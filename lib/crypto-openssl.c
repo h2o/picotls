@@ -30,6 +30,22 @@
 #include <openssl/rand.h>
 #include <openssl/x509.h>
 #include "picotls.h"
+#include "picotls_openssl.h"
+
+struct st_ptls_openssl_server_context_t {
+    char *name;
+    EVP_PKEY_CTX *sign_ctx;
+    size_t num_certs;
+    ptls_iovec_t certs[1];
+};
+
+struct st_ptls_openssl_context_t {
+    ptls_context_t super;
+    struct {
+        struct st_ptls_openssl_server_context_t **entries;
+        size_t count;
+    } servers;
+};
 
 static void random_bytes(void *buf, size_t len)
 {
@@ -166,6 +182,13 @@ static int secp256r1_key_exchange(ptls_iovec_t *pubkey, ptls_iovec_t *secret, pt
     return secp_key_exchange(NID_X9_62_prime256v1, pubkey, secret, peerkey);
 }
 
+static int rsapss_sign(void *data, ptls_iovec_t hash)
+{
+    // EVP_PKEY_CTX_set_rsa_padding(ctx, RSA_PKCS1_PSS_PADDING)
+    EVP_PKEY_sign((EVP_PKEY_CTX *)data, NULL, 0, hash.base, hash.len);
+    return 0;
+}
+
 static ptls_aead_context_t *aead_aes128gcm_create(const uint8_t *key)
 {
     return NULL;
@@ -222,9 +245,113 @@ static ptls_hash_context_t *sha256_create(void)
     return &ctx->super;
 }
 
-static ptls_key_exchange_algorithm_t key_exchanges[] = {{PTLS_GROUP_SECP256R1, secp256r1_key_exchange}, {UINT16_MAX}};
-static ptls_aead_algorithm_t aes128gcm = {16, 16, aead_aes128gcm_create};
-static ptls_hash_algorithm_t sha256 = {64, 32, sha256_create};
-static ptls_cipher_suite_t cipher_suites[] = {{PTLS_CIPHER_SUITE_AES_128_GCM_SHA256, &aes128gcm, &sha256}, {UINT16_MAX}};
+static int on_client_hello(ptls_t *tls, uint16_t *sign_algorithm,
+                           int (**signer)(void *sign_ctx, ptls_iovec_t *output, ptls_iovec_t input), void *signer_data,
+                           ptls_iovec_t **certs, size_t *num_certs, ptls_iovec_t server_name, const uint16_t *signature_algorithms,
+                           size_t num_signature_algorithms)
+{
+    return 1;
+}
 
-ptls_crypto_t ptls_crypto_openssl = {random_bytes, key_exchanges, cipher_suites};
+static void free_server_context(struct st_ptls_openssl_server_context_t *ctx)
+{
+    size_t i;
+
+    free(ctx->name);
+    EVP_PKEY_CTX_free(ctx->sign_ctx);
+    for (i = 0; i != ctx->num_certs; ++i)
+        free(ctx->certs[i].base);
+    free(ctx);
+}
+
+ptls_openssl_context_t *ptls_openssl_context_new(void)
+{
+    ptls_openssl_context_t *ctx = malloc(sizeof(*ctx));
+    if (ctx == NULL)
+        return NULL;
+
+    ctx->super = (ptls_context_t){&ptls_openssl_crypto, {on_client_hello}};
+    return ctx;
+}
+
+void ptls_openssl_context_free(ptls_openssl_context_t *ctx)
+{
+    size_t i;
+
+    for (i = 0; i != ctx->servers.count; ++i) {
+        free_server_context(ctx->servers.entries[i]);
+    }
+    free(ctx->servers.entries);
+    free(ctx);
+}
+
+ptls_context_t *ptls_openssl_context_get_context(ptls_openssl_context_t *ctx)
+{
+    assert(ctx->servers.count != 0 && !"register_server must be invoked more than once");
+    return &ctx->super;
+}
+
+int ptls_openssl_register_server(ptls_openssl_context_t *ctx, const char *server_name, EVP_PKEY *key, STACK_OF(X509) * certs)
+{
+    struct st_ptls_openssl_server_context_t *slot, **new_entries;
+    size_t i;
+    int ret;
+
+    if ((slot = malloc(offsetof(struct st_ptls_openssl_server_context_t, certs) + sizeof(slot->certs[0]) * sk_X509_num(certs))) ==
+        NULL) {
+        ret = PTLS_ERROR_NO_MEMORY;
+        goto Error;
+    }
+
+    *slot = (struct st_ptls_openssl_server_context_t){};
+    if ((slot->name = strdup(server_name)) == NULL) {
+        ret = PTLS_ERROR_NO_MEMORY;
+        goto Error;
+    }
+
+    if ((slot->sign_ctx = EVP_PKEY_CTX_new(key, NULL)) == NULL) {
+        ret = PTLS_ERROR_NO_MEMORY;
+        goto Error;
+    }
+    EVP_PKEY_CTX_set_rsa_padding(slot->sign_ctx, RSA_PKCS1_PSS_PADDING);
+    slot->num_certs = sk_X509_num(certs);
+    for (i = 0; i != slot->num_certs; ++i) {
+        X509 *cert = sk_X509_value(certs, (int)i);
+        int len = i2d_X509(cert, NULL);
+        if (len < 0) {
+            ret = PTLS_ERROR_LIBRARY;
+            goto Error;
+        }
+        if ((slot->certs[i].base = malloc(len)) == NULL) {
+            ret = PTLS_ERROR_NO_MEMORY;
+            goto Error;
+        }
+        if (i2d_X509(cert, (unsigned char **)&slot->certs[i].base) != len) {
+            ret = PTLS_ERROR_LIBRARY;
+            goto Error;
+        }
+        slot->certs[i].len = len;
+    }
+
+    if ((new_entries = realloc(ctx->servers.entries, sizeof(ctx->servers.entries[0]) * (ctx->servers.count + 1))) == NULL) {
+        ret = PTLS_ERROR_NO_MEMORY;
+        goto Error;
+    }
+    ctx->servers.entries = new_entries;
+    ctx->servers.entries[ctx->servers.count++] = slot;
+
+    return 0;
+
+Error:
+    if (slot != NULL)
+        free_server_context(slot);
+    return ret;
+}
+
+static ptls_key_exchange_algorithm_t key_exchanges[] = {{PTLS_GROUP_SECP256R1, secp256r1_key_exchange}, {UINT16_MAX}};
+ptls_aead_algorithm_t ptls_openssl_aes128gcm = {16, 16, aead_aes128gcm_create};
+ptls_hash_algorithm_t ptls_openssl_sha256 = {64, 32, sha256_create};
+static ptls_cipher_suite_t cipher_suites[] = {{PTLS_CIPHER_SUITE_AES_128_GCM_SHA256, &ptls_openssl_aes128gcm, &ptls_openssl_sha256},
+                                              {UINT16_MAX}};
+
+ptls_crypto_t ptls_openssl_crypto = {random_bytes, key_exchanges, cipher_suites};

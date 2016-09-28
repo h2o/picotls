@@ -24,6 +24,7 @@
 
 #include <inttypes.h>
 
+#define PTLS_MAX_SECRET_SIZE 32
 #define PTLS_MAX_DIGEST_SIZE 64
 
 /* cipher-suites */
@@ -61,7 +62,10 @@ typedef struct st_ptls_crypto_t ptls_crypto_t;
 typedef struct st_ptls_context_t {
     ptls_crypto_t *crypto;
     struct {
-        int (*server_name)(ptls_t *tls, ptls_iovec_t **certs, size_t *num_certs, void **signer);
+        int (*client_hello)(ptls_t *tls, uint16_t *sign_algorithm,
+                            int (**signer)(void *sign_ctx, ptls_iovec_t *output, ptls_iovec_t input), void *signer_data,
+                            ptls_iovec_t **certs, size_t *num_certs, ptls_iovec_t server_name, const uint16_t *signature_algorithms,
+                            size_t num_signature_algorithms);
     } callbacks;
 } ptls_context_t;
 
@@ -148,16 +152,25 @@ ptls_hash_context_t *ptls_hmac_create(ptls_hash_algorithm_t *algo, const void *k
 /**
  *
  */
-void ptls_hkdf_extract(ptls_hash_algorithm_t *hash, void *output, ptls_iovec_t salt, ptls_iovec_t ikm);
+int ptls_hkdf_extract(ptls_hash_algorithm_t *hash, void *output, ptls_iovec_t salt, ptls_iovec_t ikm);
 /**
  *
  */
-void ptls_hkdf_expand(ptls_hash_algorithm_t *hash, void *output, size_t outlen, ptls_iovec_t prk, ptls_iovec_t info);
+int ptls_hkdf_expand(ptls_hash_algorithm_t *hash, void *output, size_t outlen, ptls_iovec_t prk, ptls_iovec_t info);
 /**
  * clears memory
  */
 extern void (*volatile ptls_clear_memory)(void *p, size_t len);
+/**
+ *
+ */
+static ptls_iovec_t ptls_iovec_init(const void *p, size_t len);
 
-extern ptls_crypto_t ptls_crypto_openssl;
+/* inline functions */
+
+static inline ptls_iovec_t ptls_iovec_init(const void *p, size_t len)
+{
+    return (ptls_iovec_t){(uint8_t *)p, len};
+}
 
 #endif

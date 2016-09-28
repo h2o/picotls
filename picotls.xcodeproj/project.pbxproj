@@ -39,6 +39,7 @@
 		106530E61D9B7AF6005B2C60 /* test.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = test.h; sourceTree = "<group>"; };
 		106530E71D9B7B29005B2C60 /* test.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = test.c; sourceTree = "<group>"; };
 		106530E91D9B7C13005B2C60 /* picotls.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = picotls.c; sourceTree = "<group>"; };
+		106530ED1D9CEFF7005B2C60 /* picotls_openssl.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = picotls_openssl.h; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -83,6 +84,7 @@
 			isa = PBXGroup;
 			children = (
 				106530BE1D99863B005B2C60 /* picotls.h */,
+				106530ED1D9CEFF7005B2C60 /* picotls_openssl.h */,
 			);
 			path = include;
 			sourceTree = "<group>";
@@ -268,7 +270,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				HEADER_SEARCH_PATHS = "/usr/local/openssl-1.0.2/include";
-				LIBRARY_SEARCH_PATHS = "/usr/local/openssl-1.0.2";
+				LIBRARY_SEARCH_PATHS = "/usr/local/openssl-1.0.2/lib";
 				MACOSX_DEPLOYMENT_TARGET = 10.11;
 				MTL_ENABLE_DEBUG_INFO = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -308,7 +310,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				HEADER_SEARCH_PATHS = "/usr/local/openssl-1.0.2/include";
-				LIBRARY_SEARCH_PATHS = "/usr/local/openssl-1.0.2";
+				LIBRARY_SEARCH_PATHS = "/usr/local/openssl-1.0.2/lib";
 				MACOSX_DEPLOYMENT_TARGET = 10.11;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				SDKROOT = macosx;
@@ -375,6 +377,7 @@
 				106530DC1D9B3E6F005B2C60 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
 	};

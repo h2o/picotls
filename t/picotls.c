@@ -21,10 +21,10 @@
  */
 #include <assert.h>
 #include <string.h>
+#include "picotls.h"
+#include "picotls_openssl.h"
 #include "../deps/picotest/picotest.h"
 #include "../lib/picotls.c"
-
-static ptls_hash_algorithm_t *sha256;
 
 static void test_hmac_sha256(void)
 {
@@ -32,7 +32,7 @@ static void test_hmac_sha256(void)
     const char *secret = "\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b", *message = "Hi There";
     uint8_t digest[32];
 
-    ptls_hash_context_t *ctx = ptls_hmac_create(sha256, secret, strlen(secret));
+    ptls_hash_context_t *ctx = ptls_hmac_create(&ptls_openssl_sha256, secret, strlen(secret));
     ctx->update(ctx, message, strlen(message));
     ctx->final(ctx, digest, 0);
 
@@ -49,14 +49,13 @@ static void test_hkdf(void)
     uint8_t prk[PTLS_MAX_DIGEST_SIZE];
     uint8_t okm[42];
 
-    ptls_hkdf_extract(sha256, prk, (ptls_iovec_t){(uint8_t *)salt, sizeof(salt) - 1},
-                      (ptls_iovec_t){(uint8_t *)ikm, sizeof(ikm) - 1});
+    ptls_hkdf_extract(&ptls_openssl_sha256, prk, ptls_iovec_init(salt, sizeof(salt) - 1), ptls_iovec_init(ikm, sizeof(ikm) - 1));
     ok(memcmp(prk, "\x07\x77\x09\x36\x2c\x2e\x32\xdf\x0d\xdc\x3f\x0d\xc4\x7b\xba\x63\x90\xb6\xc7\x3b\xb5\x0f\x9c\x31\x22\xec\x84"
                    "\x4a\xd7\xc2\xb3\xe5",
               32) == 0);
 
-    ptls_hkdf_expand(sha256, okm, sizeof(okm), (ptls_iovec_t){prk, sha256->digest_size},
-                     (ptls_iovec_t){(uint8_t *)info, sizeof(info) - 1});
+    ptls_hkdf_expand(&ptls_openssl_sha256, okm, sizeof(okm), ptls_iovec_init(prk, ptls_openssl_sha256.digest_size),
+                     ptls_iovec_init(info, sizeof(info) - 1));
     ok(memcmp(okm, "\x3c\xb2\x5f\x25\xfa\xac\xd5\x7a\x90\x43\x4f\x64\xd0\x36\x2f\x2a\x2d\x2d\x0a\x90\xcf\x1a\x5a\x4c\x5d\xb0\x2d"
                    "\x56\xec\xc4\xc5\xbf\x34\x00\x72\x08\xd5\xb8\x87\x18\x58\x65",
               sizeof(okm)) == 0);
@@ -64,9 +63,6 @@ static void test_hkdf(void)
 
 void test_picotls(void)
 {
-    sha256 = ptls_crypto_openssl.cipher_suites[0].hash;
-    assert(sha256->digest_size == 32); /* should be sha256 */
-
     subtest("hmac-sha256", test_hmac_sha256);
     subtest("hkdf", test_hkdf);
 }

@@ -30,7 +30,7 @@ static void test_ecdh_key_exchange(void)
     int ret;
 
     /* fail */
-    ret = secp256r1_key_exchange(&pubkey, &secret, (ptls_iovec_t){NULL, 0});
+    ret = secp256r1_key_exchange(&pubkey, &secret, (ptls_iovec_t){NULL});
     ok(ret != 0);
 
     EC_GROUP *group = EC_GROUP_new_by_curve_name(NID_X9_62_prime256v1);
