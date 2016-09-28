@@ -22,6 +22,10 @@
 #ifndef picotls_h
 #define picotls_h
 
+#include <inttypes.h>
+
+#define PTLS_MAX_DIGEST_SIZE 64
+
 /* cipher-suites */
 #define PTLS_CIPHER_SUITE_AES_128_GCM_SHA256 0x1301
 #define PTLS_CIPHER_SUITE_AES_256_GCM_SHA384 0x1302
@@ -47,22 +51,71 @@
 
 typedef struct st_ptls_t ptls_t;
 
+typedef struct st_ptls_iovec_t {
+    uint8_t *base;
+    size_t len;
+} ptls_iovec_t;
+
+typedef struct st_ptls_crypto_t ptls_crypto_t;
+
 typedef struct st_ptls_context_t {
+    ptls_crypto_t *crypto;
     struct {
-        int (*server_name)(ptls_t *tls, X509 **cert, STACK_OF(X509) * *extra_certs);
+        int (*server_name)(ptls_t *tls, ptls_iovec_t **certs, size_t *num_certs, void **signer);
     } callbacks;
 } ptls_context_t;
 
+typedef struct st_ptls_key_exchange_algorithm_t {
+    uint16_t id;
+    int (*key_exchange)(ptls_iovec_t *pubkey, ptls_iovec_t *secret, ptls_iovec_t peerkey);
+} ptls_key_exchange_algorithm_t;
+
 typedef struct st_ptls_aead_context_t {
-    /**
-     *
-     */
+    void (*destroy)(struct st_ptls_aead_context_t *ctx);
+    size_t (*transform)(struct st_ptls_aead_context_t *ctx, void *output, const void *input, size_t inlen);
     uint64_t nonce;
-    /**
-     * callback used to encrypt a record
-     */
-    size_t (*transform)(struct st_ptls_aead_context_t *ctx, uint8_t *output, const uint8_t *input, size_t inlen);
 } ptls_aead_context_t;
+
+typedef struct st_ptls_aead_algorithm_t {
+    size_t key_size;
+    size_t block_size;
+    ptls_aead_context_t *(*create)(const uint8_t *key);
+} ptls_aead_algorithm_t;
+
+typedef enum en_ptls_hash_final_mode_t {
+    PTLS_HASH_FINAL_MODE_FREE = 0,
+    PTLS_HASH_FINAL_MODE_RESET = 1,
+    PTLS_HASH_FINAL_MODE_SNAPSHOT = 2
+} ptls_hash_final_mode_t;
+
+typedef struct st_ptls_hash_context_t {
+    void (*update)(struct st_ptls_hash_context_t *ctx, const void *src, size_t len);
+    void (* final)(struct st_ptls_hash_context_t *ctx, void *md, ptls_hash_final_mode_t mode);
+} ptls_hash_context_t;
+
+typedef struct st_ptls_hash_algorithm_t {
+    size_t block_size;
+    size_t digest_size;
+    ptls_hash_context_t *(*create)(void);
+} ptls_hash_algorithm_t;
+
+typedef struct st_ptls_cipher_suite_t {
+    uint16_t id;
+    ptls_aead_algorithm_t *aead;
+    ptls_hash_algorithm_t *hash;
+} ptls_cipher_suite_t;
+
+typedef struct st_ptls_crypto_t {
+    void (*random_bytes)(void *buf, size_t len);
+    /**
+     * list of supported key-exchange algorithms terminated by .id == UINT16_MAX
+     */
+    ptls_key_exchange_algorithm_t *key_exchanges;
+    /**
+     * list of supported cipher-suites terminated by .id == UINT16_MAX
+     */
+    ptls_cipher_suite_t *cipher_suites;
+} ptls_crypto_t;
 
 /**
  *
@@ -88,5 +141,23 @@ int ptls_decrypt(ptls_t *tls, const void *encrypted, size_t *enclen, void *dst, 
  *
  */
 int ptls_enrypt(ptls_t *tls, const void *src, size_t *srclen, void *encrypted, size_t *enclen);
+/**
+ *
+ */
+ptls_hash_context_t *ptls_hmac_create(ptls_hash_algorithm_t *algo, const void *key, size_t key_size);
+/**
+ *
+ */
+void ptls_hkdf_extract(ptls_hash_algorithm_t *hash, void *output, ptls_iovec_t salt, ptls_iovec_t ikm);
+/**
+ *
+ */
+void ptls_hkdf_expand(ptls_hash_algorithm_t *hash, void *output, size_t outlen, ptls_iovec_t prk, ptls_iovec_t info);
+/**
+ * clears memory
+ */
+extern void (*volatile ptls_clear_memory)(void *p, size_t len);
+
+extern ptls_crypto_t ptls_crypto_openssl;
 
 #endif
