@@ -22,33 +22,71 @@
 #ifndef picotls_h
 #define picotls_h
 
-#define PICOTLS_ALERT_HANDSHAKE_FAILURE -40
-#define PICOTLS_ALERT_DECODE_ERROR -50
-#define PICOTLS_ALERT_MISSING_EXTENSION -109
+/* cipher-suites */
+#define PTLS_CIPHER_SUITE_AES_128_GCM_SHA256 0x1301
+#define PTLS_CIPHER_SUITE_AES_256_GCM_SHA384 0x1302
+#define PTLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256 0x1303
 
-#define PICOTLS_ERROR_HANDSHAKE_INCOMPLETE -100001
+/* negotiated_groups */
+#define PTLS_GROUP_SECP256R1 23
+#define PTLS_GROUP_X25519 29
 
-typedef struct st_picotls_t picotls_t;
+/* signature algorithms */
+#define PTLS_SIGNATURE_RSA_PKCS1_SHA256 0x0401
+#define PTLS_SIGNATURE_ECDSA_SECP256R1_SHA256 0x0403
+#define PTLS_SIGNATURE_RSA_PSS_SHA256 0x0804
+
+/* alerts & errors */
+#define PTLS_ALERT_HANDSHAKE_FAILURE -40
+#define PTLS_ALERT_DECODE_ERROR -50
+#define PTLS_ALERT_MISSING_EXTENSION -109
+#define PTLS_ALERT_UNRECOGNIZED_NAME -112
+#define PTLS_ERROR_NO_MEMORY -100001
+#define PTLS_ERROR_INCOMPLETE_HANDSHAKE -100002
+#define PTLS_ERROR_LIBRARY -100003
+
+typedef struct st_ptls_t ptls_t;
+
+typedef struct st_ptls_context_t {
+    struct {
+        int (*server_name)(ptls_t *tls, X509 **cert, STACK_OF(X509) * *extra_certs);
+    } callbacks;
+} ptls_context_t;
+
+typedef struct st_ptls_aead_context_t {
+    /**
+     *
+     */
+    uint64_t nonce;
+    /**
+     * callback used to encrypt a record
+     */
+    size_t (*transform)(struct st_ptls_aead_context_t *ctx, uint8_t *output, const uint8_t *input, size_t inlen);
+} ptls_aead_context_t;
 
 /**
  *
  */
-picotls_t *picotls_new(void);
+ptls_t *ptls_new(ptls_context_t *ctx);
 /**
  *
  */
-void picotls_free(picotls_t *tls);
+void ptls_free(ptls_t *tls);
 /**
- * 
+ *
  */
-int picotls_handshake(picotls_t *tls, const void *input, size_t *inlen, void *output, size_t *outlen);
+ptls_context_t *ptls_get_context(ptls_t *tls);
 /**
- * 
+ *
  */
-int picotls_decode(picotls_t *tls, const void *encrypted, size_t *enclen, void *dst, size_t *dstlen);
+int ptls_handshake(ptls_t *tls, const void *input, size_t *inlen, void *output, size_t *outlen);
 /**
- * 
+ *
  */
-int picotls_encode(picotls_t *tls, const void *src, size_t *srclen, void *encrypted, size_t *enclen);
+int ptls_decrypt(ptls_t *tls, const void *encrypted, size_t *enclen, void *dst, size_t *dstlen);
+/**
+ *
+ */
+int ptls_enrypt(ptls_t *tls, const void *src, size_t *srclen, void *encrypted, size_t *enclen);
 
 #endif
