@@ -30,10 +30,10 @@
 #include <openssl/rand.h>
 #include <openssl/x509.h>
 #include "picotls.h"
-#include "picotls_openssl.h"
+#include "picotls/openssl.h"
 
 struct st_ptls_openssl_server_context_t {
-    char *name;
+    ptls_iovec_t name;
     EVP_PKEY_CTX *sign_ctx;
     size_t num_certs;
     ptls_iovec_t certs[1];
@@ -182,10 +182,21 @@ static int secp256r1_key_exchange(ptls_iovec_t *pubkey, ptls_iovec_t *secret, pt
     return secp_key_exchange(NID_X9_62_prime256v1, pubkey, secret, peerkey);
 }
 
-static int rsapss_sign(void *data, ptls_iovec_t hash)
+static int rsapss_sign(void *data, ptls_iovec_t *output, ptls_iovec_t input)
 {
-    // EVP_PKEY_CTX_set_rsa_padding(ctx, RSA_PKCS1_PSS_PADDING)
-    EVP_PKEY_sign((EVP_PKEY_CTX *)data, NULL, 0, hash.base, hash.len);
+    EVP_PKEY_CTX *ctx = data;
+
+    if (EVP_PKEY_sign(ctx, NULL, &output->len, input.base, input.len) != 1)
+        return PTLS_ERROR_LIBRARY;
+
+    if ((output->base = malloc(output->len)) == NULL)
+        return PTLS_ERROR_NO_MEMORY;
+
+    if (EVP_PKEY_sign(ctx, output->base, &output->len, input.base, input.len) != 1) {
+        free(output->base);
+        return PTLS_ERROR_NO_MEMORY;
+    }
+
     return 0;
 }
 
@@ -245,19 +256,86 @@ static ptls_hash_context_t *sha256_create(void)
     return &ctx->super;
 }
 
+static int ascii_tolower(int ch)
+{
+    return ('A' <= ch && ch <= 'Z') ? ch + 0x20 : ch;
+}
+
+static int ascii_streq_caseless(ptls_iovec_t x, ptls_iovec_t y)
+{
+    size_t i;
+    if (x.len != y.len)
+        return 0;
+    for (i = 0; i != x.len; ++i)
+        if (ascii_tolower(x.base[i]) != ascii_tolower(y.base[i]))
+            return 0;
+    return 0;
+}
+
+static uint16_t select_compatible_signature_algorithm(EVP_PKEY_CTX *ctx, const uint16_t *signature_algorithms,
+                                                      size_t num_signature_algorithms)
+{
+    size_t i;
+
+    switch (EVP_PKEY_CTX_get0_pkey(ctx)->type) {
+    case EVP_PKEY_RSA:
+        /* Section 4.4.2: RSA signatures MUST use an RSASSA-PSS algorithm, regardless of whether RSASSA-PKCS1-v1_5 algorithms appear
+         * in "signature_algorithms". */
+        for (i = 0; i != num_signature_algorithms; ++i)
+            if (signature_algorithms[i] == PTLS_SIGNATURE_RSA_PSS_SHA256)
+                return PTLS_SIGNATURE_RSA_PSS_SHA256;
+        break;
+    case EVP_PKEY_EC:
+        for (i = 0; i != num_signature_algorithms; ++i)
+            if (signature_algorithms[i] == PTLS_SIGNATURE_ECDSA_SECP256R1_SHA256)
+                return PTLS_SIGNATURE_ECDSA_SECP256R1_SHA256;
+        break;
+    default:
+        assert(!"logic flaw");
+        break;
+    }
+
+    return UINT16_MAX;
+}
+
 static int on_client_hello(ptls_t *tls, uint16_t *sign_algorithm,
-                           int (**signer)(void *sign_ctx, ptls_iovec_t *output, ptls_iovec_t input), void *signer_data,
+                           int (**signer)(void *sign_ctx, ptls_iovec_t *output, ptls_iovec_t input), void **signer_data,
                            ptls_iovec_t **certs, size_t *num_certs, ptls_iovec_t server_name, const uint16_t *signature_algorithms,
                            size_t num_signature_algorithms)
 {
-    return 1;
+    ptls_openssl_context_t *ctx = (ptls_openssl_context_t *)ptls_get_context(tls);
+    struct st_ptls_openssl_server_context_t *sctx;
+
+    assert(ctx->servers.count != 0);
+
+    for (size_t i = 0; i != ctx->servers.count; ++i) {
+        sctx = ctx->servers.entries[i];
+        if (ascii_streq_caseless(server_name, sctx->name) &&
+            (*sign_algorithm = select_compatible_signature_algorithm(sctx->sign_ctx, signature_algorithms,
+                                                                     num_signature_algorithms)) != UINT16_MAX)
+            goto Found;
+    }
+    /* not found, use the first one, if the signing algorithm matches */
+    sctx = ctx->servers.entries[0];
+    if ((*sign_algorithm = select_compatible_signature_algorithm(sctx->sign_ctx, signature_algorithms, num_signature_algorithms)) ==
+        UINT16_MAX)
+        return PTLS_ALERT_HANDSHAKE_FAILURE;
+
+Found:
+    /* setup the rest */
+    *signer = rsapss_sign;
+    *signer_data = sctx->sign_ctx;
+    *certs = sctx->certs;
+    *num_certs = sctx->num_certs;
+
+    return 0;
 }
 
 static void free_server_context(struct st_ptls_openssl_server_context_t *ctx)
 {
     size_t i;
 
-    free(ctx->name);
+    free(ctx->name.base);
     EVP_PKEY_CTX_free(ctx->sign_ctx);
     for (i = 0; i != ctx->num_certs; ++i)
         free(ctx->certs[i].base);
@@ -270,7 +348,7 @@ ptls_openssl_context_t *ptls_openssl_context_new(void)
     if (ctx == NULL)
         return NULL;
 
-    ctx->super = (ptls_context_t){&ptls_openssl_crypto, {on_client_hello}};
+    *ctx = (ptls_openssl_context_t){{&ptls_openssl_crypto, {on_client_hello}}};
     return ctx;
 }
 
@@ -291,7 +369,8 @@ ptls_context_t *ptls_openssl_context_get_context(ptls_openssl_context_t *ctx)
     return &ctx->super;
 }
 
-int ptls_openssl_register_server(ptls_openssl_context_t *ctx, const char *server_name, EVP_PKEY *key, STACK_OF(X509) * certs)
+int ptls_openssl_context_register_server(ptls_openssl_context_t *ctx, const char *server_name, EVP_PKEY *key,
+                                         STACK_OF(X509) * certs)
 {
     struct st_ptls_openssl_server_context_t *slot, **new_entries;
     size_t i;
@@ -304,16 +383,29 @@ int ptls_openssl_register_server(ptls_openssl_context_t *ctx, const char *server
     }
 
     *slot = (struct st_ptls_openssl_server_context_t){};
-    if ((slot->name = strdup(server_name)) == NULL) {
+    if ((slot->name.base = (uint8_t *)strdup(server_name)) == NULL) {
         ret = PTLS_ERROR_NO_MEMORY;
         goto Error;
     }
+    slot->name.len = strlen(server_name);
 
     if ((slot->sign_ctx = EVP_PKEY_CTX_new(key, NULL)) == NULL) {
         ret = PTLS_ERROR_NO_MEMORY;
         goto Error;
     }
-    EVP_PKEY_CTX_set_rsa_padding(slot->sign_ctx, RSA_PKCS1_PSS_PADDING);
+    switch (key->type) {
+    case EVP_PKEY_RSA:
+        EVP_PKEY_CTX_set_rsa_padding(slot->sign_ctx, RSA_PKCS1_PSS_PADDING);
+        break;
+    case EVP_PKEY_EC:
+        /* nothing to do? */
+        break;
+    default:
+        ret = PTLS_ERROR_INCOMPATIBLE_KEY;
+        goto Error;
+    }
+    EVP_PKEY_sign_init(slot->sign_ctx);
+
     slot->num_certs = sk_X509_num(certs);
     for (i = 0; i != slot->num_certs; ++i) {
         X509 *cert = sk_X509_value(certs, (int)i);

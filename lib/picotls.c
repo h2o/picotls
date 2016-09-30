@@ -67,7 +67,7 @@ struct st_ptls_t {
     /**
      * the state
      */
-    enum { PTLS_STATE_WAIT_CLIENT_HELLO, PTLS_STATE_WAIT_FINISHED, PTLS_STATE_APPDATA } state;
+    enum { PTLS_STATE_EXPECT_CLIENT_HELLO, PTLS_STATE_EXPECT_FINISHED, PTLS_STATE_APPDATA } state;
     /**
      * context
      */
@@ -607,7 +607,8 @@ static int handle_client_hello(ptls_t *tls, struct st_ptls_outbuf_t *outbuf, con
     int (*signer)(void *, ptls_iovec_t *, ptls_iovec_t);
     void *signer_data;
     ptls_iovec_t pubkey = {}, ecdh_secret = {};
-    uint8_t handshake_server_traffic_secret[PTLS_MAX_DIGEST_SIZE];
+    uint8_t handshake_server_traffic_secret[PTLS_MAX_DIGEST_SIZE], finished_key[PTLS_MAX_DIGEST_SIZE];
+
     ptls_aead_context_t *enc = NULL;
     int ret;
 
@@ -623,6 +624,9 @@ static int handle_client_hello(ptls_t *tls, struct st_ptls_outbuf_t *outbuf, con
                 outbuf_push_block(outbuf, 2, {
                     outbuf_push_extension(outbuf, PTLS_EXTENSION_TYPE_KEY_SHARE,
                                           { outbuf_pushu16(outbuf, ch.negotiated_group->id); });
+                    /* Section 4.2.3: Servers which are authenticating via a certificate MUST indicate so by sending the client an
+                     * empty "signature_algorithms" extension. */
+                    outbuf_push_extension(outbuf, PTLS_EXTENSION_TYPE_SIGNATURE_ALGORITHMS, {});
                 });
             });
             ret = PTLS_ERROR_INCOMPLETE_HANDSHAKE;
@@ -670,9 +674,14 @@ static int handle_client_hello(ptls_t *tls, struct st_ptls_outbuf_t *outbuf, con
     if ((enc = create_encrypter(ch.cipher_suite, "handshake key expansion", handshake_server_traffic_secret)) == NULL)
         goto Exit;
 
-    /* send EncryptedExtensions, Certificate */
-    outbuf_encrypt(outbuf, enc,
-                   { outbuf_push_handshake(outbuf, tls->key_schedule, PTLS_HANDSHAKE_TYPE_ENCRYPTED_EXTENSIONS, {}); });
+    /* send EncryptedExtensions */
+    outbuf_encrypt(outbuf, enc, {
+        outbuf_push_handshake(outbuf, tls->key_schedule, PTLS_HANDSHAKE_TYPE_ENCRYPTED_EXTENSIONS, {
+            outbuf_push_block(outbuf, 2, { outbuf_push_extension(outbuf, PTLS_EXTENSION_TYPE_SIGNATURE_ALGORITHMS, {}); });
+        });
+    });
+
+    /* send Certificate */
     outbuf_encrypt(outbuf, enc, {
         outbuf_push_handshake(outbuf, tls->key_schedule, PTLS_HANDSHAKE_TYPE_CERTIFICATE, {
             outbuf_push(outbuf, 0);
@@ -717,13 +726,34 @@ static int handle_client_hello(ptls_t *tls, struct st_ptls_outbuf_t *outbuf, con
     });
 #undef CONTEXT_STRING
 
-    assert(!"implement finished");
-    ret = -1;
+    outbuf_encrypt(outbuf, enc, {
+        outbuf_push_handshake(outbuf, tls->key_schedule, PTLS_HANDSHAKE_TYPE_FINISHED, {
+            if (*outbuf->off + tls->key_schedule->algo->digest_size <= outbuf->capacity) {
+                ptls_hash_context_t *hmac;
+                if (hkdf_expand_label(tls->key_schedule->algo, finished_key, tls->key_schedule->algo->digest_size,
+                                      ptls_iovec_init(handshake_server_traffic_secret, tls->key_schedule->algo->digest_size),
+                                      "finished", "", ptls_iovec_init(NULL, 0)) != 0)
+                    goto Exit;
+                if ((hmac = ptls_hmac_create(tls->key_schedule->algo, finished_key, tls->key_schedule->algo->digest_size)) == NULL)
+                    goto Exit;
+                uint8_t d[PTLS_MAX_DIGEST_SIZE];
+                tls->key_schedule->msghash->final(tls->key_schedule->msghash, d, PTLS_HASH_FINAL_MODE_SNAPSHOT);
+                hmac->update(hmac, d, tls->key_schedule->algo->digest_size);
+                ptls_clear_memory(d, sizeof(d));
+                hmac->update(hmac, tls->key_schedule->hashed_resumption_context, tls->key_schedule->algo->digest_size);
+                hmac->final(hmac, outbuf->base + *outbuf->off, PTLS_HASH_FINAL_MODE_FREE);
+            }
+            *outbuf->off += tls->key_schedule->algo->digest_size;
+        });
+    });
+
+    ret = PTLS_ERROR_INCOMPLETE_HANDSHAKE;
 
 Exit:
     free(pubkey.base);
     free(ecdh_secret.base);
     ptls_clear_memory(handshake_server_traffic_secret, sizeof(handshake_server_traffic_secret));
+    ptls_clear_memory(finished_key, sizeof(finished_key));
     if (enc != NULL)
         enc->destroy(enc);
     return ret;
@@ -791,7 +821,7 @@ ptls_t *ptls_new(ptls_context_t *ctx)
 {
     ptls_t *tls = malloc(sizeof(*tls));
     if (tls != NULL)
-        *tls = (ptls_t){PTLS_STATE_WAIT_CLIENT_HELLO, ctx};
+        *tls = (ptls_t){PTLS_STATE_EXPECT_CLIENT_HELLO, ctx};
     return tls;
 }
 
@@ -802,6 +832,11 @@ void ptls_free(ptls_t *tls)
     if (tls->key_schedule != NULL)
         free_key_schedule(tls->key_schedule);
     free(tls);
+}
+
+ptls_context_t *ptls_get_context(ptls_t *tls)
+{
+    return tls->ctx;
 }
 
 static int extract_handshake_message(uint8_t *type, ptls_iovec_t *body, const uint8_t *src, size_t len)
@@ -856,7 +891,7 @@ int ptls_handshake(ptls_t *tls, const void *input, size_t *inlen, void *output, 
     }
 
     switch (tls->state) {
-    case PTLS_STATE_WAIT_CLIENT_HELLO:
+    case PTLS_STATE_EXPECT_CLIENT_HELLO:
         if (hstype != PTLS_HANDSHAKE_TYPE_CLIENT_HELLO)
             return PTLS_ALERT_HANDSHAKE_FAILURE;
         if ((ret = handle_client_hello(tls, &outbuf, hsbody.base, hsbody.len)) != 0)

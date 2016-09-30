@@ -49,6 +49,7 @@
 #define PTLS_ERROR_NO_MEMORY -100001
 #define PTLS_ERROR_INCOMPLETE_HANDSHAKE -100002
 #define PTLS_ERROR_LIBRARY -100003
+#define PTLS_ERROR_INCOMPATIBLE_KEY -100004
 
 typedef struct st_ptls_t ptls_t;
 
@@ -63,7 +64,7 @@ typedef struct st_ptls_context_t {
     ptls_crypto_t *crypto;
     struct {
         int (*client_hello)(ptls_t *tls, uint16_t *sign_algorithm,
-                            int (**signer)(void *sign_ctx, ptls_iovec_t *output, ptls_iovec_t input), void *signer_data,
+                            int (**signer)(void *sign_ctx, ptls_iovec_t *output, ptls_iovec_t input), void **signer_data,
                             ptls_iovec_t **certs, size_t *num_certs, ptls_iovec_t server_name, const uint16_t *signature_algorithms,
                             size_t num_signature_algorithms);
     } callbacks;

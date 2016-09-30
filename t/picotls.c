@@ -22,7 +22,7 @@
 #include <assert.h>
 #include <string.h>
 #include "picotls.h"
-#include "picotls_openssl.h"
+#include "picotls/openssl.h"
 #include "../deps/picotest/picotest.h"
 #include "../lib/picotls.c"
 
