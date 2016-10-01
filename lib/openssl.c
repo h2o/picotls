@@ -200,9 +200,116 @@ static int rsapss_sign(void *data, ptls_iovec_t *output, ptls_iovec_t input)
     return 0;
 }
 
-static ptls_aead_context_t *aead_aes128gcm_create(const uint8_t *key)
+struct aead_crypto_context_t {
+    EVP_CIPHER_CTX *ctx;
+    size_t tag_size;
+};
+
+static void aead_dispose_crypto(ptls_aead_context_t *ctx)
 {
-    return NULL;
+    struct aead_crypto_context_t *crypto_ctx = (struct aead_crypto_context_t *)ctx->crypto_ctx;
+
+    if (crypto_ctx != NULL) {
+        if (crypto_ctx->ctx != NULL)
+            EVP_CIPHER_CTX_free(crypto_ctx->ctx);
+        free(crypto_ctx);
+    }
+    ctx->crypto_ctx = NULL;
+}
+
+static int aead_do_encrypt(ptls_aead_context_t *ctx, void *_output, size_t *outlen, const void *input, size_t inlen, const void *iv)
+{
+    struct aead_crypto_context_t *crypto_ctx = (struct aead_crypto_context_t *)ctx->crypto_ctx;
+    uint8_t *output = _output;
+    int blocklen;
+
+    *outlen = 0;
+
+    /* FIXME for performance, preserve the expanded key instead of the raw key */
+    if (!EVP_EncryptInit_ex(crypto_ctx->ctx, NULL, NULL, NULL, iv))
+        return PTLS_ERROR_LIBRARY;
+    if (!EVP_EncryptUpdate(crypto_ctx->ctx, output, &blocklen, input, (int)inlen))
+        return PTLS_ERROR_LIBRARY;
+    *outlen += blocklen;
+    if (!EVP_EncryptFinal_ex(crypto_ctx->ctx, output + *outlen, &blocklen))
+        return PTLS_ERROR_LIBRARY;
+    *outlen += blocklen;
+    if (!EVP_CIPHER_CTX_ctrl(crypto_ctx->ctx, EVP_CTRL_GCM_GET_TAG, (int)crypto_ctx->tag_size, output + *outlen))
+        return PTLS_ERROR_LIBRARY;
+    *outlen += crypto_ctx->tag_size;
+
+    return 0;
+}
+
+static int aead_do_decrypt(ptls_aead_context_t *ctx, void *_output, size_t *outlen, const void *input, size_t inlen, const void *iv)
+{
+    struct aead_crypto_context_t *crypto_ctx = (struct aead_crypto_context_t *)ctx->crypto_ctx;
+    uint8_t *output = _output;
+    int blocklen;
+
+    *outlen = 0;
+
+    if (inlen < crypto_ctx->tag_size)
+        return PTLS_ALERT_BAD_RECORD_MAC;
+
+    if (!EVP_DecryptInit_ex(crypto_ctx->ctx, NULL, NULL, NULL, iv))
+        return PTLS_ERROR_LIBRARY;
+    if (!EVP_DecryptUpdate(crypto_ctx->ctx, output, &blocklen, input, (int)(inlen - crypto_ctx->tag_size)))
+        return PTLS_ERROR_LIBRARY;
+    *outlen += blocklen;
+    if (!EVP_CIPHER_CTX_ctrl(crypto_ctx->ctx, EVP_CTRL_GCM_SET_TAG, (int)crypto_ctx->tag_size,
+                             (void *)(input + inlen - crypto_ctx->tag_size)))
+        return PTLS_ERROR_LIBRARY;
+    if (!EVP_DecryptFinal_ex(crypto_ctx->ctx, output + *outlen, &blocklen))
+        return PTLS_ALERT_BAD_RECORD_MAC;
+    *outlen += blocklen;
+
+    return 0;
+}
+
+static int aead_setup_crypto(ptls_aead_context_t *ctx, int is_enc, const void *key, const EVP_CIPHER *cipher, size_t tag_size)
+{
+    struct aead_crypto_context_t *crypto_ctx;
+    int ret;
+
+    if ((crypto_ctx = (struct aead_crypto_context_t *)malloc(sizeof(*crypto_ctx))) == NULL)
+        return PTLS_ERROR_NO_MEMORY;
+
+    *crypto_ctx = (struct aead_crypto_context_t){NULL, tag_size};
+    ctx->crypto_ctx = crypto_ctx;
+    ctx->dispose_crypto = aead_dispose_crypto;
+    ctx->do_transform = is_enc ? aead_do_encrypt : aead_do_decrypt;
+
+    if ((crypto_ctx->ctx = EVP_CIPHER_CTX_new()) == NULL) {
+        ret = PTLS_ERROR_NO_MEMORY;
+        goto Error;
+    }
+    if (is_enc) {
+        if (!EVP_EncryptInit_ex(crypto_ctx->ctx, cipher, NULL, key, NULL)) {
+            ret = PTLS_ERROR_LIBRARY;
+            goto Error;
+        }
+    } else {
+        if (!EVP_DecryptInit_ex(crypto_ctx->ctx, cipher, NULL, key, NULL)) {
+            ret = PTLS_ERROR_LIBRARY;
+            goto Error;
+        }
+    }
+    if (!EVP_CIPHER_CTX_ctrl(crypto_ctx->ctx, EVP_CTRL_GCM_SET_IVLEN, (int)ctx->algo->iv_size, NULL)) {
+        ret = PTLS_ERROR_LIBRARY;
+        goto Error;
+    }
+
+    return 0;
+
+Error:
+    aead_dispose_crypto(ctx);
+    return ret;
+}
+
+static int aead_aes128gcm_setup_crypto(ptls_aead_context_t *ctx, int is_enc, const void *key)
+{
+    return aead_setup_crypto(ctx, is_enc, key, EVP_aes_128_gcm(), 16);
 }
 
 struct sha256_context_t {
@@ -369,6 +476,19 @@ ptls_context_t *ptls_openssl_context_get_context(ptls_openssl_context_t *ctx)
     return &ctx->super;
 }
 
+static int eckey_is_on_group(EVP_PKEY *pkey, int nid)
+{
+    EC_KEY *eckey = EVP_PKEY_get1_EC_KEY(pkey);
+    int ret = 0;
+
+    if (eckey != NULL) {
+        ret = EC_GROUP_get_curve_name(EC_KEY_get0_group(eckey)) != nid;
+        EC_KEY_free(eckey);
+    }
+
+    return ret;
+}
+
 int ptls_openssl_context_register_server(ptls_openssl_context_t *ctx, const char *server_name, EVP_PKEY *key,
                                          STACK_OF(X509) * certs)
 {
@@ -398,7 +518,10 @@ int ptls_openssl_context_register_server(ptls_openssl_context_t *ctx, const char
         EVP_PKEY_CTX_set_rsa_padding(slot->sign_ctx, RSA_PKCS1_PSS_PADDING);
         break;
     case EVP_PKEY_EC:
-        /* nothing to do? */
+        if (!eckey_is_on_group(key, NID_X9_62_prime256v1)) {
+            ret = PTLS_ERROR_INCOMPATIBLE_KEY;
+            goto Error;
+        }
         break;
     default:
         ret = PTLS_ERROR_INCOMPATIBLE_KEY;
@@ -410,7 +533,7 @@ int ptls_openssl_context_register_server(ptls_openssl_context_t *ctx, const char
     for (i = 0; i != slot->num_certs; ++i) {
         X509 *cert = sk_X509_value(certs, (int)i);
         int len = i2d_X509(cert, NULL);
-        if (len < 0) {
+        if (len <= 0) {
             ret = PTLS_ERROR_LIBRARY;
             goto Error;
         }
@@ -418,7 +541,8 @@ int ptls_openssl_context_register_server(ptls_openssl_context_t *ctx, const char
             ret = PTLS_ERROR_NO_MEMORY;
             goto Error;
         }
-        if (i2d_X509(cert, (unsigned char **)&slot->certs[i].base) != len) {
+        unsigned char *p = slot->certs[i].base;
+        if (i2d_X509(cert, &p) != len) {
             ret = PTLS_ERROR_LIBRARY;
             goto Error;
         }
@@ -441,7 +565,7 @@ Error:
 }
 
 static ptls_key_exchange_algorithm_t key_exchanges[] = {{PTLS_GROUP_SECP256R1, secp256r1_key_exchange}, {UINT16_MAX}};
-ptls_aead_algorithm_t ptls_openssl_aes128gcm = {16, 16, aead_aes128gcm_create};
+ptls_aead_algorithm_t ptls_openssl_aes128gcm = {16, 16, 16, aead_aes128gcm_setup_crypto};
 ptls_hash_algorithm_t ptls_openssl_sha256 = {64, 32, sha256_create};
 static ptls_cipher_suite_t cipher_suites[] = {{PTLS_CIPHER_SUITE_AES_128_GCM_SHA256, &ptls_openssl_aes128gcm, &ptls_openssl_sha256},
                                               {UINT16_MAX}};

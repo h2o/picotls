@@ -25,6 +25,7 @@
 #include <inttypes.h>
 
 #define PTLS_MAX_SECRET_SIZE 32
+#define PTLS_MAX_IV_SIZE 16
 #define PTLS_MAX_DIGEST_SIZE 64
 
 /* cipher-suites */
@@ -42,6 +43,7 @@
 #define PTLS_SIGNATURE_RSA_PSS_SHA256 0x0804
 
 /* alerts & errors */
+#define PTLS_ALERT_BAD_RECORD_MAC -20
 #define PTLS_ALERT_HANDSHAKE_FAILURE -40
 #define PTLS_ALERT_DECODE_ERROR -50
 #define PTLS_ALERT_MISSING_EXTENSION -109
@@ -76,15 +78,21 @@ typedef struct st_ptls_key_exchange_algorithm_t {
 } ptls_key_exchange_algorithm_t;
 
 typedef struct st_ptls_aead_context_t {
-    void (*destroy)(struct st_ptls_aead_context_t *ctx);
-    size_t (*transform)(struct st_ptls_aead_context_t *ctx, void *output, const void *input, size_t inlen);
-    uint64_t nonce;
+    void *crypto_ctx;
+    void (*dispose_crypto)(struct st_ptls_aead_context_t *ctx);
+    int (*do_transform)(struct st_ptls_aead_context_t *ctx, void *output, size_t *outlen, const void *input, size_t inlen,
+                        const void *iv);
+    /* following fields must not be altered by the crypto binding */
+    struct st_ptls_aead_algorithm_t *algo;
+    uint64_t seq;
+    uint8_t static_iv[1];
 } ptls_aead_context_t;
 
 typedef struct st_ptls_aead_algorithm_t {
     size_t key_size;
+    size_t iv_size;
     size_t block_size;
-    ptls_aead_context_t *(*create)(const uint8_t *key);
+    int (*setup_crypto)(ptls_aead_context_t *ctx, int is_enc, const void *key);
 } ptls_aead_algorithm_t;
 
 typedef enum en_ptls_hash_final_mode_t {
@@ -158,6 +166,19 @@ int ptls_hkdf_extract(ptls_hash_algorithm_t *hash, void *output, ptls_iovec_t sa
  *
  */
 int ptls_hkdf_expand(ptls_hash_algorithm_t *hash, void *output, size_t outlen, ptls_iovec_t prk, ptls_iovec_t info);
+/**
+ *
+ */
+ptls_aead_context_t *ptls_aead_new(ptls_aead_algorithm_t *aead, ptls_hash_algorithm_t *hash, int is_enc, const void *secret,
+                                   const char *label);
+/**
+ *
+ */
+void ptls_aead_free(ptls_aead_context_t *ctx);
+/**
+ *
+ */
+int ptls_aead_transform(ptls_aead_context_t *ctx, void *output, size_t *outlen, const void *input, size_t inlen);
 /**
  * clears memory
  */

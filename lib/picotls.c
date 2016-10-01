@@ -148,12 +148,12 @@ static void inbuf_dispose(ptls_iovec_t *vec)
     }
 }
 
-static void outbuf_init(struct st_ptls_outbuf_t *buf, uint8_t *output, size_t *outlen)
+static void outbuf_init(struct st_ptls_outbuf_t *buf, uint8_t *output, size_t *outlen, size_t capacity)
 {
     buf->base = output;
-    buf->capacity = *outlen;
     buf->off = outlen;
-    *outlen = 0;
+    buf->capacity = capacity;
+    *buf->off = 0;
 
     if (buf->capacity == 0)
         buf->base = NULL;
@@ -175,18 +175,24 @@ static void outbuf_pushu16(struct st_ptls_outbuf_t *buf, uint16_t v)
 
 static void outbuf_do_encrypt_record(struct st_ptls_outbuf_t *buf, size_t rec_start, ptls_aead_context_t *aead)
 {
+    /* section 5.2: The length MUST NOT exceed 2^14 + 256. */
     uint8_t encrypted[PTLS_MAX_RECORD_LENGTH + 256];
     size_t enclen;
+    const uint8_t *src;
     size_t bodylen = *buf->off - rec_start - 5;
 
     assert(bodylen <= PTLS_MAX_RECORD_LENGTH);
 
     if (*buf->off < buf->capacity) {
         buf->base[*buf->off] = buf->base[rec_start]; /* copy content_type to last +1!!! */
-        enclen = aead->transform(aead, encrypted, buf->base + rec_start + 5, bodylen + 1);
+        src = buf->base + rec_start + 5;
     } else {
-        enclen = aead->transform(aead, encrypted, NULL, bodylen + 1);
+        /* encrypt garbage to obtain size */
+        src = encrypted;
     }
+
+    int ret = ptls_aead_transform(aead, encrypted, &enclen, src, bodylen + 1);
+    assert(ret == 0);
 
     *buf->off = rec_start;
     outbuf_pushv(buf, encrypted, enclen);
@@ -249,7 +255,7 @@ static int hkdf_expand_label(ptls_hash_algorithm_t *algo, void *output, size_t o
     size_t hkdf_label_off = 0;
     struct st_ptls_outbuf_t outbuf;
 
-    outbuf_init(&outbuf, hkdf_label, &hkdf_label_off);
+    outbuf_init(&outbuf, hkdf_label, &hkdf_label_off, sizeof(hkdf_label));
 
     outbuf_pushu16(&outbuf, outlen);
     outbuf_push_block(&outbuf, 1, {
@@ -340,19 +346,6 @@ static int get_traffic_key(ptls_hash_algorithm_t *algo, void *key, size_t key_si
 {
     return hkdf_expand_label(algo, key, key_size, ptls_iovec_init(secret, algo->digest_size), label, is_iv ? "iv" : "key",
                              ptls_iovec_init(NULL, 0));
-}
-
-static ptls_aead_context_t *create_encrypter(ptls_cipher_suite_t *cs, const char *label, const void *traffic_secret)
-{
-    uint8_t traffic_key[PTLS_MAX_SECRET_SIZE];
-
-    if (get_traffic_key(cs->hash, traffic_key, cs->aead->key_size, "handshake key expansion", 0, traffic_secret) != 0)
-        return NULL;
-
-    ptls_aead_context_t *enc = cs->aead->create(traffic_key);
-
-    ptls_clear_memory(traffic_key, sizeof(traffic_key));
-    return enc;
 }
 
 static const uint8_t *parse_uint16(uint16_t *value, const uint8_t *src, const uint8_t *end)
@@ -671,7 +664,8 @@ static int handle_client_hello(ptls_t *tls, struct st_ptls_outbuf_t *outbuf, con
 
     /* create encryptor for encrypting the handshake */
     derive_secret(tls->key_schedule, handshake_server_traffic_secret, "server handshake traffic secret");
-    if ((enc = create_encrypter(ch.cipher_suite, "handshake key expansion", handshake_server_traffic_secret)) == NULL)
+    if ((enc = ptls_aead_new(ch.cipher_suite->aead, ch.cipher_suite->hash, 1, handshake_server_traffic_secret,
+                             "handshake key expansion")) == NULL)
         goto Exit;
 
     /* send EncryptedExtensions */
@@ -755,7 +749,7 @@ Exit:
     ptls_clear_memory(handshake_server_traffic_secret, sizeof(handshake_server_traffic_secret));
     ptls_clear_memory(finished_key, sizeof(finished_key));
     if (enc != NULL)
-        enc->destroy(enc);
+        ptls_aead_free(enc);
     return ret;
 }
 
@@ -865,7 +859,7 @@ int ptls_handshake(ptls_t *tls, const void *input, size_t *inlen, void *output, 
     ptls_iovec_t hsbody;
     int ret;
 
-    outbuf_init(&outbuf, output, outlen);
+    outbuf_init(&outbuf, output, outlen, *outlen);
 
     /* extract the first record */
     if ((src = parse_record(tls, &rec, &ret, src, src + *inlen)) == NULL)
@@ -1019,6 +1013,68 @@ int ptls_hkdf_expand(ptls_hash_algorithm_t *algo, void *output, size_t outlen, p
 
     ptls_clear_memory(digest, algo->digest_size);
 
+    return 0;
+}
+
+ptls_aead_context_t *ptls_aead_new(ptls_aead_algorithm_t *aead, ptls_hash_algorithm_t *hash, int is_enc, const void *secret,
+                                   const char *label)
+{
+    ptls_aead_context_t *ctx;
+    uint8_t key[PTLS_MAX_SECRET_SIZE];
+    int ret;
+
+    if ((ctx = (ptls_aead_context_t *)malloc(offsetof(ptls_aead_context_t, static_iv) + aead->iv_size)) == NULL)
+        return NULL;
+
+    *ctx = (ptls_aead_context_t){NULL, NULL, NULL, aead, 0};
+
+    if ((ret = get_traffic_key(hash, key, hash->digest_size, label, 0, secret)) != 0)
+        goto Exit;
+    if ((ret = get_traffic_key(hash, ctx->static_iv, aead->iv_size, label, 1, secret)) != 0)
+        goto Exit;
+    ret = aead->setup_crypto(ctx, is_enc, key);
+
+Exit:
+    ptls_clear_memory(key, aead->key_size);
+    if (ret != 0) {
+        ptls_clear_memory(ctx->static_iv, aead->iv_size);
+        free(ctx);
+        ctx = NULL;
+    }
+
+    return ctx;
+}
+
+void ptls_aead_free(ptls_aead_context_t *ctx)
+{
+    ctx->dispose_crypto(ctx);
+    ptls_clear_memory(ctx->static_iv, ctx->algo->iv_size);
+    free(ctx);
+}
+
+int ptls_aead_transform(ptls_aead_context_t *ctx, void *output, size_t *outlen, const void *input, size_t inlen)
+{
+    uint8_t iv[PTLS_MAX_IV_SIZE];
+    size_t iv_size = ctx->algo->iv_size;
+    int ret;
+
+    { /* build iv */
+        const uint8_t *s = ctx->static_iv;
+        uint8_t *d = iv;
+        size_t i = iv_size - 8;
+        for (; i != 0; --i)
+            *d++ = *s++;
+        i = 64;
+        do {
+            i -= 8;
+            *d++ = *s++ ^ (uint8_t)(ctx->seq >> i);
+        } while (i != 0);
+    }
+
+    if ((ret = ctx->do_transform(ctx, output, outlen, input, inlen, iv)) != 0)
+        return ret;
+
+    ++ctx->seq;
     return 0;
 }
 

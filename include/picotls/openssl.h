@@ -36,6 +36,6 @@ ptls_openssl_context_t *ptls_openssl_context_new(void);
 void ptls_openssl_context_free(ptls_openssl_context_t *ctx);
 ptls_context_t *ptls_openssl_context_get_context(ptls_openssl_context_t *ctx);
 int ptls_openssl_context_register_server(ptls_openssl_context_t *ctx, const char *server_name, EVP_PKEY *key,
-                                         STACK_OF(X509) *certs);
+                                         STACK_OF(X509) * certs);
 
 #endif

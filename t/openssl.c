@@ -147,6 +147,8 @@ static void test_rsa_sign(void)
     ok(rsapss_sign(ctx->servers.entries[0]->sign_ctx, &signature, ptls_iovec_init(message, strlen(message))) == 0);
 
     /* TODO verify */
+
+    ptls_openssl_context_free(ctx);
 }
 
 void test_crypto_openssl(void)

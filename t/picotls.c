@@ -61,8 +61,51 @@ static void test_hkdf(void)
               sizeof(okm)) == 0);
 }
 
+static void test_aes128gcm(void)
+{
+    const char *traffic_secret = "01234567890123456789012345678901", *label = "handshake key expansion", *src1 = "hello world",
+               *src2 = "good bye, all";
+    ptls_aead_context_t *c;
+    char enc1[256], enc2[256], dec1[256], dec2[256];
+    size_t enc1len, enc2len, dec1len, dec2len;
+    int ret;
+
+    /* encrypt */
+    c = ptls_aead_new(&ptls_openssl_aes128gcm, &ptls_openssl_sha256, 1, traffic_secret, label);
+    assert(c != NULL);
+    ret = ptls_aead_transform(c, enc1, &enc1len, src1, strlen(src1));
+    ok(ret == 0);
+    ret = ptls_aead_transform(c, enc2, &enc2len, src2, strlen(src2));
+    ok(ret == 0);
+    ptls_aead_free(c);
+
+    /* decrypt */
+    c = ptls_aead_new(&ptls_openssl_aes128gcm, &ptls_openssl_sha256, 0, traffic_secret, label);
+    assert(c != NULL);
+    ret = ptls_aead_transform(c, dec1, &dec1len, enc1, enc1len);
+    ok(ret == 0);
+    ret = ptls_aead_transform(c, dec2, &dec2len, enc2, enc2len);
+    ok(ret == 0);
+    ptls_aead_free(c);
+
+    /* compare */
+    ok(strlen(src1) == dec1len);
+    ok(memcmp(src1, dec1, dec1len) == 0);
+    ok(strlen(src2) == dec2len);
+    ok(memcmp(src2, dec2, dec2len) == 0);
+
+    /* alter and decrypt to detect failure */
+    enc1[0] ^= 1;
+    c = ptls_aead_new(&ptls_openssl_aes128gcm, &ptls_openssl_sha256, 0, traffic_secret, label);
+    assert(c != NULL);
+    ret = ptls_aead_transform(c, dec1, &dec1len, enc1, enc1len);
+    ok(ret == PTLS_ALERT_BAD_RECORD_MAC);
+    ptls_aead_free(c);
+}
+
 void test_picotls(void)
 {
     subtest("hmac-sha256", test_hmac_sha256);
     subtest("hkdf", test_hkdf);
+    subtest("aead-aes128gcm", test_aes128gcm);
 }
