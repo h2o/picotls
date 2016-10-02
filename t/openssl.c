@@ -77,39 +77,27 @@
 
 static void test_ecdh_key_exchange(void)
 {
-    ptls_iovec_t pubkey, secret;
+    ptls_key_exchange_context_t *ctx;
+    ptls_iovec_t client_pubkey, client_secret, server_pubkey, server_secret;
     int ret;
 
     /* fail */
-    ret = secp256r1_key_exchange(&pubkey, &secret, (ptls_iovec_t){NULL});
+    ret = secp256r1_key_exchange(&server_pubkey, &server_secret, (ptls_iovec_t){NULL});
     ok(ret != 0);
 
-    EC_GROUP *group = EC_GROUP_new_by_curve_name(NID_X9_62_prime256v1);
-    BN_CTX *bn_ctx = BN_CTX_new();
-
-    EC_KEY *testkey = ecdh_gerenate_key(group);
-    ptls_iovec_t testpub = x9_62_encode_point(group, EC_KEY_get0_public_key(testkey), bn_ctx);
-    assert(testpub.base != NULL);
-
-    ret = x9_62_key_exchange(group, &pubkey, &secret, testpub, bn_ctx);
+    /* perform ecdh */
+    ret = secp256r1_create_key_exchange(&ctx, &client_pubkey);
     ok(ret == 0);
+    ret = secp256r1_key_exchange(&server_pubkey, &server_secret, client_pubkey);
+    ok(ret == 0);
+    ret = ctx->on_exchange(ctx, &client_secret, server_pubkey);
+    ok(client_secret.len == server_secret.len);
+    ok(memcmp(client_secret.base, server_secret.base, client_secret.len) == 0);
 
-    EC_POINT *libpub = x9_62_decode_point(group, pubkey, bn_ctx);
-    ok(libpub != NULL);
-
-    ptls_iovec_t testsecret = {malloc(secret.len), secret.len};
-    ret = ECDH_compute_key(testsecret.base, testsecret.len, libpub, testkey, NULL);
-    ok(ret > 0);
-
-    ok(memcmp(secret.base, testsecret.base, secret.len) == 0);
-
-    free(pubkey.base);
-    free(secret.base);
-    free(testsecret.base);
-    EC_POINT_free(libpub);
-    EC_KEY_free(testkey);
-    BN_CTX_free(bn_ctx);
-    EC_GROUP_free(group);
+    free(client_pubkey.base);
+    free(client_secret.base);
+    free(server_pubkey.base);
+    free(server_secret.base);
 }
 
 static void test_rsa_sign(void)

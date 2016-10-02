@@ -65,13 +65,18 @@ struct st_ptls_outbuf_t {
 
 struct st_ptls_t {
     /**
-     * the state
-     */
-    enum { PTLS_STATE_EXPECT_CLIENT_HELLO, PTLS_STATE_EXPECT_FINISHED, PTLS_STATE_APPDATA } state;
-    /**
      * context
      */
     ptls_context_t *ctx;
+    /**
+     * the state
+     */
+    enum {
+        PTLS_STATE_CLIENT_HANDSHAKE_START,
+        PTLS_STATE_SERVER_EXPECT_CLIENT_HELLO,
+        PTLS_STATE_SERVER_EXPECT_FINISHED,
+        PTLS_STATE_APPDATA
+    } state;
     /**
      * record buffer
      */
@@ -84,6 +89,15 @@ struct st_ptls_t {
      * key schedule
      */
     struct st_ptls_key_schedule_t *key_schedule;
+    /**
+     * misc.
+     */
+    struct {
+        struct {
+            char *server_name;
+            ptls_key_exchange_context_t *key_exchange;
+        } client;
+    };
 };
 
 struct st_ptls_record_t {
@@ -94,7 +108,7 @@ struct st_ptls_record_t {
 };
 
 struct st_ptls_client_hello_t {
-    uint8_t random[32];
+    uint8_t random[PTLS_HELLO_RANDOM_SIZE];
     ptls_cipher_suite_t *cipher_suite;
     ptls_iovec_t server_name;
     ptls_key_exchange_algorithm_t *negotiated_group;
@@ -382,6 +396,65 @@ static int _select_from_u16array(uint16_t *selected, const uint8_t *src, const u
     return PTLS_ALERT_HANDSHAKE_FAILURE;
 }
 
+static int send_client_hello(ptls_t *tls, struct st_ptls_outbuf_t *outbuf)
+{
+    uint8_t random[PTLS_HELLO_RANDOM_SIZE];
+    int ret;
+
+    outbuf_push_record(outbuf, PTLS_CONTENT_TYPE_HANDSHAKE, {
+        /* legacy_version */
+        outbuf_pushu16(outbuf, 0x0303);
+        /* random_bytes */
+        tls->ctx->crypto->random_bytes(random, sizeof(random));
+        outbuf_pushv(outbuf, random, sizeof(random));
+        ptls_clear_memory(random, sizeof(random));
+        /* lecagy_session_id */
+        outbuf_push_block(outbuf, 1, {});
+        /* cipher_suites */
+        outbuf_push_block(outbuf, 2, {
+            ptls_cipher_suite_t *cs = tls->ctx->crypto->cipher_suites;
+            size_t i;
+            for (i = 0; cs->id != UINT16_MAX; ++i)
+                outbuf_pushu16(outbuf, cs->id);
+        });
+        /* legacy_compression_methods */
+        outbuf_push_block(outbuf, 1, { outbuf_push(outbuf, 0); });
+        /* extensions */
+        outbuf_push_block(outbuf, 2, {
+            outbuf_push_extension(outbuf, PTLS_EXTENSION_TYPE_SUPPORTED_VERSIONS,
+                                  { outbuf_pushu16(outbuf, PTLS_PROTOCOL_VERSION_DRAFT16); });
+            outbuf_push_extension(outbuf, PTLS_EXTENSION_TYPE_SIGNATURE_ALGORITHMS, {
+                outbuf_pushu16(outbuf, PTLS_SIGNATURE_RSA_PSS_SHA256);
+                outbuf_pushu16(outbuf, PTLS_SIGNATURE_ECDSA_SECP256R1_SHA256);
+            });
+            outbuf_push_extension(outbuf, PTLS_EXTENSION_TYPE_SUPPORTED_GROUPS, {
+                ptls_key_exchange_algorithm_t *algo = tls->ctx->crypto->key_exchanges;
+                for (; algo->id != UINT16_MAX; ++algo)
+                    outbuf_pushu16(outbuf, algo->id);
+            });
+            outbuf_push_extension(outbuf, PTLS_EXTENSION_TYPE_KEY_SHARE, {
+                /* only sends the first algo at the moment */
+                ptls_key_exchange_algorithm_t *algo = tls->ctx->crypto->key_exchanges;
+                assert(algo->id != UINT16_MAX);
+                ptls_iovec_t pubkey;
+                if ((ret = algo->create(&tls->client.key_exchange, &pubkey)) != 0)
+                    goto Exit;
+                outbuf_push_block(outbuf, 2, {
+                    outbuf_pushu16(outbuf, algo->id);
+                    outbuf_push_block(outbuf, 2, { outbuf_pushv(outbuf, pubkey.base, pubkey.len); });
+                });
+                ptls_clear_memory(pubkey.base, pubkey.len);
+                free(pubkey.base);
+            });
+        });
+    });
+
+    ret = 0;
+
+Exit:
+    return ret;
+}
+
 static int select_cipher_suite(ptls_crypto_t *crypto, ptls_cipher_suite_t **algo, const uint8_t *src, const uint8_t *end)
 {
     if ((end - src) % 2 != 0)
@@ -637,7 +710,7 @@ static int handle_client_hello(ptls_t *tls, struct st_ptls_outbuf_t *outbuf, con
     assert(sign_algorithm != 0);
 
     /* run key-exchange, to obtain pubkey and secret */
-    if ((ret = ch.key_share.algorithm->key_exchange(&pubkey, &ecdh_secret, ch.key_share.peer)) != 0)
+    if ((ret = ch.key_share.algorithm->exchange(&pubkey, &ecdh_secret, ch.key_share.peer)) != 0)
         goto Exit;
 
     /* create key schedule and feed the initial values supplied from the client */
@@ -811,12 +884,27 @@ static const uint8_t *parse_record(ptls_t *tls, struct st_ptls_record_t *rec, in
     return src;
 }
 
-ptls_t *ptls_new(ptls_context_t *ctx)
+ptls_t *ptls_new(ptls_context_t *ctx, const char *server_name)
 {
-    ptls_t *tls = malloc(sizeof(*tls));
-    if (tls != NULL)
-        *tls = (ptls_t){PTLS_STATE_EXPECT_CLIENT_HELLO, ctx};
+    ptls_t *tls;
+
+    if ((tls = malloc(sizeof(*tls))) == NULL)
+        return NULL;
+
+    *tls = (ptls_t){ctx};
+    if (server_name != NULL) {
+        tls->state = PTLS_STATE_CLIENT_HANDSHAKE_START;
+        if ((tls->client.server_name = strdup(server_name)) == NULL)
+            goto Fail;
+    } else {
+        tls->state = PTLS_STATE_SERVER_EXPECT_CLIENT_HELLO;
+    }
+
     return tls;
+
+Fail:
+    ptls_free(tls);
+    return NULL;
 }
 
 void ptls_free(ptls_t *tls)
@@ -825,6 +913,7 @@ void ptls_free(ptls_t *tls)
     inbuf_dispose(&tls->handshakebuf);
     if (tls->key_schedule != NULL)
         free_key_schedule(tls->key_schedule);
+    free(tls->client.server_name);
     free(tls);
 }
 
@@ -885,7 +974,11 @@ int ptls_handshake(ptls_t *tls, const void *input, size_t *inlen, void *output, 
     }
 
     switch (tls->state) {
-    case PTLS_STATE_EXPECT_CLIENT_HELLO:
+    case PTLS_STATE_CLIENT_HANDSHAKE_START:
+        if ((ret = send_client_hello(tls, &outbuf)) != 0)
+            return ret;
+        break;
+    case PTLS_STATE_SERVER_EXPECT_CLIENT_HELLO:
         if (hstype != PTLS_HANDSHAKE_TYPE_CLIENT_HELLO)
             return PTLS_ALERT_HANDSHAKE_FAILURE;
         if ((ret = handle_client_hello(tls, &outbuf, hsbody.base, hsbody.len)) != 0)

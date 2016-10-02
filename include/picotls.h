@@ -72,9 +72,14 @@ typedef struct st_ptls_context_t {
     } callbacks;
 } ptls_context_t;
 
+typedef struct st_ptls_key_exchange_context_t {
+    int (*on_exchange)(struct st_ptls_key_exchange_context_t *keyex, ptls_iovec_t *secret, ptls_iovec_t peerkey);
+} ptls_key_exchange_context_t;
+
 typedef struct st_ptls_key_exchange_algorithm_t {
     uint16_t id;
-    int (*key_exchange)(ptls_iovec_t *pubkey, ptls_iovec_t *secret, ptls_iovec_t peerkey);
+    int (*create)(ptls_key_exchange_context_t **ctx, ptls_iovec_t *pubkey);
+    int (*exchange)(ptls_iovec_t *pubkey, ptls_iovec_t *secret, ptls_iovec_t peerkey);
 } ptls_key_exchange_algorithm_t;
 
 typedef struct st_ptls_aead_context_t {
@@ -133,7 +138,7 @@ typedef struct st_ptls_crypto_t {
 /**
  *
  */
-ptls_t *ptls_new(ptls_context_t *ctx);
+ptls_t *ptls_new(ptls_context_t *ctx, const char *server_name);
 /**
  *
  */

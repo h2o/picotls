@@ -66,6 +66,32 @@ static EC_KEY *ecdh_gerenate_key(EC_GROUP *group)
     return key;
 }
 
+static int ecdh_calc_secret(ptls_iovec_t *out, EC_GROUP *group, EC_KEY *privkey, EC_POINT *peer_point)
+{
+    ptls_iovec_t secret;
+    int ret;
+
+    secret.len = (EC_GROUP_get_degree(group) + 7) / 8;
+    if ((secret.base = malloc(secret.len)) == NULL) {
+        ret = PTLS_ERROR_NO_MEMORY;
+        goto Exit;
+    }
+    if (ECDH_compute_key(secret.base, secret.len, peer_point, privkey, NULL) <= 0) {
+        ret = PTLS_ALERT_HANDSHAKE_FAILURE; /* ??? */
+        goto Exit;
+    }
+    ret = 0;
+
+Exit:
+    if (ret == 0) {
+        *out = secret;
+    } else {
+        free(secret.base);
+        *out = (ptls_iovec_t){NULL};
+    }
+    return ret;
+}
+
 static EC_POINT *x9_62_decode_point(EC_GROUP *group, ptls_iovec_t vec, BN_CTX *bn_ctx)
 {
     EC_POINT *point = NULL;
@@ -94,6 +120,96 @@ static ptls_iovec_t x9_62_encode_point(EC_GROUP *group, const EC_POINT *point, B
     }
 
     return vec;
+}
+
+struct st_x9_62_keyex_context_t {
+    ptls_key_exchange_context_t super;
+    BN_CTX *bn_ctx;
+    EC_GROUP *group;
+    EC_KEY *privkey;
+};
+
+static void x9_62_free_context(struct st_x9_62_keyex_context_t *ctx)
+{
+    if (ctx->privkey != NULL)
+        EC_KEY_free(ctx->privkey);
+    if (ctx->group != NULL)
+        EC_GROUP_free(ctx->group);
+    if (ctx->bn_ctx != NULL)
+        BN_CTX_free(ctx->bn_ctx);
+    free(ctx);
+}
+
+static int x9_62_on_exchange(ptls_key_exchange_context_t *_ctx, ptls_iovec_t *secret, ptls_iovec_t peerkey)
+{
+    struct st_x9_62_keyex_context_t *ctx = (struct st_x9_62_keyex_context_t *)_ctx;
+    EC_POINT *peer_point = NULL;
+    int ret;
+
+    if (secret == NULL)
+        goto Exit;
+
+    if ((peer_point = x9_62_decode_point(ctx->group, peerkey, ctx->bn_ctx)) == NULL) {
+        ret = PTLS_ALERT_DECODE_ERROR;
+        goto Exit;
+    }
+    if ((ret = ecdh_calc_secret(secret, ctx->group, ctx->privkey, peer_point)) != 0)
+        goto Exit;
+
+Exit:
+    if (peer_point != NULL)
+        EC_POINT_free(peer_point);
+    x9_62_free_context(ctx);
+    return ret;
+}
+
+static int x9_62_create_key_exchange(ptls_key_exchange_context_t **_ctx, ptls_iovec_t *pubkey, int nid)
+{
+    struct st_x9_62_keyex_context_t *ctx = NULL;
+    int ret;
+
+    if ((ctx = (struct st_x9_62_keyex_context_t *)malloc(sizeof(*ctx))) == NULL) {
+        ret = PTLS_ERROR_NO_MEMORY;
+        goto Exit;
+    }
+    *ctx = (struct st_x9_62_keyex_context_t){{x9_62_on_exchange}};
+
+    if ((ctx->bn_ctx = BN_CTX_new()) == NULL) {
+        ret = PTLS_ERROR_NO_MEMORY;
+        goto Exit;
+    }
+    if ((ctx->group = EC_GROUP_new_by_curve_name(nid)) == NULL) {
+        ret = PTLS_ERROR_LIBRARY;
+        goto Exit;
+    }
+    if ((ctx->privkey = ecdh_gerenate_key(ctx->group)) == NULL) {
+        ret = PTLS_ERROR_LIBRARY;
+        goto Exit;
+    }
+
+    if ((*pubkey = x9_62_encode_point(ctx->group, EC_KEY_get0_public_key(ctx->privkey), ctx->bn_ctx)).base == NULL) {
+        ret = PTLS_ERROR_NO_MEMORY;
+        goto Exit;
+    }
+
+    ret = 0;
+
+Exit:
+    if (ret == 0) {
+        *_ctx = &ctx->super;
+    } else {
+        if (ctx != NULL)
+            x9_62_free_context(ctx);
+        *_ctx = NULL;
+        *pubkey = (ptls_iovec_t){NULL};
+    }
+
+    return ret;
+}
+
+static int secp256r1_create_key_exchange(ptls_key_exchange_context_t **ctx, ptls_iovec_t *pubkey)
+{
+    return x9_62_create_key_exchange(ctx, pubkey, NID_X9_62_prime256v1);
 }
 
 static int x9_62_key_exchange(EC_GROUP *group, ptls_iovec_t *pubkey, ptls_iovec_t *secret, ptls_iovec_t peerkey, BN_CTX *bn_ctx)
@@ -162,7 +278,7 @@ static int secp_key_exchange(int nid, ptls_iovec_t *pubkey, ptls_iovec_t *secret
         ret = PTLS_ERROR_LIBRARY;
         goto Exit;
     }
-    if ((bn_ctx = BN_CTX_new()) != NULL) {
+    if ((bn_ctx = BN_CTX_new()) == NULL) {
         ret = PTLS_ERROR_NO_MEMORY;
         goto Exit;
     }
@@ -564,7 +680,8 @@ Error:
     return ret;
 }
 
-static ptls_key_exchange_algorithm_t key_exchanges[] = {{PTLS_GROUP_SECP256R1, secp256r1_key_exchange}, {UINT16_MAX}};
+static ptls_key_exchange_algorithm_t key_exchanges[] = {
+    {PTLS_GROUP_SECP256R1, secp256r1_create_key_exchange, secp256r1_key_exchange}, {UINT16_MAX}};
 ptls_aead_algorithm_t ptls_openssl_aes128gcm = {16, 16, 16, aead_aes128gcm_setup_crypto};
 ptls_hash_algorithm_t ptls_openssl_sha256 = {64, 32, sha256_create};
 static ptls_cipher_suite_t cipher_suites[] = {{PTLS_CIPHER_SUITE_AES_128_GCM_SHA256, &ptls_openssl_aes128gcm, &ptls_openssl_sha256},
