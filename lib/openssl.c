@@ -529,14 +529,17 @@ static int on_client_hello(ptls_t *tls, uint16_t *sign_algorithm,
     ptls_openssl_context_t *ctx = (ptls_openssl_context_t *)ptls_get_context(tls);
     struct st_ptls_openssl_server_context_t *sctx;
 
-    assert(ctx->servers.count != 0);
+    if (ctx->servers.count == 0)
+        return PTLS_ALERT_HANDSHAKE_FAILURE;
 
-    for (size_t i = 0; i != ctx->servers.count; ++i) {
-        sctx = ctx->servers.entries[i];
-        if (ascii_streq_caseless(server_name, sctx->name) &&
-            (*sign_algorithm = select_compatible_signature_algorithm(sctx->sign_ctx, signature_algorithms,
-                                                                     num_signature_algorithms)) != UINT16_MAX)
-            goto Found;
+    if (server_name.base != NULL) {
+        for (size_t i = 0; i != ctx->servers.count; ++i) {
+            sctx = ctx->servers.entries[i];
+            if (ascii_streq_caseless(server_name, sctx->name) &&
+                (*sign_algorithm = select_compatible_signature_algorithm(sctx->sign_ctx, signature_algorithms,
+                                                                         num_signature_algorithms)) != UINT16_MAX)
+                goto Found;
+        }
     }
     /* not found, use the first one, if the signing algorithm matches */
     sctx = ctx->servers.entries[0];
@@ -588,7 +591,6 @@ void ptls_openssl_context_free(ptls_openssl_context_t *ctx)
 
 ptls_context_t *ptls_openssl_context_get_context(ptls_openssl_context_t *ctx)
 {
-    assert(ctx->servers.count != 0 && !"register_server must be invoked more than once");
     return &ctx->super;
 }
 

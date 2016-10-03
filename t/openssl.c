@@ -26,6 +26,7 @@
 #include <openssl/pem.h>
 #include "../deps/picotest/picotest.h"
 #include "../lib/openssl.c"
+#include "test.h"
 
 #define RSA_PRIVATE_KEY                                                                                                            \
     "-----BEGIN RSA PRIVATE KEY-----\n"                                                                                            \
@@ -103,26 +104,7 @@ static void test_ecdh_key_exchange(void)
 static void test_rsa_sign(void)
 {
     ptls_openssl_context_t *ctx = ptls_openssl_context_new();
-
-    { /* setup context */
-        BIO *bio = BIO_new_mem_buf(RSA_PRIVATE_KEY, strlen(RSA_PRIVATE_KEY));
-        EVP_PKEY *pkey = PEM_read_bio_PrivateKey(bio, NULL, NULL, NULL);
-        assert(pkey != NULL || !"failed to load private key");
-        BIO_free(bio);
-
-        bio = BIO_new_mem_buf(RSA_CERTIFICATE, strlen(RSA_CERTIFICATE));
-        X509 *cert = PEM_read_bio_X509(bio, NULL, NULL, NULL);
-        assert(cert != NULL || !!"failed to load certificate");
-        BIO_free(bio);
-
-        STACK_OF(X509) *certs = sk_X509_new(NULL);
-        sk_X509_push(certs, cert);
-        ptls_openssl_context_register_server(ctx, "example.com", pkey, certs);
-        sk_X509_free(certs);
-
-        X509_free(cert);
-        EVP_PKEY_free(pkey);
-    }
+    setup_server_context(ctx);
 
     ok(select_compatible_signature_algorithm(ctx->servers.entries[0]->sign_ctx, (uint16_t[]){PTLS_SIGNATURE_ECDSA_SECP256R1_SHA256},
                                              1) == UINT16_MAX);
@@ -139,8 +121,29 @@ static void test_rsa_sign(void)
     ptls_openssl_context_free(ctx);
 }
 
-void test_crypto_openssl(void)
+void test_openssl(void)
 {
     subtest("ecdh-key-exchange", test_ecdh_key_exchange);
     subtest("rsa-sign", test_rsa_sign);
+}
+
+void setup_server_context(ptls_openssl_context_t *ctx)
+{
+    BIO *bio = BIO_new_mem_buf(RSA_PRIVATE_KEY, strlen(RSA_PRIVATE_KEY));
+    EVP_PKEY *pkey = PEM_read_bio_PrivateKey(bio, NULL, NULL, NULL);
+    assert(pkey != NULL || !"failed to load private key");
+    BIO_free(bio);
+
+    bio = BIO_new_mem_buf(RSA_CERTIFICATE, strlen(RSA_CERTIFICATE));
+    X509 *cert = PEM_read_bio_X509(bio, NULL, NULL, NULL);
+    assert(cert != NULL || !!"failed to load certificate");
+    BIO_free(bio);
+
+    STACK_OF(X509) *certs = sk_X509_new(NULL);
+    sk_X509_push(certs, cert);
+    ptls_openssl_context_register_server(ctx, "example.com", pkey, certs);
+    sk_X509_free(certs);
+
+    X509_free(cert);
+    EVP_PKEY_free(pkey);
 }

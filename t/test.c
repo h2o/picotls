@@ -36,7 +36,7 @@ int main(int argc, char **argv)
     ENGINE_register_all_digests();
 #endif
 
-    subtest("crypto-openssl", test_crypto_openssl);
+    subtest("openssl", test_openssl);
     subtest("picotls", test_picotls);
 
     return done_testing();

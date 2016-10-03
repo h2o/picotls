@@ -22,7 +22,10 @@
 #ifndef test_h
 #define test_h
 
+#include "picotls/openssl.h"
+
 void test_picotls(void);
-void test_crypto_openssl(void);
+void test_openssl(void);
+void setup_server_context(ptls_openssl_context_t *ctx);
 
 #endif

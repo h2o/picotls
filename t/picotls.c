@@ -25,6 +25,7 @@
 #include "picotls/openssl.h"
 #include "../deps/picotest/picotest.h"
 #include "../lib/picotls.c"
+#include "test.h"
 
 static void test_hmac_sha256(void)
 {
@@ -103,9 +104,38 @@ static void test_aes128gcm(void)
     ptls_aead_free(c);
 }
 
+static void test_handshake(void)
+{
+    ptls_openssl_context_t *ctx = ptls_openssl_context_new();
+    setup_server_context(ctx);
+
+    ptls_t *client, *server;
+    uint8_t client_buf[16384], server_buf[16384];
+    size_t client_len, server_len, tmp;
+    int ret;
+
+    client = ptls_new(ptls_openssl_context_get_context(ctx), "example.com");
+    server = ptls_new(ptls_openssl_context_get_context(ctx), NULL);
+
+    client_len = sizeof(client_buf);
+    ret = ptls_handshake(client, NULL, NULL, client_buf, &client_len);
+    ok(ret == PTLS_ERROR_HANDSHAKE_IN_PROGRESS);
+    ok(client_len <= sizeof(client_buf));
+
+    tmp = client_len;
+    server_len = sizeof(server_buf);
+    ret = ptls_handshake(server, client_buf, &tmp, server_buf, &server_len);
+    ok(ret == PTLS_ERROR_HANDSHAKE_IN_PROGRESS);
+    ok(tmp == client_len);
+    ok(server_len <= sizeof(server_buf));
+
+    ptls_openssl_context_free(ctx);
+}
+
 void test_picotls(void)
 {
     subtest("hmac-sha256", test_hmac_sha256);
     subtest("hkdf", test_hkdf);
     subtest("aead-aes128gcm", test_aes128gcm);
+    subtest("handshake", test_handshake);
 }
