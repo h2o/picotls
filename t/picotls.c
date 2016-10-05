@@ -129,6 +129,13 @@ static void test_handshake(void)
     ok(tmp == client_len);
     ok(server_len <= sizeof(server_buf));
 
+    tmp = server_len;
+    client_len = sizeof(client_buf);
+    ret = ptls_handshake(client, server_buf, &tmp, client_buf, &client_len);
+    ok(ret == 0);
+    ok(tmp == server_len);
+    ok(client_len <= sizeof(client_buf));
+
     ptls_openssl_context_free(ctx);
 }
 
