@@ -92,6 +92,7 @@ static void test_ecdh_key_exchange(void)
     ret = secp256r1_key_exchange(&server_pubkey, &server_secret, client_pubkey);
     ok(ret == 0);
     ret = ctx->on_exchange(ctx, &client_secret, server_pubkey);
+    ok(ret == 0);
     ok(client_secret.len == server_secret.len);
     ok(memcmp(client_secret.base, server_secret.base, client_secret.len) == 0);
 

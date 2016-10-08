@@ -119,13 +119,13 @@ static void test_handshake(void)
 
     client_len = sizeof(client_buf);
     ret = ptls_handshake(client, NULL, NULL, client_buf, &client_len);
-    ok(ret == PTLS_ERROR_HANDSHAKE_IN_PROGRESS);
+    ok(ret == PTLS_ERROR_IN_PROGRESS);
     ok(client_len <= sizeof(client_buf));
 
     tmp = client_len;
     server_len = sizeof(server_buf);
     ret = ptls_handshake(server, client_buf, &tmp, server_buf, &server_len);
-    ok(ret == PTLS_ERROR_HANDSHAKE_IN_PROGRESS);
+    ok(ret == PTLS_ERROR_IN_PROGRESS);
     ok(tmp == client_len);
     ok(server_len <= sizeof(server_buf));
 
