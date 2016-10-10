@@ -74,32 +74,32 @@ static void test_aes128gcm(void)
     /* encrypt */
     c = ptls_aead_new(&ptls_openssl_aes128gcm, &ptls_openssl_sha256, 1, traffic_secret, label);
     assert(c != NULL);
-    ret = ptls_aead_transform(c, enc1, &enc1len, src1, strlen(src1));
+    ret = ptls_aead_transform(c, enc1, &enc1len, src1, strlen(src1), 0);
     ok(ret == 0);
-    ret = ptls_aead_transform(c, enc2, &enc2len, src2, strlen(src2));
+    ret = ptls_aead_transform(c, enc2, &enc2len, src2, strlen(src2), 0);
     ok(ret == 0);
     ptls_aead_free(c);
 
     /* decrypt */
     c = ptls_aead_new(&ptls_openssl_aes128gcm, &ptls_openssl_sha256, 0, traffic_secret, label);
     assert(c != NULL);
-    ret = ptls_aead_transform(c, dec1, &dec1len, enc1, enc1len);
+    ret = ptls_aead_transform(c, dec1, &dec1len, enc1, enc1len, 0);
     ok(ret == 0);
-    ret = ptls_aead_transform(c, dec2, &dec2len, enc2, enc2len);
+    ret = ptls_aead_transform(c, dec2, &dec2len, enc2, enc2len, 0);
     ok(ret == 0);
     ptls_aead_free(c);
 
     /* compare */
-    ok(strlen(src1) == dec1len);
+    ok(strlen(src1) + 1 == dec1len);
     ok(memcmp(src1, dec1, dec1len) == 0);
-    ok(strlen(src2) == dec2len);
+    ok(strlen(src2) + 1 == dec2len);
     ok(memcmp(src2, dec2, dec2len) == 0);
 
     /* alter and decrypt to detect failure */
     enc1[0] ^= 1;
     c = ptls_aead_new(&ptls_openssl_aes128gcm, &ptls_openssl_sha256, 0, traffic_secret, label);
     assert(c != NULL);
-    ret = ptls_aead_transform(c, dec1, &dec1len, enc1, enc1len);
+    ret = ptls_aead_transform(c, dec1, &dec1len, enc1, enc1len, 0);
     ok(ret == PTLS_ALERT_BAD_RECORD_MAC);
     ptls_aead_free(c);
 }
@@ -110,39 +110,58 @@ static void test_handshake(void)
     setup_server_context(ctx);
 
     ptls_t *client, *server;
-    uint8_t client_buf[16384], server_buf[16384];
-    size_t client_len, server_len, tmp;
+    uint8_t cbuf_small[16384], sbuf_small[16384];
+    ptls_buffer_t cbuf, sbuf;
+    size_t consumed;
     int ret;
+    const char *req = "GET / HTTP/1.0\r\n\r\n";
 
     client = ptls_new(ptls_openssl_context_get_context(ctx), "example.com");
     server = ptls_new(ptls_openssl_context_get_context(ctx), NULL);
+    ptls_buffer_init(&cbuf, cbuf_small, sizeof(cbuf_small));
+    ptls_buffer_init(&sbuf, sbuf_small, sizeof(sbuf_small));
 
-    client_len = sizeof(client_buf);
-    ret = ptls_handshake(client, NULL, NULL, client_buf, &client_len);
-    ok(ret == PTLS_ERROR_IN_PROGRESS);
-    ok(client_len <= sizeof(client_buf));
+    ret = ptls_handshake(client, &cbuf, NULL, NULL);
+    ok(ret == PTLS_ERROR_HANDSHAKE_IN_PROGRESS);
+    ok(cbuf.off != 0);
 
-    tmp = client_len;
-    server_len = sizeof(server_buf);
-    ret = ptls_handshake(server, client_buf, &tmp, server_buf, &server_len);
-    ok(ret == PTLS_ERROR_IN_PROGRESS);
-    ok(tmp == client_len);
-    ok(server_len <= sizeof(server_buf));
+    consumed = cbuf.off;
+    ret = ptls_handshake(server, &sbuf, cbuf.base, &consumed);
+    ok(ret == PTLS_ERROR_HANDSHAKE_IN_PROGRESS);
+    ok(sbuf.off != 0);
+    ok(consumed == cbuf.off);
+    cbuf.off = 0;
 
-    tmp = server_len;
-    client_len = sizeof(client_buf);
-    ret = ptls_handshake(client, server_buf, &tmp, client_buf, &client_len);
+    consumed = sbuf.off;
+    ret = ptls_handshake(client, &cbuf, sbuf.base, &consumed);
     ok(ret == 0);
-    ok(tmp == server_len);
-    ok(client_len > 0);
-    ok(client_len <= sizeof(client_buf));
+    ok(cbuf.off != 0);
+    ok(consumed == sbuf.off);
+    sbuf.off = 0;
 
-    tmp = client_len;
-    server_len = sizeof(server_buf);
-    ret = ptls_handshake(server, client_buf, &tmp, server_buf, &server_len);
+    ret = ptls_send(client, &cbuf, req, strlen(req));
     ok(ret == 0);
-    ok(tmp == client_len);
-    ok(server_len == 0);
+
+    consumed = cbuf.off;
+    ret = ptls_handshake(server, &sbuf, cbuf.base, &consumed);
+    ok(ret == 0);
+    ok(sbuf.off == 0);
+    ok(consumed < cbuf.off);
+    memmove(cbuf.base, cbuf.base + consumed, cbuf.off - consumed);
+    cbuf.off -= consumed;
+
+    sbuf.off = 0;
+    consumed = cbuf.off;
+    ret = ptls_receive(server, &sbuf, cbuf.base, &consumed);
+    ok(ret == 0);
+    ok(consumed == cbuf.off);
+    ok(sbuf.off == strlen(req));
+    ok(memcmp(sbuf.base, req, strlen(req)) == 0);
+
+    ptls_buffer_dispose(&cbuf);
+    ptls_buffer_dispose(&sbuf);
+    ptls_free(client);
+    ptls_free(server);
 
     ptls_openssl_context_free(ctx);
 }

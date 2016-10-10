@@ -43,18 +43,20 @@
 #define PTLS_SIGNATURE_RSA_PSS_SHA256 0x0804
 
 /* alerts & errors */
-#define PTLS_ALERT_UNEXPECTED_MESSAGE 10
-#define PTLS_ALERT_BAD_RECORD_MAC 20
-#define PTLS_ALERT_HANDSHAKE_FAILURE 40
-#define PTLS_ALERT_ILLEGAL_PARAMETER 47
-#define PTLS_ALERT_DECODE_ERROR 50
-#define PTLS_ALERT_INTERNAL_ERROR 80
-#define PTLS_ALERT_MISSING_EXTENSION 109
-#define PTLS_ALERT_UNRECOGNIZED_NAME 112
-#define PTLS_ERROR_NO_MEMORY -1
-#define PTLS_ERROR_IN_PROGRESS -2
-#define PTLS_ERROR_LIBRARY 3
-#define PTLS_ERROR_INCOMPATIBLE_KEY -4
+#define PTLS_ALERT_UNEXPECTED_MESSAGE -10
+#define PTLS_ALERT_BAD_RECORD_MAC -20
+#define PTLS_ALERT_HANDSHAKE_FAILURE -40
+#define PTLS_ALERT_ILLEGAL_PARAMETER -47
+#define PTLS_ALERT_DECODE_ERROR -50
+#define PTLS_ALERT_INTERNAL_ERROR -80
+#define PTLS_ALERT_MISSING_EXTENSION -109
+#define PTLS_ALERT_UNRECOGNIZED_NAME -112
+#define PTLS_ERROR_NO_MEMORY -256
+#define PTLS_ERROR_HANDSHAKE_IN_PROGRESS -257
+#define PTLS_ERROR_LIBRARY -258
+#define PTLS_ERROR_INCOMPATIBLE_KEY -259
+
+#define PTLS_ERROR_IS_ALERT(e) ((e) >= -255)
 
 typedef struct st_ptls_t ptls_t;
 
@@ -62,6 +64,13 @@ typedef struct st_ptls_iovec_t {
     uint8_t *base;
     size_t len;
 } ptls_iovec_t;
+
+typedef struct st_ptls_buffer_t {
+    uint8_t *base;
+    size_t capacity;
+    size_t off;
+    int is_allocated;
+} ptls_buffer_t;
 
 typedef struct st_ptls_crypto_t ptls_crypto_t;
 
@@ -89,7 +98,7 @@ typedef struct st_ptls_aead_context_t {
     void *crypto_ctx;
     void (*dispose_crypto)(struct st_ptls_aead_context_t *ctx);
     int (*do_transform)(struct st_ptls_aead_context_t *ctx, void *output, size_t *outlen, const void *input, size_t inlen,
-                        const void *iv);
+                        const void *iv, uint8_t enc_content_type);
     /* following fields must not be altered by the crypto binding */
     struct st_ptls_aead_algorithm_t *algo;
     uint64_t seq;
@@ -141,6 +150,27 @@ typedef struct st_ptls_crypto_t {
 /**
  *
  */
+static ptls_iovec_t ptls_iovec_init(const void *p, size_t len);
+/**
+ *
+ */
+static void ptls_buffer_init(ptls_buffer_t *buf, void *smallbuf, size_t smallbuf_size);
+/**
+ *
+ */
+static void ptls_buffer_dispose(struct st_ptls_buffer_t *buf);
+/**
+ *
+ */
+void ptls_buffer__release_memory(struct st_ptls_buffer_t *buf);
+/**
+ *
+ */
+int ptls_buffer_reserve(struct st_ptls_buffer_t *buf, size_t delta);
+
+/**
+ *
+ */
 ptls_t *ptls_new(ptls_context_t *ctx, const char *server_name);
 /**
  *
@@ -151,17 +181,17 @@ void ptls_free(ptls_t *tls);
  */
 ptls_context_t *ptls_get_context(ptls_t *tls);
 /**
- *
+ * proceeds with the handshake, optionally taking some input from peer
  */
-int ptls_handshake(ptls_t *tls, const void *input, size_t *inlen, void *output, size_t *outlen);
+int ptls_handshake(ptls_t *tls, ptls_buffer_t *sendbuf, const void *input, size_t *inlen);
 /**
- *
+ * decrypts the first record within given buffer
  */
-int ptls_decrypt(ptls_t *tls, const void *encrypted, size_t *enclen, void *dst, size_t *dstlen);
+int ptls_receive(ptls_t *tls, ptls_buffer_t *plaintextbuf, const void *input, size_t *len);
 /**
- *
+ * encrypts given buffer into multiple TLS records
  */
-int ptls_enrypt(ptls_t *tls, const void *src, size_t *srclen, void *encrypted, size_t *enclen);
+int ptls_send(ptls_t *tls, ptls_buffer_t *sendbuf, const void *input, size_t inlen);
 /**
  *
  */
@@ -186,7 +216,8 @@ void ptls_aead_free(ptls_aead_context_t *ctx);
 /**
  *
  */
-int ptls_aead_transform(ptls_aead_context_t *ctx, void *output, size_t *outlen, const void *input, size_t inlen);
+int ptls_aead_transform(ptls_aead_context_t *ctx, void *output, size_t *outlen, const void *input, size_t inlen,
+                        uint8_t enc_content_type);
 /**
  * clears memory
  */
@@ -198,9 +229,23 @@ static ptls_iovec_t ptls_iovec_init(const void *p, size_t len);
 
 /* inline functions */
 
-static inline ptls_iovec_t ptls_iovec_init(const void *p, size_t len)
+inline ptls_iovec_t ptls_iovec_init(const void *p, size_t len)
 {
     return (ptls_iovec_t){(uint8_t *)p, len};
+}
+
+inline void ptls_buffer_init(ptls_buffer_t *buf, void *smallbuf, size_t smallbuf_size)
+{
+    buf->base = smallbuf;
+    buf->off = 0;
+    buf->capacity = smallbuf_size;
+    buf->is_allocated = 0;
+}
+
+inline void ptls_buffer_dispose(struct st_ptls_buffer_t *buf)
+{
+    ptls_buffer__release_memory(buf);
+    ptls_buffer_init(buf, NULL, 0);
 }
 
 #endif

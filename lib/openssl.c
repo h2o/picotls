@@ -21,6 +21,7 @@
  */
 #include <assert.h>
 #include <stdlib.h>
+#include <string.h>
 #include <openssl/bn.h>
 #include <openssl/ec.h>
 #include <openssl/ecdh.h>
@@ -145,9 +146,6 @@ static int x9_62_on_exchange(ptls_key_exchange_context_t *_ctx, ptls_iovec_t *se
     struct st_x9_62_keyex_context_t *ctx = (struct st_x9_62_keyex_context_t *)_ctx;
     EC_POINT *peer_point = NULL;
     int ret;
-
-    if (secret == NULL)
-        goto Exit;
 
     if ((peer_point = x9_62_decode_point(ctx->group, peerkey, ctx->bn_ctx)) == NULL) {
         ret = PTLS_ALERT_DECODE_ERROR;
@@ -333,7 +331,8 @@ static void aead_dispose_crypto(ptls_aead_context_t *ctx)
     ctx->crypto_ctx = NULL;
 }
 
-static int aead_do_encrypt(ptls_aead_context_t *ctx, void *_output, size_t *outlen, const void *input, size_t inlen, const void *iv)
+static int aead_do_encrypt(ptls_aead_context_t *ctx, void *_output, size_t *outlen, const void *input, size_t inlen, const void *iv,
+                           uint8_t enc_content_type)
 {
     struct aead_crypto_context_t *crypto_ctx = (struct aead_crypto_context_t *)ctx->crypto_ctx;
     uint8_t *output = _output;
@@ -347,6 +346,9 @@ static int aead_do_encrypt(ptls_aead_context_t *ctx, void *_output, size_t *outl
     if (!EVP_EncryptUpdate(crypto_ctx->ctx, output, &blocklen, input, (int)inlen))
         return PTLS_ERROR_LIBRARY;
     *outlen += blocklen;
+    if (!EVP_EncryptUpdate(crypto_ctx->ctx, output + *outlen, &blocklen, &enc_content_type, 1))
+        return PTLS_ERROR_LIBRARY;
+    *outlen += blocklen;
     if (!EVP_EncryptFinal_ex(crypto_ctx->ctx, output + *outlen, &blocklen))
         return PTLS_ERROR_LIBRARY;
     *outlen += blocklen;
@@ -357,7 +359,8 @@ static int aead_do_encrypt(ptls_aead_context_t *ctx, void *_output, size_t *outl
     return 0;
 }
 
-static int aead_do_decrypt(ptls_aead_context_t *ctx, void *_output, size_t *outlen, const void *input, size_t inlen, const void *iv)
+static int aead_do_decrypt(ptls_aead_context_t *ctx, void *_output, size_t *outlen, const void *input, size_t inlen, const void *iv,
+                           uint8_t unused)
 {
     struct aead_crypto_context_t *crypto_ctx = (struct aead_crypto_context_t *)ctx->crypto_ctx;
     uint8_t *output = _output;
