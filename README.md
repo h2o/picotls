@@ -16,6 +16,7 @@ Build using cmake:
 ```
 % cmake
 % make
+% make check
 ```
 
 Run the test server (at 127.0.0.1:8443):
