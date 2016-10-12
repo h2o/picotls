@@ -1,0 +1,14 @@
+language: c
+
+compiler:
+  - gcc
+
+before_install:
+  - sudo apt-add-repository --yes ppa:smspillaz/cmake-2.8.12
+  - sudo apt-get --yes update
+  - sudo apt-get install --yes cmake cmake-data
+
+script:
+  - cmake
+  - make all
+  - make check
