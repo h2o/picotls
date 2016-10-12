@@ -852,6 +852,9 @@ static int client_hello_select_version(ptls_t *tls, void *_ch, const uint8_t *sr
         return PTLS_ALERT_DECODE_ERROR;
 
     len = *src++;
+    if (len != end - src)
+        return PTLS_ALERT_DECODE_ERROR;
+
     if ((end - src) % 2 != 0)
         return PTLS_ALERT_DECODE_ERROR;
 
