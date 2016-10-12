@@ -1058,7 +1058,8 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
         buffer_push_handshake(sendbuf, tls->key_schedule, PTLS_HANDSHAKE_TYPE_CERTIFICATE, {
             buffer_push(sendbuf, 0);
             buffer_push_block(sendbuf, 3, {
-                for (size_t i = 0; i != num_certs; ++i) {
+                size_t i;
+                for (i = 0; i != num_certs; ++i) {
                     buffer_push_block(sendbuf, 3, { buffer_pushv(sendbuf, certs[i].base, certs[i].len); });
                 }
             });
