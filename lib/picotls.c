@@ -65,6 +65,12 @@
 #define PTLS_ALERT_LEVEL_WARNING 1
 #define PTLS_ALERT_LEVEL_FATAL 2
 
+#if defined(PTLS_DEBUG) && PTLS_DEBUG
+#define PTLS_DEBUGF(...) fprintf(stderr, __VA_ARGS__)
+#else
+#define PTLS_DEBUGF(...)
+#endif
+
 struct st_ptls_protection_context_t {
     uint8_t secret[PTLS_MAX_DIGEST_SIZE];
     ptls_aead_context_t *aead;
@@ -360,13 +366,13 @@ static int key_schedule_extract(struct st_ptls_key_schedule_t *sched, ptls_iovec
 
     ++sched->generation;
     int ret = ptls_hkdf_extract(sched->algo, sched->secret, ptls_iovec_init(sched->secret, sched->algo->digest_size), ikm);
-    fprintf(stderr, "%s: %u, %02x%02x\n", __FUNCTION__, sched->generation, (int)sched->secret[0], (int)sched->secret[1]);
+    PTLS_DEBUGF("%s: %u, %02x%02x\n", __FUNCTION__, sched->generation, (int)sched->secret[0], (int)sched->secret[1]);
     return ret;
 }
 
 static void key_schedule_update_hash(struct st_ptls_key_schedule_t *sched, const uint8_t *msg, size_t msglen)
 {
-    fprintf(stderr, "%s:%zu\n", __FUNCTION__, msglen);
+    PTLS_DEBUGF("%s:%zu\n", __FUNCTION__, msglen);
     sched->msghash->update(sched->msghash, msg, msglen);
 }
 
@@ -415,8 +421,8 @@ static int setup_protection_context(struct st_ptls_protection_context_t *ctx, st
         ret = PTLS_ERROR_NO_MEMORY; /* TODO obtain error from ptls_aead_new */
         goto Fail;
     }
-    fprintf(stderr, "[%s,%s] %02x%02x,%02x%02x\n", secret_label, aead_label, (unsigned)ctx->secret[0], (unsigned)ctx->secret[1],
-            (unsigned)ctx->aead->static_iv[0], (unsigned)ctx->aead->static_iv[1]);
+    PTLS_DEBUGF("[%s,%s] %02x%02x,%02x%02x\n", secret_label, aead_label, (unsigned)ctx->secret[0], (unsigned)ctx->secret[1],
+                (unsigned)ctx->aead->static_iv[0], (unsigned)ctx->aead->static_iv[1]);
 
     return 0;
 Fail:
@@ -448,7 +454,7 @@ static int calc_verify_data(void *output, struct st_ptls_key_schedule_t *sched, 
     }
 
     sched->msghash->final(sched->msghash, digest, PTLS_HASH_FINAL_MODE_SNAPSHOT);
-    fprintf(stderr, "%s: %02x%02x,%02x%02x\n", __FUNCTION__, ((uint8_t *)secret)[0], ((uint8_t *)secret)[1], digest[0], digest[1]);
+    PTLS_DEBUGF("%s: %02x%02x,%02x%02x\n", __FUNCTION__, ((uint8_t *)secret)[0], ((uint8_t *)secret)[1], digest[0], digest[1]);
     hmac->update(hmac, digest, sched->algo->digest_size);
     ptls_clear_memory(digest, sizeof(digest));
     hmac->update(hmac, sched->hashed_resumption_context, sched->algo->digest_size);
