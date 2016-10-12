@@ -135,7 +135,7 @@ typedef struct st_ptls_cipher_suite_t {
     ptls_hash_algorithm_t *hash;
 } ptls_cipher_suite_t;
 
-typedef struct st_ptls_crypto_t {
+struct st_ptls_crypto_t {
     void (*random_bytes)(void *buf, size_t len);
     /**
      * list of supported key-exchange algorithms terminated by .id == UINT16_MAX
@@ -145,7 +145,7 @@ typedef struct st_ptls_crypto_t {
      * list of supported cipher-suites terminated by .id == UINT16_MAX
      */
     ptls_cipher_suite_t *cipher_suites;
-} ptls_crypto_t;
+};
 
 /**
  *
