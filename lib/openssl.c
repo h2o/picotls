@@ -536,7 +536,8 @@ static int on_client_hello(ptls_t *tls, uint16_t *sign_algorithm,
         return PTLS_ALERT_HANDSHAKE_FAILURE;
 
     if (server_name.base != NULL) {
-        for (size_t i = 0; i != ctx->servers.count; ++i) {
+        size_t i;
+        for (i = 0; i != ctx->servers.count; ++i) {
             sctx = ctx->servers.entries[i];
             if (ascii_streq_caseless(server_name, sctx->name) &&
                 (*sign_algorithm = select_compatible_signature_algorithm(sctx->sign_ctx, signature_algorithms,
