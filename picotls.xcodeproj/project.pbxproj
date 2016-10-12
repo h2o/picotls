@@ -13,10 +13,21 @@
 		106530E81D9B7B29005B2C60 /* test.c in Sources */ = {isa = PBXBuildFile; fileRef = 106530E71D9B7B29005B2C60 /* test.c */; };
 		106530EA1D9B7C13005B2C60 /* picotls.c in Sources */ = {isa = PBXBuildFile; fileRef = 106530E91D9B7C13005B2C60 /* picotls.c */; };
 		106530EB1D9B7C5C005B2C60 /* picotls.c in Sources */ = {isa = PBXBuildFile; fileRef = 106530BF1D998641005B2C60 /* picotls.c */; };
+		106530FD1DAD89DD005B2C60 /* libpicotls.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 106530DA1D9B3E6F005B2C60 /* libpicotls.a */; };
+		106530FF1DAD8A3C005B2C60 /* cli.c in Sources */ = {isa = PBXBuildFile; fileRef = 106530FE1DAD8A3C005B2C60 /* cli.c */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
 		106530CA1D9B3D45005B2C60 /* CopyFiles */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = /usr/share/man/man1/;
+			dstSubfolderSpec = 0;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 1;
+		};
+		106530F81DAD8985005B2C60 /* CopyFiles */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
 			dstPath = /usr/share/man/man1/;
@@ -40,6 +51,8 @@
 		106530E71D9B7B29005B2C60 /* test.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = test.c; sourceTree = "<group>"; };
 		106530E91D9B7C13005B2C60 /* picotls.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = picotls.c; sourceTree = "<group>"; };
 		106530ED1D9CEFF7005B2C60 /* openssl.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = openssl.h; path = include/picotls/openssl.h; sourceTree = SOURCE_ROOT; };
+		106530FC1DAD8985005B2C60 /* cli */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = cli; sourceTree = BUILT_PRODUCTS_DIR; };
+		106530FE1DAD8A3C005B2C60 /* cli.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = cli.c; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -54,6 +67,14 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		106530F71DAD8985005B2C60 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				106530FD1DAD89DD005B2C60 /* libpicotls.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -76,6 +97,7 @@
 			children = (
 				106530CC1D9B3D45005B2C60 /* test-openssl */,
 				106530DA1D9B3E6F005B2C60 /* libpicotls.a */,
+				106530FC1DAD8985005B2C60 /* cli */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -101,6 +123,7 @@
 		106530C41D9B1A0E005B2C60 /* t */ = {
 			isa = PBXGroup;
 			children = (
+				106530FE1DAD8A3C005B2C60 /* cli.c */,
 				106530E91D9B7C13005B2C60 /* picotls.c */,
 				106530C51D9B1A98005B2C60 /* openssl.c */,
 				106530E61D9B7AF6005B2C60 /* test.h */,
@@ -181,6 +204,23 @@
 			productReference = 106530DA1D9B3E6F005B2C60 /* libpicotls.a */;
 			productType = "com.apple.product-type.library.static";
 		};
+		106530F11DAD8985005B2C60 /* cli */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 106530F91DAD8985005B2C60 /* Build configuration list for PBXNativeTarget "cli" */;
+			buildPhases = (
+				106530F21DAD8985005B2C60 /* Sources */,
+				106530F71DAD8985005B2C60 /* Frameworks */,
+				106530F81DAD8985005B2C60 /* CopyFiles */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = cli;
+			productName = "test-crypto-openssl";
+			productReference = 106530FC1DAD8985005B2C60 /* cli */;
+			productType = "com.apple.product-type.tool";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -210,8 +250,9 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				106530CB1D9B3D45005B2C60 /* test-openssl */,
 				106530D91D9B3E6F005B2C60 /* picotls */,
+				106530F11DAD8985005B2C60 /* cli */,
+				106530CB1D9B3D45005B2C60 /* test-openssl */,
 			);
 		};
 /* End PBXProject section */
@@ -234,6 +275,14 @@
 			files = (
 				106530EB1D9B7C5C005B2C60 /* picotls.c in Sources */,
 				106530DE1D9B3E7F005B2C60 /* openssl.c in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		106530F21DAD8985005B2C60 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				106530FF1DAD8A3C005B2C60 /* cli.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -363,6 +412,22 @@
 			};
 			name = Release;
 		};
+		106530FA1DAD8985005B2C60 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				OTHER_LDFLAGS = "-lcrypto";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Debug;
+		};
+		106530FB1DAD8985005B2C60 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				OTHER_LDFLAGS = "-lcrypto";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -389,6 +454,15 @@
 			buildConfigurations = (
 				106530DB1D9B3E6F005B2C60 /* Debug */,
 				106530DC1D9B3E6F005B2C60 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		106530F91DAD8985005B2C60 /* Build configuration list for PBXNativeTarget "cli" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				106530FA1DAD8985005B2C60 /* Debug */,
+				106530FB1DAD8985005B2C60 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

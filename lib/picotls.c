@@ -1105,7 +1105,6 @@ Exit:
     free(pubkey.base);
     free(ecdh_secret.base);
     ptls_clear_memory(finished_key, sizeof(finished_key));
-    dispose_protection_context(&tls->protection_ctx.send); /* dispose now that we have sent all handshake traffic */
     return ret;
 }
 
@@ -1179,9 +1178,11 @@ static int parse_record(ptls_t *tls, struct st_ptls_record_t *rec, const uint8_t
             return ret;
         if (addlen > end - src)
             addlen = end - src;
-        memcpy(tls->recvbuf.rec.base + tls->recvbuf.rec.off, src, addlen);
-        tls->recvbuf.rec.off += addlen;
-        src += addlen;
+        if (addlen != 0) {
+            memcpy(tls->recvbuf.rec.base + tls->recvbuf.rec.off, src, addlen);
+            tls->recvbuf.rec.off += addlen;
+            src += addlen;
+        }
     }
 
     /* set rec->fragment if a complete record has been parsed */
@@ -1192,8 +1193,8 @@ static int parse_record(ptls_t *tls, struct st_ptls_record_t *rec, const uint8_t
         ret = PTLS_ERROR_HANDSHAKE_IN_PROGRESS;
     }
 
-    *len = end - src;
-    return 0;
+    *len -= end - src;
+    return ret;
 }
 
 ptls_t *ptls_new(ptls_context_t *ctx, const char *server_name)
