@@ -199,7 +199,6 @@ static int run_server(struct sockaddr *sa, socklen_t salen, ptls_context_t *ctx)
         return 1;
     }
 
-
     while (1) {
         if ((conn_fd = accept(listen_fd, NULL, 0)) != -1) {
             handle_connection(conn_fd, ctx, NULL);
@@ -332,5 +331,5 @@ int main(int argc, char **argv)
     if (resolve_address((struct sockaddr *)&sa, &salen, host, port) != 0)
         exit(1);
 
-    return (certs != NULL ? run_server : run_client)((struct sockaddr*)&sa, salen, ptls_openssl_context_get_context(ctx));
+    return (certs != NULL ? run_server : run_client)((struct sockaddr *)&sa, salen, ptls_openssl_context_get_context(ctx));
 }
