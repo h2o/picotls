@@ -107,15 +107,15 @@ static void test_rsa_sign(void)
     ptls_openssl_context_t *ctx = ptls_openssl_context_new();
     setup_server_context(ctx);
 
-    ok(select_compatible_signature_algorithm(ctx->servers.entries[0]->sign_ctx, (uint16_t[]){PTLS_SIGNATURE_ECDSA_SECP256R1_SHA256},
+    ok(select_compatible_signature_algorithm(ctx->servers.entries[0]->key, (uint16_t[]){PTLS_SIGNATURE_ECDSA_SECP256R1_SHA256},
                                              1) == UINT16_MAX);
-    ok(select_compatible_signature_algorithm(ctx->servers.entries[0]->sign_ctx,
+    ok(select_compatible_signature_algorithm(ctx->servers.entries[0]->key,
                                              (uint16_t[]){PTLS_SIGNATURE_ECDSA_SECP256R1_SHA256, PTLS_SIGNATURE_RSA_PSS_SHA256},
                                              2) == PTLS_SIGNATURE_RSA_PSS_SHA256);
 
     const void *message = "hello world";
     ptls_iovec_t signature;
-    ok(rsapss_sign(ctx->servers.entries[0]->sign_ctx, &signature, ptls_iovec_init(message, strlen(message))) == 0);
+    ok(rsapss_sign(ctx->servers.entries[0]->key, &signature, ptls_iovec_init(message, strlen(message))) == 0);
 
     /* TODO verify */
 

@@ -35,7 +35,7 @@
 
 struct st_ptls_openssl_server_context_t {
     ptls_iovec_t name;
-    EVP_PKEY_CTX *sign_ctx;
+    EVP_PKEY *key;
     size_t num_certs;
     ptls_iovec_t certs[1];
 };
@@ -298,20 +298,56 @@ static int secp256r1_key_exchange(ptls_iovec_t *pubkey, ptls_iovec_t *secret, pt
 
 static int rsapss_sign(void *data, ptls_iovec_t *output, ptls_iovec_t input)
 {
-    EVP_PKEY_CTX *ctx = data;
+    EVP_PKEY *key = data;
+    EVP_MD_CTX *ctx = NULL;
+    EVP_PKEY_CTX *pkey_ctx;
+    int ret;
 
-    if (EVP_PKEY_sign(ctx, NULL, &output->len, input.base, input.len) != 1)
-        return PTLS_ERROR_LIBRARY;
-
-    if ((output->base = malloc(output->len)) == NULL)
-        return PTLS_ERROR_NO_MEMORY;
-
-    if (EVP_PKEY_sign(ctx, output->base, &output->len, input.base, input.len) != 1) {
+    if ((ctx = EVP_MD_CTX_create()) == NULL) {
+        ret = PTLS_ERROR_NO_MEMORY;
+        goto Exit;
+    }
+    if (EVP_DigestSignInit(ctx, &pkey_ctx, EVP_sha256(), NULL, key) != 1) {
+        ret = PTLS_ERROR_LIBRARY;
+        goto Exit;
+    }
+    if (key->type == EVP_PKEY_RSA) {
+        if (EVP_PKEY_CTX_set_rsa_padding(pkey_ctx, RSA_PKCS1_PSS_PADDING) != 1) {
+            ret = PTLS_ERROR_LIBRARY;
+            goto Exit;
+        }
+        if (EVP_PKEY_CTX_set_rsa_pss_saltlen(pkey_ctx, -1) != 1) {
+            ret = PTLS_ERROR_LIBRARY;
+            goto Exit;
+        }
+        if (EVP_PKEY_CTX_set_rsa_mgf1_md(pkey_ctx, EVP_sha256()) != 1) {
+            ret = PTLS_ERROR_LIBRARY;
+            goto Exit;
+        }
+    }
+    if (EVP_DigestSignUpdate(ctx, input.base, input.len) != 1) {
+        ret = PTLS_ERROR_LIBRARY;
+        goto Exit;
+    }
+    if (EVP_DigestSignFinal(ctx, NULL, &output->len) != 1) {
+        ret = PTLS_ERROR_LIBRARY;
+        goto Exit;
+    }
+    if ((output->base = malloc(output->len)) == NULL) {
+        ret = PTLS_ERROR_NO_MEMORY;
+        goto Exit;
+    }
+    if (EVP_DigestSignFinal(ctx, output->base, &output->len) != 1) {
         free(output->base);
-        return PTLS_ERROR_NO_MEMORY;
+        ret = PTLS_ERROR_LIBRARY;
+        goto Exit;
     }
 
-    return 0;
+    ret = 0;
+Exit:
+    if (ctx != NULL)
+        EVP_MD_CTX_destroy(ctx);
+    return ret;
 }
 
 struct aead_crypto_context_t {
@@ -498,12 +534,12 @@ static int ascii_streq_caseless(ptls_iovec_t x, ptls_iovec_t y)
     return 0;
 }
 
-static uint16_t select_compatible_signature_algorithm(EVP_PKEY_CTX *ctx, const uint16_t *signature_algorithms,
+static uint16_t select_compatible_signature_algorithm(EVP_PKEY *key, const uint16_t *signature_algorithms,
                                                       size_t num_signature_algorithms)
 {
     size_t i;
 
-    switch (EVP_PKEY_CTX_get0_pkey(ctx)->type) {
+    switch (key->type) {
     case EVP_PKEY_RSA:
         /* Section 4.4.2: RSA signatures MUST use an RSASSA-PSS algorithm, regardless of whether RSASSA-PKCS1-v1_5 algorithms appear
          * in "signature_algorithms". */
@@ -540,21 +576,21 @@ static int on_client_hello(ptls_t *tls, uint16_t *sign_algorithm,
         for (i = 0; i != ctx->servers.count; ++i) {
             sctx = ctx->servers.entries[i];
             if (ascii_streq_caseless(server_name, sctx->name) &&
-                (*sign_algorithm = select_compatible_signature_algorithm(sctx->sign_ctx, signature_algorithms,
+                (*sign_algorithm = select_compatible_signature_algorithm(sctx->key, signature_algorithms,
                                                                          num_signature_algorithms)) != UINT16_MAX)
                 goto Found;
         }
     }
     /* not found, use the first one, if the signing algorithm matches */
     sctx = ctx->servers.entries[0];
-    if ((*sign_algorithm = select_compatible_signature_algorithm(sctx->sign_ctx, signature_algorithms, num_signature_algorithms)) ==
+    if ((*sign_algorithm = select_compatible_signature_algorithm(sctx->key, signature_algorithms, num_signature_algorithms)) ==
         UINT16_MAX)
         return PTLS_ALERT_HANDSHAKE_FAILURE;
 
 Found:
     /* setup the rest */
     *signer = rsapss_sign;
-    *signer_data = sctx->sign_ctx;
+    *signer_data = sctx->key;
     *certs = sctx->certs;
     *num_certs = sctx->num_certs;
 
@@ -566,7 +602,8 @@ static void free_server_context(struct st_ptls_openssl_server_context_t *ctx)
     size_t i;
 
     free(ctx->name.base);
-    EVP_PKEY_CTX_free(ctx->sign_ctx);
+    if (ctx->key != NULL)
+        EVP_PKEY_free(ctx->key);
     for (i = 0; i != ctx->num_certs; ++i)
         free(ctx->certs[i].base);
     free(ctx);
@@ -631,13 +668,10 @@ int ptls_openssl_context_register_server(ptls_openssl_context_t *ctx, const char
     }
     slot->name.len = strlen(server_name);
 
-    if ((slot->sign_ctx = EVP_PKEY_CTX_new(key, NULL)) == NULL) {
-        ret = PTLS_ERROR_NO_MEMORY;
-        goto Error;
-    }
+    CRYPTO_add(&key->references, 1, CRYPTO_LOCK_EVP_PKEY);
+    slot->key = key;
     switch (key->type) {
     case EVP_PKEY_RSA:
-        EVP_PKEY_CTX_set_rsa_padding(slot->sign_ctx, RSA_PKCS1_PSS_PADDING);
         break;
     case EVP_PKEY_EC:
         if (!eckey_is_on_group(key, NID_X9_62_prime256v1)) {
@@ -649,7 +683,6 @@ int ptls_openssl_context_register_server(ptls_openssl_context_t *ctx, const char
         ret = PTLS_ERROR_INCOMPATIBLE_KEY;
         goto Error;
     }
-    EVP_PKEY_sign_init(slot->sign_ctx);
 
     slot->num_certs = sk_X509_num(certs);
     for (i = 0; i != slot->num_certs; ++i) {
