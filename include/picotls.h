@@ -108,7 +108,6 @@ typedef struct st_ptls_aead_context_t {
 typedef struct st_ptls_aead_algorithm_t {
     size_t key_size;
     size_t iv_size;
-    size_t block_size;
     int (*setup_crypto)(ptls_aead_context_t *ctx, int is_enc, const void *key);
 } ptls_aead_algorithm_t;
 
