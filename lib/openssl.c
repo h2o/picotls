@@ -413,7 +413,7 @@ static int aead_do_decrypt(ptls_aead_context_t *ctx, void *_output, size_t *outl
         return PTLS_ERROR_LIBRARY;
     *outlen += blocklen;
     if (!EVP_CIPHER_CTX_ctrl(crypto_ctx->ctx, EVP_CTRL_GCM_SET_TAG, (int)crypto_ctx->tag_size,
-                             (void *)(input + inlen - crypto_ctx->tag_size)))
+                             (void *)((uint8_t *)input + inlen - crypto_ctx->tag_size)))
         return PTLS_ERROR_LIBRARY;
     if (!EVP_DecryptFinal_ex(crypto_ctx->ctx, output + *outlen, &blocklen))
         return PTLS_ALERT_BAD_RECORD_MAC;
