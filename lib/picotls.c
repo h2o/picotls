@@ -226,6 +226,8 @@ int ptls_buffer_reserve(struct st_ptls_buffer_t *buf, size_t delta)
 
 static void buffer_pushv(struct st_ptls_buffer_t *buf, const void *src, size_t len)
 {
+    if (len == 0)
+        return;
     ptls_buffer_reserve(buf, len);
     if (buf->base == NULL)
         return;
@@ -311,7 +313,7 @@ static int hkdf_expand_label(ptls_hash_algorithm_t *algo, void *output, size_t o
                              const char *label2, ptls_iovec_t hash_value)
 {
     struct st_ptls_buffer_t hkdf_label;
-    uint8_t hkdf_label_buf[514];
+    uint8_t hkdf_label_buf[512];
 
     ptls_buffer_init(&hkdf_label, hkdf_label_buf, sizeof(hkdf_label_buf));
 
@@ -320,7 +322,6 @@ static int hkdf_expand_label(ptls_hash_algorithm_t *algo, void *output, size_t o
         const char *prefix = "TLS 1.3, ";
         buffer_pushv(&hkdf_label, prefix, strlen(prefix));
         buffer_pushv(&hkdf_label, label1, strlen(label1));
-        buffer_pushv(&hkdf_label, ", ", 2);
         buffer_pushv(&hkdf_label, label2, strlen(label2));
     });
     buffer_push_block(&hkdf_label, 1, { buffer_pushv(&hkdf_label, hash_value.base, hash_value.len); });
@@ -394,7 +395,7 @@ static int derive_secret(struct st_ptls_key_schedule_t *sched, void *secret, con
 static int get_traffic_key(ptls_hash_algorithm_t *algo, void *key, size_t key_size, const char *label, int is_iv,
                            const void *secret)
 {
-    return hkdf_expand_label(algo, key, key_size, ptls_iovec_init(secret, algo->digest_size), label, is_iv ? "iv" : "key",
+    return hkdf_expand_label(algo, key, key_size, ptls_iovec_init(secret, algo->digest_size), label, is_iv ? ", iv" : ", key",
                              ptls_iovec_init(NULL, 0));
 }
 
