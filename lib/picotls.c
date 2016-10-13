@@ -1100,11 +1100,10 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
     });
 #undef CONTEXT_STRING
 
-    if ((ret = key_schedule_extract(tls->key_schedule, ptls_iovec_init(NULL, 0))) != 0)
-        return ret;
-
     send_finished(tls, sendbuf);
 
+    if ((ret = key_schedule_extract(tls->key_schedule, ptls_iovec_init(NULL, 0))) != 0)
+        return ret;
     if ((ret = setup_protection_context(&tls->protection_ctx.send, tls->key_schedule, "server application traffic secret",
                                         tls->protection_ctx.send.aead->algo, 1, "application data key expansion")) != 0)
         return ret;
