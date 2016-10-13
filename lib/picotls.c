@@ -1623,7 +1623,7 @@ ptls_aead_context_t *ptls_aead_new(ptls_aead_algorithm_t *aead, ptls_hash_algori
 
     *ctx = (ptls_aead_context_t){NULL, NULL, NULL, aead, 0};
 
-    if ((ret = get_traffic_key(hash, key, hash->digest_size, label, 0, secret)) != 0)
+    if ((ret = get_traffic_key(hash, key, aead->key_size, label, 0, secret)) != 0)
         goto Exit;
     if ((ret = get_traffic_key(hash, ctx->static_iv, aead->iv_size, label, 1, secret)) != 0)
         goto Exit;
