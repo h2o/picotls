@@ -1,3 +1,7 @@
+# use trusty beta (ubuntu 14.04)
+sudo: required
+dist: trusty
+
 language: c
 
 compiler:
@@ -5,9 +9,7 @@ compiler:
   - clang
 
 before_install:
-  - sudo apt-add-repository --yes ppa:smspillaz/cmake-2.8.12
-  - sudo apt-get --yes update
-  - sudo apt-get install --yes cmake cmake-data
+  - sudo apt-get install --yes cmake
 
 script:
   - cmake .
