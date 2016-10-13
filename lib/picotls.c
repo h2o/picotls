@@ -1076,8 +1076,8 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
             ptls_iovec_t sign;
 
             /* build data to be signed */
-            memset(data + datalen, 0x32, 32);
-            datalen += 32;
+            memset(data + datalen, 32, 64);
+            datalen += 64;
             memcpy(data + datalen, CONTEXT_STRING, sizeof(CONTEXT_STRING));
             datalen += sizeof(CONTEXT_STRING);
             tls->key_schedule->msghash->final(tls->key_schedule->msghash, data + datalen, PTLS_HASH_FINAL_MODE_SNAPSHOT);
