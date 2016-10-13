@@ -1599,7 +1599,7 @@ int ptls_hkdf_expand(ptls_hash_algorithm_t *algo, void *output, size_t outlen, p
         size_t off_start = i * algo->digest_size, off_end = off_start + algo->digest_size;
         if (off_end > outlen)
             off_end = outlen;
-        memcpy(output + off_start, digest, off_end - off_start);
+        memcpy((uint8_t *)output + off_start, digest, off_end - off_start);
     }
 
     if (hmac != NULL)
