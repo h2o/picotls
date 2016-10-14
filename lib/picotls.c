@@ -842,9 +842,12 @@ static int client_hello_select_negotiated_group(ptls_t *tls, void *_ch, const ui
                 goto Exit;
             if (ch->negotiated_group == NULL) {
                 ptls_key_exchange_algorithm_t *a = tls->ctx->crypto->key_exchanges;
-                for (; a->id != UINT16_MAX; ++a)
-                    if (a->id == id)
+                for (; a->id != UINT16_MAX; ++a) {
+                    if (a->id == id) {
                         ch->negotiated_group = a;
+                        break;
+                    }
+                }
             }
         } while (src != end);
     });
