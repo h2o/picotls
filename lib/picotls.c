@@ -345,6 +345,15 @@ static void buffer_encrypt_record(struct st_ptls_buffer_t *buf, size_t rec_start
         }                                                                                                                          \
     } while (0)
 
+static int decode16(uint16_t *value, const uint8_t **src, const uint8_t *end)
+{
+    if (end - *src < 2)
+        return PTLS_ALERT_DECODE_ERROR;
+    *value = ntoh16(*src);
+    *src += 2;
+    return 0;
+}
+
 static int hkdf_expand_label(ptls_hash_algorithm_t *algo, void *output, size_t outlen, ptls_iovec_t secret, const char *label1,
                              const char *label2, ptls_iovec_t hash_value)
 {
@@ -537,14 +546,6 @@ static int send_finished(ptls_t *tls, ptls_buffer_t *sendbuf)
     return 0;
 }
 
-static const uint8_t *parse_uint16(uint16_t *value, const uint8_t *src, const uint8_t *end)
-{
-    if (end - src < 2)
-        return NULL;
-    *value = ntoh16(src);
-    return src + 2;
-}
-
 static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf)
 {
     int ret;
@@ -622,10 +623,8 @@ static int decode_extensions(ptls_t *tls, const struct st_ptls_extension_decoder
     decode_block(src, end, 2, {
         while (src != end) {
             /* obtain type */
-            if ((src = parse_uint16(&type, src, end)) == NULL) {
-                ret = PTLS_ALERT_DECODE_ERROR;
+            if ((ret = decode16(&type, &src, end)) != 0)
                 goto Exit;
-            }
             /* find the decoder */
             for (dec_index = 0; decoders[dec_index].type != UINT16_MAX; ++dec_index)
                 if (decoders[dec_index].type == type)
@@ -652,10 +651,8 @@ static int decode_key_share_entry(uint16_t *group, ptls_iovec_t *key_exchange, c
 {
     int ret;
 
-    if ((*src = parse_uint16(group, *src, end)) == NULL) {
-        ret = PTLS_ALERT_DECODE_ERROR;
+    if ((ret = decode16(group, src, end)) != 0)
         goto Exit;
-    }
     decode_open_block(*src, end, 2, {
         *key_exchange = ptls_iovec_init(*src, end - *src);
         *src = end;
@@ -706,8 +703,10 @@ static int decode_server_hello(ptls_t *tls, struct st_ptls_server_hello_t *sh, c
 
     { /* check protocol version */
         uint16_t protver;
-        if ((src = parse_uint16(&protver, src, end)) == NULL || protver != PTLS_PROTOCOL_VERSION_DRAFT16)
-            return PTLS_ALERT_DECODE_ERROR;
+        if ((ret = decode16(&protver, &src, end)) != 0)
+            return ret;
+        if (protver != PTLS_PROTOCOL_VERSION_DRAFT16)
+            return PTLS_ALERT_HANDSHAKE_FAILURE;
     }
 
     /* skip random */
@@ -717,8 +716,8 @@ static int decode_server_hello(ptls_t *tls, struct st_ptls_server_hello_t *sh, c
 
     { /* select cipher_suite */
         uint16_t csid;
-        if ((src = parse_uint16(&csid, src, end)) == NULL)
-            return PTLS_ALERT_DECODE_ERROR;
+        if ((ret = decode16(&csid, &src, end)) != 0)
+            return ret;
         for (sh->cipher_suite = tls->ctx->crypto->cipher_suites; sh->cipher_suite->id != UINT16_MAX; ++sh->cipher_suite)
             if (sh->cipher_suite->id == csid)
                 break;
@@ -839,10 +838,8 @@ static int client_hello_select_negotiated_group(ptls_t *tls, void *_ch, const ui
     decode_block(src, end, 2, {
         do {
             uint16_t id;
-            if ((src = parse_uint16(&id, src, end)) == NULL) {
-                ret = PTLS_ALERT_DECODE_ERROR;
+            if ((ret = decode16(&id, &src, end)) != 0)
                 goto Exit;
-            }
             if (ch->negotiated_group == NULL) {
                 ptls_key_exchange_algorithm_t *a = tls->ctx->crypto->key_exchanges;
                 for (; a->id != UINT16_MAX; ++a)
@@ -865,10 +862,8 @@ static int client_hello_record_signature_algorithms(ptls_t *tls, void *_ch, cons
     decode_block(src, end, 2, {
         do {
             uint16_t id;
-            if ((src = parse_uint16(&id, src, end)) == NULL) {
-                ret = PTLS_ALERT_DECODE_ERROR;
+            if ((ret = decode16(&id, &src, end)) != 0)
                 goto Exit;
-            }
             if (ch->signature_algorithms.count < sizeof(ch->signature_algorithms.list) / sizeof(ch->signature_algorithms.list[0]))
                 ch->signature_algorithms.list[ch->signature_algorithms.count++] = id;
         } while (src != end);
@@ -921,10 +916,8 @@ static int client_hello_select_version(ptls_t *tls, void *_ch, const uint8_t *sr
     decode_block(src, end, 1, {
         do {
             uint16_t v;
-            if ((src = parse_uint16(&v, src, end)) == NULL) {
-                ret = PTLS_ALERT_DECODE_ERROR;
+            if ((ret = decode16(&v, &src, end)) != 0)
                 goto Exit;
-            }
             if (!match_found) {
                 if (v == PTLS_PROTOCOL_VERSION_DRAFT16) {
                     ch->selected_version = v;
@@ -958,10 +951,8 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
 
     { /* check protocol version */
         uint16_t protver;
-        if ((src = parse_uint16(&protver, src, end)) == NULL) {
-            ret = PTLS_ALERT_DECODE_ERROR;
+        if ((ret = decode16(&protver, &src, end)) != 0)
             goto Exit;
-        }
         if (protver != 0x0303) {
             ret = PTLS_ALERT_HANDSHAKE_FAILURE;
             goto Exit;
@@ -988,10 +979,8 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
     decode_open_block(src, end, 2, {
         do {
             uint16_t id;
-            if ((src = parse_uint16(&id, src, end)) == NULL) {
-                ret = PTLS_ALERT_DECODE_ERROR;
+            if ((ret = decode16(&id, &src, end)) != 0)
                 goto Exit;
-            }
             if (ch->cipher_suite == NULL) {
                 ptls_cipher_suite_t *a = tls->ctx->crypto->cipher_suites;
                 for (; a->id != UINT16_MAX; ++a) {
