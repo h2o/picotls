@@ -205,7 +205,10 @@ int ptls_buffer_reserve(struct st_ptls_buffer_t *buf, size_t delta)
 
     if (buf->capacity < buf->off + delta) {
         uint8_t *newp;
-        size_t new_capacity = buf->capacity * 2;
+        size_t new_capacity = buf->capacity;
+        do {
+            new_capacity *= 2;
+        } while (new_capacity < buf->off + delta);
         if (new_capacity < 1024)
             new_capacity = 1024;
         if ((newp = malloc(new_capacity)) == NULL) {
