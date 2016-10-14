@@ -582,6 +582,8 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf)
                 buffer_push_block(sendbuf, 2, {
                     buffer_push16(sendbuf, PTLS_SIGNATURE_RSA_PSS_SHA256);
                     buffer_push16(sendbuf, PTLS_SIGNATURE_ECDSA_SECP256R1_SHA256);
+                    buffer_push16(sendbuf, PTLS_SIGNATURE_RSA_PKCS1_SHA256);
+                    buffer_push16(sendbuf, PTLS_SIGNATURE_RSA_PKCS1_SHA1);
                 });
             });
             buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SUPPORTED_GROUPS, {
