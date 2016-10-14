@@ -641,7 +641,7 @@ static int eckey_is_on_group(EVP_PKEY *pkey, int nid)
     int ret = 0;
 
     if (eckey != NULL) {
-        ret = EC_GROUP_get_curve_name(EC_KEY_get0_group(eckey)) != nid;
+        ret = EC_GROUP_get_curve_name(EC_KEY_get0_group(eckey)) == nid;
         EC_KEY_free(eckey);
     }
 
