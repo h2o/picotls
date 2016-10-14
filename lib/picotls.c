@@ -813,8 +813,8 @@ static int client_hello_decode_server_name(ptls_t *tls, void *_ch, const uint8_t
                         ret = PTLS_ALERT_DECODE_ERROR;
                         goto Exit;
                     }
+                    ch->server_name = ptls_iovec_init(src, end - src);
                 }
-                ch->server_name = ptls_iovec_init(src, end - src);
                 src = end;
             });
         } while (src != end);
