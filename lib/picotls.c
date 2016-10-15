@@ -1136,8 +1136,15 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
 
     /* send EncryptedExtensions */
     buffer_encrypt(sendbuf, tls->protection_ctx.send.aead, {
-        buffer_push_handshake(sendbuf, tls->key_schedule, PTLS_HANDSHAKE_TYPE_ENCRYPTED_EXTENSIONS,
-                              { buffer_push_block(sendbuf, 2, {}); });
+        buffer_push_handshake(sendbuf, tls->key_schedule, PTLS_HANDSHAKE_TYPE_ENCRYPTED_EXTENSIONS, {
+            buffer_push_block(sendbuf, 2, {
+                if (ch.server_name.base != NULL) {
+                    /* In this event, the server SHALL include an extension of type "server_name" in the (extended) server hello.
+                     * The "extension_data" field of this extension SHALL be empty. (RFC 6066 section 3) */
+                    buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SERVER_NAME, {});
+                }
+            });
+        });
     });
 
     /* send Certificate */
