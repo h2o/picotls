@@ -189,13 +189,9 @@ static uint32_t ntoh24(const uint8_t *src)
 
 void ptls_buffer__release_memory(struct st_ptls_buffer_t *buf)
 {
-    if (buf->base == NULL)
-        return;
-
     ptls_clear_memory(buf->base, buf->off);
     if (buf->is_allocated)
         free(buf->base);
-    buf->base = NULL;
 }
 
 int ptls_buffer_reserve(struct st_ptls_buffer_t *buf, size_t delta)
@@ -211,10 +207,8 @@ int ptls_buffer_reserve(struct st_ptls_buffer_t *buf, size_t delta)
         do {
             new_capacity *= 2;
         } while (new_capacity < buf->off + delta);
-        if ((newp = malloc(new_capacity)) == NULL) {
-            ptls_buffer__release_memory(buf);
+        if ((newp = malloc(new_capacity)) == NULL)
             return PTLS_ERROR_NO_MEMORY;
-        }
         memcpy(newp, buf->base, buf->off);
         ptls_buffer__release_memory(buf);
         buf->base = newp;
@@ -225,41 +219,54 @@ int ptls_buffer_reserve(struct st_ptls_buffer_t *buf, size_t delta)
     return 0;
 }
 
-#define buffer_push(buf, ...) buffer_pushv((buf), (uint8_t[]){__VA_ARGS__}, sizeof((uint8_t[]){__VA_ARGS__}))
-
-static void buffer_pushv(struct st_ptls_buffer_t *buf, const void *src, size_t len)
+static int buffer_do_pushv(struct st_ptls_buffer_t *buf, const void *src, size_t len)
 {
+    int ret;
+
     if (len == 0)
-        return;
-    ptls_buffer_reserve(buf, len);
-    if (buf->base == NULL)
-        return;
+        return 0;
+    if ((ret = ptls_buffer_reserve(buf, len)) != 0)
+        return ret;
     memcpy(buf->base + buf->off, src, len);
     buf->off += len;
+    return 0;
 }
 
-static void buffer_push16(struct st_ptls_buffer_t *buf, uint16_t v)
-{
-    buffer_push(buf, (uint8_t)(v >> 8), (uint8_t)v);
-}
+#define buffer_pushv(buf, src, len)                                                                                                \
+    do {                                                                                                                           \
+        if ((ret = buffer_do_pushv((buf), (src), (len))) != 0)                                                                     \
+            goto Exit;                                                                                                             \
+    } while (0)
 
-static void buffer_encrypt_record(struct st_ptls_buffer_t *buf, size_t rec_start, ptls_aead_context_t *aead)
-{
-    if (buf->base == NULL)
-        return;
+#define buffer_push(buf, ...)                                                                                                      \
+    do {                                                                                                                           \
+        if ((ret = buffer_do_pushv((buf), (uint8_t[]){__VA_ARGS__}, sizeof((uint8_t[]){__VA_ARGS__}))) != 0)                       \
+            goto Exit;                                                                                                             \
+    } while (0)
 
+#define buffer_push16(buf, v)                                                                                                      \
+    do {                                                                                                                           \
+        uint16_t _v = (v);                                                                                                         \
+        buffer_push(buf, (uint8_t)(_v >> 8), (uint8_t)_v);                                                                         \
+    } while (0)
+
+static int buffer_encrypt_record(struct st_ptls_buffer_t *buf, size_t rec_start, ptls_aead_context_t *aead)
+{
     uint8_t encrypted[PTLS_MAX_ENCRYPTED_RECORD_SIZE];
     size_t enclen, bodylen = buf->off - rec_start - 5;
+    int ret;
 
     assert(bodylen <= PTLS_MAX_PLAINTEXT_RECORD_SIZE);
 
-    int ret = ptls_aead_transform(aead, encrypted, &enclen, buf->base + rec_start + 5, bodylen, buf->base[rec_start]);
-    assert(ret == 0);
-
+    if ((ret = ptls_aead_transform(aead, encrypted, &enclen, buf->base + rec_start + 5, bodylen, buf->base[rec_start])) != 0)
+        goto Exit;
     buf->off = rec_start;
     buffer_push(buf, PTLS_CONTENT_TYPE_APPDATA, 3, 1);
     buffer_push16(buf, enclen);
     buffer_pushv(buf, encrypted, enclen);
+
+Exit:
+    return ret;
 }
 
 #define buffer_push_block(buf, _capacity, block)                                                                                   \
@@ -270,12 +277,9 @@ static void buffer_encrypt_record(struct st_ptls_buffer_t *buf, size_t rec_start
         do {                                                                                                                       \
             block                                                                                                                  \
         } while (0);                                                                                                               \
-        if ((buf)->base != NULL) {                                                                                                 \
-            size_t body_size = (buf)->off - body_start;                                                                            \
-            for (; capacity != 0; --capacity) {                                                                                    \
-                (buf)->base[body_start - capacity] = (uint8_t)(body_size >> (8 * (capacity - 1)));                                 \
-            }                                                                                                                      \
-        }                                                                                                                          \
+        size_t body_size = (buf)->off - body_start;                                                                                \
+        for (; capacity != 0; --capacity)                                                                                          \
+            (buf)->base[body_start - capacity] = (uint8_t)(body_size >> (8 * (capacity - 1)));                                     \
     } while (0)
 
 #define buffer_push_record(buf, type, block)                                                                                       \
@@ -290,7 +294,8 @@ static void buffer_encrypt_record(struct st_ptls_buffer_t *buf, size_t rec_start
         do {                                                                                                                       \
             block                                                                                                                  \
         } while (0);                                                                                                               \
-        buffer_encrypt_record((buf), rec_start, (enc));                                                                            \
+        if ((ret = buffer_encrypt_record((buf), rec_start, (enc))) != 0)                                                           \
+            goto Exit;                                                                                                             \
     } while (0);
 
 #define buffer_push_handshake(buf, key_sched, type, block)                                                                         \
@@ -302,7 +307,7 @@ static void buffer_encrypt_record(struct st_ptls_buffer_t *buf, size_t rec_start
                 block                                                                                                              \
             } while (0);                                                                                                           \
         });                                                                                                                        \
-        if ((key_sched) != NULL && (buf)->base != NULL)                                                                            \
+        if ((key_sched) != NULL)                                                                                                   \
             key_schedule_update_hash((key_sched), (buf)->base + mess_start, (buf)->off - mess_start);                              \
     })
 
@@ -362,6 +367,7 @@ static int hkdf_expand_label(ptls_hash_algorithm_t *algo, void *output, size_t o
 {
     struct st_ptls_buffer_t hkdf_label;
     uint8_t hkdf_label_buf[512];
+    int ret;
 
     ptls_buffer_init(&hkdf_label, hkdf_label_buf, sizeof(hkdf_label_buf));
 
@@ -374,8 +380,9 @@ static int hkdf_expand_label(ptls_hash_algorithm_t *algo, void *output, size_t o
     });
     buffer_push_block(&hkdf_label, 1, { buffer_pushv(&hkdf_label, hash_value.base, hash_value.len); });
 
-    int ret = ptls_hkdf_expand(algo, output, outlen, secret, ptls_iovec_init(hkdf_label.base, hkdf_label.off));
+    ret = ptls_hkdf_expand(algo, output, outlen, secret, ptls_iovec_init(hkdf_label.base, hkdf_label.off));
 
+Exit:
     ptls_buffer_dispose(&hkdf_label);
     return ret;
 }
@@ -482,10 +489,15 @@ Fail:
 static int send_alert(ptls_t *tls, ptls_buffer_t *sendbuf, uint8_t level, uint8_t description)
 {
     size_t rec_start = sendbuf->off;
+    int ret = 0;
+
     buffer_push_record(sendbuf, PTLS_CONTENT_TYPE_ALERT, { buffer_push(sendbuf, level, description); });
-    if (tls->protection_ctx.send.aead != NULL)
-        buffer_encrypt_record(sendbuf, rec_start, tls->protection_ctx.send.aead);
-    return sendbuf->base != NULL;
+    if (tls->protection_ctx.send.aead != NULL &&
+        (ret = buffer_encrypt_record(sendbuf, rec_start, tls->protection_ctx.send.aead)) != 0)
+        goto Exit;
+
+Exit:
+    return ret;
 }
 
 static int calc_verify_data(void *output, struct st_ptls_key_schedule_t *sched, const void *secret)
@@ -515,10 +527,12 @@ static int calc_verify_data(void *output, struct st_ptls_key_schedule_t *sched, 
 static int verify_finished(ptls_t *tls, ptls_iovec_t message)
 {
     uint8_t verify_data[PTLS_MAX_DIGEST_SIZE];
-    int ret = 0;
+    int ret;
 
-    if (PTLS_HANDSHAKE_HEADER_SIZE + tls->key_schedule->algo->digest_size != message.len)
-        return PTLS_ALERT_DECODE_ERROR;
+    if (PTLS_HANDSHAKE_HEADER_SIZE + tls->key_schedule->algo->digest_size != message.len) {
+        ret = PTLS_ALERT_DECODE_ERROR;
+        goto Exit;
+    }
 
     if ((ret = calc_verify_data(verify_data, tls->key_schedule, tls->protection_ctx.recv.secret)) != 0)
         goto Exit;
@@ -539,14 +553,15 @@ static int send_finished(ptls_t *tls, ptls_buffer_t *sendbuf)
     buffer_encrypt(sendbuf, tls->protection_ctx.send.aead, {
         buffer_push_handshake(sendbuf, tls->key_schedule, PTLS_HANDSHAKE_TYPE_FINISHED, {
             if ((ret = ptls_buffer_reserve(sendbuf, tls->key_schedule->algo->digest_size)) != 0)
-                return ret;
+                goto Exit;
             if ((ret = calc_verify_data(sendbuf->base + sendbuf->off, tls->key_schedule, tls->protection_ctx.send.secret)) != 0)
-                return ret;
+                goto Exit;
             sendbuf->off += tls->key_schedule->algo->digest_size;
         });
     });
 
-    return 0;
+Exit:
+    return ret;
 }
 
 static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf)
@@ -557,14 +572,14 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf)
      * we'd need to retain the entire ClientHello) */
     tls->key_schedule = key_schedule_new(tls->ctx->crypto->cipher_suites->hash, ptls_iovec_init(NULL, 0));
     if ((ret = key_schedule_extract(tls->key_schedule, ptls_iovec_init(NULL, 0))) != 0)
-        return ret;
+        goto Exit;
 
     buffer_push_handshake(sendbuf, tls->key_schedule, PTLS_HANDSHAKE_TYPE_CLIENT_HELLO, {
         /* legacy_version */
         buffer_push16(sendbuf, 0x0303);
         /* random_bytes */
         if ((ret = ptls_buffer_reserve(sendbuf, PTLS_HELLO_RANDOM_SIZE)) != 0)
-            return ret;
+            goto Exit;
         tls->ctx->crypto->random_bytes(sendbuf->base + sendbuf->off, PTLS_HELLO_RANDOM_SIZE);
         sendbuf->off += PTLS_HELLO_RANDOM_SIZE;
         /* lecagy_session_id */
@@ -602,7 +617,7 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf)
                 assert(algo->id != UINT16_MAX);
                 ptls_iovec_t pubkey;
                 if ((ret = algo->create(&tls->client.key_exchange.ctx, &pubkey)) != 0)
-                    return ret;
+                    goto Exit;
                 tls->client.key_exchange.algo = algo;
                 buffer_push_block(sendbuf, 2, {
                     buffer_push16(sendbuf, algo->id);
@@ -615,7 +630,10 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf)
     });
 
     tls->state = PTLS_STATE_CLIENT_EXPECT_SERVER_HELLO;
-    return PTLS_ERROR_HANDSHAKE_IN_PROGRESS;
+    ret = PTLS_ERROR_HANDSHAKE_IN_PROGRESS;
+
+Exit:
+    return ret;
 }
 
 static int decode_extensions(ptls_t *tls, const struct st_ptls_extension_decoder_t *decoders, void *arg, const uint8_t *src,
@@ -623,7 +641,7 @@ static int decode_extensions(ptls_t *tls, const struct st_ptls_extension_decoder
 {
     uint16_t type;
     size_t dec_index;
-    int ret;
+    int ret = 0;
 
     decode_block(src, end, 2, {
         while (src != end) {
@@ -646,7 +664,6 @@ static int decode_extensions(ptls_t *tls, const struct st_ptls_extension_decoder
             });
         }
     });
-    ret = 0;
 
 Exit:
     return ret;
@@ -662,7 +679,6 @@ static int decode_key_share_entry(uint16_t *group, ptls_iovec_t *key_exchange, c
         *key_exchange = ptls_iovec_init(*src, end - *src);
         *src = end;
     });
-    ret = 0;
 
 Exit:
     return ret;
@@ -803,7 +819,7 @@ static int client_handle_finished(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iove
 static int client_hello_decode_server_name(ptls_t *tls, void *_ch, const uint8_t *src, const uint8_t *end)
 {
     struct st_ptls_client_hello_t *ch = (struct st_ptls_client_hello_t *)_ch;
-    int ret;
+    int ret = 0;
 
     decode_block(src, end, 2, {
         if (src == end) {
@@ -825,7 +841,6 @@ static int client_hello_decode_server_name(ptls_t *tls, void *_ch, const uint8_t
         } while (src != end);
     });
 
-    ret = 0;
 Exit:
     return ret;
 }
@@ -885,7 +900,7 @@ Exit:
 static int client_hello_decode_key_share(ptls_t *tls, void *_ch, const uint8_t *src, const uint8_t *end)
 {
     struct st_ptls_client_hello_t *ch = (struct st_ptls_client_hello_t *)_ch;
-    int ret;
+    int ret = 0;
 
     if (ch->key_share.algorithm != NULL) {
         ret = PTLS_ALERT_DECODE_ERROR;
@@ -910,7 +925,6 @@ static int client_hello_decode_key_share(ptls_t *tls, void *_ch, const uint8_t *
             }
         }
     });
-    ret = 0;
 
 Exit:
     return ret;
@@ -942,10 +956,9 @@ Exit:
 
 static int client_hello_record_cookie(ptls_t *tls, void *_ch, const uint8_t *src, const uint8_t *end)
 {
-    int ret;
+    int ret = 0;
 
     decode_block(src, end, 2, {/* do nothing, and decode_block would complain if the block was not empty */});
-    ret = 0;
 
 Exit:
     return ret;
@@ -1528,8 +1541,6 @@ int ptls_handshake(ptls_t *tls, ptls_buffer_t *sendbuf, const void *input, size_
         src += consumed;
         assert(decryptbuf.off == 0);
     }
-    if (sendbuf->base == NULL || decryptbuf.base == NULL)
-        ret = PTLS_ERROR_NO_MEMORY;
 
     ptls_buffer_dispose(&decryptbuf);
 
@@ -1575,14 +1586,15 @@ int ptls_send(ptls_t *tls, ptls_buffer_t *sendbuf, const void *_input, size_t in
             pt_size = PTLS_MAX_PLAINTEXT_RECORD_SIZE;
         buffer_push_record(sendbuf, PTLS_CONTENT_TYPE_APPDATA, {
             if ((ret = ptls_buffer_reserve(sendbuf, pt_size + 256)) != 0)
-                break;
+                goto Exit;
             if ((ret = ptls_aead_transform(tls->protection_ctx.send.aead, sendbuf->base + sendbuf->off, &enc_size, input, pt_size,
                                            PTLS_CONTENT_TYPE_APPDATA)) != 0)
-                break;
+                goto Exit;
             sendbuf->off += enc_size;
         });
     }
 
+Exit:
     return ret;
 }
 

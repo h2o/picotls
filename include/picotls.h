@@ -22,6 +22,7 @@
 #ifndef picotls_h
 #define picotls_h
 
+#include <assert.h>
 #include <inttypes.h>
 
 #define PTLS_MAX_SECRET_SIZE 32
@@ -236,16 +237,17 @@ inline ptls_iovec_t ptls_iovec_init(const void *p, size_t len)
 
 inline void ptls_buffer_init(ptls_buffer_t *buf, void *smallbuf, size_t smallbuf_size)
 {
+    assert(smallbuf != NULL);
     buf->base = smallbuf;
     buf->off = 0;
     buf->capacity = smallbuf_size;
     buf->is_allocated = 0;
 }
 
-inline void ptls_buffer_dispose(struct st_ptls_buffer_t *buf)
+inline void ptls_buffer_dispose(ptls_buffer_t *buf)
 {
     ptls_buffer__release_memory(buf);
-    ptls_buffer_init(buf, NULL, 0);
+    *buf = (ptls_buffer_t){NULL};
 }
 
 #endif
