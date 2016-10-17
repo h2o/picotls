@@ -54,6 +54,7 @@
 #define PTLS_ALERT_CERTIFICATE_UNKNOWN -46
 #define PTLS_ALERT_ILLEGAL_PARAMETER -47
 #define PTLS_ALERT_DECODE_ERROR -50
+#define PTLS_ALERT_DECRYPT_ERROR -51
 #define PTLS_ALERT_INTERNAL_ERROR -80
 #define PTLS_ALERT_MISSING_EXTENSION -109
 #define PTLS_ALERT_UNRECOGNIZED_NAME -112
@@ -87,7 +88,8 @@ typedef struct st_ptls_context_t {
                             int (**signer)(void *sign_ctx, ptls_iovec_t *output, ptls_iovec_t input), void **signer_data,
                             ptls_iovec_t **certs, size_t *num_certs, ptls_iovec_t server_name, const uint16_t *signature_algorithms,
                             size_t num_signature_algorithms);
-        int (*certificate)(ptls_t *tls, ptls_iovec_t *certs, size_t num_certs);
+        int (*certificate)(ptls_t *tls, int (**verifier)(void *verify_ctx, ptls_iovec_t data, ptls_iovec_t signature),
+                           void **verifer_data, ptls_iovec_t *certs, size_t num_certs);
     } callbacks;
 } ptls_context_t;
 

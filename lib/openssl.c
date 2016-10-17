@@ -606,7 +606,57 @@ static X509 *to_x509(ptls_iovec_t vec)
     return d2i_X509(NULL, &p, vec.len);
 }
 
-static int on_certificate(ptls_t *tls, ptls_iovec_t *certs, size_t num_certs)
+static int on_certificate_verify(void *verify_ctx, ptls_iovec_t data, ptls_iovec_t signature)
+{
+    EVP_PKEY *key = verify_ctx;
+    EVP_MD_CTX *ctx = NULL;
+    EVP_PKEY_CTX *pkey_ctx;
+    int ret = 0;
+
+    if (data.base == NULL)
+        goto Exit;
+
+    if ((ctx = EVP_MD_CTX_create()) == NULL) {
+        ret = PTLS_ERROR_NO_MEMORY;
+        goto Exit;
+    }
+    if (EVP_DigestVerifyInit(ctx, &pkey_ctx, EVP_sha256(), NULL, key) != 1) {
+        ret = PTLS_ERROR_LIBRARY;
+        goto Exit;
+    }
+    if (key->type == EVP_PKEY_RSA) {
+        if (EVP_PKEY_CTX_set_rsa_padding(pkey_ctx, RSA_PKCS1_PSS_PADDING) != 1) {
+            ret = PTLS_ERROR_LIBRARY;
+            goto Exit;
+        }
+        if (EVP_PKEY_CTX_set_rsa_pss_saltlen(pkey_ctx, -1) != 1) {
+            ret = PTLS_ERROR_LIBRARY;
+            goto Exit;
+        }
+        if (EVP_PKEY_CTX_set_rsa_mgf1_md(pkey_ctx, EVP_sha256()) != 1) {
+            ret = PTLS_ERROR_LIBRARY;
+            goto Exit;
+        }
+    }
+    if (EVP_DigestVerifyUpdate(ctx, data.base, data.len) != 1) {
+        ret = PTLS_ERROR_LIBRARY;
+        goto Exit;
+    }
+    if (EVP_DigestVerifyFinal(ctx, signature.base, signature.len) != 1) {
+        ret = PTLS_ALERT_DECRYPT_ERROR;
+        goto Exit;
+    }
+    ret = 0;
+
+Exit:
+    if (ctx != NULL)
+        EVP_MD_CTX_destroy(ctx);
+    EVP_PKEY_free(key);
+    return ret;
+}
+
+static int on_certificate(ptls_t *tls, int (**verifier)(void *, ptls_iovec_t, ptls_iovec_t), void **verify_data,
+                          ptls_iovec_t *certs, size_t num_certs)
 {
     ptls_openssl_context_t *ctx = (ptls_openssl_context_t *)ptls_get_context(tls);
     X509 *cert = NULL;
@@ -645,19 +695,25 @@ static int on_certificate(ptls_t *tls, ptls_iovec_t *certs, size_t num_certs)
             switch (X509_STORE_CTX_get_error(verify_ctx)) {
             case X509_V_ERR_OUT_OF_MEM:
                 ret = PTLS_ERROR_NO_MEMORY;
-                break;
+                goto Exit;
             case X509_V_ERR_CERT_REVOKED:
                 ret = PTLS_ALERT_CERTIFICATE_REVOKED;
-                break;
+                goto Exit;
             case X509_V_ERR_CERT_HAS_EXPIRED:
                 ret = PTLS_ALERT_CERTIFICATE_EXPIRED;
-                break;
+                goto Exit;
             default:
                 ret = PTLS_ALERT_CERTIFICATE_UNKNOWN;
-                break;
+                goto Exit;
             }
         }
     }
+
+    if ((*verify_data = X509_get_pubkey(cert)) == NULL) {
+        ret = PTLS_ALERT_BAD_CERTIFICATE;
+        goto Exit;
+    }
+    *verifier = on_certificate_verify;
 
 Exit:
     if (verify_ctx != NULL)

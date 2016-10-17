@@ -65,6 +65,11 @@
 #define PTLS_ALERT_LEVEL_WARNING 1
 #define PTLS_ALERT_LEVEL_FATAL 2
 
+#define PTLS_SERVER_CERTIFICATE_VERIFY_CONTEXT_STRING "TLS 1.3, server CertificateVerify"
+#define PTLS_CLIENT_CERTIFICATE_VERIFY_CONTEXT_STRING "TLS 1.3, client CertificateVerify"
+#define PTLS_MAX_CERTIFICATE_VERIFY_SIGNDATA_SIZE                                                                                  \
+    (64 + sizeof(PTLS_SERVER_CERTIFICATE_VERIFY_CONTEXT_STRING) + PTLS_MAX_DIGEST_SIZE * 2)
+
 #if defined(PTLS_DEBUG) && PTLS_DEBUG
 #define PTLS_DEBUGF(...) fprintf(stderr, __VA_ARGS__)
 #else
@@ -126,6 +131,10 @@ struct st_ptls_t {
                 ptls_key_exchange_algorithm_t *algo;
                 ptls_key_exchange_context_t *ctx;
             } key_exchange;
+            struct {
+                int (*cb)(void *verify_ctx, ptls_iovec_t data, ptls_iovec_t signature);
+                void *verify_ctx;
+            } certificate_verify;
         } client;
     };
 };
@@ -518,6 +527,23 @@ Fail:
     return ret;
 }
 
+static size_t build_certificate_verify_signdata(uint8_t *data, struct st_ptls_key_schedule_t *sched, const char *context_string)
+{
+    size_t datalen = 0;
+
+    memset(data + datalen, 32, 64);
+    datalen += 64;
+    memcpy(data + datalen, context_string, strlen(context_string) + 1);
+    datalen += strlen(context_string) + 1;
+    sched->msghash->final(sched->msghash, data + datalen, PTLS_HASH_FINAL_MODE_SNAPSHOT);
+    datalen += sched->algo->digest_size;
+    memcpy(data + datalen, sched->hashed_resumption_context, sched->algo->digest_size);
+    datalen += sched->algo->digest_size;
+    assert(datalen <= PTLS_MAX_CERTIFICATE_VERIFY_SIGNDATA_SIZE);
+
+    return datalen;
+}
+
 static int send_alert(ptls_t *tls, ptls_buffer_t *sendbuf, uint8_t level, uint8_t description)
 {
     size_t rec_start = sendbuf->off;
@@ -843,10 +869,54 @@ static int client_handle_certificate(ptls_t *tls, ptls_iovec_t message)
         } while (src != end);
     });
 
-    if ((ret = tls->ctx->callbacks.certificate(tls, certs, num_certs)) != 0)
+    if ((ret = tls->ctx->callbacks.certificate(tls, &tls->client.certificate_verify.cb, &tls->client.certificate_verify.verify_ctx,
+                                               certs, num_certs)) != 0)
         goto Exit;
 
     tls->state = PTLS_STATE_CLIENT_EXPECT_CERTIFICATE_VERIFY;
+    ret = PTLS_ERROR_HANDSHAKE_IN_PROGRESS;
+
+Exit:
+    return ret;
+}
+
+static int client_handle_certificate_verify(ptls_t *tls, ptls_iovec_t message)
+{
+    const uint8_t *src = message.base + PTLS_HANDSHAKE_HEADER_SIZE, *end = message.base + message.len;
+    uint16_t algo;
+    ptls_iovec_t signature;
+    uint8_t signdata[PTLS_MAX_CERTIFICATE_VERIFY_SIGNDATA_SIZE];
+    size_t signdata_size;
+    int ret;
+
+    /* decode */
+    if ((ret = decode16(&algo, &src, end)) != 0)
+        goto Exit;
+    decode_block(src, end, 2, {
+        signature = ptls_iovec_init(src, end - src);
+        src = end;
+    });
+
+    /* validate */
+    switch (algo) {
+    case PTLS_SIGNATURE_RSA_PSS_SHA256:
+    case PTLS_SIGNATURE_ECDSA_SECP256R1_SHA256:
+        /* ok */
+        break;
+    default:
+        ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+        goto Exit;
+    }
+    signdata_size = build_certificate_verify_signdata(signdata, tls->key_schedule, PTLS_SERVER_CERTIFICATE_VERIFY_CONTEXT_STRING);
+    ret = tls->client.certificate_verify.cb(tls->client.certificate_verify.verify_ctx, ptls_iovec_init(signdata, signdata_size),
+                                            signature);
+    ptls_clear_memory(signdata, signdata_size);
+    tls->client.certificate_verify.cb = NULL;
+    if (ret != 0)
+        goto Exit;
+
+    key_schedule_update_hash(tls->key_schedule, message.base, message.len);
+    tls->state = PTLS_STATE_CLIENT_EXPECT_FINISHED;
     ret = PTLS_ERROR_HANDSHAKE_IN_PROGRESS;
 
 Exit:
@@ -1219,29 +1289,14 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
     /* build and send CertificateVerify */
     buffer_encrypt(sendbuf, tls->protection_ctx.send.aead, {
         buffer_push_handshake(sendbuf, tls->key_schedule, PTLS_HANDSHAKE_TYPE_CERTIFICATE_VERIFY, {
-            static const char context_string[] = "TLS 1.3, server CertificateVerify";
-            uint8_t data[64 + sizeof(context_string) + PTLS_MAX_DIGEST_SIZE * 2];
-            size_t datalen = 0;
+            uint8_t data[PTLS_MAX_CERTIFICATE_VERIFY_SIGNDATA_SIZE];
+            size_t datalen =
+                build_certificate_verify_signdata(data, tls->key_schedule, PTLS_SERVER_CERTIFICATE_VERIFY_CONTEXT_STRING);
             ptls_iovec_t sign;
-
-            /* build data to be signed */
-            memset(data + datalen, 32, 64);
-            datalen += 64;
-            memcpy(data + datalen, context_string, sizeof(context_string));
-            datalen += sizeof(context_string);
-            tls->key_schedule->msghash->final(tls->key_schedule->msghash, data + datalen, PTLS_HASH_FINAL_MODE_SNAPSHOT);
-            datalen += tls->key_schedule->algo->digest_size;
-            memcpy(data + datalen, tls->key_schedule->hashed_resumption_context, tls->key_schedule->algo->digest_size);
-            datalen += tls->key_schedule->algo->digest_size;
-            assert(datalen <= sizeof(data));
-
-            /* sign */
             ret = signer(signer_data, &sign, ptls_iovec_init(data, datalen));
             ptls_clear_memory(data, datalen);
             if (ret != 0)
                 goto Exit;
-
-            /* emit */
             buffer_push16(sendbuf, sign_algorithm);
             buffer_push_block(sendbuf, 2, { buffer_pushv(sendbuf, sign.base, sign.len); });
             free(sign.base);
@@ -1384,6 +1439,9 @@ void ptls_free(ptls_t *tls)
     ptls_buffer_dispose(&tls->recvbuf.mess);
     if (tls->key_schedule != NULL)
         key_schedule_free(tls->key_schedule);
+    if (tls->client.certificate_verify.cb != NULL)
+        tls->client.certificate_verify.cb(tls->client.certificate_verify.verify_ctx, ptls_iovec_init(NULL, 0),
+                                          ptls_iovec_init(NULL, 0));
     free(tls->client.server_name);
     free(tls);
 }
@@ -1415,7 +1473,7 @@ static int handle_handshake_message(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_io
     uint8_t type = message.base[0];
     int ret;
 
-    if (tls->key_schedule != NULL && type != PTLS_HANDSHAKE_TYPE_FINISHED)
+    if (tls->key_schedule != NULL && (type != PTLS_HANDSHAKE_TYPE_FINISHED && type != PTLS_HANDSHAKE_TYPE_CERTIFICATE_VERIFY))
         key_schedule_update_hash(tls->key_schedule, message.base, message.len);
 
     switch (tls->state) {
@@ -1442,9 +1500,7 @@ static int handle_handshake_message(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_io
         break;
     case PTLS_STATE_CLIENT_EXPECT_CERTIFICATE_VERIFY:
         if (type == PTLS_HANDSHAKE_TYPE_CERTIFICATE_VERIFY) {
-            /* TODO implement */
-            tls->state = PTLS_STATE_CLIENT_EXPECT_FINISHED;
-            ret = PTLS_ERROR_HANDSHAKE_IN_PROGRESS;
+            ret = client_handle_certificate_verify(tls, message);
         } else {
             ret = PTLS_ALERT_UNEXPECTED_MESSAGE;
         }
