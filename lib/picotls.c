@@ -770,6 +770,37 @@ static int client_handle_hello(ptls_t *tls, ptls_iovec_t message)
     return PTLS_ERROR_HANDSHAKE_IN_PROGRESS;
 }
 
+static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message)
+{
+    const uint8_t *src = message.base + PTLS_HANDSHAKE_HEADER_SIZE, *end = message.base + message.len;
+    uint16_t type;
+    int ret;
+
+    decode_extensions(src, end, &type, {
+        switch (type) {
+        case PTLS_EXTENSION_TYPE_SERVER_NAME:
+            if (src != end) {
+                ret = PTLS_ALERT_DECODE_ERROR;
+                goto Exit;
+            }
+            if (tls->client.server_name == NULL) {
+                ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+                goto Exit;
+            }
+            break;
+        default:
+            break;
+        }
+        src = end;
+    });
+
+    tls->state = PTLS_STATE_CLIENT_EXPECT_CERTIFICATE;
+    ret = PTLS_ERROR_HANDSHAKE_IN_PROGRESS;
+
+Exit:
+    return ret;
+}
+
 static int client_handle_finished(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t message)
 {
     struct st_ptls_protection_context_t send_ctx = {{0}};
@@ -1343,9 +1374,7 @@ static int handle_handshake_message(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_io
         break;
     case PTLS_STATE_CLIENT_EXPECT_ENCRYPTED_EXTENSIONS:
         if (type == PTLS_HANDSHAKE_TYPE_ENCRYPTED_EXTENSIONS) {
-            /* TODO implement */
-            tls->state = PTLS_STATE_CLIENT_EXPECT_CERTIFICATE;
-            ret = PTLS_ERROR_HANDSHAKE_IN_PROGRESS;
+            ret = client_handle_encrypted_extensions(tls, message);
         } else {
             ret = PTLS_ALERT_UNEXPECTED_MESSAGE;
         }
