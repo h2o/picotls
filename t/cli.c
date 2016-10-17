@@ -271,7 +271,7 @@ int main(int argc, char **argv)
     ENGINE_register_all_digests();
 #endif
 
-    ptls_openssl_context_t *ctx = ptls_openssl_context_new();
+    ptls_openssl_t *ctx = ptls_openssl_new();
     const char *host, *port;
     STACK_OF(X509) *certs = NULL;
     EVP_PKEY *pkey = NULL;
@@ -322,7 +322,7 @@ int main(int argc, char **argv)
             fprintf(stderr, "-c and -k options must be used together\n");
             return 1;
         }
-        ptls_openssl_context_register_server(ctx, "example.com", pkey, certs);
+        ptls_openssl_register_server(ctx, "example.com", pkey, certs);
         sk_X509_free(certs);
         EVP_PKEY_free(pkey);
     }
@@ -336,5 +336,5 @@ int main(int argc, char **argv)
     if (resolve_address((struct sockaddr *)&sa, &salen, host, port) != 0)
         exit(1);
 
-    return (certs != NULL ? run_server : run_client)((struct sockaddr *)&sa, salen, ptls_openssl_context_get_context(ctx));
+    return (certs != NULL ? run_server : run_client)((struct sockaddr *)&sa, salen, ptls_openssl_get_context(ctx));
 }

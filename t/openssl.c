@@ -104,7 +104,7 @@ static void test_ecdh_key_exchange(void)
 
 static void test_rsa_sign(void)
 {
-    ptls_openssl_context_t *ctx = ptls_openssl_context_new();
+    ptls_openssl_t *ctx = ptls_openssl_new();
     setup_server_context(ctx);
 
     ok(select_compatible_signature_algorithm(ctx->servers.entries[0]->key, (uint16_t[]){PTLS_SIGNATURE_ECDSA_SECP256R1_SHA256},
@@ -119,7 +119,7 @@ static void test_rsa_sign(void)
 
     /* TODO verify */
 
-    ptls_openssl_context_free(ctx);
+    ptls_openssl_free(ctx);
 }
 
 void test_openssl(void)
@@ -128,7 +128,7 @@ void test_openssl(void)
     subtest("rsa-sign", test_rsa_sign);
 }
 
-void setup_server_context(ptls_openssl_context_t *ctx)
+void setup_server_context(ptls_openssl_t *ctx)
 {
     BIO *bio = BIO_new_mem_buf(RSA_PRIVATE_KEY, strlen(RSA_PRIVATE_KEY));
     EVP_PKEY *pkey = PEM_read_bio_PrivateKey(bio, NULL, NULL, NULL);
@@ -142,7 +142,7 @@ void setup_server_context(ptls_openssl_context_t *ctx)
 
     STACK_OF(X509) *certs = sk_X509_new(NULL);
     sk_X509_push(certs, cert);
-    ptls_openssl_context_register_server(ctx, "example.com", pkey, certs);
+    ptls_openssl_register_server(ctx, "example.com", pkey, certs);
     sk_X509_free(certs);
 
     X509_free(cert);

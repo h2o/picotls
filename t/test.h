@@ -26,6 +26,6 @@
 
 void test_picotls(void);
 void test_openssl(void);
-void setup_server_context(ptls_openssl_context_t *ctx);
+void setup_server_context(ptls_openssl_t *ctx);
 
 #endif

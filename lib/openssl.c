@@ -42,7 +42,7 @@ struct st_ptls_openssl_server_context_t {
     ptls_iovec_t certs[1];
 };
 
-struct st_ptls_openssl_context_t {
+struct st_ptls_openssl_t {
     ptls_context_t super;
     struct {
         struct st_ptls_openssl_server_context_t **entries;
@@ -568,7 +568,7 @@ static int on_client_hello(ptls_t *tls, uint16_t *sign_algorithm,
                            ptls_iovec_t **certs, size_t *num_certs, ptls_iovec_t server_name, const uint16_t *signature_algorithms,
                            size_t num_signature_algorithms)
 {
-    ptls_openssl_context_t *ctx = (ptls_openssl_context_t *)ptls_get_context(tls);
+    ptls_openssl_t *ctx = (ptls_openssl_t *)ptls_get_context(tls);
     struct st_ptls_openssl_server_context_t *sctx;
 
     if (ctx->servers.count == 0)
@@ -658,7 +658,7 @@ Exit:
 static int on_certificate(ptls_t *tls, int (**verifier)(void *, ptls_iovec_t, ptls_iovec_t), void **verify_data,
                           ptls_iovec_t *certs, size_t num_certs)
 {
-    ptls_openssl_context_t *ctx = (ptls_openssl_context_t *)ptls_get_context(tls);
+    ptls_openssl_t *ctx = (ptls_openssl_t *)ptls_get_context(tls);
     X509 *cert = NULL;
     STACK_OF(X509) *chain = NULL;
     X509_STORE_CTX *verify_ctx = NULL;
@@ -737,18 +737,18 @@ static void free_server_context(struct st_ptls_openssl_server_context_t *ctx)
     free(ctx);
 }
 
-ptls_openssl_context_t *ptls_openssl_context_new(void)
+ptls_openssl_t *ptls_openssl_new(void)
 {
-    ptls_openssl_context_t *ctx = malloc(sizeof(*ctx));
+    ptls_openssl_t *ctx = malloc(sizeof(*ctx));
     if (ctx == NULL)
         return NULL;
 
-    *ctx = (ptls_openssl_context_t){{&ptls_openssl_crypto, {on_client_hello, on_certificate}}};
+    *ctx = (ptls_openssl_t){{&ptls_openssl_crypto, {on_client_hello, on_certificate}}};
 
     return ctx;
 }
 
-void ptls_openssl_context_free(ptls_openssl_context_t *ctx)
+void ptls_openssl_free(ptls_openssl_t *ctx)
 {
     size_t i;
 
@@ -759,7 +759,7 @@ void ptls_openssl_context_free(ptls_openssl_context_t *ctx)
     free(ctx);
 }
 
-ptls_context_t *ptls_openssl_context_get_context(ptls_openssl_context_t *ctx)
+ptls_context_t *ptls_openssl_get_context(ptls_openssl_t *ctx)
 {
     return &ctx->super;
 }
@@ -777,8 +777,7 @@ static int eckey_is_on_group(EVP_PKEY *pkey, int nid)
     return ret;
 }
 
-int ptls_openssl_context_register_server(ptls_openssl_context_t *ctx, const char *server_name, EVP_PKEY *key,
-                                         STACK_OF(X509) * certs)
+int ptls_openssl_register_server(ptls_openssl_t *ctx, const char *server_name, EVP_PKEY *key, STACK_OF(X509) * certs)
 {
     struct st_ptls_openssl_server_context_t *slot, **new_entries;
     size_t i;
@@ -848,7 +847,7 @@ Error:
     return ret;
 }
 
-int ptls_openssl_set_certificate_store(ptls_openssl_context_t *ctx, X509_STORE *store)
+int ptls_openssl_set_certificate_store(ptls_openssl_t *ctx, X509_STORE *store)
 {
     if (ctx->cert_store != NULL) {
         X509_STORE_free(ctx->cert_store);

@@ -106,7 +106,7 @@ static void test_aes128gcm(void)
 
 static void test_handshake(void)
 {
-    ptls_openssl_context_t *ctx = ptls_openssl_context_new();
+    ptls_openssl_t *ctx = ptls_openssl_new();
     setup_server_context(ctx);
 
     ptls_t *client, *server;
@@ -116,8 +116,8 @@ static void test_handshake(void)
     int ret;
     const char *req = "GET / HTTP/1.0\r\n\r\n";
 
-    client = ptls_new(ptls_openssl_context_get_context(ctx), "example.com");
-    server = ptls_new(ptls_openssl_context_get_context(ctx), NULL);
+    client = ptls_new(ptls_openssl_get_context(ctx), "example.com");
+    server = ptls_new(ptls_openssl_get_context(ctx), NULL);
     ptls_buffer_init(&cbuf, cbuf_small, sizeof(cbuf_small));
     ptls_buffer_init(&sbuf, sbuf_small, sizeof(sbuf_small));
 
@@ -163,7 +163,7 @@ static void test_handshake(void)
     ptls_free(client);
     ptls_free(server);
 
-    ptls_openssl_context_free(ctx);
+    ptls_openssl_free(ctx);
 }
 
 void test_picotls(void)
