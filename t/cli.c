@@ -252,9 +252,10 @@ static void usage(const char *cmd)
     printf("Usage: %s [options] host port\n"
            "\n"
            "Options:\n"
-           "  -k key-file\n"
-           "  -c certificate-file  specifies the credentials to be used for running the\n"
+           "  -c certificate-file\n"
+           "  -k key-file          specifies the credentials to be used for running the\n"
            "                       server. If omitted, the command runs as a client.\n"
+           "  -v                   verify peer using the default certificates\n"
            "  -h                   print this help\n"
            "\n",
            cmd);
