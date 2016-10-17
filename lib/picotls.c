@@ -1612,6 +1612,8 @@ static int ptls_handle_input(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_buffer_t 
 
 int ptls_handshake(ptls_t *tls, ptls_buffer_t *sendbuf, const void *input, size_t *inlen)
 {
+    size_t sendbuf_orig_off = sendbuf->off;
+
     assert(tls->state != PTLS_STATE_POST_HANDSHAKE);
 
     /* special handling for initiating the handshake */
@@ -1639,6 +1641,7 @@ int ptls_handshake(ptls_t *tls, ptls_buffer_t *sendbuf, const void *input, size_
 
     if (!(ret == 0 || ret == PTLS_ERROR_HANDSHAKE_IN_PROGRESS)) {
         /* send alert immediately */
+        sendbuf->off = sendbuf_orig_off;
         send_alert(tls, sendbuf, PTLS_ALERT_LEVEL_FATAL, PTLS_ERROR_IS_ALERT(ret) ? ret : PTLS_ALERT_INTERNAL_ERROR);
     }
 
