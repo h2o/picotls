@@ -249,6 +249,15 @@ static int resolve_address(struct sockaddr *sa, socklen_t *salen, const char *ho
 
 static void usage(const char *cmd)
 {
+    printf("Usage: %s [options] host port\n"
+           "\n"
+           "Options:\n"
+           "  -k key-file\n"
+           "  -c certificate-file  specifies the credentials to be used for running the\n"
+           "                       server. If omitted, the command runs as a client.\n"
+           "  -h                   print this help\n"
+           "\n",
+           cmd);
 }
 
 int main(int argc, char **argv)
@@ -270,7 +279,7 @@ int main(int argc, char **argv)
     struct sockaddr_storage sa;
     socklen_t salen;
 
-    while ((ch = getopt(argc, argv, "c:k:")) != -1) {
+    while ((ch = getopt(argc, argv, "c:k:h")) != -1) {
         switch (ch) {
         case 'c': {
             FILE *fp;
@@ -317,16 +326,12 @@ int main(int argc, char **argv)
         sk_X509_free(certs);
         EVP_PKEY_free(pkey);
     }
-    if (argc != 0) {
-        host = (--argc, *argv++);
-    } else {
-        host = certs != NULL ? "0.0.0.0" : "127.0.0.1";
+    if (argc != 2) {
+        fprintf(stderr, "missing host and port\n");
+        return 1;
     }
-    if (argc != 0) {
-        port = (--argc, *argv++);
-    } else {
-        port = "8443";
-    }
+    host = (--argc, *argv++);
+    port = (--argc, *argv++);
 
     if (resolve_address((struct sockaddr *)&sa, &salen, host, port) != 0)
         exit(1);
