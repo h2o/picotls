@@ -1533,7 +1533,7 @@ static int handle_handshake_message(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_io
     return ret;
 }
 
-static int ptls_handle_input(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_buffer_t *decryptbuf, const void *input, size_t *inlen)
+static int handle_input(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_buffer_t *decryptbuf, const void *input, size_t *inlen)
 {
     struct st_ptls_record_t rec;
     int ret;
@@ -1632,7 +1632,7 @@ int ptls_handshake(ptls_t *tls, ptls_buffer_t *sendbuf, const void *input, size_
     /* perform handhake until completion or until all the input has been swallowed */
     while (ret == PTLS_ERROR_HANDSHAKE_IN_PROGRESS && src != src_end) {
         size_t consumed = src_end - src;
-        ret = ptls_handle_input(tls, sendbuf, &decryptbuf, src, &consumed);
+        ret = handle_input(tls, sendbuf, &decryptbuf, src, &consumed);
         src += consumed;
         assert(decryptbuf.off == 0);
     }
@@ -1655,7 +1655,7 @@ int ptls_receive(ptls_t *tls, ptls_buffer_t *decryptbuf, const void *input, size
 
     assert(tls->state >= PTLS_STATE_SERVER_EXPECT_FINISHED);
 
-    ret = ptls_handle_input(tls, NULL, decryptbuf, input, inlen);
+    ret = handle_input(tls, NULL, decryptbuf, input, inlen);
     if (decryptbuf->base == NULL)
         ret = PTLS_ERROR_NO_MEMORY;
 
