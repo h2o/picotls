@@ -795,9 +795,10 @@ static int client_handle_hello(ptls_t *tls, ptls_iovec_t message)
     if ((ret = tls->client.key_exchange.ctx->on_exchange(tls->client.key_exchange.ctx, &ecdh_secret, sh.peerkey)) != 0)
         return ret;
 
+    key_schedule_update_hash(tls->key_schedule, message.base, message.len);
+
     if ((ret = key_schedule_extract(tls->key_schedule, ecdh_secret)) != 0)
         return ret;
-
     if ((ret = setup_protection_context(&tls->protection_ctx.send, tls->key_schedule, "client handshake traffic secret",
                                         sh.cipher_suite->aead, 1, "handshake key expansion")) != 0)
         return ret;
@@ -833,6 +834,7 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message)
         src = end;
     });
 
+    key_schedule_update_hash(tls->key_schedule, message.base, message.len);
     tls->state = PTLS_STATE_CLIENT_EXPECT_CERTIFICATE;
     ret = PTLS_ERROR_HANDSHAKE_IN_PROGRESS;
 
@@ -873,6 +875,7 @@ static int client_handle_certificate(ptls_t *tls, ptls_iovec_t message)
                                                certs, num_certs)) != 0)
         goto Exit;
 
+    key_schedule_update_hash(tls->key_schedule, message.base, message.len);
     tls->state = PTLS_STATE_CLIENT_EXPECT_CERTIFICATE_VERIFY;
     ret = PTLS_ERROR_HANDSHAKE_IN_PROGRESS;
 
@@ -1333,7 +1336,6 @@ static int server_handle_finished(ptls_t *tls, ptls_iovec_t message)
         return ret;
 
     key_schedule_update_hash(tls->key_schedule, message.base, message.len);
-
     tls->state = PTLS_STATE_POST_HANDSHAKE;
     return 0;
 }
@@ -1472,9 +1474,6 @@ static int handle_handshake_message(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_io
 {
     uint8_t type = message.base[0];
     int ret;
-
-    if (tls->key_schedule != NULL && (type != PTLS_HANDSHAKE_TYPE_FINISHED && type != PTLS_HANDSHAKE_TYPE_CERTIFICATE_VERIFY))
-        key_schedule_update_hash(tls->key_schedule, message.base, message.len);
 
     switch (tls->state) {
     case PTLS_STATE_CLIENT_EXPECT_SERVER_HELLO:
