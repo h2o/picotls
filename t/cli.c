@@ -76,8 +76,10 @@ static int run_handshake(int fd, ptls_t *tls, ptls_buffer_t *wbuf, uint8_t *pend
         *pending_input_len = rret;
     }
 
+    if (write_all(fd, wbuf->base, wbuf->off) != 0)
+        return -1;
+
     if (ret != 0) {
-        write_all(fd, wbuf->base, wbuf->off);
         fprintf(stderr, "ptls_handshake:%d\n", ret);
         return -1;
     }
@@ -127,9 +129,6 @@ static int handle_connection(int fd, ptls_context_t *ctx, const char *server_nam
 
     roff = sizeof(rbuf);
     if (run_handshake(fd, tls, &wbuf, rbuf, &roff) != 0)
-        goto Exit;
-
-    if (write_all(fd, wbuf.base, wbuf.off) != 0)
         goto Exit;
     wbuf.off = 0;
 
