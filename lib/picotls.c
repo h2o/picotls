@@ -353,6 +353,25 @@ Exit:
         }                                                                                                                          \
     } while (0)
 
+#define decode_extensions(src, end, type, block)                                                                                   \
+    do {                                                                                                                           \
+        uint8_t found[8] = {0}; /* track only first 256 extensions for detecting duplicates */                                     \
+        decode_block((src), end, 2, {                                                                                              \
+            while ((src) != end) {                                                                                                 \
+                if ((ret = decode16((type), &(src), end)) != 0)                                                                    \
+                    goto Exit;                                                                                                     \
+                if (*(type) < sizeof(found[0]) * 8) {                                                                              \
+                    if ((found[*(type) / 8] & (1 << *(type) % 8)) != 0) {                                                          \
+                        ret = PTLS_ALERT_ILLEGAL_PARAMETER;                                                                        \
+                        goto Exit;                                                                                                 \
+                    }                                                                                                              \
+                    found[*(type) / 8] |= 1 << *(type)&7;                                                                          \
+                }                                                                                                                  \
+                decode_open_block((src), end, 2, block);                                                                           \
+            }                                                                                                                      \
+        });                                                                                                                        \
+    } while (0)
+
 static int decode16(uint16_t *value, const uint8_t **src, const uint8_t *end)
 {
     if (end - *src < 2)
@@ -636,39 +655,6 @@ Exit:
     return ret;
 }
 
-static int decode_extensions(ptls_t *tls, const struct st_ptls_extension_decoder_t *decoders, void *arg, const uint8_t *src,
-                             const uint8_t *end)
-{
-    uint16_t type;
-    size_t dec_index;
-    int ret = 0;
-
-    decode_block(src, end, 2, {
-        while (src != end) {
-            /* obtain type */
-            if ((ret = decode16(&type, &src, end)) != 0)
-                goto Exit;
-            /* find the decoder */
-            for (dec_index = 0; decoders[dec_index].type != UINT16_MAX; ++dec_index)
-                if (decoders[dec_index].type == type)
-                    break;
-            /* call the decoder */
-            decode_open_block(src, end, 2, {
-                if (decoders[dec_index].type != UINT16_MAX) {
-                    if ((ret = decoders[dec_index].cb(tls, arg, src, end)) != 0)
-                        goto Exit;
-                } else {
-                    /* TODO check multiple occurences of unknown extensions */
-                }
-                src = end;
-            });
-        }
-    });
-
-Exit:
-    return ret;
-}
-
 static int decode_key_share_entry(uint16_t *group, ptls_iovec_t *key_exchange, const uint8_t **src, const uint8_t *end)
 {
     int ret;
@@ -684,38 +670,6 @@ Exit:
     return ret;
 }
 
-static int return_decode_error_for_extension(ptls_t *tls, void *_sh, const uint8_t *src, const uint8_t *end)
-{
-    return PTLS_ALERT_DECODE_ERROR;
-}
-
-static int expect_empty_extension(ptls_t *tls, void *_sh, const uint8_t *src, const uint8_t *end)
-{
-    if (src != end)
-        return PTLS_ALERT_DECODE_ERROR;
-    return 0;
-}
-
-static int server_hello_record_key_share(ptls_t *tls, void *_sh, const uint8_t *src, const uint8_t *end)
-{
-    struct st_ptls_server_hello_t *sh = (struct st_ptls_server_hello_t *)_sh;
-    uint16_t group;
-    ptls_iovec_t keyex;
-    int ret;
-
-    if ((ret = decode_key_share_entry(&group, &keyex, &src, end)) != 0)
-        return ret;
-    if (src != end)
-        return PTLS_ALERT_DECODE_ERROR;
-
-    if (tls->client.key_exchange.algo->id != group)
-        return PTLS_ALERT_ILLEGAL_PARAMETER;
-
-    sh->peerkey = keyex;
-
-    return 0;
-}
-
 static int decode_server_hello(ptls_t *tls, struct st_ptls_server_hello_t *sh, const uint8_t *src, const uint8_t *end)
 {
     int ret;
@@ -725,39 +679,69 @@ static int decode_server_hello(ptls_t *tls, struct st_ptls_server_hello_t *sh, c
     { /* check protocol version */
         uint16_t protver;
         if ((ret = decode16(&protver, &src, end)) != 0)
-            return ret;
-        if (protver != PTLS_PROTOCOL_VERSION_DRAFT16)
-            return PTLS_ALERT_HANDSHAKE_FAILURE;
+            goto Exit;
+        if (protver != PTLS_PROTOCOL_VERSION_DRAFT16) {
+            ret = PTLS_ALERT_HANDSHAKE_FAILURE;
+            goto Exit;
+        }
     }
 
     /* skip random */
-    if (end - src < PTLS_HELLO_RANDOM_SIZE)
-        return PTLS_ALERT_DECODE_ERROR;
+    if (end - src < PTLS_HELLO_RANDOM_SIZE) {
+        ret = PTLS_ALERT_DECODE_ERROR;
+        goto Exit;
+    }
     src += PTLS_HELLO_RANDOM_SIZE;
 
     { /* select cipher_suite */
         uint16_t csid;
         if ((ret = decode16(&csid, &src, end)) != 0)
-            return ret;
+            goto Exit;
         for (sh->cipher_suite = tls->ctx->crypto->cipher_suites; sh->cipher_suite->id != UINT16_MAX; ++sh->cipher_suite)
             if (sh->cipher_suite->id == csid)
                 break;
-        if (sh->cipher_suite->id == UINT16_MAX)
-            return PTLS_ALERT_HANDSHAKE_FAILURE;
+        if (sh->cipher_suite->id == UINT16_MAX) {
+            ret = PTLS_ALERT_HANDSHAKE_FAILURE;
+            goto Exit;
+        }
     }
 
-    static const struct st_ptls_extension_decoder_t decoders[] = {
-        {PTLS_EXTENSION_TYPE_SUPPORTED_VERSIONS, return_decode_error_for_extension},
-        {PTLS_EXTENSION_TYPE_SIGNATURE_ALGORITHMS, expect_empty_extension},
-        {PTLS_EXTENSION_TYPE_KEY_SHARE, server_hello_record_key_share},
-        {UINT16_MAX}};
-    if ((ret = decode_extensions(tls, decoders, sh, src, end)) != 0)
-        return ret;
-
-    if (sh->cipher_suite == NULL || sh->peerkey.base == NULL)
+    uint16_t type;
+    decode_extensions(src, end, &type, {
+        switch (type) {
+        case PTLS_EXTENSION_TYPE_SUPPORTED_VERSIONS:
+            ret = PTLS_ALERT_DECODE_ERROR;
+            goto Exit;
+        case PTLS_EXTENSION_TYPE_SIGNATURE_ALGORITHMS:
+            if (src != end) {
+                ret = PTLS_ALERT_DECODE_ERROR;
+                goto Exit;
+            }
+            break;
+        case PTLS_EXTENSION_TYPE_KEY_SHARE: {
+            uint16_t group;
+            if ((ret = decode_key_share_entry(&group, &sh->peerkey, &src, end)) != 0)
+                goto Exit;
+            if (src != end) {
+                ret = PTLS_ALERT_DECODE_ERROR;
+                goto Exit;
+            }
+            if (tls->client.key_exchange.algo->id != group) {
+                ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+                goto Exit;
+            }
+        } break;
+        default:
+            src = end;
+            break;
+        }
+    });
+    if (sh->peerkey.base == NULL)
         return PTLS_ALERT_ILLEGAL_PARAMETER;
 
-    return 0;
+    ret = 0;
+Exit:
+    return ret;
 }
 
 static int client_handle_hello(ptls_t *tls, ptls_iovec_t message)
@@ -816,9 +800,8 @@ static int client_handle_finished(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iove
     return ret;
 }
 
-static int client_hello_decode_server_name(ptls_t *tls, void *_ch, const uint8_t *src, const uint8_t *end)
+static int client_hello_decode_server_name(ptls_iovec_t *name, const uint8_t *src, const uint8_t *end)
 {
-    struct st_ptls_client_hello_t *ch = (struct st_ptls_client_hello_t *)_ch;
     int ret = 0;
 
     decode_block(src, end, 2, {
@@ -830,11 +813,11 @@ static int client_hello_decode_server_name(ptls_t *tls, void *_ch, const uint8_t
             uint8_t type = *src++;
             decode_open_block(src, end, 2, {
                 if (type == 0) {
-                    if (ch->server_name.base != NULL) {
-                        ret = PTLS_ALERT_DECODE_ERROR;
+                    if (name->base != NULL) {
+                        ret = PTLS_ALERT_ILLEGAL_PARAMETER;
                         goto Exit;
                     }
-                    ch->server_name = ptls_iovec_init(src, end - src);
+                    *name = ptls_iovec_init(src, end - src);
                 }
                 src = end;
             });
@@ -845,120 +828,56 @@ Exit:
     return ret;
 }
 
-static int client_hello_select_negotiated_group(ptls_t *tls, void *_ch, const uint8_t *src, const uint8_t *end)
+static int client_hello_select_negotiated_group(ptls_key_exchange_algorithm_t **selected, ptls_key_exchange_algorithm_t *candidates,
+                                                const uint8_t *src, const uint8_t *end)
 {
-    struct st_ptls_client_hello_t *ch = (struct st_ptls_client_hello_t *)_ch;
     int ret;
-
-    if (ch->negotiated_group != NULL) {
-        ret = PTLS_ALERT_DECODE_ERROR;
-        goto Exit;
-    }
 
     decode_block(src, end, 2, {
         do {
             uint16_t id;
             if ((ret = decode16(&id, &src, end)) != 0)
                 goto Exit;
-            if (ch->negotiated_group == NULL) {
-                ptls_key_exchange_algorithm_t *a = tls->ctx->crypto->key_exchanges;
-                for (; a->id != UINT16_MAX; ++a) {
-                    if (a->id == id) {
-                        ch->negotiated_group = a;
+            if (*selected == NULL) {
+                ptls_key_exchange_algorithm_t *c = candidates;
+                for (; c->id != UINT16_MAX; ++c) {
+                    if (c->id == id) {
+                        *selected = c;
                         break;
                     }
                 }
             }
         } while (src != end);
     });
-    ret = ch->negotiated_group != NULL ? 0 : PTLS_ALERT_HANDSHAKE_FAILURE;
+    ret = *selected != NULL ? 0 : PTLS_ALERT_HANDSHAKE_FAILURE;
 
 Exit:
     return ret;
 }
 
-static int client_hello_record_signature_algorithms(ptls_t *tls, void *_ch, const uint8_t *src, const uint8_t *end)
+static int client_hello_decode_key_share(ptls_key_exchange_algorithm_t **selected_group, ptls_iovec_t *selected_key,
+                                         ptls_key_exchange_algorithm_t *candidates, const uint8_t *src, const uint8_t *end)
 {
-    struct st_ptls_client_hello_t *ch = (struct st_ptls_client_hello_t *)_ch;
-    int ret;
-
-    decode_block(src, end, 2, {
-        do {
-            uint16_t id;
-            if ((ret = decode16(&id, &src, end)) != 0)
-                goto Exit;
-            if (ch->signature_algorithms.count < sizeof(ch->signature_algorithms.list) / sizeof(ch->signature_algorithms.list[0]))
-                ch->signature_algorithms.list[ch->signature_algorithms.count++] = id;
-        } while (src != end);
-    });
-    ret = 0;
-
-Exit:
-    return ret;
-}
-
-static int client_hello_decode_key_share(ptls_t *tls, void *_ch, const uint8_t *src, const uint8_t *end)
-{
-    struct st_ptls_client_hello_t *ch = (struct st_ptls_client_hello_t *)_ch;
     int ret = 0;
-
-    if (ch->key_share.algorithm != NULL) {
-        ret = PTLS_ALERT_DECODE_ERROR;
-        goto Exit;
-    }
 
     decode_block(src, end, 2, {
         while (src != end) {
             uint16_t group;
-            ptls_iovec_t key_exchange;
-            if ((ret = decode_key_share_entry(&group, &key_exchange, &src, end)) != 0)
+            ptls_iovec_t key;
+            if ((ret = decode_key_share_entry(&group, &key, &src, end)) != 0)
                 goto Exit;
-            if (ch->key_share.algorithm == NULL) {
-                ptls_key_exchange_algorithm_t *a = tls->ctx->crypto->key_exchanges;
-                for (; a->id != UINT16_MAX; ++a) {
-                    if (a->id == group) {
-                        ch->key_share.algorithm = a;
-                        ch->key_share.peer = key_exchange;
+            if (*selected_group == NULL) {
+                ptls_key_exchange_algorithm_t *c = candidates;
+                for (; c->id != UINT16_MAX; ++c) {
+                    if (c->id == group) {
+                        *selected_group = c;
+                        *selected_key = key;
                         break;
                     }
                 }
             }
         }
     });
-
-Exit:
-    return ret;
-}
-
-static int client_hello_select_version(ptls_t *tls, void *_ch, const uint8_t *src, const uint8_t *end)
-{
-    struct st_ptls_client_hello_t *ch = (struct st_ptls_client_hello_t *)_ch;
-    int ret, match_found = 0;
-
-    decode_block(src, end, 1, {
-        do {
-            uint16_t v;
-            if ((ret = decode16(&v, &src, end)) != 0)
-                goto Exit;
-            if (!match_found) {
-                if (v == PTLS_PROTOCOL_VERSION_DRAFT16) {
-                    ch->selected_version = v;
-                    match_found = 1;
-                }
-            }
-        } while (src != end);
-    });
-    ret = match_found ? 0 : PTLS_ALERT_HANDSHAKE_FAILURE;
-
-Exit:
-    return ret;
-}
-
-static int client_hello_record_cookie(ptls_t *tls, void *_ch, const uint8_t *src, const uint8_t *end)
-{
-    int ret = 0;
-
-    decode_block(src, end, 2, {/* do nothing, and decode_block would complain if the block was not empty */});
 
 Exit:
     return ret;
@@ -1030,17 +949,56 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
     });
 
     /* decode extensions */
-    static const struct st_ptls_extension_decoder_t decoders[] = {
-        {PTLS_EXTENSION_TYPE_SERVER_NAME, client_hello_decode_server_name},
-        {PTLS_EXTENSION_TYPE_SUPPORTED_GROUPS, client_hello_select_negotiated_group},
-        {PTLS_EXTENSION_TYPE_SIGNATURE_ALGORITHMS, client_hello_record_signature_algorithms},
-        {PTLS_EXTENSION_TYPE_KEY_SHARE, client_hello_decode_key_share},
-        {PTLS_EXTENSION_TYPE_SUPPORTED_VERSIONS, client_hello_select_version},
-        {PTLS_EXTENSION_TYPE_COOKIE, client_hello_record_cookie},
-        {UINT16_MAX},
-    };
-    if ((ret = decode_extensions(tls, decoders, ch, src, end)) != 0)
-        goto Exit;
+    uint16_t type;
+    decode_extensions(src, end, &type, {
+        switch (type) {
+        case PTLS_EXTENSION_TYPE_SERVER_NAME:
+            if ((ret = client_hello_decode_server_name(&ch->server_name, src, end)) != 0)
+                goto Exit;
+            break;
+        case PTLS_EXTENSION_TYPE_SUPPORTED_GROUPS:
+            if ((ret = client_hello_select_negotiated_group(&ch->negotiated_group, tls->ctx->crypto->key_exchanges, src, end)) != 0)
+                goto Exit;
+            break;
+        case PTLS_EXTENSION_TYPE_SIGNATURE_ALGORITHMS:
+            decode_block(src, end, 2, {
+                do {
+                    uint16_t id;
+                    if ((ret = decode16(&id, &src, end)) != 0)
+                        goto Exit;
+                    if (ch->signature_algorithms.count <
+                        sizeof(ch->signature_algorithms.list) / sizeof(ch->signature_algorithms.list[0]))
+                        ch->signature_algorithms.list[ch->signature_algorithms.count++] = id;
+                } while (src != end);
+            });
+            break;
+        case PTLS_EXTENSION_TYPE_KEY_SHARE:
+            if ((ret = client_hello_decode_key_share(&ch->key_share.algorithm, &ch->key_share.peer, tls->ctx->crypto->key_exchanges,
+                                                     src, end)) != 0)
+                goto Exit;
+            break;
+        case PTLS_EXTENSION_TYPE_SUPPORTED_VERSIONS:
+            decode_block(src, end, 1, {
+                do {
+                    uint16_t v;
+                    if ((ret = decode16(&v, &src, end)) != 0)
+                        goto Exit;
+                    if (ch->selected_version == 0 && v == PTLS_PROTOCOL_VERSION_DRAFT16)
+                        ch->selected_version = v;
+                } while (src != end);
+            });
+            break;
+        case PTLS_EXTENSION_TYPE_COOKIE:
+            if (src != end) {
+                ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+                goto Exit;
+            }
+            break;
+        default:
+            break;
+        }
+        src = end;
+    });
 
     /* check if client hello make sense */
     switch (ch->selected_version) {
@@ -1063,7 +1021,6 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
     }
 
     ret = 0;
-
 Exit:
     return ret;
 }
