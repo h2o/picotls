@@ -1639,7 +1639,7 @@ int ptls_handshake(ptls_t *tls, ptls_buffer_t *sendbuf, const void *input, size_
 
     if (!(ret == 0 || ret == PTLS_ERROR_HANDSHAKE_IN_PROGRESS)) {
         /* send alert immediately */
-        ret = send_alert(tls, sendbuf, PTLS_ALERT_LEVEL_FATAL, -(PTLS_ERROR_IS_ALERT(ret) ? ret : PTLS_ALERT_INTERNAL_ERROR));
+        send_alert(tls, sendbuf, PTLS_ALERT_LEVEL_FATAL, PTLS_ERROR_IS_ALERT(ret) ? ret : PTLS_ALERT_INTERNAL_ERROR);
     }
 
     *inlen -= src_end - src;
