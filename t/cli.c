@@ -279,7 +279,7 @@ int main(int argc, char **argv)
     struct sockaddr_storage sa;
     socklen_t salen;
 
-    while ((ch = getopt(argc, argv, "c:k:h")) != -1) {
+    while ((ch = getopt(argc, argv, "c:k:vh")) != -1) {
         switch (ch) {
         case 'c': {
             FILE *fp;
@@ -310,6 +310,9 @@ int main(int argc, char **argv)
                 return 1;
             }
         } break;
+        case 'v':
+            ptls_openssl_set_certificate_store(ctx, NULL);
+            break;
         default:
             usage(argv[0]);
             exit(1);
