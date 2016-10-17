@@ -1161,19 +1161,19 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
         });
     });
 
-#define CONTEXT_STRING "TLS 1.3, server CertificateVerify"
     /* build and send CertificateVerify */
     buffer_encrypt(sendbuf, tls->protection_ctx.send.aead, {
         buffer_push_handshake(sendbuf, tls->key_schedule, PTLS_HANDSHAKE_TYPE_CERTIFICATE_VERIFY, {
-            uint8_t data[64 + sizeof(CONTEXT_STRING) + PTLS_MAX_DIGEST_SIZE * 2];
+            static const char context_string[] = "TLS 1.3, server CertificateVerify";
+            uint8_t data[64 + sizeof(context_string) + PTLS_MAX_DIGEST_SIZE * 2];
             size_t datalen = 0;
             ptls_iovec_t sign;
 
             /* build data to be signed */
             memset(data + datalen, 32, 64);
             datalen += 64;
-            memcpy(data + datalen, CONTEXT_STRING, sizeof(CONTEXT_STRING));
-            datalen += sizeof(CONTEXT_STRING);
+            memcpy(data + datalen, context_string, sizeof(context_string));
+            datalen += sizeof(context_string);
             tls->key_schedule->msghash->final(tls->key_schedule->msghash, data + datalen, PTLS_HASH_FINAL_MODE_SNAPSHOT);
             datalen += tls->key_schedule->algo->digest_size;
             memcpy(data + datalen, tls->key_schedule->hashed_resumption_context, tls->key_schedule->algo->digest_size);
@@ -1192,7 +1192,6 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
             free(sign.base);
         });
     });
-#undef CONTEXT_STRING
 
     send_finished(tls, sendbuf);
 
