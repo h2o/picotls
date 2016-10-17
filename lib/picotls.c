@@ -71,6 +71,8 @@
 #define PTLS_DEBUGF(...)
 #endif
 
+#define POST16 0
+
 struct st_ptls_protection_context_t {
     uint8_t secret[PTLS_MAX_DIGEST_SIZE];
     ptls_aead_context_t *aead;
@@ -344,19 +346,24 @@ Exit:
         } while (0);                                                                                                               \
     } while (0)
 
-#define decode_block(src, end, capacity, block)                                                                                    \
+#define decode_assert_block_close(src, end)                                                                                        \
     do {                                                                                                                           \
-        decode_open_block((src), end, capacity, block);                                                                            \
         if ((src) != end) {                                                                                                        \
             ret = PTLS_ALERT_DECODE_ERROR;                                                                                         \
             goto Exit;                                                                                                             \
         }                                                                                                                          \
+    } while (0);
+
+#define decode_block(src, end, capacity, block)                                                                                    \
+    do {                                                                                                                           \
+        decode_open_block((src), end, capacity, block);                                                                            \
+        decode_assert_block_close((src), end);                                                                                     \
     } while (0)
 
-#define decode_extensions(src, end, type, block)                                                                                   \
+#define decode_open_extensions(src, end, type, block)                                                                              \
     do {                                                                                                                           \
         uint8_t found[8] = {0}; /* track only first 256 extensions for detecting duplicates */                                     \
-        decode_block((src), end, 2, {                                                                                              \
+        decode_open_block((src), end, 2, {                                                                                         \
             while ((src) != end) {                                                                                                 \
                 if ((ret = decode16((type), &(src), end)) != 0)                                                                    \
                     goto Exit;                                                                                                     \
@@ -370,6 +377,12 @@ Exit:
                 decode_open_block((src), end, 2, block);                                                                           \
             }                                                                                                                      \
         });                                                                                                                        \
+    } while (0)
+
+#define decode_extensions(src, end, type, block)                                                                                   \
+    do {                                                                                                                           \
+        decode_open_extensions((src), end, type, block);                                                                           \
+        decode_assert_block_close((src), end);                                                                                     \
     } while (0)
 
 static int decode16(uint16_t *value, const uint8_t **src, const uint8_t *end)
@@ -801,6 +814,45 @@ Exit:
     return ret;
 }
 
+static int client_handle_certificate(ptls_t *tls, ptls_iovec_t message)
+{
+    const uint8_t *src = message.base + PTLS_HANDSHAKE_HEADER_SIZE, *end = message.base + message.len;
+    ptls_iovec_t certs[16];
+    size_t num_certs = 0;
+    int ret;
+
+    /* certificate request context */
+    decode_open_block(src, end, 1, {
+        if (src != end) {
+            ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+            goto Exit;
+        }
+    });
+    /* certificate_list */
+    decode_block(src, end, 3, {
+        do {
+            decode_open_block(src, end, 3, {
+                if (num_certs < sizeof(certs) / sizeof(certs[0]))
+                    certs[num_certs++] = ptls_iovec_init(src, end - src);
+                src = end;
+            });
+#if POST16
+            uint16_t type;
+            decode_open_extensions(src, end, &type, { src = end; });
+#endif
+        } while (src != end);
+    });
+
+    if ((ret = tls->ctx->callbacks.certificate(tls, certs, num_certs)) != 0)
+        goto Exit;
+
+    tls->state = PTLS_STATE_CLIENT_EXPECT_CERTIFICATE_VERIFY;
+    ret = PTLS_ERROR_HANDSHAKE_IN_PROGRESS;
+
+Exit:
+    return ret;
+}
+
 static int client_handle_finished(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t message)
 {
     struct st_ptls_protection_context_t send_ctx = {{0}};
@@ -1156,6 +1208,9 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
                 size_t i;
                 for (i = 0; i != num_certs; ++i) {
                     buffer_push_block(sendbuf, 3, { buffer_pushv(sendbuf, certs[i].base, certs[i].len); });
+#if POST16
+                    buffer_push_block(sendbuf, 2, {}); /* extensions */
+#endif
                 }
             });
         });
@@ -1380,9 +1435,7 @@ static int handle_handshake_message(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_io
         break;
     case PTLS_STATE_CLIENT_EXPECT_CERTIFICATE:
         if (type == PTLS_HANDSHAKE_TYPE_CERTIFICATE) {
-            /* TODO implement */
-            tls->state = PTLS_STATE_CLIENT_EXPECT_CERTIFICATE_VERIFY;
-            ret = PTLS_ERROR_HANDSHAKE_IN_PROGRESS;
+            ret = client_handle_certificate(tls, message);
         } else {
             ret = PTLS_ALERT_UNEXPECTED_MESSAGE;
         }

@@ -30,6 +30,8 @@
 #include <openssl/objects.h>
 #include <openssl/rand.h>
 #include <openssl/x509.h>
+#include <openssl/x509v3.h>
+#include <openssl/x509_vfy.h>
 #include "picotls.h"
 #include "picotls/openssl.h"
 
@@ -46,6 +48,7 @@ struct st_ptls_openssl_context_t {
         struct st_ptls_openssl_server_context_t **entries;
         size_t count;
     } servers;
+    X509_STORE *cert_store;
 };
 
 static void random_bytes(void *buf, size_t len)
@@ -597,6 +600,75 @@ Found:
     return 0;
 }
 
+static X509 *to_x509(ptls_iovec_t vec)
+{
+    const uint8_t *p = vec.base;
+    return d2i_X509(NULL, &p, vec.len);
+}
+
+static int on_certificate(ptls_t *tls, ptls_iovec_t *certs, size_t num_certs)
+{
+    ptls_openssl_context_t *ctx = (ptls_openssl_context_t *)ptls_get_context(tls);
+    X509 *cert = NULL;
+    STACK_OF(X509) *chain = NULL;
+    X509_STORE_CTX *verify_ctx = NULL;
+    int ret = 0;
+
+    assert(num_certs != 0);
+
+    if ((cert = to_x509(certs[0])) == NULL) {
+        ret = PTLS_ALERT_BAD_CERTIFICATE;
+        goto Exit;
+    }
+
+    if (ctx->cert_store != NULL) {
+        size_t i;
+        for (i = 1; i != num_certs; ++i) {
+            X509 *interm = to_x509(certs[i]);
+            if (interm == NULL) {
+                ret = PTLS_ALERT_BAD_CERTIFICATE;
+                goto Exit;
+            }
+        }
+        if ((verify_ctx = X509_STORE_CTX_new()) == NULL) {
+            ret = PTLS_ERROR_NO_MEMORY;
+            goto Exit;
+        }
+        if (X509_STORE_CTX_init(verify_ctx, ctx->cert_store, cert, chain) != 1) {
+            ret = PTLS_ERROR_LIBRARY;
+            goto Exit;
+        }
+        X509_STORE_CTX_set_purpose(verify_ctx, X509_PURPOSE_SSL_CLIENT);
+        if (X509_verify_cert(verify_ctx) == 1) {
+            ret = 0;
+        } else {
+            switch (X509_STORE_CTX_get_error(verify_ctx)) {
+            case X509_V_ERR_OUT_OF_MEM:
+                ret = PTLS_ERROR_NO_MEMORY;
+                break;
+            case X509_V_ERR_CERT_REVOKED:
+                ret = PTLS_ALERT_CERTIFICATE_REVOKED;
+                break;
+            case X509_V_ERR_CERT_HAS_EXPIRED:
+                ret = PTLS_ALERT_CERTIFICATE_EXPIRED;
+                break;
+            default:
+                ret = PTLS_ALERT_CERTIFICATE_UNKNOWN;
+                break;
+            }
+        }
+    }
+
+Exit:
+    if (verify_ctx != NULL)
+        X509_STORE_CTX_free(verify_ctx);
+    if (chain != NULL)
+        sk_X509_free(chain);
+    if (cert != NULL)
+        X509_free(cert);
+    return ret;
+}
+
 static void free_server_context(struct st_ptls_openssl_server_context_t *ctx)
 {
     size_t i;
@@ -615,7 +687,8 @@ ptls_openssl_context_t *ptls_openssl_context_new(void)
     if (ctx == NULL)
         return NULL;
 
-    *ctx = (ptls_openssl_context_t){{&ptls_openssl_crypto, {on_client_hello}}};
+    *ctx = (ptls_openssl_context_t){{&ptls_openssl_crypto, {on_client_hello, on_certificate}}};
+
     return ctx;
 }
 
@@ -717,6 +790,31 @@ Error:
     if (slot != NULL)
         free_server_context(slot);
     return ret;
+}
+
+int ptls_openssl_set_certificate_store(ptls_openssl_context_t *ctx, X509_STORE *store)
+{
+    if (ctx->cert_store != NULL) {
+        X509_STORE_free(ctx->cert_store);
+        ctx->cert_store = NULL;
+    }
+
+    if (store != NULL) {
+        CRYPTO_add(&store->references, 1, CRYPTO_LOCK_X509_STORE);
+        ctx->cert_store = store;
+    } else {
+        X509_LOOKUP *lookup;
+        if ((ctx->cert_store = X509_STORE_new()) == NULL)
+            return -1;
+        if ((lookup = X509_STORE_add_lookup(ctx->cert_store, X509_LOOKUP_file())) == NULL)
+            return -1;
+        X509_LOOKUP_load_file(lookup, NULL, X509_FILETYPE_DEFAULT);
+        if ((lookup = X509_STORE_add_lookup(ctx->cert_store, X509_LOOKUP_hash_dir())) == NULL)
+            return -1;
+        X509_LOOKUP_add_dir(lookup, NULL, X509_FILETYPE_DEFAULT);
+    }
+
+    return 0;
 }
 
 static ptls_key_exchange_algorithm_t key_exchanges[] = {

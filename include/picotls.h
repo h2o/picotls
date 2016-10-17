@@ -48,6 +48,10 @@
 #define PTLS_ALERT_UNEXPECTED_MESSAGE -10
 #define PTLS_ALERT_BAD_RECORD_MAC -20
 #define PTLS_ALERT_HANDSHAKE_FAILURE -40
+#define PTLS_ALERT_BAD_CERTIFICATE -42
+#define PTLS_ALERT_CERTIFICATE_REVOKED -44
+#define PTLS_ALERT_CERTIFICATE_EXPIRED -45
+#define PTLS_ALERT_CERTIFICATE_UNKNOWN -46
 #define PTLS_ALERT_ILLEGAL_PARAMETER -47
 #define PTLS_ALERT_DECODE_ERROR -50
 #define PTLS_ALERT_INTERNAL_ERROR -80
@@ -83,6 +87,7 @@ typedef struct st_ptls_context_t {
                             int (**signer)(void *sign_ctx, ptls_iovec_t *output, ptls_iovec_t input), void **signer_data,
                             ptls_iovec_t **certs, size_t *num_certs, ptls_iovec_t server_name, const uint16_t *signature_algorithms,
                             size_t num_signature_algorithms);
+        int (*certificate)(ptls_t *tls, ptls_iovec_t *certs, size_t num_certs);
     } callbacks;
 } ptls_context_t;
 
