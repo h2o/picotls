@@ -77,6 +77,7 @@ static int run_handshake(int fd, ptls_t *tls, ptls_buffer_t *wbuf, uint8_t *pend
     }
 
     if (ret != 0) {
+        write_all(fd, wbuf->base, wbuf->off);
         fprintf(stderr, "ptls_handshake:%d\n", ret);
         return -1;
     }
