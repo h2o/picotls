@@ -872,11 +872,10 @@ int ptls_openssl_set_certificate_store(ptls_openssl_t *ctx, X509_STORE *store)
     return 0;
 }
 
-static ptls_key_exchange_algorithm_t key_exchanges[] = {
+ptls_key_exchange_algorithm_t ptls_openssl_key_exchanges[] = {
     {PTLS_GROUP_SECP256R1, secp256r1_create_key_exchange, secp256r1_key_exchange}, {UINT16_MAX}};
 ptls_aead_algorithm_t ptls_openssl_aes128gcm = {16, 12, aead_aes128gcm_setup_crypto};
 ptls_hash_algorithm_t ptls_openssl_sha256 = {64, 32, sha256_create};
-static ptls_cipher_suite_t cipher_suites[] = {{PTLS_CIPHER_SUITE_AES_128_GCM_SHA256, &ptls_openssl_aes128gcm, &ptls_openssl_sha256},
-                                              {UINT16_MAX}};
-
-ptls_crypto_t ptls_openssl_crypto = {random_bytes, key_exchanges, cipher_suites};
+ptls_cipher_suite_t ptls_openssl_cipher_suites[] = {
+    {PTLS_CIPHER_SUITE_AES_128_GCM_SHA256, &ptls_openssl_aes128gcm, &ptls_openssl_sha256}, {UINT16_MAX}};
+ptls_crypto_t ptls_openssl_crypto = {random_bytes, ptls_openssl_key_exchanges, ptls_openssl_cipher_suites};

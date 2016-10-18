@@ -26,8 +26,10 @@
 #include <openssl/x509.h>
 #include "picotls.h"
 
+extern ptls_key_exchange_algorithm_t ptls_openssl_key_exchanges[];
 extern ptls_aead_algorithm_t ptls_openssl_aes128gcm;
 extern ptls_hash_algorithm_t ptls_openssl_sha256;
+extern ptls_cipher_suite_t ptls_openssl_cipher_suites[];
 extern ptls_crypto_t ptls_openssl_crypto;
 
 typedef struct st_ptls_openssl_t ptls_openssl_t;
