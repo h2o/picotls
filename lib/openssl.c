@@ -43,7 +43,7 @@ struct st_ptls_openssl_server_context_t {
 };
 
 struct st_ptls_openssl_t {
-    ptls_context_t super;
+    ptls_certificate_context_t cert_ctx;
     struct {
         struct st_ptls_openssl_server_context_t **entries;
         size_t count;
@@ -563,12 +563,12 @@ static uint16_t select_compatible_signature_algorithm(EVP_PKEY *key, const uint1
     return UINT16_MAX;
 }
 
-static int on_client_hello(ptls_t *tls, uint16_t *sign_algorithm,
-                           int (**signer)(void *sign_ctx, ptls_iovec_t *output, ptls_iovec_t input), void **signer_data,
-                           ptls_iovec_t **certs, size_t *num_certs, ptls_iovec_t server_name, const uint16_t *signature_algorithms,
-                           size_t num_signature_algorithms)
+static int lookup_certificate(ptls_t *tls, uint16_t *sign_algorithm,
+                              int (**signer)(void *sign_ctx, ptls_iovec_t *output, ptls_iovec_t input), void **signer_data,
+                              ptls_iovec_t **certs, size_t *num_certs, ptls_iovec_t server_name,
+                              const uint16_t *signature_algorithms, size_t num_signature_algorithms)
 {
-    ptls_openssl_t *ctx = (ptls_openssl_t *)ptls_get_context(tls);
+    ptls_openssl_t *ctx = (ptls_openssl_t *)ptls_get_certificate_context(tls);
     struct st_ptls_openssl_server_context_t *sctx;
 
     if (ctx->servers.count == 0)
@@ -606,7 +606,7 @@ static X509 *to_x509(ptls_iovec_t vec)
     return d2i_X509(NULL, &p, vec.len);
 }
 
-static int on_certificate_verify(void *verify_ctx, ptls_iovec_t data, ptls_iovec_t signature)
+static int verify_sign(void *verify_ctx, ptls_iovec_t data, ptls_iovec_t signature)
 {
     EVP_PKEY *key = verify_ctx;
     EVP_MD_CTX *ctx = NULL;
@@ -655,10 +655,10 @@ Exit:
     return ret;
 }
 
-static int on_certificate(ptls_t *tls, int (**verifier)(void *, ptls_iovec_t, ptls_iovec_t), void **verify_data,
-                          ptls_iovec_t *certs, size_t num_certs)
+static int verify_certificate(ptls_t *tls, int (**verifier)(void *, ptls_iovec_t, ptls_iovec_t), void **verify_data,
+                              ptls_iovec_t *certs, size_t num_certs)
 {
-    ptls_openssl_t *ctx = (ptls_openssl_t *)ptls_get_context(tls);
+    ptls_openssl_t *ctx = (ptls_openssl_t *)ptls_get_certificate_context(tls);
     X509 *cert = NULL;
     STACK_OF(X509) *chain = NULL;
     X509_STORE_CTX *verify_ctx = NULL;
@@ -713,7 +713,7 @@ static int on_certificate(ptls_t *tls, int (**verifier)(void *, ptls_iovec_t, pt
         ret = PTLS_ALERT_BAD_CERTIFICATE;
         goto Exit;
     }
-    *verifier = on_certificate_verify;
+    *verifier = verify_sign;
 
 Exit:
     if (verify_ctx != NULL)
@@ -743,7 +743,7 @@ ptls_openssl_t *ptls_openssl_new(void)
     if (ctx == NULL)
         return NULL;
 
-    *ctx = (ptls_openssl_t){{&ptls_openssl_crypto, {on_client_hello, on_certificate}}};
+    *ctx = (ptls_openssl_t){lookup_certificate, verify_certificate};
 
     return ctx;
 }
@@ -759,9 +759,9 @@ void ptls_openssl_free(ptls_openssl_t *ctx)
     free(ctx);
 }
 
-ptls_context_t *ptls_openssl_get_context(ptls_openssl_t *ctx)
+ptls_certificate_context_t *ptls_openssl_get_certificate_context(ptls_openssl_t *ctx)
 {
-    return &ctx->super;
+    return &ctx->cert_ctx;
 }
 
 static int eckey_is_on_group(EVP_PKEY *pkey, int nid)

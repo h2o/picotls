@@ -36,7 +36,7 @@ typedef struct st_ptls_openssl_t ptls_openssl_t;
 
 ptls_openssl_t *ptls_openssl_new(void);
 void ptls_openssl_free(ptls_openssl_t *ctx);
-ptls_context_t *ptls_openssl_get_context(ptls_openssl_t *ctx);
+ptls_certificate_context_t *ptls_openssl_get_certificate_context(ptls_openssl_t *ctx);
 int ptls_openssl_register_server(ptls_openssl_t *ctx, const char *server_name, EVP_PKEY *key, STACK_OF(X509) * certs);
 int ptls_openssl_set_certificate_store(ptls_openssl_t *ctx, X509_STORE *store);
 

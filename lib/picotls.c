@@ -85,9 +85,13 @@ struct st_ptls_protection_context_t {
 
 struct st_ptls_t {
     /**
-     * context
+     * crypto
      */
-    ptls_context_t *ctx;
+    ptls_crypto_t *crypto;
+    /**
+     * certificate context
+     */
+    ptls_certificate_context_t *cert_ctx;
     /**
      * the state
      */
@@ -628,7 +632,7 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf)
 
     /* TODO postpone the generation of key_schedule until we receive ServerHello so that we can choose the best hash algo (note:
      * we'd need to retain the entire ClientHello) */
-    tls->key_schedule = key_schedule_new(tls->ctx->crypto->cipher_suites->hash, ptls_iovec_init(NULL, 0));
+    tls->key_schedule = key_schedule_new(tls->crypto->cipher_suites->hash, ptls_iovec_init(NULL, 0));
     if ((ret = key_schedule_extract(tls->key_schedule, ptls_iovec_init(NULL, 0))) != 0)
         goto Exit;
 
@@ -638,13 +642,13 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf)
         /* random_bytes */
         if ((ret = ptls_buffer_reserve(sendbuf, PTLS_HELLO_RANDOM_SIZE)) != 0)
             goto Exit;
-        tls->ctx->crypto->random_bytes(sendbuf->base + sendbuf->off, PTLS_HELLO_RANDOM_SIZE);
+        tls->crypto->random_bytes(sendbuf->base + sendbuf->off, PTLS_HELLO_RANDOM_SIZE);
         sendbuf->off += PTLS_HELLO_RANDOM_SIZE;
         /* lecagy_session_id */
         buffer_push_block(sendbuf, 1, {});
         /* cipher_suites */
         buffer_push_block(sendbuf, 2, {
-            ptls_cipher_suite_t *cs = tls->ctx->crypto->cipher_suites;
+            ptls_cipher_suite_t *cs = tls->crypto->cipher_suites;
             for (; cs->id != UINT16_MAX; ++cs)
                 buffer_push16(sendbuf, cs->id);
         });
@@ -663,7 +667,7 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf)
                 });
             });
             buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SUPPORTED_GROUPS, {
-                ptls_key_exchange_algorithm_t *algo = tls->ctx->crypto->key_exchanges;
+                ptls_key_exchange_algorithm_t *algo = tls->crypto->key_exchanges;
                 buffer_push_block(sendbuf, 2, {
                     for (; algo->id != UINT16_MAX; ++algo)
                         buffer_push16(sendbuf, algo->id);
@@ -671,7 +675,7 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf)
             });
             buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_KEY_SHARE, {
                 /* only sends the first algo at the moment */
-                ptls_key_exchange_algorithm_t *algo = tls->ctx->crypto->key_exchanges;
+                ptls_key_exchange_algorithm_t *algo = tls->crypto->key_exchanges;
                 assert(algo->id != UINT16_MAX);
                 ptls_iovec_t pubkey;
                 if ((ret = algo->create(&tls->client.key_exchange.ctx, &pubkey)) != 0)
@@ -736,7 +740,7 @@ static int decode_server_hello(ptls_t *tls, struct st_ptls_server_hello_t *sh, c
         uint16_t csid;
         if ((ret = decode16(&csid, &src, end)) != 0)
             goto Exit;
-        for (sh->cipher_suite = tls->ctx->crypto->cipher_suites; sh->cipher_suite->id != UINT16_MAX; ++sh->cipher_suite)
+        for (sh->cipher_suite = tls->crypto->cipher_suites; sh->cipher_suite->id != UINT16_MAX; ++sh->cipher_suite)
             if (sh->cipher_suite->id == csid)
                 break;
         if (sh->cipher_suite->id == UINT16_MAX) {
@@ -871,8 +875,8 @@ static int client_handle_certificate(ptls_t *tls, ptls_iovec_t message)
         } while (src != end);
     });
 
-    if ((ret = tls->ctx->callbacks.certificate(tls, &tls->client.certificate_verify.cb, &tls->client.certificate_verify.verify_ctx,
-                                               certs, num_certs)) != 0)
+    if ((ret = tls->cert_ctx->verify(tls, &tls->client.certificate_verify.cb, &tls->client.certificate_verify.verify_ctx, certs,
+                                     num_certs)) != 0)
         goto Exit;
 
     key_schedule_update_hash(tls->key_schedule, message.base, message.len);
@@ -1078,7 +1082,7 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
             if ((ret = decode16(&id, &src, end)) != 0)
                 goto Exit;
             if (ch->cipher_suite == NULL) {
-                ptls_cipher_suite_t *a = tls->ctx->crypto->cipher_suites;
+                ptls_cipher_suite_t *a = tls->crypto->cipher_suites;
                 for (; a->id != UINT16_MAX; ++a) {
                     if (a->id == id) {
                         ch->cipher_suite = a;
@@ -1113,7 +1117,7 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
                 goto Exit;
             break;
         case PTLS_EXTENSION_TYPE_SUPPORTED_GROUPS:
-            if ((ret = client_hello_select_negotiated_group(&ch->negotiated_group, tls->ctx->crypto->key_exchanges, src, end)) != 0)
+            if ((ret = client_hello_select_negotiated_group(&ch->negotiated_group, tls->crypto->key_exchanges, src, end)) != 0)
                 goto Exit;
             break;
         case PTLS_EXTENSION_TYPE_SIGNATURE_ALGORITHMS:
@@ -1129,8 +1133,8 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
             });
             break;
         case PTLS_EXTENSION_TYPE_KEY_SHARE:
-            if ((ret = client_hello_decode_key_share(&ch->key_share.algorithm, &ch->key_share.peer, tls->ctx->crypto->key_exchanges,
-                                                     src, end)) != 0)
+            if ((ret = client_hello_decode_key_share(&ch->key_share.algorithm, &ch->key_share.peer, tls->crypto->key_exchanges, src,
+                                                     end)) != 0)
                 goto Exit;
             break;
         case PTLS_EXTENSION_TYPE_SUPPORTED_VERSIONS:
@@ -1219,8 +1223,8 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
     }
 
     /* run post-hello callback to determine certificate, etc. */
-    if ((ret = tls->ctx->callbacks.client_hello(tls, &sign_algorithm, &signer, &signer_data, &certs, &num_certs, ch.server_name,
-                                                ch.signature_algorithms.list, ch.signature_algorithms.count)) != 0)
+    if ((ret = tls->cert_ctx->lookup(tls, &sign_algorithm, &signer, &signer_data, &certs, &num_certs, ch.server_name,
+                                     ch.signature_algorithms.list, ch.signature_algorithms.count)) != 0)
         goto Exit;
     assert(sign_algorithm != 0);
 
@@ -1239,7 +1243,7 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
         buffer_push16(sendbuf, PTLS_PROTOCOL_VERSION_DRAFT16);
         if ((ret = ptls_buffer_reserve(sendbuf, PTLS_HELLO_RANDOM_SIZE)) != 0)
             goto Exit;
-        tls->ctx->crypto->random_bytes(sendbuf->base + sendbuf->off, PTLS_HELLO_RANDOM_SIZE);
+        tls->crypto->random_bytes(sendbuf->base + sendbuf->off, PTLS_HELLO_RANDOM_SIZE);
         sendbuf->off += PTLS_HELLO_RANDOM_SIZE;
         buffer_push16(sendbuf, ch.cipher_suite->id);
         buffer_push_block(sendbuf, 2, {
@@ -1412,14 +1416,14 @@ static int parse_record(ptls_t *tls, struct st_ptls_record_t *rec, const uint8_t
     return ret;
 }
 
-ptls_t *ptls_new(ptls_context_t *ctx, const char *server_name)
+ptls_t *ptls_new(ptls_crypto_t *crypto, ptls_certificate_context_t *cert_ctx, const char *server_name)
 {
     ptls_t *tls;
 
     if ((tls = malloc(sizeof(*tls))) == NULL)
         return NULL;
 
-    *tls = (ptls_t){ctx};
+    *tls = (ptls_t){crypto, cert_ctx};
     if (server_name != NULL) {
         tls->state = PTLS_STATE_CLIENT_HANDSHAKE_START;
         if ((tls->client.server_name = strdup(server_name)) == NULL)
@@ -1448,9 +1452,14 @@ void ptls_free(ptls_t *tls)
     free(tls);
 }
 
-ptls_context_t *ptls_get_context(ptls_t *tls)
+ptls_crypto_t *ptls_get_crypto(ptls_t *tls)
 {
-    return tls->ctx;
+    return tls->crypto;
+}
+
+ptls_certificate_context_t *ptls_get_certificate_context(ptls_t *tls)
+{
+    return tls->cert_ctx;
 }
 
 static int test_handshake_message(const uint8_t *src, size_t src_len)

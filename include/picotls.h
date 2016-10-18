@@ -94,17 +94,13 @@ typedef struct st_ptls_buffer_t {
 
 typedef const struct st_ptls_crypto_t ptls_crypto_t;
 
-typedef struct st_ptls_context_t {
-    ptls_crypto_t *crypto;
-    struct {
-        int (*client_hello)(ptls_t *tls, uint16_t *sign_algorithm,
-                            int (**signer)(void *sign_ctx, ptls_iovec_t *output, ptls_iovec_t input), void **signer_data,
-                            ptls_iovec_t **certs, size_t *num_certs, ptls_iovec_t server_name, const uint16_t *signature_algorithms,
-                            size_t num_signature_algorithms);
-        int (*certificate)(ptls_t *tls, int (**verifier)(void *verify_ctx, ptls_iovec_t data, ptls_iovec_t signature),
-                           void **verifer_data, ptls_iovec_t *certs, size_t num_certs);
-    } callbacks;
-} ptls_context_t;
+typedef struct st_ptls_certificate_context_t {
+    int (*lookup)(ptls_t *tls, uint16_t *sign_algorithm, int (**signer)(void *sign_ctx, ptls_iovec_t *output, ptls_iovec_t input),
+                  void **signer_data, ptls_iovec_t **certs, size_t *num_certs, ptls_iovec_t server_name,
+                  const uint16_t *signature_algorithms, size_t num_signature_algorithms);
+    int (*verify)(ptls_t *tls, int (**verify_sign)(void *verify_ctx, ptls_iovec_t data, ptls_iovec_t sign), void **verify_data,
+                  ptls_iovec_t *certs, size_t num_certs);
+} ptls_certificate_context_t;
 
 typedef struct st_ptls_key_exchange_context_t {
     int (*on_exchange)(struct st_ptls_key_exchange_context_t *keyex, ptls_iovec_t *secret, ptls_iovec_t peerkey);
@@ -192,7 +188,7 @@ int ptls_buffer_reserve(struct st_ptls_buffer_t *buf, size_t delta);
 /**
  *
  */
-ptls_t *ptls_new(ptls_context_t *ctx, const char *server_name);
+ptls_t *ptls_new(ptls_crypto_t *crypto, ptls_certificate_context_t *cert_ctx, const char *server_name);
 /**
  *
  */
@@ -200,7 +196,11 @@ void ptls_free(ptls_t *tls);
 /**
  *
  */
-ptls_context_t *ptls_get_context(ptls_t *tls);
+ptls_crypto_t *ptls_get_crypto(ptls_t *tls);
+/**
+ *
+ */
+ptls_certificate_context_t *ptls_get_certificate_context(ptls_t *tls);
 /**
  * proceeds with the handshake, optionally taking some input from peer
  */

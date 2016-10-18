@@ -116,8 +116,8 @@ static void test_handshake(void)
     int ret;
     const char *req = "GET / HTTP/1.0\r\n\r\n";
 
-    client = ptls_new(ptls_openssl_get_context(ctx), "example.com");
-    server = ptls_new(ptls_openssl_get_context(ctx), NULL);
+    client = ptls_new(&ptls_openssl_crypto, ptls_openssl_get_certificate_context(ctx), "example.com");
+    server = ptls_new(&ptls_openssl_crypto, ptls_openssl_get_certificate_context(ctx), NULL);
     ptls_buffer_init(&cbuf, cbuf_small, sizeof(cbuf_small));
     ptls_buffer_init(&sbuf, sbuf_small, sizeof(sbuf_small));
 

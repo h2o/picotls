@@ -116,9 +116,9 @@ static int decrypt_and_print(ptls_t *tls, const uint8_t *input, size_t inlen)
     return 0;
 }
 
-static int handle_connection(int fd, ptls_context_t *ctx, const char *server_name)
+static int handle_connection(int fd, ptls_certificate_context_t *cert_ctx, const char *server_name)
 {
-    ptls_t *tls = ptls_new(ctx, server_name);
+    ptls_t *tls = ptls_new(&ptls_openssl_crypto, cert_ctx, server_name);
     uint8_t rbuf[1024], wbuf_small[1024];
     ptls_buffer_t wbuf;
     int ret;
@@ -178,7 +178,7 @@ Exit:
     return 0;
 }
 
-static int run_server(struct sockaddr *sa, socklen_t salen, ptls_context_t *ctx)
+static int run_server(struct sockaddr *sa, socklen_t salen, ptls_certificate_context_t *cert_ctx)
 {
     int listen_fd, conn_fd, on = 1;
 
@@ -201,7 +201,7 @@ static int run_server(struct sockaddr *sa, socklen_t salen, ptls_context_t *ctx)
 
     while (1) {
         if ((conn_fd = accept(listen_fd, NULL, 0)) != -1) {
-            handle_connection(conn_fd, ctx, NULL);
+            handle_connection(conn_fd, cert_ctx, NULL);
             close(conn_fd);
         }
     }
@@ -209,7 +209,7 @@ static int run_server(struct sockaddr *sa, socklen_t salen, ptls_context_t *ctx)
     return 0;
 }
 
-static int run_client(struct sockaddr *sa, socklen_t salen, ptls_context_t *ctx)
+static int run_client(struct sockaddr *sa, socklen_t salen, ptls_certificate_context_t *cert_ctx)
 {
     int fd;
 
@@ -222,7 +222,7 @@ static int run_client(struct sockaddr *sa, socklen_t salen, ptls_context_t *ctx)
         return 1;
     }
 
-    return handle_connection(fd, ctx, "example.com");
+    return handle_connection(fd, cert_ctx, "example.com");
 }
 
 static int resolve_address(struct sockaddr *sa, socklen_t *salen, const char *host, const char *port)
@@ -340,5 +340,5 @@ int main(int argc, char **argv)
     if (resolve_address((struct sockaddr *)&sa, &salen, host, port) != 0)
         exit(1);
 
-    return (certs != NULL ? run_server : run_client)((struct sockaddr *)&sa, salen, ptls_openssl_get_context(ctx));
+    return (certs != NULL ? run_server : run_client)((struct sockaddr *)&sa, salen, ptls_openssl_get_certificate_context(ctx));
 }
