@@ -1533,6 +1533,28 @@ static int handle_handshake_message(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_io
     return ret;
 }
 
+static int handle_alert(ptls_t *tls, const uint8_t *src, size_t len)
+{
+    if (len != 2)
+        return PTLS_ALERT_DECODE_ERROR;
+
+    uint8_t level = src[0], desc = src[1];
+
+    /* ignore certain warnings */
+    if (level == PTLS_ALERT_LEVEL_WARNING) {
+        switch (desc) {
+        case PTLS_ALERT_END_OF_EARLY_DATA:
+        case PTLS_ALERT_USER_CANCELED:
+            return 0;
+        default:
+            break;
+        }
+    }
+
+    /* all other alerts are considered fatal, regardless of the transmitted level (section 6) */
+    return PTLS_ALERT_TO_PEER_ERROR(desc);
+}
+
 static int handle_input(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_buffer_t *decryptbuf, const void *input, size_t *inlen)
 {
     struct st_ptls_record_t rec;
@@ -1592,14 +1614,18 @@ static int handle_input(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_buffer_t *decr
         /* handling of an alert or an application record */
         switch (rec.type) {
         case PTLS_CONTENT_TYPE_APPDATA:
-            decryptbuf->off += rec.length;
-            ret = 0;
+            if (tls->state == PTLS_STATE_POST_HANDSHAKE) {
+                decryptbuf->off += rec.length;
+                ret = 0;
+            } else {
+                ret = PTLS_ALERT_UNEXPECTED_MESSAGE;
+            }
             break;
         case PTLS_CONTENT_TYPE_ALERT:
-            assert(!"FIXME");
+            ret = handle_alert(tls, rec.fragment, rec.length);
             break;
         default:
-            assert(!"FIXME");
+            ret = PTLS_ALERT_UNEXPECTED_MESSAGE;
             break;
         }
     }
@@ -1640,9 +1666,13 @@ int ptls_handshake(ptls_t *tls, ptls_buffer_t *sendbuf, const void *input, size_
     ptls_buffer_dispose(&decryptbuf);
 
     if (!(ret == 0 || ret == PTLS_ERROR_HANDSHAKE_IN_PROGRESS)) {
-        /* send alert immediately */
+        /* flush partially written response */
+        ptls_clear_memory(sendbuf->base + sendbuf_orig_off, sendbuf->off - sendbuf_orig_off);
         sendbuf->off = sendbuf_orig_off;
-        send_alert(tls, sendbuf, PTLS_ALERT_LEVEL_FATAL, PTLS_ERROR_IS_ALERT(ret) ? ret : PTLS_ALERT_INTERNAL_ERROR);
+        /* send alert immediately */
+        if (PTLS_ERROR_GET_CLASS(ret) != PTLS_ERROR_CLASS_PEER_ALERT)
+            send_alert(tls, sendbuf, PTLS_ALERT_LEVEL_FATAL,
+                       PTLS_ERROR_GET_CLASS(ret) == PTLS_ERROR_CLASS_SELF_ALERT ? ret : PTLS_ALERT_INTERNAL_ERROR);
     }
 
     *inlen -= src_end - src;
@@ -1659,10 +1689,20 @@ int ptls_receive(ptls_t *tls, ptls_buffer_t *decryptbuf, const void *input, size
     if (decryptbuf->base == NULL)
         ret = PTLS_ERROR_NO_MEMORY;
 
-    if (ret == PTLS_ERROR_HANDSHAKE_IN_PROGRESS) {
+    switch (ret) {
+    case 0:
+        break;
+    case PTLS_ERROR_HANDSHAKE_IN_PROGRESS:
         ret = 0;
-    } else {
-        /* TODO send alert */
+        break;
+    case PTLS_ERROR_CLASS_PEER_ALERT + PTLS_ALERT_CLOSE_NOTIFY:
+        /* TODO send close alert */
+        break;
+    default:
+        if (PTLS_ERROR_GET_CLASS(ret) == PTLS_ERROR_CLASS_SELF_ALERT) {
+            /* TODO send alert */
+        }
+        break;
     }
 
     return ret;
@@ -1876,7 +1916,8 @@ int ptls_aead_transform(ptls_aead_context_t *ctx, void *output, size_t *outlen, 
 
 static void clear_memory(void *p, size_t len)
 {
-    memset(p, 0, len);
+    if (len != 0)
+        memset(p, 0, len);
 }
 
 void (*volatile ptls_clear_memory)(void *p, size_t len) = clear_memory;
