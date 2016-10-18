@@ -51,7 +51,7 @@ struct st_ptls_openssl_t {
     X509_STORE *cert_store;
 };
 
-static void random_bytes(void *buf, size_t len)
+void ptls_openssl_random_bytes(void *buf, size_t len)
 {
     RAND_bytes(buf, (int)len);
 }
@@ -880,4 +880,4 @@ ptls_hash_algorithm_t ptls_openssl_sha256 = {64, 32, sha256_create};
 ptls_cipher_suite_t ptls_openssl_aes128gcmsha256 = {PTLS_CIPHER_SUITE_AES_128_GCM_SHA256, &ptls_openssl_aes128gcm,
                                                     &ptls_openssl_sha256};
 ptls_cipher_suite_t *ptls_openssl_cipher_suites[] = {&ptls_openssl_aes128gcmsha256, NULL};
-ptls_crypto_t ptls_openssl_crypto = {random_bytes, ptls_openssl_key_exchanges, ptls_openssl_cipher_suites};
+ptls_crypto_t ptls_openssl_crypto = {ptls_openssl_random_bytes, ptls_openssl_key_exchanges, ptls_openssl_cipher_suites};

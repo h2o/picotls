@@ -36,6 +36,7 @@ extern ptls_crypto_t ptls_openssl_crypto;
 
 typedef struct st_ptls_openssl_t ptls_openssl_t;
 
+void ptls_openssl_random_bytes(void *buf, size_t len);
 ptls_openssl_t *ptls_openssl_new(void);
 void ptls_openssl_free(ptls_openssl_t *ctx);
 ptls_certificate_context_t *ptls_openssl_get_certificate_context(ptls_openssl_t *ctx);
