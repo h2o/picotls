@@ -155,13 +155,13 @@ typedef const struct st_ptls_cipher_suite_t {
 struct st_ptls_crypto_t {
     void (*random_bytes)(void *buf, size_t len);
     /**
-     * list of supported key-exchange algorithms terminated by .id == UINT16_MAX
+     * list of supported key-exchange algorithms terminated by NULL
      */
-    ptls_key_exchange_algorithm_t *key_exchanges;
+    ptls_key_exchange_algorithm_t **key_exchanges;
     /**
-     * list of supported cipher-suites terminated by .id == UINT16_MAX
+     * list of supported cipher-suites terminated by NULL
      */
-    ptls_cipher_suite_t *cipher_suites;
+    ptls_cipher_suite_t **cipher_suites;
 };
 
 /**

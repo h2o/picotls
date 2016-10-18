@@ -632,7 +632,7 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf)
 
     /* TODO postpone the generation of key_schedule until we receive ServerHello so that we can choose the best hash algo (note:
      * we'd need to retain the entire ClientHello) */
-    tls->key_schedule = key_schedule_new(tls->crypto->cipher_suites->hash, ptls_iovec_init(NULL, 0));
+    tls->key_schedule = key_schedule_new(tls->crypto->cipher_suites[0]->hash, ptls_iovec_init(NULL, 0));
     if ((ret = key_schedule_extract(tls->key_schedule, ptls_iovec_init(NULL, 0))) != 0)
         goto Exit;
 
@@ -648,9 +648,9 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf)
         buffer_push_block(sendbuf, 1, {});
         /* cipher_suites */
         buffer_push_block(sendbuf, 2, {
-            ptls_cipher_suite_t *cs = tls->crypto->cipher_suites;
-            for (; cs->id != UINT16_MAX; ++cs)
-                buffer_push16(sendbuf, cs->id);
+            ptls_cipher_suite_t **cs = tls->crypto->cipher_suites;
+            for (; *cs != NULL; ++cs)
+                buffer_push16(sendbuf, (*cs)->id);
         });
         /* legacy_compression_methods */
         buffer_push_block(sendbuf, 1, { buffer_push(sendbuf, 0); });
@@ -667,22 +667,22 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf)
                 });
             });
             buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SUPPORTED_GROUPS, {
-                ptls_key_exchange_algorithm_t *algo = tls->crypto->key_exchanges;
+                ptls_key_exchange_algorithm_t **algo = tls->crypto->key_exchanges;
                 buffer_push_block(sendbuf, 2, {
-                    for (; algo->id != UINT16_MAX; ++algo)
-                        buffer_push16(sendbuf, algo->id);
+                    for (; *algo != NULL; ++algo)
+                        buffer_push16(sendbuf, (*algo)->id);
                 });
             });
             buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_KEY_SHARE, {
                 /* only sends the first algo at the moment */
-                ptls_key_exchange_algorithm_t *algo = tls->crypto->key_exchanges;
-                assert(algo->id != UINT16_MAX);
+                ptls_key_exchange_algorithm_t **algo = tls->crypto->key_exchanges;
+                assert(*algo != NULL);
                 ptls_iovec_t pubkey;
-                if ((ret = algo->create(&tls->client.key_exchange.ctx, &pubkey)) != 0)
+                if ((ret = (*algo)->create(&tls->client.key_exchange.ctx, &pubkey)) != 0)
                     goto Exit;
-                tls->client.key_exchange.algo = algo;
+                tls->client.key_exchange.algo = *algo;
                 buffer_push_block(sendbuf, 2, {
-                    buffer_push16(sendbuf, algo->id);
+                    buffer_push16(sendbuf, tls->client.key_exchange.algo->id);
                     buffer_push_block(sendbuf, 2, { buffer_pushv(sendbuf, pubkey.base, pubkey.len); });
                 });
                 ptls_clear_memory(pubkey.base, pubkey.len);
@@ -738,15 +738,17 @@ static int decode_server_hello(ptls_t *tls, struct st_ptls_server_hello_t *sh, c
 
     { /* select cipher_suite */
         uint16_t csid;
+        ptls_cipher_suite_t **cs;
         if ((ret = decode16(&csid, &src, end)) != 0)
             goto Exit;
-        for (sh->cipher_suite = tls->crypto->cipher_suites; sh->cipher_suite->id != UINT16_MAX; ++sh->cipher_suite)
-            if (sh->cipher_suite->id == csid)
+        for (cs = tls->crypto->cipher_suites; *cs != NULL; ++cs)
+            if ((*cs)->id == csid)
                 break;
-        if (sh->cipher_suite->id == UINT16_MAX) {
+        if (*cs == NULL) {
             ret = PTLS_ALERT_HANDSHAKE_FAILURE;
             goto Exit;
         }
+        sh->cipher_suite = *cs;
     }
 
     uint16_t type;
@@ -988,8 +990,8 @@ Exit:
     return ret;
 }
 
-static int client_hello_select_negotiated_group(ptls_key_exchange_algorithm_t **selected, ptls_key_exchange_algorithm_t *candidates,
-                                                const uint8_t *src, const uint8_t *end)
+static int client_hello_select_negotiated_group(ptls_key_exchange_algorithm_t **selected,
+                                                ptls_key_exchange_algorithm_t **candidates, const uint8_t *src, const uint8_t *end)
 {
     int ret;
 
@@ -999,10 +1001,10 @@ static int client_hello_select_negotiated_group(ptls_key_exchange_algorithm_t **
             if ((ret = decode16(&id, &src, end)) != 0)
                 goto Exit;
             if (*selected == NULL) {
-                ptls_key_exchange_algorithm_t *c = candidates;
-                for (; c->id != UINT16_MAX; ++c) {
-                    if (c->id == id) {
-                        *selected = c;
+                ptls_key_exchange_algorithm_t **c = candidates;
+                for (; *c != NULL; ++c) {
+                    if ((*c)->id == id) {
+                        *selected = *c;
                         break;
                     }
                 }
@@ -1016,7 +1018,7 @@ Exit:
 }
 
 static int client_hello_decode_key_share(ptls_key_exchange_algorithm_t **selected_group, ptls_iovec_t *selected_key,
-                                         ptls_key_exchange_algorithm_t *candidates, const uint8_t *src, const uint8_t *end)
+                                         ptls_key_exchange_algorithm_t **candidates, const uint8_t *src, const uint8_t *end)
 {
     int ret = 0;
 
@@ -1027,10 +1029,10 @@ static int client_hello_decode_key_share(ptls_key_exchange_algorithm_t **selecte
             if ((ret = decode_key_share_entry(&group, &key, &src, end)) != 0)
                 goto Exit;
             if (*selected_group == NULL) {
-                ptls_key_exchange_algorithm_t *c = candidates;
-                for (; c->id != UINT16_MAX; ++c) {
-                    if (c->id == group) {
-                        *selected_group = c;
+                ptls_key_exchange_algorithm_t **c = candidates;
+                for (; *c != NULL; ++c) {
+                    if ((*c)->id == group) {
+                        *selected_group = *c;
                         *selected_key = key;
                         break;
                     }
@@ -1082,10 +1084,10 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
             if ((ret = decode16(&id, &src, end)) != 0)
                 goto Exit;
             if (ch->cipher_suite == NULL) {
-                ptls_cipher_suite_t *a = tls->crypto->cipher_suites;
-                for (; a->id != UINT16_MAX; ++a) {
-                    if (a->id == id) {
-                        ch->cipher_suite = a;
+                ptls_cipher_suite_t **cs = tls->crypto->cipher_suites;
+                for (; *cs != NULL; ++cs) {
+                    if ((*cs)->id == id) {
+                        ch->cipher_suite = *cs;
                         break;
                     }
                 }
