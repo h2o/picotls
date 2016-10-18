@@ -92,7 +92,7 @@ typedef struct st_ptls_buffer_t {
     int is_allocated;
 } ptls_buffer_t;
 
-typedef struct st_ptls_crypto_t ptls_crypto_t;
+typedef const struct st_ptls_crypto_t ptls_crypto_t;
 
 typedef struct st_ptls_context_t {
     ptls_crypto_t *crypto;
@@ -110,7 +110,7 @@ typedef struct st_ptls_key_exchange_context_t {
     int (*on_exchange)(struct st_ptls_key_exchange_context_t *keyex, ptls_iovec_t *secret, ptls_iovec_t peerkey);
 } ptls_key_exchange_context_t;
 
-typedef struct st_ptls_key_exchange_algorithm_t {
+typedef const struct st_ptls_key_exchange_algorithm_t {
     uint16_t id;
     int (*create)(ptls_key_exchange_context_t **ctx, ptls_iovec_t *pubkey);
     int (*exchange)(ptls_iovec_t *pubkey, ptls_iovec_t *secret, ptls_iovec_t peerkey);
@@ -122,12 +122,12 @@ typedef struct st_ptls_aead_context_t {
     int (*do_transform)(struct st_ptls_aead_context_t *ctx, void *output, size_t *outlen, const void *input, size_t inlen,
                         const void *iv, uint8_t enc_content_type);
     /* following fields must not be altered by the crypto binding */
-    struct st_ptls_aead_algorithm_t *algo;
+    const struct st_ptls_aead_algorithm_t *algo;
     uint64_t seq;
     uint8_t static_iv[1];
 } ptls_aead_context_t;
 
-typedef struct st_ptls_aead_algorithm_t {
+typedef const struct st_ptls_aead_algorithm_t {
     size_t key_size;
     size_t iv_size;
     int (*setup_crypto)(ptls_aead_context_t *ctx, int is_enc, const void *key);
@@ -144,13 +144,13 @@ typedef struct st_ptls_hash_context_t {
     void (* final)(struct st_ptls_hash_context_t *ctx, void *md, ptls_hash_final_mode_t mode);
 } ptls_hash_context_t;
 
-typedef struct st_ptls_hash_algorithm_t {
+typedef const struct st_ptls_hash_algorithm_t {
     size_t block_size;
     size_t digest_size;
     ptls_hash_context_t *(*create)(void);
 } ptls_hash_algorithm_t;
 
-typedef struct st_ptls_cipher_suite_t {
+typedef const struct st_ptls_cipher_suite_t {
     uint16_t id;
     ptls_aead_algorithm_t *aead;
     ptls_hash_algorithm_t *hash;
