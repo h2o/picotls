@@ -80,11 +80,17 @@
 
 typedef struct st_ptls_t ptls_t;
 
+/**
+ * represents a sequence of octets
+ */
 typedef struct st_ptls_iovec_t {
     uint8_t *base;
     size_t len;
 } ptls_iovec_t;
 
+/**
+ * used for storing output
+ */
 typedef struct st_ptls_buffer_t {
     uint8_t *base;
     size_t capacity;
@@ -94,21 +100,55 @@ typedef struct st_ptls_buffer_t {
 
 typedef const struct st_ptls_crypto_t ptls_crypto_t;
 
+/**
+ * defines callbacks for certificate-related operations during the handshake
+ */
 typedef struct st_ptls_certificate_context_t {
+    /**
+     * after receiving ClientHello, the core calls the callback to obtain the certificate chain to be sent to the client as well as
+     * a pointer to a function that should be called for signing the handshake using the private key associated to the certificate
+     */
     int (*lookup)(ptls_t *tls, uint16_t *sign_algorithm, int (**signer)(void *sign_ctx, ptls_iovec_t *output, ptls_iovec_t input),
                   void **signer_data, ptls_iovec_t **certs, size_t *num_certs, ptls_iovec_t server_name,
                   const uint16_t *signature_algorithms, size_t num_signature_algorithms);
+    /**
+     * after receiving Certificate, the core calls the callback to verify the certificate chain and to obtain a pointer to a
+     * callback that should be used for verifying CertificateVerify. If an error occurs between a successful return from this
+     * callback to the invocation of the verify_sign callback, verify_sign is called with both data and sign set to an empty buffer.
+     * The implementor of the callback should use that as the opportunity to free any temporary data allocated for the verify_sign
+     * callback.
+     */
     int (*verify)(ptls_t *tls, int (**verify_sign)(void *verify_ctx, ptls_iovec_t data, ptls_iovec_t sign), void **verify_data,
                   ptls_iovec_t *certs, size_t num_certs);
 } ptls_certificate_context_t;
 
+/**
+ * key exchange context built by ptls_key_exchange_algorithm::create.
+ */
 typedef struct st_ptls_key_exchange_context_t {
+    /**
+     * called once per created context. It is the callee's responsibility to free the resources associated to keyex. Secret and
+     * peerkey will be NULL in case the exchange never happened.
+     */
     int (*on_exchange)(struct st_ptls_key_exchange_context_t *keyex, ptls_iovec_t *secret, ptls_iovec_t peerkey);
 } ptls_key_exchange_context_t;
 
+/**
+ * A key exchange algorithm.
+ */
 typedef const struct st_ptls_key_exchange_algorithm_t {
+    /**
+     * ID defined by the TLS specification
+     */
     uint16_t id;
+    /**
+     * creates a context for asynchronous key exchange. The function is called when ClientHello is generated. The on_exchange
+     * callback of the created context is called when the client receives ServerHello.
+     */
     int (*create)(ptls_key_exchange_context_t **ctx, ptls_iovec_t *pubkey);
+    /**
+     * implements synchronous key exchange. Called when receiving a ServerHello.
+     */
     int (*exchange)(ptls_iovec_t *pubkey, ptls_iovec_t *secret, ptls_iovec_t peerkey);
 } ptls_key_exchange_algorithm_t;
 
