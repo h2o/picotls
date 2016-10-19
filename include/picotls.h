@@ -153,19 +153,19 @@ typedef const struct st_ptls_key_exchange_algorithm_t {
 } ptls_key_exchange_algorithm_t;
 
 typedef struct st_ptls_aead_context_t {
-    void *crypto_ctx;
+    const struct st_ptls_aead_algorithm_t *algo;
+    uint64_t seq;
+    uint8_t static_iv[PTLS_MAX_IV_SIZE];
+    /* field above this line must not be altered by the crypto binding */
     void (*dispose_crypto)(struct st_ptls_aead_context_t *ctx);
     int (*do_transform)(struct st_ptls_aead_context_t *ctx, void *output, size_t *outlen, const void *input, size_t inlen,
                         const void *iv, uint8_t enc_content_type);
-    /* following fields must not be altered by the crypto binding */
-    const struct st_ptls_aead_algorithm_t *algo;
-    uint64_t seq;
-    uint8_t static_iv[1];
 } ptls_aead_context_t;
 
 typedef const struct st_ptls_aead_algorithm_t {
     size_t key_size;
     size_t iv_size;
+    size_t context_size;
     int (*setup_crypto)(ptls_aead_context_t *ctx, int is_enc, const void *key);
 } ptls_aead_algorithm_t;
 

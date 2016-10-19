@@ -1869,11 +1869,10 @@ ptls_aead_context_t *ptls_aead_new(ptls_aead_algorithm_t *aead, ptls_hash_algori
     uint8_t key[PTLS_MAX_SECRET_SIZE];
     int ret;
 
-    if ((ctx = (ptls_aead_context_t *)malloc(offsetof(ptls_aead_context_t, static_iv) + aead->iv_size)) == NULL)
+    if ((ctx = (ptls_aead_context_t *)malloc(aead->context_size)) == NULL)
         return NULL;
 
-    *ctx = (ptls_aead_context_t){NULL, NULL, NULL, aead, 0};
-
+    *ctx = (ptls_aead_context_t){aead};
     if ((ret = get_traffic_key(hash, key, aead->key_size, label, 0, secret)) != 0)
         goto Exit;
     if ((ret = get_traffic_key(hash, ctx->static_iv, aead->iv_size, label, 1, secret)) != 0)

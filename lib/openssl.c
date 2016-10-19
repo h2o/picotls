@@ -354,106 +354,100 @@ Exit:
 }
 
 struct aead_crypto_context_t {
-    EVP_CIPHER_CTX *ctx;
+    ptls_aead_context_t super;
+    EVP_CIPHER_CTX *evp_ctx;
     size_t tag_size;
 };
 
-static void aead_dispose_crypto(ptls_aead_context_t *ctx)
+static void aead_dispose_crypto(ptls_aead_context_t *_ctx)
 {
-    struct aead_crypto_context_t *crypto_ctx = (struct aead_crypto_context_t *)ctx->crypto_ctx;
+    struct aead_crypto_context_t *ctx = (struct aead_crypto_context_t *)_ctx;
 
-    if (crypto_ctx != NULL) {
-        if (crypto_ctx->ctx != NULL)
-            EVP_CIPHER_CTX_free(crypto_ctx->ctx);
-        free(crypto_ctx);
-    }
-    ctx->crypto_ctx = NULL;
+    if (ctx->evp_ctx != NULL)
+        EVP_CIPHER_CTX_free(ctx->evp_ctx);
 }
 
-static int aead_do_encrypt(ptls_aead_context_t *ctx, void *_output, size_t *outlen, const void *input, size_t inlen, const void *iv,
-                           uint8_t enc_content_type)
+static int aead_do_encrypt(ptls_aead_context_t *_ctx, void *_output, size_t *outlen, const void *input, size_t inlen,
+                           const void *iv, uint8_t enc_content_type)
 {
-    struct aead_crypto_context_t *crypto_ctx = (struct aead_crypto_context_t *)ctx->crypto_ctx;
+    struct aead_crypto_context_t *ctx = (struct aead_crypto_context_t *)_ctx;
     uint8_t *output = _output;
     int blocklen;
 
     *outlen = 0;
 
     /* FIXME for performance, preserve the expanded key instead of the raw key */
-    if (!EVP_EncryptInit_ex(crypto_ctx->ctx, NULL, NULL, NULL, iv))
+    if (!EVP_EncryptInit_ex(ctx->evp_ctx, NULL, NULL, NULL, iv))
         return PTLS_ERROR_LIBRARY;
-    if (!EVP_EncryptUpdate(crypto_ctx->ctx, output, &blocklen, input, (int)inlen))
-        return PTLS_ERROR_LIBRARY;
-    *outlen += blocklen;
-    if (!EVP_EncryptUpdate(crypto_ctx->ctx, output + *outlen, &blocklen, &enc_content_type, 1))
+    if (!EVP_EncryptUpdate(ctx->evp_ctx, output, &blocklen, input, (int)inlen))
         return PTLS_ERROR_LIBRARY;
     *outlen += blocklen;
-    if (!EVP_EncryptFinal_ex(crypto_ctx->ctx, output + *outlen, &blocklen))
+    if (!EVP_EncryptUpdate(ctx->evp_ctx, output + *outlen, &blocklen, &enc_content_type, 1))
         return PTLS_ERROR_LIBRARY;
     *outlen += blocklen;
-    if (!EVP_CIPHER_CTX_ctrl(crypto_ctx->ctx, EVP_CTRL_GCM_GET_TAG, (int)crypto_ctx->tag_size, output + *outlen))
+    if (!EVP_EncryptFinal_ex(ctx->evp_ctx, output + *outlen, &blocklen))
         return PTLS_ERROR_LIBRARY;
-    *outlen += crypto_ctx->tag_size;
+    *outlen += blocklen;
+    if (!EVP_CIPHER_CTX_ctrl(ctx->evp_ctx, EVP_CTRL_GCM_GET_TAG, (int)ctx->tag_size, output + *outlen))
+        return PTLS_ERROR_LIBRARY;
+    *outlen += ctx->tag_size;
 
     return 0;
 }
 
-static int aead_do_decrypt(ptls_aead_context_t *ctx, void *_output, size_t *outlen, const void *input, size_t inlen, const void *iv,
-                           uint8_t unused)
+static int aead_do_decrypt(ptls_aead_context_t *_ctx, void *_output, size_t *outlen, const void *input, size_t inlen,
+                           const void *iv, uint8_t unused)
 {
-    struct aead_crypto_context_t *crypto_ctx = (struct aead_crypto_context_t *)ctx->crypto_ctx;
+    struct aead_crypto_context_t *ctx = (struct aead_crypto_context_t *)_ctx;
     uint8_t *output = _output;
     int blocklen;
 
     *outlen = 0;
 
-    if (inlen < crypto_ctx->tag_size)
+    if (inlen < ctx->tag_size)
         return PTLS_ALERT_BAD_RECORD_MAC;
 
-    if (!EVP_DecryptInit_ex(crypto_ctx->ctx, NULL, NULL, NULL, iv))
+    if (!EVP_DecryptInit_ex(ctx->evp_ctx, NULL, NULL, NULL, iv))
         return PTLS_ERROR_LIBRARY;
-    if (!EVP_DecryptUpdate(crypto_ctx->ctx, output, &blocklen, input, (int)(inlen - crypto_ctx->tag_size)))
+    if (!EVP_DecryptUpdate(ctx->evp_ctx, output, &blocklen, input, (int)(inlen - ctx->tag_size)))
         return PTLS_ERROR_LIBRARY;
     *outlen += blocklen;
-    if (!EVP_CIPHER_CTX_ctrl(crypto_ctx->ctx, EVP_CTRL_GCM_SET_TAG, (int)crypto_ctx->tag_size,
-                             (void *)((uint8_t *)input + inlen - crypto_ctx->tag_size)))
+    if (!EVP_CIPHER_CTX_ctrl(ctx->evp_ctx, EVP_CTRL_GCM_SET_TAG, (int)ctx->tag_size,
+                             (void *)((uint8_t *)input + inlen - ctx->tag_size)))
         return PTLS_ERROR_LIBRARY;
-    if (!EVP_DecryptFinal_ex(crypto_ctx->ctx, output + *outlen, &blocklen))
+    if (!EVP_DecryptFinal_ex(ctx->evp_ctx, output + *outlen, &blocklen))
         return PTLS_ALERT_BAD_RECORD_MAC;
     *outlen += blocklen;
 
     return 0;
 }
 
-static int aead_setup_crypto(ptls_aead_context_t *ctx, int is_enc, const void *key, const EVP_CIPHER *cipher, size_t tag_size)
+static int aead_setup_crypto(ptls_aead_context_t *_ctx, int is_enc, const void *key, const EVP_CIPHER *cipher, size_t tag_size)
 {
-    struct aead_crypto_context_t *crypto_ctx;
+    struct aead_crypto_context_t *ctx = (struct aead_crypto_context_t *)_ctx;
     int ret;
 
-    if ((crypto_ctx = (struct aead_crypto_context_t *)malloc(sizeof(*crypto_ctx))) == NULL)
-        return PTLS_ERROR_NO_MEMORY;
+    ctx->super.dispose_crypto = aead_dispose_crypto;
+    ctx->super.do_transform = is_enc ? aead_do_encrypt : aead_do_decrypt;
+    ctx->evp_ctx = NULL;
+    ctx->tag_size = tag_size;
 
-    *crypto_ctx = (struct aead_crypto_context_t){NULL, tag_size};
-    ctx->crypto_ctx = crypto_ctx;
-    ctx->dispose_crypto = aead_dispose_crypto;
-    ctx->do_transform = is_enc ? aead_do_encrypt : aead_do_decrypt;
-
-    if ((crypto_ctx->ctx = EVP_CIPHER_CTX_new()) == NULL) {
+    if ((ctx->evp_ctx = EVP_CIPHER_CTX_new()) == NULL) {
         ret = PTLS_ERROR_NO_MEMORY;
         goto Error;
     }
     if (is_enc) {
-        if (!EVP_EncryptInit_ex(crypto_ctx->ctx, cipher, NULL, key, NULL)) {
+        if (!EVP_EncryptInit_ex(ctx->evp_ctx, cipher, NULL, key, NULL)) {
             ret = PTLS_ERROR_LIBRARY;
             goto Error;
         }
     } else {
-        if (!EVP_DecryptInit_ex(crypto_ctx->ctx, cipher, NULL, key, NULL)) {
+        if (!EVP_DecryptInit_ex(ctx->evp_ctx, cipher, NULL, key, NULL)) {
             ret = PTLS_ERROR_LIBRARY;
             goto Error;
         }
     }
-    if (!EVP_CIPHER_CTX_ctrl(crypto_ctx->ctx, EVP_CTRL_GCM_SET_IVLEN, (int)ctx->algo->iv_size, NULL)) {
+    if (!EVP_CIPHER_CTX_ctrl(ctx->evp_ctx, EVP_CTRL_GCM_SET_IVLEN, (int)ctx->super.algo->iv_size, NULL)) {
         ret = PTLS_ERROR_LIBRARY;
         goto Error;
     }
@@ -461,7 +455,7 @@ static int aead_setup_crypto(ptls_aead_context_t *ctx, int is_enc, const void *k
     return 0;
 
 Error:
-    aead_dispose_crypto(ctx);
+    aead_dispose_crypto(&ctx->super);
     return ret;
 }
 
@@ -875,7 +869,7 @@ int ptls_openssl_set_certificate_store(ptls_openssl_t *ctx, X509_STORE *store)
 ptls_key_exchange_algorithm_t ptls_openssl_secp256r1 = {PTLS_GROUP_SECP256R1, secp256r1_create_key_exchange,
                                                         secp256r1_key_exchange};
 ptls_key_exchange_algorithm_t *ptls_openssl_key_exchanges[] = {&ptls_openssl_secp256r1, NULL};
-ptls_aead_algorithm_t ptls_openssl_aes128gcm = {16, 12, aead_aes128gcm_setup_crypto};
+ptls_aead_algorithm_t ptls_openssl_aes128gcm = {16, 12, sizeof(struct aead_crypto_context_t), aead_aes128gcm_setup_crypto};
 ptls_hash_algorithm_t ptls_openssl_sha256 = {64, 32, sha256_create};
 ptls_cipher_suite_t ptls_openssl_aes128gcmsha256 = {PTLS_CIPHER_SUITE_AES_128_GCM_SHA256, &ptls_openssl_aes128gcm,
                                                     &ptls_openssl_sha256};
