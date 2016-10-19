@@ -152,6 +152,10 @@ typedef const struct st_ptls_key_exchange_algorithm_t {
     int (*exchange)(ptls_iovec_t *pubkey, ptls_iovec_t *secret, ptls_iovec_t peerkey);
 } ptls_key_exchange_algorithm_t;
 
+/**
+ * AEAD context. AEAD implementations are allowed to stuff data at the end of the struct. The size of the memory allocated for the
+ * struct is governed by ptls_aead_algorithm_t::context_size.
+ */
 typedef struct st_ptls_aead_context_t {
     const struct st_ptls_aead_algorithm_t *algo;
     uint64_t seq;
@@ -162,27 +166,76 @@ typedef struct st_ptls_aead_context_t {
                         const void *iv, uint8_t enc_content_type);
 } ptls_aead_context_t;
 
+/**
+ * An AEAD cipher.
+ */
 typedef const struct st_ptls_aead_algorithm_t {
+    /**
+     * key size
+     */
     size_t key_size;
+    /**
+     * size of the IV
+     */
     size_t iv_size;
+    /**
+     * size of memory allocated for ptls_aead_context_t. AEAD implementations can set this value to something greater than
+     * sizeof(ptls_aead_context_t) and stuff additional data at the bottom of the struct.
+     */
     size_t context_size;
+    /**
+     * callback that sets up the crypto
+     */
     int (*setup_crypto)(ptls_aead_context_t *ctx, int is_enc, const void *key);
 } ptls_aead_algorithm_t;
 
+/**
+ *
+ */
 typedef enum en_ptls_hash_final_mode_t {
+    /**
+     * obtains the digest and frees the context
+     */
     PTLS_HASH_FINAL_MODE_FREE = 0,
+    /**
+     * obtains the digest and reset the context to initial state
+     */
     PTLS_HASH_FINAL_MODE_RESET = 1,
+    /**
+     * obtains the digest while leaving the context as-is
+     */
     PTLS_HASH_FINAL_MODE_SNAPSHOT = 2
 } ptls_hash_final_mode_t;
 
+/**
+ * A hash context.
+ */
 typedef struct st_ptls_hash_context_t {
+    /**
+     * feeds additional data into the hash context
+     */
     void (*update)(struct st_ptls_hash_context_t *ctx, const void *src, size_t len);
+    /**
+     * returns the digest and performs necessary operation specified by mode
+     */
     void (* final)(struct st_ptls_hash_context_t *ctx, void *md, ptls_hash_final_mode_t mode);
 } ptls_hash_context_t;
 
+/**
+ * A hash algorithm and its properties.
+ */
 typedef const struct st_ptls_hash_algorithm_t {
+    /**
+     * block size
+     */
     size_t block_size;
+    /**
+     * digest size
+     */
     size_t digest_size;
+    /**
+     * constructor that creates the hash context
+     */
     ptls_hash_context_t *(*create)(void);
 } ptls_hash_algorithm_t;
 
@@ -192,6 +245,10 @@ typedef const struct st_ptls_cipher_suite_t {
     ptls_hash_algorithm_t *hash;
 } ptls_cipher_suite_t;
 
+/**
+ * A list of ciphers and callbacks required for running TLS. Users can create this structure of their choice to enable / disable
+ * certain ciphers.
+ */
 struct st_ptls_crypto_t {
     void (*random_bytes)(void *buf, size_t len);
     /**
