@@ -1682,8 +1682,9 @@ int ptls_handshake(ptls_t *tls, ptls_buffer_t *sendbuf, const void *input, size_
         sendbuf->off = sendbuf_orig_off;
         /* send alert immediately */
         if (PTLS_ERROR_GET_CLASS(ret) != PTLS_ERROR_CLASS_PEER_ALERT)
-            send_alert(tls, sendbuf, PTLS_ALERT_LEVEL_FATAL,
-                       PTLS_ERROR_GET_CLASS(ret) == PTLS_ERROR_CLASS_SELF_ALERT ? ret : PTLS_ALERT_INTERNAL_ERROR);
+            if (send_alert(tls, sendbuf, PTLS_ALERT_LEVEL_FATAL,
+                           PTLS_ERROR_GET_CLASS(ret) == PTLS_ERROR_CLASS_SELF_ALERT ? ret : PTLS_ALERT_INTERNAL_ERROR) != 0)
+                sendbuf->off = sendbuf_orig_off;
     }
 
     *inlen -= src_end - src;
