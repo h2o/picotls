@@ -250,6 +250,9 @@ typedef const struct st_ptls_cipher_suite_t {
  * certain ciphers.
  */
 struct st_ptls_crypto_t {
+    /**
+     * PRNG to be used
+     */
     void (*random_bytes)(void *buf, size_t len);
     /**
      * list of supported key-exchange algorithms terminated by NULL
@@ -262,44 +265,50 @@ struct st_ptls_crypto_t {
 };
 
 /**
- *
+ * builds a new ptls_iovec_t instance using the supplied parameters
  */
 static ptls_iovec_t ptls_iovec_init(const void *p, size_t len);
 /**
- *
+ * initializes a buffer, setting the default destination to the small buffer provided as the argument.
  */
 static void ptls_buffer_init(ptls_buffer_t *buf, void *smallbuf, size_t smallbuf_size);
 /**
- *
+ * disposes a buffer, freeing resources allocated by the buffer itself (if any)
  */
 static void ptls_buffer_dispose(struct st_ptls_buffer_t *buf);
 /**
- *
+ * internal
  */
 void ptls_buffer__release_memory(struct st_ptls_buffer_t *buf);
 /**
- *
+ * reserves space for additional amount of memory
  */
 int ptls_buffer_reserve(struct st_ptls_buffer_t *buf, size_t delta);
 
 /**
- *
+ * create a object to handle new TLS connection. Client-side of a TLS connection is created if server_name is non-NULL. Otherwise,
+ * a server-side connection is created.
  */
 ptls_t *ptls_new(ptls_crypto_t *crypto, ptls_certificate_context_t *cert_ctx, const char *server_name);
 /**
- *
+ * releases all resources associated to the object
  */
 void ptls_free(ptls_t *tls);
 /**
- *
+ * returns address of the crypto callbacks that the connection is using
  */
 ptls_crypto_t *ptls_get_crypto(ptls_t *tls);
 /**
- *
+ * returns the certificate context that the connection is using
  */
 ptls_certificate_context_t *ptls_get_certificate_context(ptls_t *tls);
 /**
- * proceeds with the handshake, optionally taking some input from peer
+ * proceeds with the handshake, optionally taking some input from peer. The function returns zero in case the handshake completed
+ * successfully. PTLS_ERROR_HANDSHAKE_IN_PROGRESS is returned in case the handshake is incomplete. Otherwise, an error value is
+ * returned. The contents of sendbuf should be sent to the client, regardless of whether if an error is returned. inlen is an
+ * argument used for both input and output. As an input, the arguments takes the size of the data available as input. Upon return
+ * the value is updated to the number of bytes consumed by the handshake. In case the returned value is
+ * PTLS_ERROR_HANDSHAKE_IN_PROGRESS there is a guarantee that all the input are consumed (i.e. the value of inlen does not change).
  */
 int ptls_handshake(ptls_t *tls, ptls_buffer_t *sendbuf, const void *input, size_t *inlen);
 /**
