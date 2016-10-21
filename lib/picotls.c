@@ -60,7 +60,7 @@
 #define PTLS_EXTENSION_TYPE_SUPPORTED_VERSIONS 43
 #define PTLS_EXTENSION_TYPE_COOKIE 44
 
-#define PTLS_PROTOCOL_VERSION_DRAFT16 0x7f10
+#define PTLS_PROTOCOL_VERSION_DRAFT17 0x7f11
 
 #define PTLS_ALERT_LEVEL_WARNING 1
 #define PTLS_ALERT_LEVEL_FATAL 2
@@ -75,8 +75,6 @@
 #else
 #define PTLS_DEBUGF(...)
 #endif
-
-#define POST16 0
 
 struct st_ptls_protection_context_t {
     uint8_t secret[PTLS_MAX_DIGEST_SIZE];
@@ -407,8 +405,8 @@ static int decode16(uint16_t *value, const uint8_t **src, const uint8_t *end)
     return 0;
 }
 
-static int hkdf_expand_label(ptls_hash_algorithm_t *algo, void *output, size_t outlen, ptls_iovec_t secret, const char *label1,
-                             const char *label2, ptls_iovec_t hash_value)
+static int hkdf_expand_label(ptls_hash_algorithm_t *algo, void *output, size_t outlen, ptls_iovec_t secret, const char *label,
+                             ptls_iovec_t hash_value)
 {
     struct st_ptls_buffer_t hkdf_label;
     uint8_t hkdf_label_buf[512];
@@ -420,8 +418,7 @@ static int hkdf_expand_label(ptls_hash_algorithm_t *algo, void *output, size_t o
     buffer_push_block(&hkdf_label, 1, {
         const char *prefix = "TLS 1.3, ";
         buffer_pushv(&hkdf_label, prefix, strlen(prefix));
-        buffer_pushv(&hkdf_label, label1, strlen(label1));
-        buffer_pushv(&hkdf_label, label2, strlen(label2));
+        buffer_pushv(&hkdf_label, label, strlen(label));
     });
     buffer_push_block(&hkdf_label, 1, { buffer_pushv(&hkdf_label, hash_value.base, hash_value.len); });
 
@@ -486,7 +483,7 @@ static int derive_secret(struct st_ptls_key_schedule_t *sched, void *secret, con
 
     int ret =
         hkdf_expand_label(sched->algo, secret, sched->algo->digest_size, ptls_iovec_init(sched->secret, sched->algo->digest_size),
-                          label, "", ptls_iovec_init(hash_value, sched->algo->digest_size * 2));
+                          label, ptls_iovec_init(hash_value, sched->algo->digest_size * 2));
 
     ptls_clear_memory(hash_value, sched->algo->digest_size * 2);
     return ret;
@@ -495,7 +492,7 @@ static int derive_secret(struct st_ptls_key_schedule_t *sched, void *secret, con
 static int get_traffic_key(ptls_hash_algorithm_t *algo, void *key, size_t key_size, const char *label, int is_iv,
                            const void *secret)
 {
-    return hkdf_expand_label(algo, key, key_size, ptls_iovec_init(secret, algo->digest_size), label, is_iv ? ", iv" : ", key",
+    return hkdf_expand_label(algo, key, key_size, ptls_iovec_init(secret, algo->digest_size), is_iv ? "iv" : "key",
                              ptls_iovec_init(NULL, 0));
 }
 
@@ -569,7 +566,7 @@ static int calc_verify_data(void *output, struct st_ptls_key_schedule_t *sched, 
     int ret;
 
     if ((ret = hkdf_expand_label(sched->algo, digest, sched->algo->digest_size, ptls_iovec_init(secret, sched->algo->digest_size),
-                                 "finished", "", ptls_iovec_init(NULL, 0))) != 0)
+                                 "finished", ptls_iovec_init(NULL, 0))) != 0)
         return ret;
     if ((hmac = ptls_hmac_create(sched->algo, digest, sched->algo->digest_size)) == NULL) {
         ptls_clear_memory(digest, sizeof(digest));
@@ -657,7 +654,7 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf)
         /* extensions */
         buffer_push_block(sendbuf, 2, {
             buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SUPPORTED_VERSIONS,
-                                  { buffer_push_block(sendbuf, 1, { buffer_push16(sendbuf, PTLS_PROTOCOL_VERSION_DRAFT16); }); });
+                                  { buffer_push_block(sendbuf, 1, { buffer_push16(sendbuf, PTLS_PROTOCOL_VERSION_DRAFT17); }); });
             buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SIGNATURE_ALGORITHMS, {
                 buffer_push_block(sendbuf, 2, {
                     buffer_push16(sendbuf, PTLS_SIGNATURE_RSA_PSS_SHA256);
@@ -723,7 +720,7 @@ static int decode_server_hello(ptls_t *tls, struct st_ptls_server_hello_t *sh, c
         uint16_t protver;
         if ((ret = decode16(&protver, &src, end)) != 0)
             goto Exit;
-        if (protver != PTLS_PROTOCOL_VERSION_DRAFT16) {
+        if (protver != PTLS_PROTOCOL_VERSION_DRAFT17) {
             ret = PTLS_ALERT_HANDSHAKE_FAILURE;
             goto Exit;
         }
@@ -870,10 +867,8 @@ static int client_handle_certificate(ptls_t *tls, ptls_iovec_t message)
                     certs[num_certs++] = ptls_iovec_init(src, end - src);
                 src = end;
             });
-#if POST16
             uint16_t type;
             decode_open_extensions(src, end, &type, { src = end; });
-#endif
         } while (src != end);
     });
 
@@ -1145,7 +1140,7 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
                     uint16_t v;
                     if ((ret = decode16(&v, &src, end)) != 0)
                         goto Exit;
-                    if (ch->selected_version == 0 && v == PTLS_PROTOCOL_VERSION_DRAFT16)
+                    if (ch->selected_version == 0 && v == PTLS_PROTOCOL_VERSION_DRAFT17)
                         ch->selected_version = v;
                 } while (src != end);
             });
@@ -1164,7 +1159,7 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
 
     /* check if client hello make sense */
     switch (ch->selected_version) {
-    case PTLS_PROTOCOL_VERSION_DRAFT16:
+    case PTLS_PROTOCOL_VERSION_DRAFT17:
         if (!(ch->compression_methods.count == 1 && ch->compression_methods.ids[0] == 0)) {
             ret = PTLS_ALERT_ILLEGAL_PARAMETER;
             goto Exit;
@@ -1207,7 +1202,7 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
     if (ch.key_share.algorithm == &key_exchange_no_match) {
         if (ch.negotiated_group != NULL) {
             buffer_push_handshake(sendbuf, NULL, PTLS_HANDSHAKE_TYPE_HELLO_RETRY_REQUEST, {
-                buffer_push16(sendbuf, PTLS_PROTOCOL_VERSION_DRAFT16);
+                buffer_push16(sendbuf, PTLS_PROTOCOL_VERSION_DRAFT17);
                 buffer_push_block(sendbuf, 2, {
                     buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_KEY_SHARE,
                                           { buffer_push16(sendbuf, ch.negotiated_group->id); });
@@ -1242,7 +1237,7 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
 
     /* send ServerHello */
     buffer_push_handshake(sendbuf, tls->key_schedule, PTLS_HANDSHAKE_TYPE_SERVER_HELLO, {
-        buffer_push16(sendbuf, PTLS_PROTOCOL_VERSION_DRAFT16);
+        buffer_push16(sendbuf, PTLS_PROTOCOL_VERSION_DRAFT17);
         if ((ret = ptls_buffer_reserve(sendbuf, PTLS_HELLO_RANDOM_SIZE)) != 0)
             goto Exit;
         tls->crypto->random_bytes(sendbuf->base + sendbuf->off, PTLS_HELLO_RANDOM_SIZE);
@@ -1287,9 +1282,7 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
                 size_t i;
                 for (i = 0; i != num_certs; ++i) {
                     buffer_push_block(sendbuf, 3, { buffer_pushv(sendbuf, certs[i].base, certs[i].len); });
-#if POST16
                     buffer_push_block(sendbuf, 2, {}); /* extensions */
-#endif
                 }
             });
         });
