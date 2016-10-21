@@ -179,7 +179,6 @@ struct st_ptls_key_schedule_t {
     ptls_hash_context_t *msghash;
     unsigned generation; /* early secret (1), hanshake secret (2), master secret (3) */
     uint8_t secret[PTLS_MAX_DIGEST_SIZE];
-    uint8_t hashed_resumption_context[PTLS_MAX_DIGEST_SIZE];
 };
 
 struct st_ptls_extension_decoder_t {
@@ -429,7 +428,7 @@ Exit:
     return ret;
 }
 
-static struct st_ptls_key_schedule_t *key_schedule_new(ptls_hash_algorithm_t *algo, ptls_iovec_t resumption_context)
+static struct st_ptls_key_schedule_t *key_schedule_new(ptls_hash_algorithm_t *algo)
 {
     struct st_ptls_key_schedule_t *sched = NULL;
     ptls_hash_context_t *hash = NULL;
@@ -442,12 +441,6 @@ static struct st_ptls_key_schedule_t *key_schedule_new(ptls_hash_algorithm_t *al
     }
 
     *sched = (struct st_ptls_key_schedule_t){algo, hash};
-
-    if (resumption_context.base == NULL)
-        resumption_context = ptls_iovec_init(zeroes_of_max_digest_size, sched->algo->digest_size);
-    hash->update(hash, resumption_context.base, resumption_context.len);
-    hash->final(hash, sched->hashed_resumption_context, PTLS_HASH_FINAL_MODE_RESET);
-
     return sched;
 }
 
@@ -476,14 +469,13 @@ static void key_schedule_update_hash(struct st_ptls_key_schedule_t *sched, const
 
 static int derive_secret(struct st_ptls_key_schedule_t *sched, void *secret, const char *label)
 {
-    uint8_t hash_value[PTLS_MAX_DIGEST_SIZE * 2];
+    uint8_t hash_value[PTLS_MAX_DIGEST_SIZE];
 
     sched->msghash->final(sched->msghash, hash_value, PTLS_HASH_FINAL_MODE_SNAPSHOT);
-    memcpy(hash_value + sched->algo->digest_size, sched->hashed_resumption_context, sched->algo->digest_size);
 
     int ret =
         hkdf_expand_label(sched->algo, secret, sched->algo->digest_size, ptls_iovec_init(sched->secret, sched->algo->digest_size),
-                          label, ptls_iovec_init(hash_value, sched->algo->digest_size * 2));
+                          label, ptls_iovec_init(hash_value, sched->algo->digest_size));
 
     ptls_clear_memory(hash_value, sched->algo->digest_size * 2);
     return ret;
@@ -538,8 +530,6 @@ static size_t build_certificate_verify_signdata(uint8_t *data, struct st_ptls_ke
     datalen += strlen(context_string) + 1;
     sched->msghash->final(sched->msghash, data + datalen, PTLS_HASH_FINAL_MODE_SNAPSHOT);
     datalen += sched->algo->digest_size;
-    memcpy(data + datalen, sched->hashed_resumption_context, sched->algo->digest_size);
-    datalen += sched->algo->digest_size;
     assert(datalen <= PTLS_MAX_CERTIFICATE_VERIFY_SIGNDATA_SIZE);
 
     return datalen;
@@ -577,7 +567,6 @@ static int calc_verify_data(void *output, struct st_ptls_key_schedule_t *sched, 
     PTLS_DEBUGF("%s: %02x%02x,%02x%02x\n", __FUNCTION__, ((uint8_t *)secret)[0], ((uint8_t *)secret)[1], digest[0], digest[1]);
     hmac->update(hmac, digest, sched->algo->digest_size);
     ptls_clear_memory(digest, sizeof(digest));
-    hmac->update(hmac, sched->hashed_resumption_context, sched->algo->digest_size);
     hmac->final(hmac, output, PTLS_HASH_FINAL_MODE_FREE);
 
     return 0;
@@ -629,7 +618,7 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf)
 
     /* TODO postpone the generation of key_schedule until we receive ServerHello so that we can choose the best hash algo (note:
      * we'd need to retain the entire ClientHello) */
-    tls->key_schedule = key_schedule_new(tls->crypto->cipher_suites[0]->hash, ptls_iovec_init(NULL, 0));
+    tls->key_schedule = key_schedule_new(tls->crypto->cipher_suites[0]->hash);
     if ((ret = key_schedule_extract(tls->key_schedule, ptls_iovec_init(NULL, 0))) != 0)
         goto Exit;
 
@@ -754,12 +743,6 @@ static int decode_server_hello(ptls_t *tls, struct st_ptls_server_hello_t *sh, c
         case PTLS_EXTENSION_TYPE_SUPPORTED_VERSIONS:
             ret = PTLS_ALERT_DECODE_ERROR;
             goto Exit;
-        case PTLS_EXTENSION_TYPE_SIGNATURE_ALGORITHMS:
-            if (src != end) {
-                ret = PTLS_ALERT_DECODE_ERROR;
-                goto Exit;
-            }
-            break;
         case PTLS_EXTENSION_TYPE_KEY_SHARE: {
             uint16_t group;
             if ((ret = decode_key_share_entry(&group, &sh->peerkey, &src, end)) != 0)
@@ -1231,7 +1214,7 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
 
     /* create key schedule, feed the initial values supplied from the client */
     assert(tls->key_schedule == NULL);
-    tls->key_schedule = key_schedule_new(ch.cipher_suite->hash, ptls_iovec_init(NULL, 0));
+    tls->key_schedule = key_schedule_new(ch.cipher_suite->hash);
     key_schedule_extract(tls->key_schedule, ptls_iovec_init(NULL, 0));
     key_schedule_update_hash(tls->key_schedule, message.base, message.len);
 
@@ -1248,7 +1231,6 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
                 buffer_push16(sendbuf, ch.key_share.algorithm->id);
                 buffer_push_block(sendbuf, 2, { buffer_pushv(sendbuf, pubkey.base, pubkey.len); });
             });
-            buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SIGNATURE_ALGORITHMS, {});
         });
     });
 
