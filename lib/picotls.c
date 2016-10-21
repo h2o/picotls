@@ -743,12 +743,6 @@ static int decode_server_hello(ptls_t *tls, struct st_ptls_server_hello_t *sh, c
         case PTLS_EXTENSION_TYPE_SUPPORTED_VERSIONS:
             ret = PTLS_ALERT_DECODE_ERROR;
             goto Exit;
-        case PTLS_EXTENSION_TYPE_SIGNATURE_ALGORITHMS:
-            if (src != end) {
-                ret = PTLS_ALERT_DECODE_ERROR;
-                goto Exit;
-            }
-            break;
         case PTLS_EXTENSION_TYPE_KEY_SHARE: {
             uint16_t group;
             if ((ret = decode_key_share_entry(&group, &sh->peerkey, &src, end)) != 0)
@@ -1237,7 +1231,6 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
                 buffer_push16(sendbuf, ch.key_share.algorithm->id);
                 buffer_push_block(sendbuf, 2, { buffer_pushv(sendbuf, pubkey.base, pubkey.len); });
             });
-            buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SIGNATURE_ALGORITHMS, {});
         });
     });
 
