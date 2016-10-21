@@ -405,8 +405,8 @@ static int decode16(uint16_t *value, const uint8_t **src, const uint8_t *end)
     return 0;
 }
 
-static int hkdf_expand_label(ptls_hash_algorithm_t *algo, void *output, size_t outlen, ptls_iovec_t secret, const char *label1,
-                             const char *label2, ptls_iovec_t hash_value)
+static int hkdf_expand_label(ptls_hash_algorithm_t *algo, void *output, size_t outlen, ptls_iovec_t secret, const char *label,
+                             ptls_iovec_t hash_value)
 {
     struct st_ptls_buffer_t hkdf_label;
     uint8_t hkdf_label_buf[512];
@@ -418,8 +418,7 @@ static int hkdf_expand_label(ptls_hash_algorithm_t *algo, void *output, size_t o
     buffer_push_block(&hkdf_label, 1, {
         const char *prefix = "TLS 1.3, ";
         buffer_pushv(&hkdf_label, prefix, strlen(prefix));
-        buffer_pushv(&hkdf_label, label1, strlen(label1));
-        buffer_pushv(&hkdf_label, label2, strlen(label2));
+        buffer_pushv(&hkdf_label, label, strlen(label));
     });
     buffer_push_block(&hkdf_label, 1, { buffer_pushv(&hkdf_label, hash_value.base, hash_value.len); });
 
@@ -484,7 +483,7 @@ static int derive_secret(struct st_ptls_key_schedule_t *sched, void *secret, con
 
     int ret =
         hkdf_expand_label(sched->algo, secret, sched->algo->digest_size, ptls_iovec_init(sched->secret, sched->algo->digest_size),
-                          label, "", ptls_iovec_init(hash_value, sched->algo->digest_size * 2));
+                          label, ptls_iovec_init(hash_value, sched->algo->digest_size * 2));
 
     ptls_clear_memory(hash_value, sched->algo->digest_size * 2);
     return ret;
@@ -493,7 +492,7 @@ static int derive_secret(struct st_ptls_key_schedule_t *sched, void *secret, con
 static int get_traffic_key(ptls_hash_algorithm_t *algo, void *key, size_t key_size, const char *label, int is_iv,
                            const void *secret)
 {
-    return hkdf_expand_label(algo, key, key_size, ptls_iovec_init(secret, algo->digest_size), label, is_iv ? ", iv" : ", key",
+    return hkdf_expand_label(algo, key, key_size, ptls_iovec_init(secret, algo->digest_size), is_iv ? "iv" : "key",
                              ptls_iovec_init(NULL, 0));
 }
 
@@ -567,7 +566,7 @@ static int calc_verify_data(void *output, struct st_ptls_key_schedule_t *sched, 
     int ret;
 
     if ((ret = hkdf_expand_label(sched->algo, digest, sched->algo->digest_size, ptls_iovec_init(secret, sched->algo->digest_size),
-                                 "finished", "", ptls_iovec_init(NULL, 0))) != 0)
+                                 "finished", ptls_iovec_init(NULL, 0))) != 0)
         return ret;
     if ((hmac = ptls_hmac_create(sched->algo, digest, sched->algo->digest_size)) == NULL) {
         ptls_clear_memory(digest, sizeof(digest));
