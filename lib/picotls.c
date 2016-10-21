@@ -76,8 +76,6 @@
 #define PTLS_DEBUGF(...)
 #endif
 
-#define POST16 0
-
 struct st_ptls_protection_context_t {
     uint8_t secret[PTLS_MAX_DIGEST_SIZE];
     ptls_aead_context_t *aead;
@@ -870,10 +868,8 @@ static int client_handle_certificate(ptls_t *tls, ptls_iovec_t message)
                     certs[num_certs++] = ptls_iovec_init(src, end - src);
                 src = end;
             });
-#if POST16
             uint16_t type;
             decode_open_extensions(src, end, &type, { src = end; });
-#endif
         } while (src != end);
     });
 
@@ -1287,9 +1283,7 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
                 size_t i;
                 for (i = 0; i != num_certs; ++i) {
                     buffer_push_block(sendbuf, 3, { buffer_pushv(sendbuf, certs[i].base, certs[i].len); });
-#if POST16
                     buffer_push_block(sendbuf, 2, {}); /* extensions */
-#endif
                 }
             });
         });
