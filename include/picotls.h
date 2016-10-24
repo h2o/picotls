@@ -232,7 +232,7 @@ typedef const struct st_ptls_cipher_suite_t {
  */
 PTLS_CALLBACK_TYPE(int, lookup_certificate, ptls_t *tls, uint16_t *sign_algorithm,
                    int (**signer)(void *sign_ctx, ptls_iovec_t *output, ptls_iovec_t input), void **signer_data,
-                   ptls_iovec_t **certs, size_t *num_certs, ptls_iovec_t server_name, const uint16_t *signature_algorithms,
+                   ptls_iovec_t **certs, size_t *num_certs, const char *server_name, const uint16_t *signature_algorithms,
                    size_t num_signature_algorithms);
 /**
  * after receiving Certificate, the core calls the callback to verify the certificate chain and to obtain a pointer to a

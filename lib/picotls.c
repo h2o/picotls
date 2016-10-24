@@ -120,11 +120,14 @@ struct st_ptls_t {
         struct st_ptls_protection_context_t send;
     } protection_ctx;
     /**
+     * server-name passed using SNI
+     */
+    char *server_name;
+    /**
      * misc.
      */
     struct {
         struct {
-            char *server_name;
             struct {
                 ptls_key_exchange_algorithm_t *algo;
                 ptls_key_exchange_context_t *ctx;
@@ -150,7 +153,6 @@ struct st_ptls_client_hello_t {
         const uint8_t *ids;
         size_t count;
     } compression_methods;
-    ptls_iovec_t server_name;
     uint16_t selected_version;
     ptls_key_exchange_algorithm_t *negotiated_group;
     struct {
@@ -804,7 +806,7 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message)
                 ret = PTLS_ALERT_DECODE_ERROR;
                 goto Exit;
             }
-            if (tls->client.server_name == NULL) {
+            if (tls->server_name == NULL) {
                 ret = PTLS_ALERT_ILLEGAL_PARAMETER;
                 goto Exit;
             }
@@ -941,7 +943,7 @@ static int client_handle_finished(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iove
     return ret;
 }
 
-static int client_hello_decode_server_name(ptls_iovec_t *name, const uint8_t *src, const uint8_t *end)
+static int client_hello_decode_server_name(char **name, const uint8_t *src, const uint8_t *end)
 {
     int ret = 0;
 
@@ -954,11 +956,20 @@ static int client_hello_decode_server_name(ptls_iovec_t *name, const uint8_t *sr
             uint8_t type = *src++;
             decode_open_block(src, end, 2, {
                 if (type == 0) {
-                    if (name->base != NULL) {
+                    if (memchr(src, '\0', end - src) != 0) {
                         ret = PTLS_ALERT_ILLEGAL_PARAMETER;
                         goto Exit;
                     }
-                    *name = ptls_iovec_init(src, end - src);
+                    if (*name != NULL) {
+                        ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+                        goto Exit;
+                    }
+                    if ((*name = malloc(end - src + 1)) == NULL) {
+                        ret = PTLS_ERROR_NO_MEMORY;
+                        goto Exit;
+                    }
+                    memcpy(*name, src, end - src);
+                    (*name)[end - src] = '\0';
                 }
                 src = end;
             });
@@ -1094,7 +1105,7 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
     decode_extensions(src, end, &type, {
         switch (type) {
         case PTLS_EXTENSION_TYPE_SERVER_NAME:
-            if ((ret = client_hello_decode_server_name(&ch->server_name, src, end)) != 0)
+            if ((ret = client_hello_decode_server_name(&tls->server_name, src, end)) != 0)
                 goto Exit;
             break;
         case PTLS_EXTENSION_TYPE_SUPPORTED_GROUPS:
@@ -1205,7 +1216,7 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
 
     /* run post-hello callback to determine certificate, etc. */
     if ((ret = tls->ctx->lookup_certificate->cb(tls->ctx->lookup_certificate, tls, &sign_algorithm, &signer, &signer_data, &certs,
-                                                &num_certs, ch.server_name, ch.signature_algorithms.list,
+                                                &num_certs, tls->server_name, ch.signature_algorithms.list,
                                                 ch.signature_algorithms.count)) != 0)
         goto Exit;
     assert(sign_algorithm != 0);
@@ -1249,7 +1260,7 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
     buffer_encrypt(sendbuf, tls->protection_ctx.send.aead, {
         buffer_push_handshake(sendbuf, tls->key_schedule, PTLS_HANDSHAKE_TYPE_ENCRYPTED_EXTENSIONS, {
             buffer_push_block(sendbuf, 2, {
-                if (ch.server_name.base != NULL) {
+                if (tls->server_name != NULL) {
                     /* In this event, the server SHALL include an extension of type "server_name" in the (extended) server hello.
                      * The "extension_data" field of this extension SHALL be empty. (RFC 6066 section 3) */
                     buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SERVER_NAME, {});
@@ -1405,7 +1416,7 @@ ptls_t *ptls_new(ptls_context_t *ctx, const char *server_name)
     *tls = (ptls_t){ctx};
     if (server_name != NULL) {
         tls->state = PTLS_STATE_CLIENT_HANDSHAKE_START;
-        if ((tls->client.server_name = strdup(server_name)) == NULL)
+        if ((tls->server_name = strdup(server_name)) == NULL)
             goto Fail;
     } else {
         tls->state = PTLS_STATE_SERVER_EXPECT_CLIENT_HELLO;
@@ -1427,7 +1438,7 @@ void ptls_free(ptls_t *tls)
     if (tls->client.certificate_verify.cb != NULL)
         tls->client.certificate_verify.cb(tls->client.certificate_verify.verify_ctx, ptls_iovec_init(NULL, 0),
                                           ptls_iovec_init(NULL, 0));
-    free(tls->client.server_name);
+    free(tls->server_name);
     free(tls);
 }
 
