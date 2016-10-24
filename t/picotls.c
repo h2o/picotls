@@ -64,15 +64,14 @@ static void test_hkdf(void)
 
 static void test_aes128gcm(void)
 {
-    const char *traffic_secret = "01234567890123456789012345678901", *label = "handshake key expansion", *src1 = "hello world",
-               *src2 = "good bye, all";
+    const char *traffic_secret = "01234567890123456789012345678901", *src1 = "hello world", *src2 = "good bye, all";
     ptls_aead_context_t *c;
     char enc1[256], enc2[256], dec1[256], dec2[256];
     size_t enc1len, enc2len, dec1len, dec2len;
     int ret;
 
     /* encrypt */
-    c = ptls_aead_new(&ptls_openssl_aes128gcm, &ptls_openssl_sha256, 1, traffic_secret, label);
+    c = ptls_aead_new(&ptls_openssl_aes128gcm, &ptls_openssl_sha256, 1, traffic_secret);
     assert(c != NULL);
     ret = ptls_aead_transform(c, enc1, &enc1len, src1, strlen(src1), 0);
     ok(ret == 0);
@@ -81,7 +80,7 @@ static void test_aes128gcm(void)
     ptls_aead_free(c);
 
     /* decrypt */
-    c = ptls_aead_new(&ptls_openssl_aes128gcm, &ptls_openssl_sha256, 0, traffic_secret, label);
+    c = ptls_aead_new(&ptls_openssl_aes128gcm, &ptls_openssl_sha256, 0, traffic_secret);
     assert(c != NULL);
     ret = ptls_aead_transform(c, dec1, &dec1len, enc1, enc1len, 0);
     ok(ret == 0);
@@ -97,7 +96,7 @@ static void test_aes128gcm(void)
 
     /* alter and decrypt to detect failure */
     enc1[0] ^= 1;
-    c = ptls_aead_new(&ptls_openssl_aes128gcm, &ptls_openssl_sha256, 0, traffic_secret, label);
+    c = ptls_aead_new(&ptls_openssl_aes128gcm, &ptls_openssl_sha256, 0, traffic_secret);
     assert(c != NULL);
     ret = ptls_aead_transform(c, dec1, &dec1len, enc1, enc1len, 0);
     ok(ret == PTLS_ALERT_BAD_RECORD_MAC);

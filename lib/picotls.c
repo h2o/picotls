@@ -481,8 +481,7 @@ static int derive_secret(struct st_ptls_key_schedule_t *sched, void *secret, con
     return ret;
 }
 
-static int get_traffic_key(ptls_hash_algorithm_t *algo, void *key, size_t key_size, const char *label, int is_iv,
-                           const void *secret)
+static int get_traffic_key(ptls_hash_algorithm_t *algo, void *key, size_t key_size, int is_iv, const void *secret)
 {
     return hkdf_expand_label(algo, key, key_size, ptls_iovec_init(secret, algo->digest_size), is_iv ? "iv" : "key",
                              ptls_iovec_init(NULL, 0));
@@ -499,7 +498,7 @@ static void dispose_protection_context(struct st_ptls_protection_context_t *ctx)
 }
 
 static int setup_protection_context(struct st_ptls_protection_context_t *ctx, struct st_ptls_key_schedule_t *sched,
-                                    const char *secret_label, ptls_aead_algorithm_t *aead, int is_enc, const char *aead_label)
+                                    const char *secret_label, ptls_aead_algorithm_t *aead, int is_enc)
 {
     int ret;
 
@@ -507,11 +506,11 @@ static int setup_protection_context(struct st_ptls_protection_context_t *ctx, st
 
     if ((ret = derive_secret(sched, ctx->secret, secret_label)) != 0)
         goto Fail;
-    if ((ctx->aead = ptls_aead_new(aead, sched->algo, is_enc, ctx->secret, aead_label)) == NULL) {
+    if ((ctx->aead = ptls_aead_new(aead, sched->algo, is_enc, ctx->secret)) == NULL) {
         ret = PTLS_ERROR_NO_MEMORY; /* TODO obtain error from ptls_aead_new */
         goto Fail;
     }
-    PTLS_DEBUGF("[%s,%s] %02x%02x,%02x%02x\n", secret_label, aead_label, (unsigned)ctx->secret[0], (unsigned)ctx->secret[1],
+    PTLS_DEBUGF("[%s] %02x%02x,%02x%02x\n", secret_label, (unsigned)ctx->secret[0], (unsigned)ctx->secret[1],
                 (unsigned)ctx->aead->static_iv[0], (unsigned)ctx->aead->static_iv[1]);
 
     return 0;
@@ -786,10 +785,10 @@ static int client_handle_hello(ptls_t *tls, ptls_iovec_t message)
     if ((ret = key_schedule_extract(tls->key_schedule, ecdh_secret)) != 0)
         return ret;
     if ((ret = setup_protection_context(&tls->protection_ctx.send, tls->key_schedule, "client handshake traffic secret",
-                                        sh.cipher_suite->aead, 1, "handshake key expansion")) != 0)
+                                        sh.cipher_suite->aead, 1)) != 0)
         return ret;
     if ((ret = setup_protection_context(&tls->protection_ctx.recv, tls->key_schedule, "server handshake traffic secret",
-                                        sh.cipher_suite->aead, 0, "handshake key expansion")) != 0)
+                                        sh.cipher_suite->aead, 0)) != 0)
         return ret;
 
     tls->state = PTLS_STATE_CLIENT_EXPECT_ENCRYPTED_EXTENSIONS;
@@ -923,10 +922,10 @@ static int client_handle_finished(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iove
     if ((ret = key_schedule_extract(tls->key_schedule, ptls_iovec_init(NULL, 0))) != 0)
         return ret;
     if ((ret = setup_protection_context(&tls->protection_ctx.recv, tls->key_schedule, "server application traffic secret",
-                                        tls->protection_ctx.recv.aead->algo, 0, "application data key expansion")) != 0)
+                                        tls->protection_ctx.recv.aead->algo, 0)) != 0)
         return ret;
     if ((ret = setup_protection_context(&send_ctx, tls->key_schedule, "client application traffic secret",
-                                        tls->protection_ctx.send.aead->algo, 1, "application data key expansion")) != 0)
+                                        tls->protection_ctx.send.aead->algo, 1)) != 0)
         return ret;
 
     ret = send_finished(tls, sendbuf);
@@ -1237,10 +1236,10 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
     /* create protection contexts for the handshake */
     key_schedule_extract(tls->key_schedule, ecdh_secret);
     if ((ret = setup_protection_context(&tls->protection_ctx.send, tls->key_schedule, "server handshake traffic secret",
-                                        ch.cipher_suite->aead, 1, "handshake key expansion")) != 0)
+                                        ch.cipher_suite->aead, 1)) != 0)
         goto Exit;
     if ((ret = setup_protection_context(&tls->protection_ctx.recv, tls->key_schedule, "client handshake traffic secret",
-                                        ch.cipher_suite->aead, 0, "handshake key expansion")) != 0)
+                                        ch.cipher_suite->aead, 0)) != 0)
         goto Exit;
 
     /* send EncryptedExtensions */
@@ -1292,7 +1291,7 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
     if ((ret = key_schedule_extract(tls->key_schedule, ptls_iovec_init(NULL, 0))) != 0)
         return ret;
     if ((ret = setup_protection_context(&tls->protection_ctx.send, tls->key_schedule, "server application traffic secret",
-                                        tls->protection_ctx.send.aead->algo, 1, "application data key expansion")) != 0)
+                                        tls->protection_ctx.send.aead->algo, 1)) != 0)
         return ret;
 
     tls->state = PTLS_STATE_SERVER_EXPECT_FINISHED;
@@ -1313,7 +1312,7 @@ static int server_handle_finished(ptls_t *tls, ptls_iovec_t message)
         return ret;
 
     if ((ret = setup_protection_context(&tls->protection_ctx.recv, tls->key_schedule, "client application traffic secret",
-                                        tls->protection_ctx.recv.aead->algo, 0, "application data key expansion")) != 0)
+                                        tls->protection_ctx.recv.aead->algo, 0)) != 0)
         return ret;
 
     key_schedule_update_hash(tls->key_schedule, message.base, message.len);
@@ -1838,8 +1837,7 @@ int ptls_hkdf_expand(ptls_hash_algorithm_t *algo, void *output, size_t outlen, p
     return 0;
 }
 
-ptls_aead_context_t *ptls_aead_new(ptls_aead_algorithm_t *aead, ptls_hash_algorithm_t *hash, int is_enc, const void *secret,
-                                   const char *label)
+ptls_aead_context_t *ptls_aead_new(ptls_aead_algorithm_t *aead, ptls_hash_algorithm_t *hash, int is_enc, const void *secret)
 {
     ptls_aead_context_t *ctx;
     uint8_t key[PTLS_MAX_SECRET_SIZE];
@@ -1849,9 +1847,9 @@ ptls_aead_context_t *ptls_aead_new(ptls_aead_algorithm_t *aead, ptls_hash_algori
         return NULL;
 
     *ctx = (ptls_aead_context_t){aead};
-    if ((ret = get_traffic_key(hash, key, aead->key_size, label, 0, secret)) != 0)
+    if ((ret = get_traffic_key(hash, key, aead->key_size, 0, secret)) != 0)
         goto Exit;
-    if ((ret = get_traffic_key(hash, ctx->static_iv, aead->iv_size, label, 1, secret)) != 0)
+    if ((ret = get_traffic_key(hash, ctx->static_iv, aead->iv_size, 1, secret)) != 0)
         goto Exit;
     ret = aead->setup_crypto(ctx, is_enc, key);
 
