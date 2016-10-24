@@ -124,6 +124,10 @@ struct st_ptls_t {
      */
     char *server_name;
     /**
+     * selected cipher-suite
+     */
+    ptls_cipher_suite_t *cipher_suite;
+    /**
      * misc.
      */
     struct {
@@ -148,7 +152,6 @@ struct st_ptls_record_t {
 };
 
 struct st_ptls_client_hello_t {
-    ptls_cipher_suite_t *cipher_suite;
     struct {
         const uint8_t *ids;
         size_t count;
@@ -168,7 +171,6 @@ struct st_ptls_client_hello_t {
 
 struct st_ptls_server_hello_t {
     uint8_t random[PTLS_HELLO_RANDOM_SIZE];
-    ptls_cipher_suite_t *cipher_suite;
     ptls_iovec_t peerkey;
 };
 
@@ -731,7 +733,7 @@ static int decode_server_hello(ptls_t *tls, struct st_ptls_server_hello_t *sh, c
             ret = PTLS_ALERT_HANDSHAKE_FAILURE;
             goto Exit;
         }
-        sh->cipher_suite = *cs;
+        tls->cipher_suite = *cs;
     }
 
     uint16_t type;
@@ -783,10 +785,10 @@ static int client_handle_hello(ptls_t *tls, ptls_iovec_t message)
     if ((ret = key_schedule_extract(tls->key_schedule, ecdh_secret)) != 0)
         return ret;
     if ((ret = setup_protection_context(&tls->protection_ctx.send, tls->key_schedule, "client handshake traffic secret",
-                                        sh.cipher_suite->aead, 1)) != 0)
+                                        tls->cipher_suite->aead, 1)) != 0)
         return ret;
     if ((ret = setup_protection_context(&tls->protection_ctx.recv, tls->key_schedule, "server handshake traffic secret",
-                                        sh.cipher_suite->aead, 0)) != 0)
+                                        tls->cipher_suite->aead, 0)) != 0)
         return ret;
 
     tls->state = PTLS_STATE_CLIENT_EXPECT_ENCRYPTED_EXTENSIONS;
@@ -1073,18 +1075,18 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
             uint16_t id;
             if ((ret = decode16(&id, &src, end)) != 0)
                 goto Exit;
-            if (ch->cipher_suite == NULL) {
+            if (tls->cipher_suite == NULL) {
                 ptls_cipher_suite_t **cs = tls->ctx->cipher_suites;
                 for (; *cs != NULL; ++cs) {
                     if ((*cs)->id == id) {
-                        ch->cipher_suite = *cs;
+                        tls->cipher_suite = *cs;
                         break;
                     }
                 }
             }
         } while (src != end);
     });
-    if (ch->cipher_suite == NULL) {
+    if (tls->cipher_suite == NULL) {
         ret = PTLS_ALERT_HANDSHAKE_FAILURE;
         goto Exit;
     }
@@ -1227,7 +1229,7 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
 
     /* create key schedule, feed the initial values supplied from the client */
     assert(tls->key_schedule == NULL);
-    tls->key_schedule = key_schedule_new(ch.cipher_suite->hash);
+    tls->key_schedule = key_schedule_new(tls->cipher_suite->hash);
     key_schedule_extract(tls->key_schedule, ptls_iovec_init(NULL, 0));
     key_schedule_update_hash(tls->key_schedule, message.base, message.len);
 
@@ -1238,7 +1240,7 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
             goto Exit;
         tls->ctx->random_bytes(sendbuf->base + sendbuf->off, PTLS_HELLO_RANDOM_SIZE);
         sendbuf->off += PTLS_HELLO_RANDOM_SIZE;
-        buffer_push16(sendbuf, ch.cipher_suite->id);
+        buffer_push16(sendbuf, tls->cipher_suite->id);
         buffer_push_block(sendbuf, 2, {
             buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_KEY_SHARE, {
                 buffer_push16(sendbuf, ch.key_share.algorithm->id);
@@ -1250,10 +1252,10 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
     /* create protection contexts for the handshake */
     key_schedule_extract(tls->key_schedule, ecdh_secret);
     if ((ret = setup_protection_context(&tls->protection_ctx.send, tls->key_schedule, "server handshake traffic secret",
-                                        ch.cipher_suite->aead, 1)) != 0)
+                                        tls->cipher_suite->aead, 1)) != 0)
         goto Exit;
     if ((ret = setup_protection_context(&tls->protection_ctx.recv, tls->key_schedule, "client handshake traffic secret",
-                                        ch.cipher_suite->aead, 0)) != 0)
+                                        tls->cipher_suite->aead, 0)) != 0)
         goto Exit;
 
     /* send EncryptedExtensions */
