@@ -737,7 +737,7 @@ ptls_openssl_t *ptls_openssl_new(void)
     if (ctx == NULL)
         return NULL;
 
-    *ctx = (ptls_openssl_t){lookup_certificate, verify_certificate};
+    *ctx = (ptls_openssl_t){{lookup_certificate, verify_certificate}};
 
     return ctx;
 }
