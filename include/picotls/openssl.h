@@ -32,15 +32,32 @@ extern ptls_aead_algorithm_t ptls_openssl_aes128gcm;
 extern ptls_hash_algorithm_t ptls_openssl_sha256;
 extern ptls_cipher_suite_t ptls_openssl_aes128gcmsha256;
 extern ptls_cipher_suite_t *ptls_openssl_cipher_suites[];
-extern ptls_crypto_t ptls_openssl_crypto;
-
-typedef struct st_ptls_openssl_t ptls_openssl_t;
 
 void ptls_openssl_random_bytes(void *buf, size_t len);
-ptls_openssl_t *ptls_openssl_new(void);
-void ptls_openssl_free(ptls_openssl_t *ctx);
-ptls_certificate_context_t *ptls_openssl_get_certificate_context(ptls_openssl_t *ctx);
-int ptls_openssl_register_server(ptls_openssl_t *ctx, const char *server_name, EVP_PKEY *key, STACK_OF(X509) * certs);
-int ptls_openssl_set_certificate_store(ptls_openssl_t *ctx, X509_STORE *store);
+
+struct st_ptls_openssl_identity_t {
+    ptls_iovec_t name;
+    EVP_PKEY *key;
+    size_t num_certs;
+    ptls_iovec_t certs[1];
+};
+
+typedef struct st_ptls_openssl_lookup_certificate_t {
+    ptls_lookup_certificate_t super;
+    struct st_ptls_openssl_identity_t **identities;
+    size_t count;
+} ptls_openssl_lookup_certificate_t;
+
+void ptls_openssl_init_lookup_certificate(ptls_openssl_lookup_certificate_t *self);
+void ptls_openssl_dispose_lookup_certificate(ptls_openssl_lookup_certificate_t *self);
+int ptls_openssl_lookup_certificate_add_identity(ptls_openssl_lookup_certificate_t *self, const char *server_name, EVP_PKEY *key,
+                                                 STACK_OF(X509) * certs);
+typedef struct st_ptls_openssl_verify_certificate_t {
+    ptls_verify_certificate_t super;
+    X509_STORE *cert_store;
+} ptls_openssl_verify_certificate_t;
+
+int ptls_openssl_init_verify_certificate(ptls_openssl_verify_certificate_t *self, X509_STORE *store);
+void ptls_openssl_dispose_verify_certificate(ptls_openssl_verify_certificate_t *self);
 
 #endif

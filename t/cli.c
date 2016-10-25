@@ -116,9 +116,9 @@ static int decrypt_and_print(ptls_t *tls, const uint8_t *input, size_t inlen)
     return 0;
 }
 
-static int handle_connection(int fd, ptls_certificate_context_t *cert_ctx, const char *server_name)
+static int handle_connection(int fd, ptls_context_t *ctx, const char *server_name)
 {
-    ptls_t *tls = ptls_new(&ptls_openssl_crypto, cert_ctx, server_name);
+    ptls_t *tls = ptls_new(ctx, server_name);
     uint8_t rbuf[1024], wbuf_small[1024];
     ptls_buffer_t wbuf;
     int ret;
@@ -178,7 +178,7 @@ Exit:
     return 0;
 }
 
-static int run_server(struct sockaddr *sa, socklen_t salen, ptls_certificate_context_t *cert_ctx)
+static int run_server(struct sockaddr *sa, socklen_t salen, ptls_context_t *ctx)
 {
     int listen_fd, conn_fd, on = 1;
 
@@ -201,7 +201,7 @@ static int run_server(struct sockaddr *sa, socklen_t salen, ptls_certificate_con
 
     while (1) {
         if ((conn_fd = accept(listen_fd, NULL, 0)) != -1) {
-            handle_connection(conn_fd, cert_ctx, NULL);
+            handle_connection(conn_fd, ctx, NULL);
             close(conn_fd);
         }
     }
@@ -209,7 +209,7 @@ static int run_server(struct sockaddr *sa, socklen_t salen, ptls_certificate_con
     return 0;
 }
 
-static int run_client(struct sockaddr *sa, socklen_t salen, ptls_certificate_context_t *cert_ctx)
+static int run_client(struct sockaddr *sa, socklen_t salen, ptls_context_t *ctx)
 {
     int fd;
 
@@ -222,7 +222,7 @@ static int run_client(struct sockaddr *sa, socklen_t salen, ptls_certificate_con
         return 1;
     }
 
-    return handle_connection(fd, cert_ctx, "example.com");
+    return handle_connection(fd, ctx, "example.com");
 }
 
 static int resolve_address(struct sockaddr *sa, socklen_t *salen, const char *host, const char *port)
@@ -272,13 +272,18 @@ int main(int argc, char **argv)
     ENGINE_register_all_digests();
 #endif
 
-    ptls_openssl_t *ctx = ptls_openssl_new();
+    ptls_context_t ctx = {ptls_openssl_random_bytes, ptls_openssl_key_exchanges, ptls_openssl_cipher_suites};
+    ptls_openssl_lookup_certificate_t lookup_certificate;
+    ptls_openssl_verify_certificate_t verify_certificate;
     const char *host, *port;
     STACK_OF(X509) *certs = NULL;
     EVP_PKEY *pkey = NULL;
     int ch;
     struct sockaddr_storage sa;
     socklen_t salen;
+
+    ptls_openssl_init_lookup_certificate(&lookup_certificate);
+    ctx.lookup_certificate = &lookup_certificate.super;
 
     while ((ch = getopt(argc, argv, "c:k:vh")) != -1) {
         switch (ch) {
@@ -312,7 +317,8 @@ int main(int argc, char **argv)
             }
         } break;
         case 'v':
-            ptls_openssl_set_certificate_store(ctx, NULL);
+            ptls_openssl_init_verify_certificate(&verify_certificate, NULL);
+            ctx.verify_certificate = &verify_certificate.super;
             break;
         default:
             usage(argv[0]);
@@ -326,7 +332,7 @@ int main(int argc, char **argv)
             fprintf(stderr, "-c and -k options must be used together\n");
             return 1;
         }
-        ptls_openssl_register_server(ctx, "example.com", pkey, certs);
+        ptls_openssl_lookup_certificate_add_identity(&lookup_certificate, "example.com", pkey, certs);
         sk_X509_free(certs);
         EVP_PKEY_free(pkey);
     }
@@ -340,5 +346,5 @@ int main(int argc, char **argv)
     if (resolve_address((struct sockaddr *)&sa, &salen, host, port) != 0)
         exit(1);
 
-    return (certs != NULL ? run_server : run_client)((struct sockaddr *)&sa, salen, ptls_openssl_get_certificate_context(ctx));
+    return (certs != NULL ? run_server : run_client)((struct sockaddr *)&sa, salen, &ctx);
 }

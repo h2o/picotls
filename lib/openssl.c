@@ -35,25 +35,22 @@
 #include "picotls.h"
 #include "picotls/openssl.h"
 
-struct st_ptls_openssl_server_context_t {
-    ptls_iovec_t name;
-    EVP_PKEY *key;
-    size_t num_certs;
-    ptls_iovec_t certs[1];
-};
-
-struct st_ptls_openssl_t {
-    ptls_certificate_context_t cert_ctx;
-    struct {
-        struct st_ptls_openssl_server_context_t **entries;
-        size_t count;
-    } servers;
-    X509_STORE *cert_store;
-};
-
 void ptls_openssl_random_bytes(void *buf, size_t len)
 {
     RAND_bytes(buf, (int)len);
+}
+
+static int eckey_is_on_group(EVP_PKEY *pkey, int nid)
+{
+    EC_KEY *eckey = EVP_PKEY_get1_EC_KEY(pkey);
+    int ret = 0;
+
+    if (eckey != NULL) {
+        ret = EC_GROUP_get_curve_name(EC_KEY_get0_group(eckey)) == nid;
+        EC_KEY_free(eckey);
+    }
+
+    return ret;
 }
 
 static EC_KEY *ecdh_gerenate_key(EC_GROUP *group)
@@ -557,39 +554,39 @@ static uint16_t select_compatible_signature_algorithm(EVP_PKEY *key, const uint1
     return UINT16_MAX;
 }
 
-static int lookup_certificate(ptls_t *tls, uint16_t *sign_algorithm,
+static int lookup_certificate(ptls_lookup_certificate_t *_self, ptls_t *tls, uint16_t *sign_algorithm,
                               int (**signer)(void *sign_ctx, ptls_iovec_t *output, ptls_iovec_t input), void **signer_data,
                               ptls_iovec_t **certs, size_t *num_certs, ptls_iovec_t server_name,
                               const uint16_t *signature_algorithms, size_t num_signature_algorithms)
 {
-    ptls_openssl_t *ctx = (ptls_openssl_t *)ptls_get_certificate_context(tls);
-    struct st_ptls_openssl_server_context_t *sctx;
+    ptls_openssl_lookup_certificate_t *self = (ptls_openssl_lookup_certificate_t *)_self;
+    struct st_ptls_openssl_identity_t *identity;
 
-    if (ctx->servers.count == 0)
+    if (self->count == 0)
         return PTLS_ALERT_HANDSHAKE_FAILURE;
 
     if (server_name.base != NULL) {
         size_t i;
-        for (i = 0; i != ctx->servers.count; ++i) {
-            sctx = ctx->servers.entries[i];
-            if (ascii_streq_caseless(server_name, sctx->name) &&
-                (*sign_algorithm = select_compatible_signature_algorithm(sctx->key, signature_algorithms,
+        for (i = 0; i != self->count; ++i) {
+            identity = self->identities[i];
+            if (ascii_streq_caseless(server_name, identity->name) &&
+                (*sign_algorithm = select_compatible_signature_algorithm(identity->key, signature_algorithms,
                                                                          num_signature_algorithms)) != UINT16_MAX)
                 goto Found;
         }
     }
     /* not found, use the first one, if the signing algorithm matches */
-    sctx = ctx->servers.entries[0];
-    if ((*sign_algorithm = select_compatible_signature_algorithm(sctx->key, signature_algorithms, num_signature_algorithms)) ==
+    identity = self->identities[0];
+    if ((*sign_algorithm = select_compatible_signature_algorithm(identity->key, signature_algorithms, num_signature_algorithms)) ==
         UINT16_MAX)
         return PTLS_ALERT_HANDSHAKE_FAILURE;
 
 Found:
     /* setup the rest */
     *signer = rsapss_sign;
-    *signer_data = sctx->key;
-    *certs = sctx->certs;
-    *num_certs = sctx->num_certs;
+    *signer_data = identity->key;
+    *certs = identity->certs;
+    *num_certs = identity->num_certs;
 
     return 0;
 }
@@ -649,141 +646,45 @@ Exit:
     return ret;
 }
 
-static int verify_certificate(ptls_t *tls, int (**verifier)(void *, ptls_iovec_t, ptls_iovec_t), void **verify_data,
-                              ptls_iovec_t *certs, size_t num_certs)
-{
-    ptls_openssl_t *ctx = (ptls_openssl_t *)ptls_get_certificate_context(tls);
-    X509 *cert = NULL;
-    STACK_OF(X509) *chain = NULL;
-    X509_STORE_CTX *verify_ctx = NULL;
-    int ret = 0;
-
-    assert(num_certs != 0);
-
-    if ((cert = to_x509(certs[0])) == NULL) {
-        ret = PTLS_ALERT_BAD_CERTIFICATE;
-        goto Exit;
-    }
-
-    if (ctx->cert_store != NULL) {
-        size_t i;
-        for (i = 1; i != num_certs; ++i) {
-            X509 *interm = to_x509(certs[i]);
-            if (interm == NULL) {
-                ret = PTLS_ALERT_BAD_CERTIFICATE;
-                goto Exit;
-            }
-        }
-        if ((verify_ctx = X509_STORE_CTX_new()) == NULL) {
-            ret = PTLS_ERROR_NO_MEMORY;
-            goto Exit;
-        }
-        if (X509_STORE_CTX_init(verify_ctx, ctx->cert_store, cert, chain) != 1) {
-            ret = PTLS_ERROR_LIBRARY;
-            goto Exit;
-        }
-        X509_STORE_CTX_set_purpose(verify_ctx, X509_PURPOSE_SSL_CLIENT);
-        if (X509_verify_cert(verify_ctx) == 1) {
-            ret = 0;
-        } else {
-            switch (X509_STORE_CTX_get_error(verify_ctx)) {
-            case X509_V_ERR_OUT_OF_MEM:
-                ret = PTLS_ERROR_NO_MEMORY;
-                goto Exit;
-            case X509_V_ERR_CERT_REVOKED:
-                ret = PTLS_ALERT_CERTIFICATE_REVOKED;
-                goto Exit;
-            case X509_V_ERR_CERT_HAS_EXPIRED:
-                ret = PTLS_ALERT_CERTIFICATE_EXPIRED;
-                goto Exit;
-            default:
-                ret = PTLS_ALERT_CERTIFICATE_UNKNOWN;
-                goto Exit;
-            }
-        }
-    }
-
-    if ((*verify_data = X509_get_pubkey(cert)) == NULL) {
-        ret = PTLS_ALERT_BAD_CERTIFICATE;
-        goto Exit;
-    }
-    *verifier = verify_sign;
-
-Exit:
-    if (verify_ctx != NULL)
-        X509_STORE_CTX_free(verify_ctx);
-    if (chain != NULL)
-        sk_X509_free(chain);
-    if (cert != NULL)
-        X509_free(cert);
-    return ret;
-}
-
-static void free_server_context(struct st_ptls_openssl_server_context_t *ctx)
+static void free_identity(struct st_ptls_openssl_identity_t *identity)
 {
     size_t i;
 
-    free(ctx->name.base);
-    if (ctx->key != NULL)
-        EVP_PKEY_free(ctx->key);
-    for (i = 0; i != ctx->num_certs; ++i)
-        free(ctx->certs[i].base);
-    free(ctx);
+    free(identity->name.base);
+    if (identity->key != NULL)
+        EVP_PKEY_free(identity->key);
+    for (i = 0; i != identity->num_certs; ++i)
+        free(identity->certs[i].base);
+    free(identity);
 }
 
-ptls_openssl_t *ptls_openssl_new(void)
+void ptls_openssl_init_lookup_certificate(ptls_openssl_lookup_certificate_t *self)
 {
-    ptls_openssl_t *ctx = malloc(sizeof(*ctx));
-    if (ctx == NULL)
-        return NULL;
-
-    *ctx = (ptls_openssl_t){{lookup_certificate, verify_certificate}};
-
-    return ctx;
+    *self = (ptls_openssl_lookup_certificate_t){{lookup_certificate}};
 }
 
-void ptls_openssl_free(ptls_openssl_t *ctx)
+void ptls_openssl_dispose_lookup_certificate(ptls_openssl_lookup_certificate_t *self)
 {
     size_t i;
-
-    for (i = 0; i != ctx->servers.count; ++i) {
-        free_server_context(ctx->servers.entries[i]);
-    }
-    free(ctx->servers.entries);
-    free(ctx);
+    for (i = 0; i != self->count; ++i)
+        free_identity(self->identities[i]);
+    free(self->identities);
+    free(self);
 }
 
-ptls_certificate_context_t *ptls_openssl_get_certificate_context(ptls_openssl_t *ctx)
+int ptls_openssl_lookup_certificate_add_identity(ptls_openssl_lookup_certificate_t *self, const char *server_name, EVP_PKEY *key,
+                                                 STACK_OF(X509) * certs)
 {
-    return &ctx->cert_ctx;
-}
-
-static int eckey_is_on_group(EVP_PKEY *pkey, int nid)
-{
-    EC_KEY *eckey = EVP_PKEY_get1_EC_KEY(pkey);
-    int ret = 0;
-
-    if (eckey != NULL) {
-        ret = EC_GROUP_get_curve_name(EC_KEY_get0_group(eckey)) == nid;
-        EC_KEY_free(eckey);
-    }
-
-    return ret;
-}
-
-int ptls_openssl_register_server(ptls_openssl_t *ctx, const char *server_name, EVP_PKEY *key, STACK_OF(X509) * certs)
-{
-    struct st_ptls_openssl_server_context_t *slot, **new_entries;
+    struct st_ptls_openssl_identity_t *slot, **new_identities;
     size_t i;
     int ret;
 
-    if ((slot = malloc(offsetof(struct st_ptls_openssl_server_context_t, certs) + sizeof(slot->certs[0]) * sk_X509_num(certs))) ==
-        NULL) {
+    if ((slot = malloc(offsetof(struct st_ptls_openssl_identity_t, certs) + sizeof(slot->certs[0]) * sk_X509_num(certs))) == NULL) {
         ret = PTLS_ERROR_NO_MEMORY;
         goto Error;
     }
 
-    *slot = (struct st_ptls_openssl_server_context_t){};
+    *slot = (struct st_ptls_openssl_identity_t){{NULL}};
     if ((slot->name.base = (uint8_t *)strdup(server_name)) == NULL) {
         ret = PTLS_ERROR_NO_MEMORY;
         goto Error;
@@ -826,44 +727,117 @@ int ptls_openssl_register_server(ptls_openssl_t *ctx, const char *server_name, E
         slot->certs[i].len = len;
     }
 
-    if ((new_entries = realloc(ctx->servers.entries, sizeof(ctx->servers.entries[0]) * (ctx->servers.count + 1))) == NULL) {
+    if ((new_identities = realloc(self->identities, sizeof(self->identities[0]) * (self->count + 1))) == NULL) {
         ret = PTLS_ERROR_NO_MEMORY;
         goto Error;
     }
-    ctx->servers.entries = new_entries;
-    ctx->servers.entries[ctx->servers.count++] = slot;
+    self->identities = new_identities;
+    self->identities[self->count++] = slot;
 
     return 0;
 
 Error:
     if (slot != NULL)
-        free_server_context(slot);
+        free_identity(slot);
     return ret;
 }
 
-int ptls_openssl_set_certificate_store(ptls_openssl_t *ctx, X509_STORE *store)
+static int verify_certificate(ptls_verify_certificate_t *_self, ptls_t *tls, int (**verifier)(void *, ptls_iovec_t, ptls_iovec_t),
+                              void **verify_data, ptls_iovec_t *certs, size_t num_certs)
 {
-    if (ctx->cert_store != NULL) {
-        X509_STORE_free(ctx->cert_store);
-        ctx->cert_store = NULL;
+    ptls_openssl_verify_certificate_t *self = (ptls_openssl_verify_certificate_t *)_self;
+    X509 *cert = NULL;
+    STACK_OF(X509) *chain = NULL;
+    X509_STORE_CTX *verify_ctx = NULL;
+    int ret = 0;
+
+    assert(num_certs != 0);
+
+    if ((cert = to_x509(certs[0])) == NULL) {
+        ret = PTLS_ALERT_BAD_CERTIFICATE;
+        goto Exit;
     }
+
+    if (self->cert_store != NULL) {
+        size_t i;
+        for (i = 1; i != num_certs; ++i) {
+            X509 *interm = to_x509(certs[i]);
+            if (interm == NULL) {
+                ret = PTLS_ALERT_BAD_CERTIFICATE;
+                goto Exit;
+            }
+        }
+        if ((verify_ctx = X509_STORE_CTX_new()) == NULL) {
+            ret = PTLS_ERROR_NO_MEMORY;
+            goto Exit;
+        }
+        if (X509_STORE_CTX_init(verify_ctx, self->cert_store, cert, chain) != 1) {
+            ret = PTLS_ERROR_LIBRARY;
+            goto Exit;
+        }
+        X509_STORE_CTX_set_purpose(verify_ctx, X509_PURPOSE_SSL_CLIENT);
+        if (X509_verify_cert(verify_ctx) == 1) {
+            ret = 0;
+        } else {
+            switch (X509_STORE_CTX_get_error(verify_ctx)) {
+            case X509_V_ERR_OUT_OF_MEM:
+                ret = PTLS_ERROR_NO_MEMORY;
+                goto Exit;
+            case X509_V_ERR_CERT_REVOKED:
+                ret = PTLS_ALERT_CERTIFICATE_REVOKED;
+                goto Exit;
+            case X509_V_ERR_CERT_HAS_EXPIRED:
+                ret = PTLS_ALERT_CERTIFICATE_EXPIRED;
+                goto Exit;
+            default:
+                ret = PTLS_ALERT_CERTIFICATE_UNKNOWN;
+                goto Exit;
+            }
+        }
+    }
+
+    if ((*verify_data = X509_get_pubkey(cert)) == NULL) {
+        ret = PTLS_ALERT_BAD_CERTIFICATE;
+        goto Exit;
+    }
+    *verifier = verify_sign;
+
+Exit:
+    if (verify_ctx != NULL)
+        X509_STORE_CTX_free(verify_ctx);
+    if (chain != NULL)
+        sk_X509_free(chain);
+    if (cert != NULL)
+        X509_free(cert);
+    return ret;
+}
+
+int ptls_openssl_init_verify_certificate(ptls_openssl_verify_certificate_t *self, X509_STORE *store)
+{
+    *self = (ptls_openssl_verify_certificate_t){{verify_certificate}};
 
     if (store != NULL) {
         CRYPTO_add(&store->references, 1, CRYPTO_LOCK_X509_STORE);
-        ctx->cert_store = store;
+        self->cert_store = store;
     } else {
         X509_LOOKUP *lookup;
-        if ((ctx->cert_store = X509_STORE_new()) == NULL)
+        if ((self->cert_store = X509_STORE_new()) == NULL)
             return -1;
-        if ((lookup = X509_STORE_add_lookup(ctx->cert_store, X509_LOOKUP_file())) == NULL)
+        if ((lookup = X509_STORE_add_lookup(self->cert_store, X509_LOOKUP_file())) == NULL)
             return -1;
         X509_LOOKUP_load_file(lookup, NULL, X509_FILETYPE_DEFAULT);
-        if ((lookup = X509_STORE_add_lookup(ctx->cert_store, X509_LOOKUP_hash_dir())) == NULL)
+        if ((lookup = X509_STORE_add_lookup(self->cert_store, X509_LOOKUP_hash_dir())) == NULL)
             return -1;
         X509_LOOKUP_add_dir(lookup, NULL, X509_FILETYPE_DEFAULT);
     }
 
     return 0;
+}
+
+void ptls_openssl_dispose_verify_certificate(ptls_openssl_verify_certificate_t *self)
+{
+    X509_STORE_free(self->cert_store);
+    free(self);
 }
 
 ptls_key_exchange_algorithm_t ptls_openssl_secp256r1 = {PTLS_GROUP_SECP256R1, secp256r1_create_key_exchange,
@@ -874,4 +848,3 @@ ptls_hash_algorithm_t ptls_openssl_sha256 = {64, 32, sha256_create};
 ptls_cipher_suite_t ptls_openssl_aes128gcmsha256 = {PTLS_CIPHER_SUITE_AES_128_GCM_SHA256, &ptls_openssl_aes128gcm,
                                                     &ptls_openssl_sha256};
 ptls_cipher_suite_t *ptls_openssl_cipher_suites[] = {&ptls_openssl_aes128gcmsha256, NULL};
-ptls_crypto_t ptls_openssl_crypto = {ptls_openssl_random_bytes, ptls_openssl_key_exchanges, ptls_openssl_cipher_suites};

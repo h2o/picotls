@@ -98,30 +98,6 @@ typedef struct st_ptls_buffer_t {
     int is_allocated;
 } ptls_buffer_t;
 
-typedef const struct st_ptls_crypto_t ptls_crypto_t;
-
-/**
- * defines callbacks for certificate-related operations during the handshake
- */
-typedef struct st_ptls_certificate_context_t {
-    /**
-     * after receiving ClientHello, the core calls the callback to obtain the certificate chain to be sent to the client as well as
-     * a pointer to a function that should be called for signing the handshake using the private key associated to the certificate
-     */
-    int (*lookup)(ptls_t *tls, uint16_t *sign_algorithm, int (**signer)(void *sign_ctx, ptls_iovec_t *output, ptls_iovec_t input),
-                  void **signer_data, ptls_iovec_t **certs, size_t *num_certs, ptls_iovec_t server_name,
-                  const uint16_t *signature_algorithms, size_t num_signature_algorithms);
-    /**
-     * after receiving Certificate, the core calls the callback to verify the certificate chain and to obtain a pointer to a
-     * callback that should be used for verifying CertificateVerify. If an error occurs between a successful return from this
-     * callback to the invocation of the verify_sign callback, verify_sign is called with both data and sign set to an empty buffer.
-     * The implementor of the callback should use that as the opportunity to free any temporary data allocated for the verify_sign
-     * callback.
-     */
-    int (*verify)(ptls_t *tls, int (**verify_sign)(void *verify_ctx, ptls_iovec_t data, ptls_iovec_t sign), void **verify_data,
-                  ptls_iovec_t *certs, size_t num_certs);
-} ptls_certificate_context_t;
-
 /**
  * key exchange context built by ptls_key_exchange_algorithm::create.
  */
@@ -245,11 +221,34 @@ typedef const struct st_ptls_cipher_suite_t {
     ptls_hash_algorithm_t *hash;
 } ptls_cipher_suite_t;
 
+#define PTLS_CALLBACK_TYPE(ret, name, ...)                                                                                         \
+    typedef struct st_ptls_##name##_t {                                                                                            \
+        ret (*cb)(struct st_ptls_##name##_t * self, __VA_ARGS__);                                                                  \
+    } ptls_##name##_t
+
 /**
- * A list of ciphers and callbacks required for running TLS. Users can create this structure of their choice to enable / disable
- * certain ciphers.
+ * after receiving ClientHello, the core calls the callback to obtain the certificate chain to be sent to the client as well as
+ * a pointer to a function that should be called for signing the handshake using the private key associated to the certificate
  */
-struct st_ptls_crypto_t {
+PTLS_CALLBACK_TYPE(int, lookup_certificate, ptls_t *tls, uint16_t *sign_algorithm,
+                   int (**signer)(void *sign_ctx, ptls_iovec_t *output, ptls_iovec_t input), void **signer_data,
+                   ptls_iovec_t **certs, size_t *num_certs, ptls_iovec_t server_name, const uint16_t *signature_algorithms,
+                   size_t num_signature_algorithms);
+/**
+ * after receiving Certificate, the core calls the callback to verify the certificate chain and to obtain a pointer to a
+ * callback that should be used for verifying CertificateVerify. If an error occurs between a successful return from this
+ * callback to the invocation of the verify_sign callback, verify_sign is called with both data and sign set to an empty buffer.
+ * The implementor of the callback should use that as the opportunity to free any temporary data allocated for the verify_sign
+ * callback.
+ */
+PTLS_CALLBACK_TYPE(int, verify_certificate, ptls_t *tls,
+                   int (**verify_sign)(void *verify_ctx, ptls_iovec_t data, ptls_iovec_t sign), void **verify_data,
+                   ptls_iovec_t *certs, size_t num_certs);
+
+/**
+ * the configuration
+ */
+typedef struct st_ptls_context_t {
     /**
      * PRNG to be used
      */
@@ -262,7 +261,15 @@ struct st_ptls_crypto_t {
      * list of supported cipher-suites terminated by NULL
      */
     ptls_cipher_suite_t **cipher_suites;
-};
+    /**
+     *
+     */
+    ptls_lookup_certificate_t *lookup_certificate;
+    /**
+     *
+     */
+    ptls_verify_certificate_t *verify_certificate;
+} ptls_context_t;
 
 /**
  * builds a new ptls_iovec_t instance using the supplied parameters
@@ -289,7 +296,7 @@ int ptls_buffer_reserve(struct st_ptls_buffer_t *buf, size_t delta);
  * create a object to handle new TLS connection. Client-side of a TLS connection is created if server_name is non-NULL. Otherwise,
  * a server-side connection is created.
  */
-ptls_t *ptls_new(ptls_crypto_t *crypto, ptls_certificate_context_t *cert_ctx, const char *server_name);
+ptls_t *ptls_new(ptls_context_t *ctx, const char *server_name);
 /**
  * releases all resources associated to the object
  */
@@ -297,11 +304,7 @@ void ptls_free(ptls_t *tls);
 /**
  * returns address of the crypto callbacks that the connection is using
  */
-ptls_crypto_t *ptls_get_crypto(ptls_t *tls);
-/**
- * returns the certificate context that the connection is using
- */
-ptls_certificate_context_t *ptls_get_certificate_context(ptls_t *tls);
+ptls_context_t *ptls_get_context(ptls_t *tls);
 /**
  * proceeds with the handshake, optionally taking some input from peer. The function returns zero in case the handshake completed
  * successfully. PTLS_ERROR_HANDSHAKE_IN_PROGRESS is returned in case the handshake is incomplete. Otherwise, an error value is

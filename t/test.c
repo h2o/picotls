@@ -25,6 +25,8 @@
 #include "../deps/picotest/picotest.h"
 #include "test.h"
 
+ptls_context_t *ctx;
+
 int main(int argc, char **argv)
 {
     ERR_load_crypto_strings();
@@ -35,6 +37,8 @@ int main(int argc, char **argv)
     ENGINE_register_all_ciphers();
     ENGINE_register_all_digests();
 #endif
+
+    ctx = setup_openssl_context();
 
     subtest("openssl", test_openssl);
     subtest("picotls", test_picotls);

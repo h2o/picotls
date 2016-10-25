@@ -104,22 +104,19 @@ static void test_ecdh_key_exchange(void)
 
 static void test_rsa_sign(void)
 {
-    ptls_openssl_t *ctx = ptls_openssl_new();
-    setup_server_context(ctx);
+    ptls_openssl_lookup_certificate_t *lookup_certificate = (ptls_openssl_lookup_certificate_t *)ctx->lookup_certificate;
 
-    ok(select_compatible_signature_algorithm(ctx->servers.entries[0]->key, (uint16_t[]){PTLS_SIGNATURE_ECDSA_SECP256R1_SHA256},
-                                             1) == UINT16_MAX);
-    ok(select_compatible_signature_algorithm(ctx->servers.entries[0]->key,
+    ok(select_compatible_signature_algorithm(lookup_certificate->identities[0]->key,
+                                             (uint16_t[]){PTLS_SIGNATURE_ECDSA_SECP256R1_SHA256}, 1) == UINT16_MAX);
+    ok(select_compatible_signature_algorithm(lookup_certificate->identities[0]->key,
                                              (uint16_t[]){PTLS_SIGNATURE_ECDSA_SECP256R1_SHA256, PTLS_SIGNATURE_RSA_PSS_SHA256},
                                              2) == PTLS_SIGNATURE_RSA_PSS_SHA256);
 
     const void *message = "hello world";
     ptls_iovec_t signature;
-    ok(rsapss_sign(ctx->servers.entries[0]->key, &signature, ptls_iovec_init(message, strlen(message))) == 0);
+    ok(rsapss_sign(lookup_certificate->identities[0]->key, &signature, ptls_iovec_init(message, strlen(message))) == 0);
 
     /* TODO verify */
-
-    ptls_openssl_free(ctx);
 }
 
 void test_openssl(void)
@@ -128,8 +125,18 @@ void test_openssl(void)
     subtest("rsa-sign", test_rsa_sign);
 }
 
-void setup_server_context(ptls_openssl_t *ctx)
+ptls_context_t *setup_openssl_context(void)
 {
+    static int inited = 0;
+    static ptls_openssl_lookup_certificate_t lookup_certificate;
+    static ptls_context_t ctx = {ptls_openssl_random_bytes, ptls_openssl_key_exchanges, ptls_openssl_cipher_suites,
+                                 &lookup_certificate.super};
+
+    if (inited)
+        goto Exit;
+
+    ptls_openssl_init_lookup_certificate(&lookup_certificate);
+
     BIO *bio = BIO_new_mem_buf(RSA_PRIVATE_KEY, strlen(RSA_PRIVATE_KEY));
     EVP_PKEY *pkey = PEM_read_bio_PrivateKey(bio, NULL, NULL, NULL);
     assert(pkey != NULL || !"failed to load private key");
@@ -142,9 +149,12 @@ void setup_server_context(ptls_openssl_t *ctx)
 
     STACK_OF(X509) *certs = sk_X509_new(NULL);
     sk_X509_push(certs, cert);
-    ptls_openssl_register_server(ctx, "example.com", pkey, certs);
+    ptls_openssl_lookup_certificate_add_identity(&lookup_certificate, "example.com", pkey, certs);
     sk_X509_free(certs);
 
     X509_free(cert);
     EVP_PKEY_free(pkey);
+
+Exit:
+    return &ctx;
 }
