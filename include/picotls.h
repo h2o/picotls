@@ -247,7 +247,7 @@ PTLS_CALLBACK_TYPE(int, verify_certificate, ptls_t *tls,
 /**
  * encrypt-and-signs (or verify-and-decrypts) a ticket (server-only)
  */
-PTLS_CALLBACK_TYPE(int, encrypt_ticket, ptls_t *tls, void *dst, size_t *dst_size, ptls_iovec_t src);
+PTLS_CALLBACK_TYPE(int, encrypt_ticket, ptls_t *tls, ptls_buffer_t *dst, ptls_iovec_t src);
 /**
  * saves a ticket (client-only)
  */

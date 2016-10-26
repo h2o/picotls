@@ -237,10 +237,15 @@ static void test_full_handshake(void)
     ok(lc_callcnt == 2);
 }
 
-static int copy_ticket(ptls_encrypt_ticket_t *self, ptls_t *tls, void *dst, size_t *dst_size, ptls_iovec_t src)
+static int copy_ticket(ptls_encrypt_ticket_t *self, ptls_t *tls, ptls_buffer_t *dst, ptls_iovec_t src)
 {
-    memcpy(dst, src.base, src.len);
-    *dst_size = src.len;
+    int ret;
+
+    if ((ret = ptls_buffer_reserve(dst, src.len)) != 0)
+        return ret;
+    memcpy(dst->base + dst->off, src.base, src.len);
+    dst->off += src.len;
+
     return 0;
 }
 

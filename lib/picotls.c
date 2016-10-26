@@ -1594,30 +1594,24 @@ Exit:
 
 static int try_psk_handshake(ptls_t *tls, size_t *psk_index, struct st_ptls_client_hello_t *ch)
 {
-    ptls_iovec_t allocated_buf = {NULL}, ticket_psk, ticket_server_name;
+    ptls_buffer_t decbuf;
+    ptls_iovec_t ticket_psk, ticket_server_name;
     uint64_t issue_at;
     uint32_t age_add;
     uint16_t ticket_csid;
-    uint8_t binder_key[PTLS_MAX_DIGEST_SIZE], verify_data[PTLS_MAX_DIGEST_SIZE];
+    uint8_t decbuf_small[256], binder_key[PTLS_MAX_DIGEST_SIZE], verify_data[PTLS_MAX_DIGEST_SIZE];
     int ret;
+
+    ptls_buffer_init(&decbuf, decbuf_small, sizeof(decbuf_small));
 
     for (*psk_index = 0; *psk_index < ch->psk.identities.count; ++*psk_index) {
         ptls_iovec_t input = ch->psk.identities.list[*psk_index].identity;
-
-        /* (re)allocate buffer */
-        if (allocated_buf.base != NULL) {
-            ptls_clear_memory(allocated_buf.base, allocated_buf.len);
-            free(allocated_buf.base);
-        }
-        if ((allocated_buf.base = malloc(input.len)) == NULL) {
-            ret = PTLS_ERROR_NO_MEMORY;
-            goto Exit;
-        }
         /* decrypt and decode */
-        if ((tls->ctx->decrypt_ticket->cb(tls->ctx->decrypt_ticket, tls, allocated_buf.base, &allocated_buf.len, input)) != 0)
+        decbuf.off = 0;
+        if ((tls->ctx->decrypt_ticket->cb(tls->ctx->decrypt_ticket, tls, &decbuf, input)) != 0)
             continue;
-        if (decode_session_identifier(&issue_at, &ticket_psk, &age_add, &ticket_server_name, &ticket_csid, allocated_buf.base,
-                                      allocated_buf.base + allocated_buf.len) != 0)
+        if (decode_session_identifier(&issue_at, &ticket_psk, &age_add, &ticket_server_name, &ticket_csid, decbuf.base,
+                                      decbuf.base + decbuf.off) != 0)
             continue;
         /* check server-name */
         if (ticket_server_name.len != 0) {
@@ -1663,10 +1657,7 @@ Found:
     ret = 0;
 
 Exit:
-    if (allocated_buf.base != NULL) {
-        ptls_clear_memory(allocated_buf.base, allocated_buf.len);
-        free(allocated_buf.base);
-    }
+    ptls_buffer_dispose(&decbuf);
     ptls_clear_memory(binder_key, sizeof(binder_key));
     ptls_clear_memory(verify_data, sizeof(verify_data));
     return ret;
@@ -1890,13 +1881,9 @@ static int send_session_ticket(ptls_t *tls, ptls_buffer_t *sendbuf)
             buffer_push32(sendbuf, tls->ctx->ticket_lifetime);
             buffer_push32(sendbuf, ticket_age_add);
             buffer_push_block(sendbuf, 2, {
-                if ((ret = ptls_buffer_reserve(sendbuf, session_id.off + 256)) != 0)
+                if ((ret = tls->ctx->encrypt_ticket->cb(tls->ctx->encrypt_ticket, tls, sendbuf,
+                                                        ptls_iovec_init(session_id.base, session_id.off))) != 0)
                     goto Exit;
-                size_t encrypted_size;
-                if ((ret = tls->ctx->encrypt_ticket->cb(tls->ctx->encrypt_ticket, tls, sendbuf->base + sendbuf->off,
-                                                        &encrypted_size, ptls_iovec_init(session_id.base, session_id.off))) != 0)
-                    goto Exit;
-                sendbuf->off += encrypted_size;
             });
             buffer_push_block(sendbuf, 2, {
                 if (tls->ctx->max_early_data_size != 0)
