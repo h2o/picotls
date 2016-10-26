@@ -63,7 +63,7 @@ static int run_handshake(int fd, ptls_t *tls, ptls_buffer_t *wbuf, uint8_t *pend
 
     *pending_input_len = 0;
 
-    while ((ret = ptls_handshake(tls, wbuf, pending_input, pending_input_len)) == PTLS_ERROR_HANDSHAKE_IN_PROGRESS) {
+    while ((ret = ptls_handshake(tls, wbuf, pending_input, pending_input_len, NULL)) == PTLS_ERROR_HANDSHAKE_IN_PROGRESS) {
         /* write to socket */
         if (write_all(fd, wbuf->base, wbuf->off) != 0)
             return -1;
