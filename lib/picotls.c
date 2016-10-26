@@ -194,6 +194,7 @@ struct st_ptls_client_hello_t {
             size_t count;
         } identities;
         unsigned ke_modes;
+        int early_data_indication;
     } psk;
 };
 
@@ -1385,7 +1386,7 @@ Exit:
 static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, const uint8_t *src, const uint8_t *end)
 {
     uint16_t exttype = 0;
-    int early_data_indication = 0, ret;
+    int ret;
 
     *ch = (struct st_ptls_client_hello_t){};
 
@@ -1537,7 +1538,7 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
             }
             break;
         case PTLS_EXTENSION_TYPE_EARLY_DATA:
-            early_data_indication = 1;
+            ch->psk.early_data_indication = 1;
             break;
         default:
             break;
@@ -1566,14 +1567,8 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
                 ret = PTLS_ALERT_ILLEGAL_PARAMETER;
                 goto Exit;
             }
-            if (early_data_indication && tls->ctx->max_early_data_size != 0) {
-                if ((tls->server.receive_secret_post_early_data = malloc(PTLS_MAX_DIGEST_SIZE)) == NULL) {
-                    ret = PTLS_ERROR_NO_MEMORY;
-                    goto Exit;
-                }
-            }
         } else {
-            if (ch->psk.ke_modes != 0 || early_data_indication) {
+            if (ch->psk.ke_modes != 0 || ch->psk.early_data_indication) {
                 ret = PTLS_ALERT_ILLEGAL_PARAMETER;
                 goto Exit;
             }
@@ -1714,7 +1709,11 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
             assert((ch.psk.ke_modes & (1u << PTLS_PSK_KE_MODE_PSK_DHE)) != 0);
             mode = HANDSHAKE_MODE_PSK_DHE;
         }
-        if (tls->server.receive_secret_post_early_data != NULL) {
+        if (ch.psk.early_data_indication && tls->ctx->max_early_data_size != 0 && psk_index == 0) {
+            if ((tls->server.receive_secret_post_early_data = malloc(PTLS_MAX_DIGEST_SIZE)) == NULL) {
+                ret = PTLS_ERROR_NO_MEMORY;
+                goto Exit;
+            }
             if ((ret = setup_traffic_protection(tls, tls->cipher_suite, 0, "client early traffic secret")) != 0)
                 goto Exit;
         }
