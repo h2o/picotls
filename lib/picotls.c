@@ -1775,8 +1775,6 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
             if (mode != HANDSHAKE_MODE_FULL) {
                 buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_PRE_SHARED_KEY,
                                       { buffer_push16(sendbuf, (uint16_t)psk_index); });
-                if (tls->server.receive_secret_post_early_data != NULL)
-                    buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_EARLY_DATA, {});
             }
         });
     });
@@ -1803,6 +1801,8 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
                      * The "extension_data" field of this extension SHALL be empty. (RFC 6066 section 3) */
                     buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SERVER_NAME, {});
                 }
+                if (tls->server.receive_secret_post_early_data != NULL)
+                    buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_EARLY_DATA, {});
             });
         });
     });
