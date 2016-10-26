@@ -558,15 +558,11 @@ static int derive_secret(struct st_ptls_key_schedule_t *sched, void *secret, con
     return ret;
 }
 
-static int derive_resumption_psk(struct st_ptls_key_schedule_t *sched, uint8_t *psk)
+static int derive_resumption_secret(struct st_ptls_key_schedule_t *sched, uint8_t *secret)
 {
-    int ret;
-
-    if ((ret = derive_secret(sched, psk, "resumption master secret")) != 0)
-        return ret;
-    return hkdf_expand_label(sched->algo, psk, sched->algo->digest_size, ptls_iovec_init(psk, sched->algo->digest_size),
-                             "resumption psk", ptls_iovec_init(NULL, 0));
+    return derive_secret(sched, secret, "resumption master secret");
 }
+
 static int decode_new_session_ticket(uint32_t *lifetime, uint32_t *age_add, ptls_iovec_t *ticket, uint32_t *max_early_data_size,
                                      const uint8_t *src, const uint8_t *end)
 {
@@ -604,7 +600,7 @@ Exit:
     return ret;
 }
 
-static int decode_stored_session_ticket(ptls_context_t *ctx, ptls_cipher_suite_t **cs, ptls_iovec_t *psk,
+static int decode_stored_session_ticket(ptls_context_t *ctx, ptls_cipher_suite_t **cs, ptls_iovec_t *secret,
                                         uint32_t *obfuscated_ticket_age, ptls_iovec_t *ticket, uint32_t *max_early_data_size,
                                         const uint8_t *src, const uint8_t *end)
 {
@@ -624,7 +620,7 @@ static int decode_stored_session_ticket(ptls_context_t *ctx, ptls_cipher_suite_t
         src = end;
     });
     decode_block(src, end, 2, {
-        *psk = ptls_iovec_init(src, end - src);
+        *secret = ptls_iovec_init(src, end - src);
         src = end;
     });
 
@@ -687,11 +683,11 @@ int encode_session_identifier(ptls_buffer_t *buf, uint32_t ticket_age_add, struc
     buffer_push_block(buf, 2, {
         /* date */
         buffer_push64(buf, gettime_millis());
-        /* psk */
+        /* resumption master secret */
         buffer_push_block(buf, 2, {
             if ((ret = ptls_buffer_reserve(buf, sched->algo->digest_size)) != 0)
                 goto Exit;
-            if ((ret = derive_resumption_psk(sched, buf->base + buf->off)) != 0)
+            if ((ret = derive_resumption_secret(sched, buf->base + buf->off)) != 0)
                 goto Exit;
             buf->off += sched->algo->digest_size;
         });
@@ -830,7 +826,7 @@ Exit:
 
 static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_handshake_properties_t *properties)
 {
-    ptls_iovec_t resumption_psk = {NULL}, resumption_ticket;
+    ptls_iovec_t resumption_secret = {NULL}, resumption_ticket;
     ptls_cipher_suite_t *resumption_cipher_suite = NULL;
     uint32_t obfuscated_ticket_age = 0;
     size_t msghash_off;
@@ -842,10 +838,10 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_handshake
     ptls_hash_algorithm_t *key_schedule_hash = tls->ctx->cipher_suites[0]->hash;
 
     if (properties != NULL) {
-        /* setup resumption-related data. If successful, resumption_psk becomes a non-zero value. */
+        /* setup resumption-related data. If successful, resumption_secret becomes a non-zero value. */
         if (properties->client.session_ticket.base != NULL) {
             uint32_t max_early_data_size;
-            if (decode_stored_session_ticket(tls->ctx, &resumption_cipher_suite, &resumption_psk, &obfuscated_ticket_age,
+            if (decode_stored_session_ticket(tls->ctx, &resumption_cipher_suite, &resumption_secret, &obfuscated_ticket_age,
                                              &resumption_ticket, &max_early_data_size, properties->client.session_ticket.base,
                                              properties->client.session_ticket.base + properties->client.session_ticket.len) == 0 &&
                 resumption_cipher_suite->hash == key_schedule_hash) {
@@ -855,7 +851,7 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_handshake
                     send_early_data = 1;
                 }
             } else {
-                resumption_psk = ptls_iovec_init(NULL, 0);
+                resumption_secret = ptls_iovec_init(NULL, 0);
             }
         }
         if (properties->client.max_early_data_size != NULL && !send_early_data)
@@ -863,7 +859,7 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_handshake
     }
 
     tls->key_schedule = key_schedule_new(key_schedule_hash);
-    if ((ret = key_schedule_extract(tls->key_schedule, resumption_psk)) != 0)
+    if ((ret = key_schedule_extract(tls->key_schedule, resumption_secret)) != 0)
         goto Exit;
 
     msghash_off = sendbuf->off + 5;
@@ -919,7 +915,7 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_handshake
                 ptls_clear_memory(pubkey.base, pubkey.len);
                 free(pubkey.base);
             });
-            if (resumption_psk.base != NULL) {
+            if (resumption_secret.base != NULL) {
                 if (send_early_data)
                     buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_EARLY_DATA, {});
                 buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_PSK_KEY_EXCHANGE_MODES, {
@@ -947,7 +943,7 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_handshake
     });
 
     /* update the message hash, filling in the PSK binder HMAC if necessary */
-    if (resumption_psk.base != NULL) {
+    if (resumption_secret.base != NULL) {
         size_t psk_binder_off = sendbuf->off - (3 + tls->key_schedule->algo->digest_size);
         key_schedule_update_hash(tls->key_schedule, sendbuf->base + msghash_off, psk_binder_off - msghash_off);
         msghash_off = psk_binder_off;
@@ -1280,7 +1276,7 @@ static int client_handle_new_session_ticket(ptls_t *tls, ptls_iovec_t message)
     buffer_push_block(&ticket_buf, 2, {
         if ((ret = ptls_buffer_reserve(&ticket_buf, tls->key_schedule->algo->digest_size)) != 0)
             goto Exit;
-        if ((ret = derive_resumption_psk(tls->key_schedule, ticket_buf.base + ticket_buf.off)) != 0)
+        if ((ret = derive_resumption_secret(tls->key_schedule, ticket_buf.base + ticket_buf.off)) != 0)
             goto Exit;
         ticket_buf.off += tls->key_schedule->algo->digest_size;
     });
