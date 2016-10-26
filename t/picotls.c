@@ -163,6 +163,7 @@ static void test_handshake(ptls_context_t *ctx, ptls_iovec_t ticket, int use_ear
         ok(consumed == cbuf.off);
         ok(decbuf.off == strlen(req));
         ok(memcmp(decbuf.base, req, decbuf.off) == 0);
+        ok(ptls_is_early_data(server));
         cbuf.off = 0;
         decbuf.off = 0;
 
@@ -195,6 +196,7 @@ static void test_handshake(ptls_context_t *ctx, ptls_iovec_t ticket, int use_ear
         ok(consumed == cbuf.off);
         ok(decbuf.off == strlen(req));
         ok(memcmp(decbuf.base, req, strlen(req)) == 0);
+        ok(!ptls_is_early_data(server));
         decbuf.off = 0;
 
         ret = ptls_send(server, &sbuf, resp, strlen(resp));
@@ -207,6 +209,7 @@ static void test_handshake(ptls_context_t *ctx, ptls_iovec_t ticket, int use_ear
     ok(consumed == sbuf.off);
     ok(decbuf.off == strlen(resp));
     ok(memcmp(decbuf.base, resp, strlen(resp)) == 0);
+    ok(!ptls_is_early_data(client));
 
     ptls_buffer_dispose(&cbuf);
     ptls_buffer_dispose(&sbuf);

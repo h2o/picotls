@@ -2039,6 +2039,11 @@ ptls_context_t *ptls_get_context(ptls_t *tls)
     return tls->ctx;
 }
 
+int ptls_is_early_data(ptls_t *tls)
+{
+    return tls->server.early_data != NULL;
+}
+
 static int test_handshake_message(const uint8_t *src, size_t src_len)
 {
     uint32_t body_len;

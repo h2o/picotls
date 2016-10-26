@@ -356,6 +356,10 @@ void ptls_free(ptls_t *tls);
  */
 ptls_context_t *ptls_get_context(ptls_t *tls);
 /**
+ * returns if the received data is early data
+ */
+int ptls_is_early_data(ptls_t *tls);
+/**
  * proceeds with the handshake, optionally taking some input from peer. The function returns zero in case the handshake completed
  * successfully. PTLS_ERROR_HANDSHAKE_IN_PROGRESS is returned in case the handshake is incomplete. Otherwise, an error value is
  * returned. The contents of sendbuf should be sent to the client, regardless of whether if an error is returned. inlen is an
