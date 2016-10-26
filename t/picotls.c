@@ -119,7 +119,7 @@ static void test_aes128gcm(void)
 static void test_handshake(ptls_context_t *ctx, ptls_iovec_t ticket, int use_early_data)
 {
     ptls_t *client, *server;
-    ptls_handshake_properties_t client_hs_prop = {{ticket}}, server_hs_prop = {{{NULL}}};
+    ptls_handshake_properties_t client_hs_prop = {{ticket}};
     uint8_t cbuf_small[16384], sbuf_small[16384], decbuf_small[16384];
     ptls_buffer_t cbuf, sbuf, decbuf;
     size_t consumed, max_early_data_size = 0;
@@ -136,7 +136,6 @@ static void test_handshake(ptls_context_t *ctx, ptls_iovec_t ticket, int use_ear
     if (use_early_data) {
         assert(ctx->max_early_data_size != 0);
         client_hs_prop.client.max_early_data_size = &max_early_data_size;
-        server_hs_prop.server.early_data = &decbuf;
     }
     ret = ptls_handshake(client, &cbuf, NULL, NULL, &client_hs_prop);
     ok(ret == PTLS_ERROR_HANDSHAKE_IN_PROGRESS);
@@ -149,18 +148,29 @@ static void test_handshake(ptls_context_t *ctx, ptls_iovec_t ticket, int use_ear
     }
 
     consumed = cbuf.off;
-    ret = ptls_handshake(server, &sbuf, cbuf.base, &consumed, &server_hs_prop);
-    ok(ret == PTLS_ERROR_HANDSHAKE_IN_PROGRESS);
+    ret = ptls_handshake(server, &sbuf, cbuf.base, &consumed, NULL);
+    ok(ret == 0);
     ok(sbuf.off != 0);
-    ok(consumed == cbuf.off);
-    cbuf.off = 0;
 
     if (use_early_data) {
+        ok(consumed < cbuf.off);
+        memmove(cbuf.base, cbuf.base + consumed, cbuf.off - consumed);
+        cbuf.off -= consumed;
+
+        consumed = cbuf.off;
+        ret = ptls_receive(server, &decbuf, cbuf.base, &consumed);
+        ok(ret == 0);
+        ok(consumed == cbuf.off);
         ok(decbuf.off == strlen(req));
         ok(memcmp(decbuf.base, req, decbuf.off) == 0);
+        cbuf.off = 0;
         decbuf.off = 0;
+
         ret = ptls_send(server, &sbuf, resp, strlen(resp));
         ok(ret == 0);
+    } else {
+        ok(consumed == cbuf.off);
+        cbuf.off = 0;
     }
 
     consumed = sbuf.off;
@@ -180,25 +190,17 @@ static void test_handshake(ptls_context_t *ctx, ptls_iovec_t ticket, int use_ear
         ok(ret == 0);
 
         consumed = cbuf.off;
-        ret = ptls_handshake(server, &sbuf, cbuf.base, &consumed, NULL);
-        ok(ret == 0);
-        ok(consumed < cbuf.off);
-        memmove(cbuf.base, cbuf.base + consumed, cbuf.off - consumed);
-        cbuf.off -= consumed;
-
-        decbuf.off = 0;
-        consumed = cbuf.off;
         ret = ptls_receive(server, &decbuf, cbuf.base, &consumed);
         ok(ret == 0);
         ok(consumed == cbuf.off);
         ok(decbuf.off == strlen(req));
         ok(memcmp(decbuf.base, req, strlen(req)) == 0);
+        decbuf.off = 0;
 
         ret = ptls_send(server, &sbuf, resp, strlen(resp));
         ok(ret == 0);
     }
 
-    decbuf.off = 0;
     consumed = sbuf.off;
     ret = ptls_receive(client, &decbuf, sbuf.base, &consumed);
     ok(ret == 0);

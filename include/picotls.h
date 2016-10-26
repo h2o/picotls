@@ -318,10 +318,6 @@ typedef union st_ptls_handshake_properties_t {
         size_t *max_early_data_size;
     } client;
     struct {
-        /**
-         * buffer for receiving early data
-         */
-        ptls_buffer_t *early_data;
     } server;
 } ptls_handshake_properties_t;
 

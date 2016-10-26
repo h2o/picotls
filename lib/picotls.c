@@ -153,6 +153,7 @@ struct st_ptls_t {
         } client;
         struct {
             uint8_t *receive_secret_post_early_data;
+            int send_ticket : 1;
         } server;
     };
 };
@@ -1851,7 +1852,7 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
         return ret;
 
     tls->state = PTLS_STATE_SERVER_EXPECT_FINISHED;
-    ret = PTLS_ERROR_HANDSHAKE_IN_PROGRESS;
+    ret = 0;
 
 Exit:
     free(pubkey.base);
@@ -1867,8 +1868,7 @@ static int send_session_ticket(ptls_t *tls, ptls_buffer_t *sendbuf)
     uint32_t ticket_age_add;
     int ret = 0;
 
-    if (tls->ctx->ticket_lifetime == 0)
-        return 0;
+    assert(tls->ctx->ticket_lifetime != 0);
     assert(tls->ctx->encrypt_ticket != NULL);
 
     tls->ctx->random_bytes(&ticket_age_add, sizeof(ticket_age_add));
@@ -1906,7 +1906,7 @@ Exit:
     return ret;
 }
 
-static int server_handle_finished(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t message)
+static int server_handle_finished(ptls_t *tls, ptls_iovec_t message)
 {
     int ret;
 
@@ -1918,8 +1918,8 @@ static int server_handle_finished(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iove
 
     key_schedule_update_hash(tls->key_schedule, message.base, message.len);
 
-    if ((ret = send_session_ticket(tls, sendbuf)) != 0)
-        return ret;
+    if (tls->ctx->ticket_lifetime != 0)
+        tls->server.send_ticket = 1;
 
     tls->state = PTLS_STATE_SERVER_POST_HANDSHAKE;
     return 0;
@@ -2114,7 +2114,7 @@ static int handle_handshake_message(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_io
         break;
     case PTLS_STATE_SERVER_EXPECT_FINISHED:
         if (type == PTLS_HANDSHAKE_TYPE_FINISHED) {
-            ret = server_handle_finished(tls, sendbuf, message);
+            ret = server_handle_finished(tls, message);
         } else {
             ret = PTLS_ALERT_HANDSHAKE_FAILURE;
         }
@@ -2274,26 +2274,26 @@ int ptls_handshake(ptls_t *tls, ptls_buffer_t *sendbuf, const void *input, size_
     }
 
     const uint8_t *src = input, *src_end = src + *inlen;
-    ptls_buffer_t *decryptbuf, decryptbuf_self;
-    uint8_t decryptbuf_self_small[256];
+    ptls_buffer_t decryptbuf;
+    uint8_t decryptbuf_small[256];
 
-    if (properties != NULL && properties->server.early_data != NULL) {
-        decryptbuf = properties->server.early_data;
-    } else {
-        ptls_buffer_init(&decryptbuf_self, decryptbuf_self_small, sizeof(decryptbuf_self_small));
-        decryptbuf = &decryptbuf_self;
-    }
+    ptls_buffer_init(&decryptbuf, decryptbuf_small, sizeof(decryptbuf_small));
 
     /* perform handhake until completion or until all the input has been swallowed */
     ret = PTLS_ERROR_HANDSHAKE_IN_PROGRESS;
     while (ret == PTLS_ERROR_HANDSHAKE_IN_PROGRESS && src != src_end) {
         size_t consumed = src_end - src;
-        ret = handle_input(tls, sendbuf, decryptbuf, src, &consumed);
+        ret = handle_input(tls, sendbuf, &decryptbuf, src, &consumed);
         src += consumed;
+        assert(decryptbuf.off == 0);
     }
 
-    if (decryptbuf == &decryptbuf_self)
-        ptls_buffer_dispose(&decryptbuf_self);
+    ptls_buffer_dispose(&decryptbuf);
+
+    if (ret == 0 && tls->server.send_ticket) {
+        tls->server.send_ticket = 0;
+        ret = send_session_ticket(tls, sendbuf);
+    }
 
     if (!(ret == 0 || ret == PTLS_ERROR_HANDSHAKE_IN_PROGRESS)) {
         /* flush partially written response */
@@ -2352,6 +2352,12 @@ int ptls_send(ptls_t *tls, ptls_buffer_t *sendbuf, const void *_input, size_t in
     int ret = 0;
 
     assert(tls->state >= PTLS_STATE_SERVER_EXPECT_FINISHED || tls->state == PTLS_STATE_CLIENT_SEND_EARLY_DATA);
+
+    if (tls->server.send_ticket) {
+        tls->server.send_ticket = 0;
+        if ((ret = send_session_ticket(tls, sendbuf)) != 0)
+            goto Exit;
+    }
 
     for (; inlen != 0; input += pt_size, inlen -= pt_size) {
         pt_size = inlen;
