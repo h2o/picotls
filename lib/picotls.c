@@ -2149,7 +2149,7 @@ static int handle_alert(ptls_t *tls, const uint8_t *src, size_t len)
         case PTLS_ALERT_END_OF_EARLY_DATA:
             /* switch to using the next traffic key */
             if (tls->server.receive_secret_post_early_data == NULL)
-                return PTLS_ALERT_UNEXPECTED_MESSAGE;
+                return 0;
             memcpy(tls->traffic_protection.dec.secret, tls->server.receive_secret_post_early_data, PTLS_MAX_DIGEST_SIZE);
             ptls_clear_memory(tls->server.receive_secret_post_early_data, PTLS_MAX_DIGEST_SIZE);
             return setup_traffic_protection(tls, tls->cipher_suite, 0, NULL);
@@ -2226,9 +2226,10 @@ static int handle_input(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_buffer_t *decr
             if (tls->state >= PTLS_STATE_POST_HANDSHAKE_MIN) {
                 decryptbuf->off += rec.length;
                 ret = 0;
-            } else if (tls->server.receive_secret_post_early_data != NULL) {
-                decryptbuf->off += rec.length;
-                ret = PTLS_ERROR_HANDSHAKE_IN_PROGRESS;
+            } else if (tls->state == PTLS_STATE_SERVER_EXPECT_FINISHED) {
+                if (tls->server.receive_secret_post_early_data != NULL)
+                    decryptbuf->off += rec.length;
+                ret = 0;
             } else {
                 ret = PTLS_ALERT_UNEXPECTED_MESSAGE;
             }
