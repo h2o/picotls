@@ -2197,9 +2197,14 @@ static int handle_input(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_buffer_t *decr
     }
 
     if (tls->server.early_data != NULL) {
-        /* only application data is expected */
-        if (rec.type != PTLS_CONTENT_TYPE_APPDATA)
+        /* only application data (or an alert) is expected */
+        switch (rec.type) {
+        case PTLS_CONTENT_TYPE_APPDATA:
+        case PTLS_CONTENT_TYPE_ALERT:
+            break;
+        default:
             return PTLS_ALERT_UNEXPECTED_MESSAGE;
+        }
     }
 
     if (tls->recvbuf.mess.base != NULL || rec.type == PTLS_CONTENT_TYPE_HANDSHAKE) {
@@ -2316,18 +2321,19 @@ int ptls_handshake(ptls_t *tls, ptls_buffer_t *sendbuf, const void *input, size_
     return ret;
 }
 
-int ptls_receive(ptls_t *tls, ptls_buffer_t *decryptbuf, const void *input, size_t *inlen)
+int ptls_receive(ptls_t *tls, ptls_buffer_t *decryptbuf, const void *_input, size_t *inlen)
 {
-    size_t decryptbuf_orig_size = decryptbuf->off, consumed = 0;
-    int ret;
+    const uint8_t *input = (const uint8_t *)_input, *end = input + *inlen;
+    size_t decryptbuf_orig_size = decryptbuf->off;
+    int ret = 0;
 
     assert(tls->state >= PTLS_STATE_SERVER_EXPECT_FINISHED);
 
     /* loop until we decrypt some application data (or an error) */
-    do {
-        size_t avail = *inlen - consumed;
-        ret = handle_input(tls, NULL, decryptbuf, input + consumed, &avail);
-        consumed += avail;
+    while (ret == 0 && input != end && decryptbuf_orig_size == decryptbuf->off) {
+        size_t consumed = end - input;
+        ret = handle_input(tls, NULL, decryptbuf, input, &consumed);
+        input += consumed;
 
         switch (ret) {
         case 0:
@@ -2344,9 +2350,9 @@ int ptls_receive(ptls_t *tls, ptls_buffer_t *decryptbuf, const void *input, size
             }
             break;
         }
-    } while (ret == 0 && decryptbuf_orig_size == decryptbuf->off);
+    }
 
-    *inlen = consumed;
+    *inlen -= end - input;
 
     return ret;
 }

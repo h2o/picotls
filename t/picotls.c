@@ -210,6 +210,16 @@ static void test_handshake(ptls_context_t *ctx, ptls_iovec_t ticket, int use_ear
     ok(decbuf.off == strlen(resp));
     ok(memcmp(decbuf.base, resp, strlen(resp)) == 0);
     ok(!ptls_is_early_data(client));
+    decbuf.off = 0;
+
+    if (use_early_data) {
+        consumed = cbuf.off;
+        ret = ptls_receive(server, &decbuf, cbuf.base, &consumed);
+        ok(ret == 0);
+        ok(cbuf.off == consumed);
+        ok(decbuf.off == 0);
+        ok(!ptls_is_early_data(client));
+    }
 
     ptls_buffer_dispose(&cbuf);
     ptls_buffer_dispose(&sbuf);
