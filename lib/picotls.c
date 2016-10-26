@@ -922,7 +922,8 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_handshake
                 if (tls->client.send_early_data)
                     buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_EARLY_DATA, {});
                 buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_PSK_KEY_EXCHANGE_MODES, {
-                    buffer_push(sendbuf, PTLS_PSK_KE_MODE_PSK);
+                    if (!tls->ctx->require_dhe_on_psk)
+                        buffer_push(sendbuf, PTLS_PSK_KE_MODE_PSK);
                     buffer_push(sendbuf, PTLS_PSK_KE_MODE_PSK_DHE);
                 });
                 /* pre-shared key "MUST be the last extension in the ClientHello" (draft-17 section 4.2.6) */
@@ -1687,6 +1688,8 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
     tls->key_schedule = key_schedule_new(tls->cipher_suite->hash);
 
     /* try psk handshake */
+    if (tls->ctx->require_dhe_on_psk)
+        ch.psk.ke_modes &= ~(1u << PTLS_PSK_KE_MODE_PSK);
     if (ch.psk.hash_end != 0 && (ch.psk.ke_modes & ((1u << PTLS_PSK_KE_MODE_PSK) | (1u << PTLS_PSK_KE_MODE_PSK_DHE))) != 0 &&
         tls->ctx->decrypt_ticket != NULL) {
         key_schedule_update_hash(tls->key_schedule, message.base, ch.psk.hash_end - message.base);

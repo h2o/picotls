@@ -278,13 +278,17 @@ typedef struct st_ptls_context_t {
      */
     ptls_verify_certificate_t *verify_certificate;
     /**
-     * lifetime of a session ticket
+     * lifetime of a session ticket (server-only)
      */
     uint32_t ticket_lifetime;
     /**
-     * maximum permitted size of early data
+     * maximum permitted size of early data (server-only)
      */
     uint32_t max_early_data_size;
+    /**
+     * if set, psk handshakes use (ec)dhe
+     */
+    int require_dhe_on_psk;
     /**
      *
      */

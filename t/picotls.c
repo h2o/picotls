@@ -248,10 +248,15 @@ static void test_resumption(void)
     test_handshake(ctx, saved_ticket);
     ok(lc_callcnt == 1);
 
+    ctx->require_dhe_on_psk = 1;
+    test_handshake(ctx, saved_ticket);
+    ok(lc_callcnt == 1);
+
     ctx->ticket_lifetime = 0;
     ctx->encrypt_ticket = NULL;
     ctx->decrypt_ticket = NULL;
     ctx->save_ticket = NULL;
+    ctx->require_dhe_on_psk = 0;
 }
 
 void test_picotls(void)
