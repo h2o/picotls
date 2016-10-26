@@ -87,6 +87,10 @@ struct st_ptls_traffic_protection_t {
     ptls_aead_context_t *aead;
 };
 
+struct st_ptls_early_data_receiver_t {
+    uint8_t next_secret[PTLS_MAX_DIGEST_SIZE];
+};
+
 struct st_ptls_t {
     /**
      * the context
@@ -152,7 +156,11 @@ struct st_ptls_t {
             int is_psk : 1;
         } client;
         struct {
-            uint8_t *receive_secret_post_early_data;
+            /**
+             * if non-NULL, the server expects to receive early-data. Whether the data is passed to the application depends on if
+             * record_protection.recv.aead is set or not.
+             */
+            struct st_ptls_early_data_receiver_t *early_data;
             int send_ticket : 1;
         } server;
     };
@@ -1709,11 +1717,14 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
             assert((ch.psk.ke_modes & (1u << PTLS_PSK_KE_MODE_PSK_DHE)) != 0);
             mode = HANDSHAKE_MODE_PSK_DHE;
         }
-        if (ch.psk.early_data_indication && tls->ctx->max_early_data_size != 0 && psk_index == 0) {
-            if ((tls->server.receive_secret_post_early_data = malloc(PTLS_MAX_DIGEST_SIZE)) == NULL) {
-                ret = PTLS_ERROR_NO_MEMORY;
-                goto Exit;
-            }
+    }
+
+    if (ch.psk.early_data_indication) {
+        if ((tls->server.early_data = malloc(sizeof(*tls->server.early_data))) == NULL) {
+            ret = PTLS_ERROR_NO_MEMORY;
+            goto Exit;
+        }
+        if (tls->ctx->max_early_data_size != 0 && psk_index == 0) {
             if ((ret = setup_traffic_protection(tls, tls->cipher_suite, 0, "client early traffic secret")) != 0)
                 goto Exit;
         }
@@ -1783,9 +1794,8 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
     key_schedule_extract(tls->key_schedule, ecdh_secret);
     if ((ret = setup_traffic_protection(tls, tls->cipher_suite, 1, "server handshake traffic secret")) != 0)
         goto Exit;
-    if (tls->server.receive_secret_post_early_data != NULL) {
-        if ((ret = derive_secret(tls->key_schedule, tls->server.receive_secret_post_early_data,
-                                 "client handshake traffic secret")) != 0)
+    if (ch.psk.early_data_indication) {
+        if ((ret = derive_secret(tls->key_schedule, tls->server.early_data->next_secret, "client handshake traffic secret")) != 0)
             goto Exit;
     } else {
         if ((ret = setup_traffic_protection(tls, tls->cipher_suite, 0, "client handshake traffic secret")) != 0)
@@ -1801,7 +1811,7 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
                      * The "extension_data" field of this extension SHALL be empty. (RFC 6066 section 3) */
                     buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SERVER_NAME, {});
                 }
-                if (tls->server.receive_secret_post_early_data != NULL)
+                if (tls->server.early_data != NULL && tls->traffic_protection.dec.aead != NULL)
                     buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_EARLY_DATA, {});
             });
         });
@@ -2029,9 +2039,9 @@ void ptls_free(ptls_t *tls)
     if (tls->client.certificate_verify.cb != NULL)
         tls->client.certificate_verify.cb(tls->client.certificate_verify.verify_ctx, ptls_iovec_init(NULL, 0),
                                           ptls_iovec_init(NULL, 0));
-    if (tls->server.receive_secret_post_early_data != NULL) {
-        ptls_clear_memory(tls->server.receive_secret_post_early_data, PTLS_MAX_DIGEST_SIZE);
-        free(tls->server.receive_secret_post_early_data);
+    if (tls->server.early_data != NULL) {
+        ptls_clear_memory(tls->server.early_data, sizeof(*tls->server.early_data));
+        free(tls->server.early_data);
     }
     ptls_clear_memory(tls, sizeof(*tls));
     free(tls);
@@ -2147,10 +2157,12 @@ static int handle_alert(ptls_t *tls, const uint8_t *src, size_t len)
         switch (desc) {
         case PTLS_ALERT_END_OF_EARLY_DATA:
             /* switch to using the next traffic key */
-            if (tls->server.receive_secret_post_early_data == NULL)
+            if (tls->server.early_data == NULL)
                 return 0;
-            memcpy(tls->traffic_protection.dec.secret, tls->server.receive_secret_post_early_data, PTLS_MAX_DIGEST_SIZE);
-            ptls_clear_memory(tls->server.receive_secret_post_early_data, PTLS_MAX_DIGEST_SIZE);
+            memcpy(tls->traffic_protection.dec.secret, tls->server.early_data->next_secret, PTLS_MAX_DIGEST_SIZE);
+            ptls_clear_memory(tls->server.early_data, sizeof(*tls->server.early_data));
+            free(tls->server.early_data);
+            tls->server.early_data = NULL;
             return setup_traffic_protection(tls, tls->cipher_suite, 0, NULL);
         case PTLS_ALERT_USER_CANCELED:
             return 0;
@@ -2192,6 +2204,12 @@ static int handle_input(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_buffer_t *decr
         rec.type = rec.fragment[--rec.length];
     }
 
+    if (tls->server.early_data != NULL) {
+        /* only application data is expected */
+        if (rec.type != PTLS_CONTENT_TYPE_APPDATA)
+            return PTLS_ALERT_UNEXPECTED_MESSAGE;
+    }
+
     if (tls->recvbuf.mess.base != NULL || rec.type == PTLS_CONTENT_TYPE_HANDSHAKE) {
 
         /* handshake */
@@ -2226,7 +2244,7 @@ static int handle_input(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_buffer_t *decr
                 decryptbuf->off += rec.length;
                 ret = 0;
             } else if (tls->state == PTLS_STATE_SERVER_EXPECT_FINISHED) {
-                if (tls->server.receive_secret_post_early_data != NULL)
+                if (tls->traffic_protection.dec.aead != NULL)
                     decryptbuf->off += rec.length;
                 ret = 0;
             } else {
