@@ -55,7 +55,8 @@ static int write_all(int fd, const uint8_t *data, size_t len)
     return 0;
 }
 
-static int run_handshake(int fd, ptls_t *tls, ptls_buffer_t *wbuf, uint8_t *pending_input, size_t *pending_input_len)
+static int run_handshake(int fd, ptls_t *tls, ptls_buffer_t *wbuf, uint8_t *pending_input, size_t *pending_input_len,
+                         ptls_handshake_properties_t *hsprop, ptls_iovec_t early_data)
 {
     size_t pending_input_bufsz = *pending_input_len;
     int ret;
@@ -63,7 +64,17 @@ static int run_handshake(int fd, ptls_t *tls, ptls_buffer_t *wbuf, uint8_t *pend
 
     *pending_input_len = 0;
 
-    while ((ret = ptls_handshake(tls, wbuf, pending_input, pending_input_len)) == PTLS_ERROR_HANDSHAKE_IN_PROGRESS) {
+    while ((ret = ptls_handshake(tls, wbuf, pending_input, pending_input_len, hsprop)) == PTLS_ERROR_HANDSHAKE_IN_PROGRESS) {
+        /* send early-data if possible */
+        if (early_data.len != 0) {
+            if (hsprop->client.max_early_data_size != NULL && early_data.len <= *hsprop->client.max_early_data_size) {
+                if ((ret = ptls_send(tls, wbuf, early_data.base, early_data.len)) != 0) {
+                    fprintf(stderr, "ptls_send(early_data): %d\n", ret);
+                    return ret;
+                }
+            }
+            early_data.len = 0; /* do not send twice! */
+        }
         /* write to socket */
         if (write_all(fd, wbuf->base, wbuf->off) != 0)
             return -1;
@@ -117,21 +128,38 @@ static int decrypt_and_print(ptls_t *tls, const uint8_t *input, size_t inlen)
     return 0;
 }
 
-static int handle_connection(int fd, ptls_context_t *ctx, const char *server_name)
+static int handle_connection(int fd, ptls_context_t *ctx, const char *server_name, ptls_handshake_properties_t *hsprop)
 {
     ptls_t *tls = ptls_new(ctx, server_name);
-    uint8_t rbuf[1024], wbuf_small[1024];
+    uint8_t rbuf[1024], wbuf_small[1024], early_data[1024];
     ptls_buffer_t wbuf;
     int ret;
-    size_t roff;
+    size_t early_data_size = 0, roff;
     ssize_t rret;
+
+    if (server_name != NULL && hsprop->client.max_early_data_size != NULL) {
+        /* using early data */
+        if ((rret = read(0, early_data, sizeof(early_data))) > 0)
+            early_data_size = rret;
+    }
 
     ptls_buffer_init(&wbuf, wbuf_small, sizeof(wbuf_small));
 
     roff = sizeof(rbuf);
-    if (run_handshake(fd, tls, &wbuf, rbuf, &roff) != 0)
+    if (run_handshake(fd, tls, &wbuf, rbuf, &roff, hsprop, ptls_iovec_init(early_data, early_data_size)) != 0)
         goto Exit;
     wbuf.off = 0;
+
+    /* re-send early data if necessary */
+    if (early_data_size != 0 && !hsprop->client.early_data_accepted_by_peer) {
+        if ((ret = ptls_send(tls, &wbuf, early_data, early_data_size)) != 0) {
+            fprintf(stderr, "ptls_send:%d\n", ret);
+            goto Exit;
+        }
+        if (write_all(fd, wbuf.base, wbuf.off) != 0)
+            goto Exit;
+        wbuf.off = 0;
+    }
 
     /* process pending post-handshake data (if any) */
     if (decrypt_and_print(tls, rbuf, roff) != 0)
@@ -179,7 +207,49 @@ Exit:
     return 0;
 }
 
-static int run_server(struct sockaddr *sa, socklen_t salen, ptls_context_t *ctx)
+/* single-entry session cache */
+static struct {
+    uint8_t id[32];
+    ptls_iovec_t data;
+} session_cache = {{0}};
+
+static int encrypt_ticket_cb(ptls_encrypt_ticket_t *self, ptls_t *tls, ptls_buffer_t *dst, ptls_iovec_t src)
+{
+    int ret;
+
+    free(session_cache.data.base);
+    if ((session_cache.data.base = malloc(src.len)) == NULL)
+        return PTLS_ERROR_NO_MEMORY;
+
+    ptls_get_context(tls)->random_bytes(session_cache.id, sizeof(session_cache.id));
+    memcpy(session_cache.data.base, src.base, src.len);
+    session_cache.data.len = src.len;
+
+    if ((ret = ptls_buffer_reserve(dst, sizeof(session_cache.id))) != 0)
+        return ret;
+    memcpy(dst->base + dst->off, session_cache.id, sizeof(session_cache.id));
+    dst->off += sizeof(session_cache.id);
+
+    return 0;
+}
+
+static int decrypt_ticket_cb(ptls_encrypt_ticket_t *self, ptls_t *tls, ptls_buffer_t *dst, ptls_iovec_t src)
+{
+    int ret;
+
+    if (src.len != sizeof(session_cache.id))
+        return PTLS_ERROR_SESSION_NOT_FOUND;
+    if (memcmp(session_cache.id, src.base, sizeof(session_cache.id)) != 0)
+        return PTLS_ERROR_SESSION_NOT_FOUND;
+
+    if ((ret = ptls_buffer_reserve(dst, session_cache.data.len)) != 0)
+        return ret;
+    memcpy(dst->base + dst->off, session_cache.data.base, session_cache.data.len);
+    dst->off += session_cache.data.len;
+    return 0;
+}
+
+static int run_server(struct sockaddr *sa, socklen_t salen, ptls_context_t *ctx, ptls_handshake_properties_t *hsprop)
 {
     int listen_fd, conn_fd, on = 1;
 
@@ -202,7 +272,7 @@ static int run_server(struct sockaddr *sa, socklen_t salen, ptls_context_t *ctx)
 
     while (1) {
         if ((conn_fd = accept(listen_fd, NULL, 0)) != -1) {
-            handle_connection(conn_fd, ctx, NULL);
+            handle_connection(conn_fd, ctx, NULL, hsprop);
             close(conn_fd);
         }
     }
@@ -210,7 +280,46 @@ static int run_server(struct sockaddr *sa, socklen_t salen, ptls_context_t *ctx)
     return 0;
 }
 
-static int run_client(struct sockaddr *sa, socklen_t salen, ptls_context_t *ctx)
+static char *session_file = NULL;
+
+static int load_ticket(ptls_buffer_t *dst)
+{
+    FILE *fp;
+
+    if ((fp = fopen(session_file, "rb")) == NULL)
+        return PTLS_ERROR_LIBRARY;
+    while (1) {
+        size_t n;
+        int ret;
+        if ((ret = ptls_buffer_reserve(dst, 256)) != 0)
+            return ret;
+        if ((n = fread(dst->base + dst->off, 1, 256, fp)) == 0)
+            break;
+        dst->off += n;
+    }
+    fclose(fp);
+
+    return 0;
+}
+
+static int save_ticket_cb(ptls_save_ticket_t *self, ptls_t *tls, ptls_iovec_t src)
+{
+    FILE *fp;
+
+    if (session_file == NULL)
+        return 0;
+
+    if ((fp = fopen(session_file, "wb")) == NULL) {
+        fprintf(stderr, "failed to open file:%s:%s\n", session_file, strerror(errno));
+        return PTLS_ERROR_LIBRARY;
+    }
+    fwrite(src.base, 1, src.len, fp);
+    fclose(fp);
+
+    return 0;
+}
+
+static int run_client(struct sockaddr *sa, socklen_t salen, ptls_context_t *ctx, ptls_handshake_properties_t *hsprop)
 {
     int fd;
 
@@ -223,7 +332,7 @@ static int run_client(struct sockaddr *sa, socklen_t salen, ptls_context_t *ctx)
         return 1;
     }
 
-    return handle_connection(fd, ctx, "example.com");
+    return handle_connection(fd, ctx, "example.com", hsprop);
 }
 
 static int resolve_address(struct sockaddr *sa, socklen_t *salen, const char *host, const char *port)
@@ -256,6 +365,7 @@ static void usage(const char *cmd)
            "  -c certificate-file\n"
            "  -k key-file          specifies the credentials to be used for running the\n"
            "                       server. If omitted, the command runs as a client.\n"
+           "  -s session-file      file to read/write the session ticket\n"
            "  -v                   verify peer using the default certificates\n"
            "  -h                   print this help\n"
            "\n",
@@ -273,20 +383,32 @@ int main(int argc, char **argv)
     ENGINE_register_all_digests();
 #endif
 
-    ptls_context_t ctx = {ptls_openssl_random_bytes, ptls_openssl_key_exchanges, ptls_openssl_cipher_suites};
     ptls_openssl_lookup_certificate_t lookup_certificate;
+    ptls_encrypt_ticket_t encrypt_ticket = {encrypt_ticket_cb}, decrypt_ticket = {decrypt_ticket_cb};
+    ptls_save_ticket_t save_ticket = {save_ticket_cb};
+    ptls_context_t ctx = {ptls_openssl_random_bytes,
+                          ptls_openssl_key_exchanges,
+                          ptls_openssl_cipher_suites,
+                          &lookup_certificate.super,
+                          NULL,
+                          86400,
+                          8192,
+                          0,
+                          &encrypt_ticket,
+                          &decrypt_ticket,
+                          &save_ticket};
     ptls_openssl_verify_certificate_t verify_certificate;
+    ptls_handshake_properties_t hsprop = {{{NULL}}};
     const char *host, *port;
     STACK_OF(X509) *certs = NULL;
     EVP_PKEY *pkey = NULL;
-    int ch;
+    int use_early_data = 0, ch;
     struct sockaddr_storage sa;
     socklen_t salen;
 
     ptls_openssl_init_lookup_certificate(&lookup_certificate);
-    ctx.lookup_certificate = &lookup_certificate.super;
 
-    while ((ch = getopt(argc, argv, "c:k:vh")) != -1) {
+    while ((ch = getopt(argc, argv, "c:k:es:vh")) != -1) {
         switch (ch) {
         case 'c': {
             FILE *fp;
@@ -317,6 +439,12 @@ int main(int argc, char **argv)
                 return 1;
             }
         } break;
+        case 'e':
+            use_early_data = 1;
+            break;
+        case 's':
+            session_file = optarg;
+            break;
         case 'v':
             ptls_openssl_init_verify_certificate(&verify_certificate, NULL);
             ctx.verify_certificate = &verify_certificate.super;
@@ -329,13 +457,34 @@ int main(int argc, char **argv)
     argc -= optind;
     argv += optind;
     if (certs != NULL || pkey != NULL) {
+        /* server */
         if (certs == NULL || pkey == NULL) {
             fprintf(stderr, "-c and -k options must be used together\n");
+            return 1;
+        }
+        if (session_file != NULL) {
+            fprintf(stderr, "-s option cannot be used for server\n");
+            return 1;
+        }
+        if (use_early_data) {
+            fprintf(stderr, "-e option cannot be used for server\n");
             return 1;
         }
         ptls_openssl_lookup_certificate_add_identity(&lookup_certificate, "example.com", pkey, certs);
         sk_X509_free(certs);
         EVP_PKEY_free(pkey);
+    } else {
+        /* client */
+        if (session_file != NULL) {
+            ptls_buffer_t sessdata;
+            ptls_buffer_init(&sessdata, "", 0);
+            if (load_ticket(&sessdata) == 0)
+                hsprop.client.session_ticket = ptls_iovec_init(sessdata.base, sessdata.off);
+        }
+        if (use_early_data) {
+            static size_t max_early_data_size;
+            hsprop.client.max_early_data_size = &max_early_data_size;
+        }
     }
     if (argc != 2) {
         fprintf(stderr, "missing host and port\n");
@@ -347,5 +496,5 @@ int main(int argc, char **argv)
     if (resolve_address((struct sockaddr *)&sa, &salen, host, port) != 0)
         exit(1);
 
-    return (certs != NULL ? run_server : run_client)((struct sockaddr *)&sa, salen, &ctx);
+    return (certs != NULL ? run_server : run_client)((struct sockaddr *)&sa, salen, &ctx, &hsprop);
 }

@@ -77,6 +77,7 @@
 #define PTLS_ERROR_HANDSHAKE_IN_PROGRESS (PTLS_ERROR_CLASS_INTERNAL + 2)
 #define PTLS_ERROR_LIBRARY (PTLS_ERROR_CLASS_INTERNAL + 3)
 #define PTLS_ERROR_INCOMPATIBLE_KEY (PTLS_ERROR_CLASS_INTERNAL + 4)
+#define PTLS_ERROR_SESSION_NOT_FOUND (PTLS_ERROR_CLASS_INTERNAL + 5)
 
 typedef struct st_ptls_t ptls_t;
 
@@ -232,7 +233,7 @@ typedef const struct st_ptls_cipher_suite_t {
  */
 PTLS_CALLBACK_TYPE(int, lookup_certificate, ptls_t *tls, uint16_t *sign_algorithm,
                    int (**signer)(void *sign_ctx, ptls_iovec_t *output, ptls_iovec_t input), void **signer_data,
-                   ptls_iovec_t **certs, size_t *num_certs, ptls_iovec_t server_name, const uint16_t *signature_algorithms,
+                   ptls_iovec_t **certs, size_t *num_certs, const char *server_name, const uint16_t *signature_algorithms,
                    size_t num_signature_algorithms);
 /**
  * after receiving Certificate, the core calls the callback to verify the certificate chain and to obtain a pointer to a
@@ -244,6 +245,14 @@ PTLS_CALLBACK_TYPE(int, lookup_certificate, ptls_t *tls, uint16_t *sign_algorith
 PTLS_CALLBACK_TYPE(int, verify_certificate, ptls_t *tls,
                    int (**verify_sign)(void *verify_ctx, ptls_iovec_t data, ptls_iovec_t sign), void **verify_data,
                    ptls_iovec_t *certs, size_t num_certs);
+/**
+ * encrypt-and-signs (or verify-and-decrypts) a ticket (server-only)
+ */
+PTLS_CALLBACK_TYPE(int, encrypt_ticket, ptls_t *tls, ptls_buffer_t *dst, ptls_iovec_t src);
+/**
+ * saves a ticket (client-only)
+ */
+PTLS_CALLBACK_TYPE(int, save_ticket, ptls_t *tls, ptls_iovec_t input);
 
 /**
  * the configuration
@@ -269,7 +278,53 @@ typedef struct st_ptls_context_t {
      *
      */
     ptls_verify_certificate_t *verify_certificate;
+    /**
+     * lifetime of a session ticket (server-only)
+     */
+    uint32_t ticket_lifetime;
+    /**
+     * maximum permitted size of early data (server-only)
+     */
+    uint32_t max_early_data_size;
+    /**
+     * if set, psk handshakes use (ec)dhe
+     */
+    int require_dhe_on_psk;
+    /**
+     *
+     */
+    ptls_encrypt_ticket_t *encrypt_ticket;
+    /**
+     *
+     */
+    ptls_encrypt_ticket_t *decrypt_ticket;
+    /**
+     *
+     */
+    ptls_save_ticket_t *save_ticket;
 } ptls_context_t;
+
+/**
+ * optional arguments to client-driven handshake
+ */
+typedef union st_ptls_handshake_properties_t {
+    struct {
+        /**
+         * session ticket sent to the application via save_ticket callback
+         */
+        ptls_iovec_t session_ticket;
+        /**
+         * pointer to store the maximum size of early-data that can be sent immediately (if NULL, early data is not used)
+         */
+        size_t *max_early_data_size;
+        /**
+         *
+         */
+        int early_data_accepted_by_peer : 1;
+    } client;
+    struct {
+    } server;
+} ptls_handshake_properties_t;
 
 /**
  * builds a new ptls_iovec_t instance using the supplied parameters
@@ -306,6 +361,10 @@ void ptls_free(ptls_t *tls);
  */
 ptls_context_t *ptls_get_context(ptls_t *tls);
 /**
+ * returns if the received data is early data
+ */
+int ptls_is_early_data(ptls_t *tls);
+/**
  * proceeds with the handshake, optionally taking some input from peer. The function returns zero in case the handshake completed
  * successfully. PTLS_ERROR_HANDSHAKE_IN_PROGRESS is returned in case the handshake is incomplete. Otherwise, an error value is
  * returned. The contents of sendbuf should be sent to the client, regardless of whether if an error is returned. inlen is an
@@ -313,7 +372,7 @@ ptls_context_t *ptls_get_context(ptls_t *tls);
  * the value is updated to the number of bytes consumed by the handshake. In case the returned value is
  * PTLS_ERROR_HANDSHAKE_IN_PROGRESS there is a guarantee that all the input are consumed (i.e. the value of inlen does not change).
  */
-int ptls_handshake(ptls_t *tls, ptls_buffer_t *sendbuf, const void *input, size_t *inlen);
+int ptls_handshake(ptls_t *tls, ptls_buffer_t *sendbuf, const void *input, size_t *inlen, ptls_handshake_properties_t *args);
 /**
  * decrypts the first record within given buffer
  */

@@ -116,61 +116,202 @@ static void test_aes128gcm(void)
     test_ciphersuite(find_aes128gcmsha256());
 }
 
-static void test_handshake(void)
+static void test_handshake(ptls_context_t *ctx, ptls_iovec_t ticket, int use_early_data)
 {
     ptls_t *client, *server;
-    uint8_t cbuf_small[16384], sbuf_small[16384];
-    ptls_buffer_t cbuf, sbuf;
-    size_t consumed;
+    ptls_handshake_properties_t client_hs_prop = {{ticket}};
+    uint8_t cbuf_small[16384], sbuf_small[16384], decbuf_small[16384];
+    ptls_buffer_t cbuf, sbuf, decbuf;
+    size_t consumed, max_early_data_size = 0;
     int ret;
     const char *req = "GET / HTTP/1.0\r\n\r\n";
+    const char *resp = "HTTP/1.0 200 OK\r\n\r\nhello world\n";
 
     client = ptls_new(ctx, "example.com");
     server = ptls_new(ctx, NULL);
     ptls_buffer_init(&cbuf, cbuf_small, sizeof(cbuf_small));
     ptls_buffer_init(&sbuf, sbuf_small, sizeof(sbuf_small));
+    ptls_buffer_init(&decbuf, decbuf_small, sizeof(decbuf_small));
 
-    ret = ptls_handshake(client, &cbuf, NULL, NULL);
+    if (use_early_data) {
+        assert(ctx->max_early_data_size != 0);
+        client_hs_prop.client.max_early_data_size = &max_early_data_size;
+    }
+    ret = ptls_handshake(client, &cbuf, NULL, NULL, &client_hs_prop);
     ok(ret == PTLS_ERROR_HANDSHAKE_IN_PROGRESS);
     ok(cbuf.off != 0);
 
+    if (use_early_data) {
+        ok(max_early_data_size == ctx->max_early_data_size);
+        ret = ptls_send(client, &cbuf, req, strlen(req));
+        ok(ret == 0);
+    }
+
     consumed = cbuf.off;
-    ret = ptls_handshake(server, &sbuf, cbuf.base, &consumed);
-    ok(ret == PTLS_ERROR_HANDSHAKE_IN_PROGRESS);
+    ret = ptls_handshake(server, &sbuf, cbuf.base, &consumed, NULL);
+    ok(ret == 0);
     ok(sbuf.off != 0);
-    ok(consumed == cbuf.off);
-    cbuf.off = 0;
+
+    if (use_early_data) {
+        ok(consumed < cbuf.off);
+        memmove(cbuf.base, cbuf.base + consumed, cbuf.off - consumed);
+        cbuf.off -= consumed;
+
+        consumed = cbuf.off;
+        ret = ptls_receive(server, &decbuf, cbuf.base, &consumed);
+        ok(ret == 0);
+        ok(consumed == cbuf.off);
+        ok(decbuf.off == strlen(req));
+        ok(memcmp(decbuf.base, req, decbuf.off) == 0);
+        ok(ptls_is_early_data(server));
+        cbuf.off = 0;
+        decbuf.off = 0;
+
+        ret = ptls_send(server, &sbuf, resp, strlen(resp));
+        ok(ret == 0);
+    } else {
+        ok(consumed == cbuf.off);
+        cbuf.off = 0;
+    }
 
     consumed = sbuf.off;
-    ret = ptls_handshake(client, &cbuf, sbuf.base, &consumed);
+    ret = ptls_handshake(client, &cbuf, sbuf.base, &consumed, NULL);
     ok(ret == 0);
     ok(cbuf.off != 0);
+
+    if (use_early_data) {
+        ok(consumed < sbuf.off);
+        memmove(sbuf.base, sbuf.base + consumed, sbuf.off - consumed);
+        sbuf.off -= consumed;
+    } else {
+        ok(consumed == sbuf.off);
+        sbuf.off = 0;
+
+        ret = ptls_send(client, &cbuf, req, strlen(req));
+        ok(ret == 0);
+
+        consumed = cbuf.off;
+        ret = ptls_receive(server, &decbuf, cbuf.base, &consumed);
+        ok(ret == 0);
+        ok(consumed == cbuf.off);
+        ok(decbuf.off == strlen(req));
+        ok(memcmp(decbuf.base, req, strlen(req)) == 0);
+        ok(!ptls_is_early_data(server));
+        decbuf.off = 0;
+
+        ret = ptls_send(server, &sbuf, resp, strlen(resp));
+        ok(ret == 0);
+    }
+
+    consumed = sbuf.off;
+    ret = ptls_receive(client, &decbuf, sbuf.base, &consumed);
+    ok(ret == 0);
     ok(consumed == sbuf.off);
-    sbuf.off = 0;
+    ok(decbuf.off == strlen(resp));
+    ok(memcmp(decbuf.base, resp, strlen(resp)) == 0);
+    ok(!ptls_is_early_data(client));
+    decbuf.off = 0;
 
-    ret = ptls_send(client, &cbuf, req, strlen(req));
-    ok(ret == 0);
-
-    consumed = cbuf.off;
-    ret = ptls_handshake(server, &sbuf, cbuf.base, &consumed);
-    ok(ret == 0);
-    ok(sbuf.off == 0);
-    ok(consumed < cbuf.off);
-    memmove(cbuf.base, cbuf.base + consumed, cbuf.off - consumed);
-    cbuf.off -= consumed;
-
-    sbuf.off = 0;
-    consumed = cbuf.off;
-    ret = ptls_receive(server, &sbuf, cbuf.base, &consumed);
-    ok(ret == 0);
-    ok(consumed == cbuf.off);
-    ok(sbuf.off == strlen(req));
-    ok(memcmp(sbuf.base, req, strlen(req)) == 0);
+    if (use_early_data) {
+        consumed = cbuf.off;
+        ret = ptls_receive(server, &decbuf, cbuf.base, &consumed);
+        ok(ret == 0);
+        ok(cbuf.off == consumed);
+        ok(decbuf.off == 0);
+        ok(!ptls_is_early_data(client));
+    }
 
     ptls_buffer_dispose(&cbuf);
     ptls_buffer_dispose(&sbuf);
+    ptls_buffer_dispose(&decbuf);
     ptls_free(client);
     ptls_free(server);
+}
+
+static ptls_lookup_certificate_t *lc_orig;
+size_t lc_callcnt;
+
+static int lookup_certificate(ptls_lookup_certificate_t *self, ptls_t *tls, uint16_t *sign_algorithm,
+                              int (**signer)(void *sign_ctx, ptls_iovec_t *output, ptls_iovec_t input), void **signer_data,
+                              ptls_iovec_t **certs, size_t *num_certs, const char *server_name,
+                              const uint16_t *signature_algorithms, size_t num_signature_algorithms)
+{
+    ++lc_callcnt;
+    return lc_orig->cb(lc_orig, tls, sign_algorithm, signer, signer_data, certs, num_certs, server_name, signature_algorithms,
+                       num_signature_algorithms);
+}
+
+static void test_full_handshake(void)
+{
+    lc_callcnt = 0;
+    test_handshake(ctx, ptls_iovec_init(NULL, 0), 0);
+    ok(lc_callcnt == 1);
+    test_handshake(ctx, ptls_iovec_init(NULL, 0), 0);
+    ok(lc_callcnt == 2);
+}
+
+static int copy_ticket(ptls_encrypt_ticket_t *self, ptls_t *tls, ptls_buffer_t *dst, ptls_iovec_t src)
+{
+    int ret;
+
+    if ((ret = ptls_buffer_reserve(dst, src.len)) != 0)
+        return ret;
+    memcpy(dst->base + dst->off, src.base, src.len);
+    dst->off += src.len;
+
+    return 0;
+}
+
+static ptls_iovec_t saved_ticket = {NULL};
+
+static int save_ticket(ptls_save_ticket_t *self, ptls_t *tls, ptls_iovec_t src)
+{
+    saved_ticket.base = malloc(src.len);
+    memcpy(saved_ticket.base, src.base, src.len);
+    saved_ticket.len = src.len;
+    return 0;
+}
+
+static void test_resumption(void)
+{
+    ptls_encrypt_ticket_t et = {copy_ticket};
+    ptls_save_ticket_t st = {save_ticket};
+
+    assert(ctx->ticket_lifetime == 0);
+    assert(ctx->max_early_data_size == 0);
+    assert(ctx->encrypt_ticket == NULL);
+    assert(ctx->decrypt_ticket == NULL);
+    assert(ctx->save_ticket == NULL);
+
+    ctx->ticket_lifetime = 86400;
+    ctx->max_early_data_size = 8192;
+    ctx->encrypt_ticket = &et;
+    ctx->decrypt_ticket = &et;
+    ctx->save_ticket = &st;
+
+    lc_callcnt = 0;
+    test_handshake(ctx, saved_ticket, 0);
+    ok(lc_callcnt == 1);
+    ok(saved_ticket.base != NULL);
+
+    /* psk using saved ticket */
+    test_handshake(ctx, saved_ticket, 0);
+    ok(lc_callcnt == 1);
+
+    /* psk-dhe using saved ticket */
+    ctx->require_dhe_on_psk = 1;
+    test_handshake(ctx, saved_ticket, 0);
+    ok(lc_callcnt == 1);
+    ctx->require_dhe_on_psk = 0;
+
+    /* 0-rtt psk using saved ticket */
+    test_handshake(ctx, saved_ticket, 1);
+
+    ctx->ticket_lifetime = 0;
+    ctx->max_early_data_size = 0;
+    ctx->encrypt_ticket = NULL;
+    ctx->decrypt_ticket = NULL;
+    ctx->save_ticket = NULL;
 }
 
 void test_picotls(void)
@@ -178,5 +319,13 @@ void test_picotls(void)
     subtest("hmac-sha256", test_hmac_sha256);
     subtest("hkdf", test_hkdf);
     subtest("aead-aes128gcm", test_aes128gcm);
-    subtest("handshake", test_handshake);
+
+    ptls_lookup_certificate_t lc = {lookup_certificate};
+    lc_orig = ctx->lookup_certificate;
+    ctx->lookup_certificate = &lc;
+
+    subtest("full-handshake", test_full_handshake);
+    subtest("resumption", test_resumption);
+
+    ctx->lookup_certificate = lc_orig;
 }

@@ -556,7 +556,7 @@ static uint16_t select_compatible_signature_algorithm(EVP_PKEY *key, const uint1
 
 static int lookup_certificate(ptls_lookup_certificate_t *_self, ptls_t *tls, uint16_t *sign_algorithm,
                               int (**signer)(void *sign_ctx, ptls_iovec_t *output, ptls_iovec_t input), void **signer_data,
-                              ptls_iovec_t **certs, size_t *num_certs, ptls_iovec_t server_name,
+                              ptls_iovec_t **certs, size_t *num_certs, const char *server_name,
                               const uint16_t *signature_algorithms, size_t num_signature_algorithms)
 {
     ptls_openssl_lookup_certificate_t *self = (ptls_openssl_lookup_certificate_t *)_self;
@@ -565,11 +565,11 @@ static int lookup_certificate(ptls_lookup_certificate_t *_self, ptls_t *tls, uin
     if (self->count == 0)
         return PTLS_ALERT_HANDSHAKE_FAILURE;
 
-    if (server_name.base != NULL) {
-        size_t i;
+    if (server_name != NULL) {
+        size_t i, server_name_len = strlen(server_name);
         for (i = 0; i != self->count; ++i) {
             identity = self->identities[i];
-            if (ascii_streq_caseless(server_name, identity->name) &&
+            if (ascii_streq_caseless(ptls_iovec_init(server_name, server_name_len), identity->name) &&
                 (*sign_algorithm = select_compatible_signature_algorithm(identity->key, signature_algorithms,
                                                                          num_signature_algorithms)) != UINT16_MAX)
                 goto Found;
