@@ -380,7 +380,7 @@ int main(int argc, char **argv)
 
     ptls_openssl_init_lookup_certificate(&lookup_certificate);
 
-    while ((ch = getopt(argc, argv, "c:k:s:S:vh")) != -1) {
+    while ((ch = getopt(argc, argv, "c:k:s:vh")) != -1) {
         switch (ch) {
         case 'c': {
             FILE *fp;
