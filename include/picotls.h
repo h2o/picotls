@@ -317,6 +317,10 @@ typedef union st_ptls_handshake_properties_t {
          * pointer to store the maximum size of early-data that can be sent immediately (if NULL, early data is not used)
          */
         size_t *max_early_data_size;
+        /**
+         *
+         */
+        int early_data_accepted_by_peer : 1;
     } client;
     struct {
     } server;

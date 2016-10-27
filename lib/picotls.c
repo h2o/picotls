@@ -154,15 +154,20 @@ struct st_ptls_t {
                 void *verify_ctx;
             } certificate_verify;
             int offered_psk : 1;
+            int send_early_data : 1;
             int is_psk : 1;
         } client;
         struct {
+            int send_ticket : 1;
             /**
-             * if non-NULL, the server expects to receive early-data. Whether the data is passed to the application depends on if
-             * record_protection.recv.aead is set or not.
+             * expecting to recieve undecrytable early-data packets
+             */
+            int skip_early_data : 1;
+            /**
+             * if accepting early-data, the value contains the receiving traffic secret to be commisioned after receiving
+             * END_OF_EARLY_DATA
              */
             struct st_ptls_early_data_receiver_t *early_data;
-            int send_ticket : 1;
         } server;
     };
 };
@@ -850,7 +855,7 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_handshake
     uint32_t obfuscated_ticket_age = 0;
     size_t msghash_off;
     uint8_t binder_key[PTLS_MAX_DIGEST_SIZE];
-    int send_early_data = 0, ret;
+    int ret;
 
     /* TODO postpone the designation of the  digest alrogithm until we receive ServerHello so that we can choose the best hash algo
      * (note: we'd need to retain the entire ClientHello) */
@@ -867,13 +872,13 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_handshake
                 tls->client.offered_psk = 1;
                 if (max_early_data_size != 0 && properties->client.max_early_data_size != NULL) {
                     *properties->client.max_early_data_size = max_early_data_size;
-                    send_early_data = 1;
+                    tls->client.send_early_data = 1;
                 }
             } else {
                 resumption_secret = ptls_iovec_init(NULL, 0);
             }
         }
-        if (properties->client.max_early_data_size != NULL && !send_early_data)
+        if (properties->client.max_early_data_size != NULL && !tls->client.send_early_data)
             *properties->client.max_early_data_size = 0;
     }
 
@@ -935,7 +940,7 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_handshake
                 free(pubkey.base);
             });
             if (resumption_secret.base != NULL) {
-                if (send_early_data)
+                if (tls->client.send_early_data)
                     buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_EARLY_DATA, {});
                 buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_PSK_KEY_EXCHANGE_MODES, {
                     if (!tls->ctx->require_dhe_on_psk)
@@ -973,7 +978,7 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_handshake
     }
     key_schedule_update_hash(tls->key_schedule, sendbuf->base + msghash_off, sendbuf->off - msghash_off);
 
-    if (send_early_data) {
+    if (tls->client.send_early_data) {
         if ((ret = setup_traffic_protection(tls, resumption_cipher_suite, 1, "client early traffic secret")) != 0)
             goto Exit;
         tls->state = PTLS_STATE_CLIENT_SEND_EARLY_DATA;
@@ -1120,7 +1125,7 @@ static int client_handle_hello(ptls_t *tls, ptls_iovec_t message)
     return PTLS_ERROR_HANDSHAKE_IN_PROGRESS;
 }
 
-static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message)
+static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message, ptls_handshake_properties_t *properties)
 {
     const uint8_t *src = message.base + PTLS_HANDSHAKE_HEADER_SIZE, *end = message.base + message.len;
     uint16_t type;
@@ -1137,6 +1142,14 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message)
                 ret = PTLS_ALERT_ILLEGAL_PARAMETER;
                 goto Exit;
             }
+            break;
+        case PTLS_EXTENSION_TYPE_EARLY_DATA:
+            if (!tls->client.send_early_data) {
+                ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+                goto Exit;
+            }
+            if (properties != NULL)
+                properties->client.early_data_accepted_by_peer = 1;
             break;
         default:
             break;
@@ -1721,15 +1734,13 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
         }
     }
 
-    if (ch.psk.early_data_indication) {
+    if (ch.psk.early_data_indication && tls->ctx->max_early_data_size != 0 && psk_index == 0) {
         if ((tls->server.early_data = malloc(sizeof(*tls->server.early_data))) == NULL) {
             ret = PTLS_ERROR_NO_MEMORY;
             goto Exit;
         }
-        if (tls->ctx->max_early_data_size != 0 && psk_index == 0) {
-            if ((ret = setup_traffic_protection(tls, tls->cipher_suite, 0, "client early traffic secret")) != 0)
-                goto Exit;
-        }
+        if ((ret = setup_traffic_protection(tls, tls->cipher_suite, 0, "client early traffic secret")) != 0)
+            goto Exit;
     }
 
     /* send HelloRetryRequest or abort the handshake if failed to obtain the key */
@@ -1796,12 +1807,14 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
     key_schedule_extract(tls->key_schedule, ecdh_secret);
     if ((ret = setup_traffic_protection(tls, tls->cipher_suite, 1, "server handshake traffic secret")) != 0)
         goto Exit;
-    if (ch.psk.early_data_indication) {
+    if (tls->server.early_data != NULL) {
         if ((ret = derive_secret(tls->key_schedule, tls->server.early_data->next_secret, "client handshake traffic secret")) != 0)
             goto Exit;
     } else {
         if ((ret = setup_traffic_protection(tls, tls->cipher_suite, 0, "client handshake traffic secret")) != 0)
             goto Exit;
+        if (ch.psk.early_data_indication)
+            tls->server.skip_early_data = 1;
     }
 
     /* send EncryptedExtensions */
@@ -2072,7 +2085,8 @@ static int test_handshake_message(const uint8_t *src, size_t src_len)
     return 0;
 }
 
-static int handle_handshake_message(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t message)
+static int handle_handshake_message(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t message,
+                                    ptls_handshake_properties_t *properties)
 {
     uint8_t type = message.base[0];
     int ret;
@@ -2087,7 +2101,7 @@ static int handle_handshake_message(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_io
         break;
     case PTLS_STATE_CLIENT_EXPECT_ENCRYPTED_EXTENSIONS:
         if (type == PTLS_HANDSHAKE_TYPE_ENCRYPTED_EXTENSIONS) {
-            ret = client_handle_encrypted_extensions(tls, message);
+            ret = client_handle_encrypted_extensions(tls, message, properties);
         } else {
             ret = PTLS_ALERT_UNEXPECTED_MESSAGE;
         }
@@ -2178,7 +2192,8 @@ static int handle_alert(ptls_t *tls, const uint8_t *src, size_t len)
     return PTLS_ALERT_TO_PEER_ERROR(desc);
 }
 
-static int handle_input(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_buffer_t *decryptbuf, const void *input, size_t *inlen)
+static int handle_input(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_buffer_t *decryptbuf, const void *input, size_t *inlen,
+                        ptls_handshake_properties_t *properties)
 {
     struct st_ptls_record_t rec;
     int ret;
@@ -2195,8 +2210,14 @@ static int handle_input(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_buffer_t *decr
         if ((ret = ptls_buffer_reserve(decryptbuf, 5 + rec.length)) != 0)
             return ret;
         if ((ret = ptls_aead_transform(tls->traffic_protection.dec.aead, decryptbuf->base + decryptbuf->off, &rec.length,
-                                       rec.fragment, rec.length, 0)) != 0)
+                                       rec.fragment, rec.length, 0)) != 0) {
+            if (tls->server.skip_early_data) {
+                ret = PTLS_ERROR_HANDSHAKE_IN_PROGRESS;
+                goto NextRecord;
+            }
             return ret;
+        }
+        tls->server.skip_early_data = 0;
         rec.fragment = decryptbuf->base + decryptbuf->off;
         /* skip padding */
         for (; rec.length != 0; --rec.length)
@@ -2205,17 +2226,6 @@ static int handle_input(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_buffer_t *decr
         if (rec.length == 0)
             return PTLS_ALERT_UNEXPECTED_MESSAGE;
         rec.type = rec.fragment[--rec.length];
-    }
-
-    if (tls->server.early_data != NULL) {
-        /* only application data (or an alert) is expected */
-        switch (rec.type) {
-        case PTLS_CONTENT_TYPE_APPDATA:
-        case PTLS_CONTENT_TYPE_ALERT:
-            break;
-        default:
-            return PTLS_ALERT_UNEXPECTED_MESSAGE;
-        }
     }
 
     if (tls->recvbuf.mess.base != NULL || rec.type == PTLS_CONTENT_TYPE_HANDSHAKE) {
@@ -2239,7 +2249,7 @@ static int handle_input(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_buffer_t *decr
 
         /* handle the complete message, if available */
         if (message.base != NULL) {
-            ret = handle_handshake_message(tls, sendbuf, message);
+            ret = handle_handshake_message(tls, sendbuf, message, properties);
             ptls_buffer_dispose(&tls->recvbuf.mess);
         }
 
@@ -2268,9 +2278,8 @@ static int handle_input(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_buffer_t *decr
         }
     }
 
-    /* cleanup */
+NextRecord:
     ptls_buffer_dispose(&tls->recvbuf.rec);
-
     return ret;
 }
 
@@ -2305,7 +2314,7 @@ int ptls_handshake(ptls_t *tls, ptls_buffer_t *sendbuf, const void *input, size_
     ret = PTLS_ERROR_HANDSHAKE_IN_PROGRESS;
     while (ret == PTLS_ERROR_HANDSHAKE_IN_PROGRESS && src != src_end) {
         size_t consumed = src_end - src;
-        ret = handle_input(tls, sendbuf, &decryptbuf, src, &consumed);
+        ret = handle_input(tls, sendbuf, &decryptbuf, src, &consumed, properties);
         src += consumed;
         assert(decryptbuf.off == 0);
     }
@@ -2343,7 +2352,7 @@ int ptls_receive(ptls_t *tls, ptls_buffer_t *decryptbuf, const void *_input, siz
     /* loop until we decrypt some application data (or an error) */
     while (ret == 0 && input != end && decryptbuf_orig_size == decryptbuf->off) {
         size_t consumed = end - input;
-        ret = handle_input(tls, NULL, decryptbuf, input, &consumed);
+        ret = handle_input(tls, NULL, decryptbuf, input, &consumed, NULL);
         input += consumed;
 
         switch (ret) {

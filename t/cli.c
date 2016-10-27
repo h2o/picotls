@@ -56,7 +56,7 @@ static int write_all(int fd, const uint8_t *data, size_t len)
 }
 
 static int run_handshake(int fd, ptls_t *tls, ptls_buffer_t *wbuf, uint8_t *pending_input, size_t *pending_input_len,
-                         ptls_handshake_properties_t *hsprop, const uint8_t *early_data, size_t *early_data_size)
+                         ptls_handshake_properties_t *hsprop, ptls_iovec_t early_data)
 {
     size_t pending_input_bufsz = *pending_input_len;
     int ret;
@@ -66,17 +66,14 @@ static int run_handshake(int fd, ptls_t *tls, ptls_buffer_t *wbuf, uint8_t *pend
 
     while ((ret = ptls_handshake(tls, wbuf, pending_input, pending_input_len, hsprop)) == PTLS_ERROR_HANDSHAKE_IN_PROGRESS) {
         /* send early-data if possible */
-        if (early_data_size != NULL) {
-            if (*early_data_size != 0 && hsprop->client.max_early_data_size != NULL && *hsprop->client.max_early_data_size != 0) {
-                if (*hsprop->client.max_early_data_size < *early_data_size)
-                    *early_data_size = *hsprop->client.max_early_data_size;
-                if ((ret = ptls_send(tls, wbuf, early_data, *early_data_size)) != 0) {
+        if (early_data.len != 0) {
+            if (hsprop->client.max_early_data_size != NULL && early_data.len <= *hsprop->client.max_early_data_size) {
+                if ((ret = ptls_send(tls, wbuf, early_data.base, early_data.len)) != 0) {
                     fprintf(stderr, "ptls_send(early_data): %d\n", ret);
                     return ret;
                 }
-            } else {
-                *early_data_size = 0;
             }
+            early_data.len = 0; /* do not send twice! */
         }
         /* write to socket */
         if (write_all(fd, wbuf->base, wbuf->off) != 0)
@@ -136,35 +133,31 @@ static int handle_connection(int fd, ptls_context_t *ctx, const char *server_nam
     uint8_t rbuf[1024], wbuf_small[1024], early_data[1024];
     ptls_buffer_t wbuf;
     int ret;
-    size_t early_data_size = 0, early_data_sent_size, roff;
+    size_t early_data_size = 0, roff;
     ssize_t rret;
 
     if (server_name != NULL && hsprop->client.max_early_data_size != NULL) {
         /* using early data */
-        fd_set readfds;
-        struct timeval zero_wait = {0};
-        FD_ZERO(&readfds);
-        FD_SET(0, &readfds);
-        if (select(1, &readfds, NULL, NULL, &zero_wait) > 0) {
-            if ((rret = read(0, early_data, sizeof(early_data))) > 0)
-                early_data_size = rret;
-        }
+        if ((rret = read(0, early_data, sizeof(early_data))) > 0)
+            early_data_size = rret;
     }
 
     ptls_buffer_init(&wbuf, wbuf_small, sizeof(wbuf_small));
 
     roff = sizeof(rbuf);
-    early_data_sent_size = early_data_size;
-    if (run_handshake(fd, tls, &wbuf, rbuf, &roff, hsprop, early_data, early_data_size != 0 ? &early_data_sent_size : NULL) != 0)
+    if (run_handshake(fd, tls, &wbuf, rbuf, &roff, hsprop, ptls_iovec_init(early_data, early_data_size)) != 0)
         goto Exit;
     wbuf.off = 0;
 
-    /* send remaining data (that we tried to send early) */
-    if (early_data_size != early_data_sent_size) {
-        if ((ret = ptls_send(tls, &wbuf, early_data + early_data_sent_size, early_data_size - early_data_sent_size)) != 0) {
+    /* re-send early data if necessary */
+    if (early_data_size != 0 && !hsprop->client.early_data_accepted_by_peer) {
+        if ((ret = ptls_send(tls, &wbuf, early_data, early_data_size)) != 0) {
             fprintf(stderr, "ptls_send:%d\n", ret);
             goto Exit;
         }
+        if (write_all(fd, wbuf.base, wbuf.off) != 0)
+            goto Exit;
+        wbuf.off = 0;
     }
 
     /* process pending post-handshake data (if any) */
