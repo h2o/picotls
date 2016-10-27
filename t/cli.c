@@ -56,7 +56,7 @@ static int write_all(int fd, const uint8_t *data, size_t len)
 }
 
 static int run_handshake(int fd, ptls_t *tls, ptls_buffer_t *wbuf, uint8_t *pending_input, size_t *pending_input_len,
-                         ptls_handshake_properties_t *hsprop)
+                         ptls_handshake_properties_t *hsprop, const uint8_t *early_data, size_t *early_data_size)
 {
     size_t pending_input_bufsz = *pending_input_len;
     int ret;
@@ -65,6 +65,19 @@ static int run_handshake(int fd, ptls_t *tls, ptls_buffer_t *wbuf, uint8_t *pend
     *pending_input_len = 0;
 
     while ((ret = ptls_handshake(tls, wbuf, pending_input, pending_input_len, hsprop)) == PTLS_ERROR_HANDSHAKE_IN_PROGRESS) {
+        /* send early-data if possible */
+        if (early_data_size != NULL) {
+            if (*early_data_size != 0 && hsprop->client.max_early_data_size != NULL && *hsprop->client.max_early_data_size != 0) {
+                if (*hsprop->client.max_early_data_size < *early_data_size)
+                    *early_data_size = *hsprop->client.max_early_data_size;
+                if ((ret = ptls_send(tls, wbuf, early_data, *early_data_size)) != 0) {
+                    fprintf(stderr, "ptls_send(early_data): %d\n", ret);
+                    return ret;
+                }
+            } else {
+                *early_data_size = 0;
+            }
+        }
         /* write to socket */
         if (write_all(fd, wbuf->base, wbuf->off) != 0)
             return -1;
@@ -120,18 +133,39 @@ static int decrypt_and_print(ptls_t *tls, const uint8_t *input, size_t inlen)
 static int handle_connection(int fd, ptls_context_t *ctx, const char *server_name, ptls_handshake_properties_t *hsprop)
 {
     ptls_t *tls = ptls_new(ctx, server_name);
-    uint8_t rbuf[1024], wbuf_small[1024];
+    uint8_t rbuf[1024], wbuf_small[1024], early_data[1024];
     ptls_buffer_t wbuf;
     int ret;
-    size_t roff;
+    size_t early_data_size = 0, early_data_sent_size, roff;
     ssize_t rret;
+
+    if (server_name != NULL && hsprop->client.max_early_data_size != NULL) {
+        /* using early data */
+        fd_set readfds;
+        struct timeval zero_wait = {0};
+        FD_ZERO(&readfds);
+        FD_SET(0, &readfds);
+        if (select(1, &readfds, NULL, NULL, &zero_wait) > 0) {
+            if ((rret = read(0, early_data, sizeof(early_data))) > 0)
+                early_data_size = rret;
+        }
+    }
 
     ptls_buffer_init(&wbuf, wbuf_small, sizeof(wbuf_small));
 
     roff = sizeof(rbuf);
-    if (run_handshake(fd, tls, &wbuf, rbuf, &roff, hsprop) != 0)
+    early_data_sent_size = early_data_size;
+    if (run_handshake(fd, tls, &wbuf, rbuf, &roff, hsprop, early_data, early_data_size != 0 ? &early_data_sent_size : NULL) != 0)
         goto Exit;
     wbuf.off = 0;
+
+    /* send remaining data (that we tried to send early) */
+    if (early_data_size != early_data_sent_size) {
+        if ((ret = ptls_send(tls, &wbuf, early_data + early_data_sent_size, early_data_size - early_data_sent_size)) != 0) {
+            fprintf(stderr, "ptls_send:%d\n", ret);
+            goto Exit;
+        }
+    }
 
     /* process pending post-handshake data (if any) */
     if (decrypt_and_print(tls, rbuf, roff) != 0)
@@ -374,13 +408,13 @@ int main(int argc, char **argv)
     const char *host, *port;
     STACK_OF(X509) *certs = NULL;
     EVP_PKEY *pkey = NULL;
-    int ch;
+    int use_early_data = 0, ch;
     struct sockaddr_storage sa;
     socklen_t salen;
 
     ptls_openssl_init_lookup_certificate(&lookup_certificate);
 
-    while ((ch = getopt(argc, argv, "c:k:s:vh")) != -1) {
+    while ((ch = getopt(argc, argv, "c:k:es:vh")) != -1) {
         switch (ch) {
         case 'c': {
             FILE *fp;
@@ -411,6 +445,9 @@ int main(int argc, char **argv)
                 return 1;
             }
         } break;
+        case 'e':
+            use_early_data = 1;
+            break;
         case 's':
             session_file = optarg;
             break;
@@ -435,6 +472,10 @@ int main(int argc, char **argv)
             fprintf(stderr, "-s option cannot be used for server\n");
             return 1;
         }
+        if (use_early_data) {
+            fprintf(stderr, "-e option cannot be used for server\n");
+            return 1;
+        }
         ptls_openssl_lookup_certificate_add_identity(&lookup_certificate, "example.com", pkey, certs);
         sk_X509_free(certs);
         EVP_PKEY_free(pkey);
@@ -445,6 +486,10 @@ int main(int argc, char **argv)
             ptls_buffer_init(&sessdata, "", 0);
             if (load_ticket(&sessdata) == 0)
                 hsprop.client.session_ticket = ptls_iovec_init(sessdata.base, sessdata.off);
+        }
+        if (use_early_data) {
+            static size_t max_early_data_size;
+            hsprop.client.max_early_data_size = &max_early_data_size;
         }
     }
     if (argc != 2) {
