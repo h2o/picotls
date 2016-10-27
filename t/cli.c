@@ -113,6 +113,7 @@ static int decrypt_and_print(ptls_t *tls, const uint8_t *input, size_t inlen)
         }
     }
 
+    ptls_buffer_dispose(&decryptbuf);
     return 0;
 }
 
