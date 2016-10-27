@@ -66,7 +66,7 @@
 #define PTLS_EXTENSION_TYPE_PSK_KEY_EXCHANGE_MODES 45
 #define PTLS_EXTENSION_TYPE_TICKET_EARLY_DATA_INFO 46
 
-#define PTLS_PROTOCOL_VERSION_DRAFT17 0x7f11
+#define PTLS_PROTOCOL_VERSION_DRAFT18 0x7f12
 
 #define PTLS_ALERT_LEVEL_WARNING 1
 #define PTLS_ALERT_LEVEL_FATAL 2
@@ -908,7 +908,7 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_handshake
         /* extensions */
         buffer_push_block(sendbuf, 2, {
             buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SUPPORTED_VERSIONS,
-                                  { buffer_push_block(sendbuf, 1, { buffer_push16(sendbuf, PTLS_PROTOCOL_VERSION_DRAFT17); }); });
+                                  { buffer_push_block(sendbuf, 1, { buffer_push16(sendbuf, PTLS_PROTOCOL_VERSION_DRAFT18); }); });
             buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SIGNATURE_ALGORITHMS, {
                 buffer_push_block(sendbuf, 2, {
                     buffer_push16(sendbuf, PTLS_SIGNATURE_RSA_PSS_SHA256);
@@ -1018,7 +1018,7 @@ static int decode_server_hello(ptls_t *tls, struct st_ptls_server_hello_t *sh, c
         uint16_t protver;
         if ((ret = decode16(&protver, &src, end)) != 0)
             goto Exit;
-        if (protver != PTLS_PROTOCOL_VERSION_DRAFT17) {
+        if (protver != PTLS_PROTOCOL_VERSION_DRAFT18) {
             ret = PTLS_ALERT_HANDSHAKE_FAILURE;
             goto Exit;
         }
@@ -1515,7 +1515,7 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
                     uint16_t v;
                     if ((ret = decode16(&v, &src, end)) != 0)
                         goto Exit;
-                    if (ch->selected_version == 0 && v == PTLS_PROTOCOL_VERSION_DRAFT17)
+                    if (ch->selected_version == 0 && v == PTLS_PROTOCOL_VERSION_DRAFT18)
                         ch->selected_version = v;
                 } while (src != end);
             });
@@ -1580,7 +1580,7 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
 
     /* check if client hello make sense */
     switch (ch->selected_version) {
-    case PTLS_PROTOCOL_VERSION_DRAFT17:
+    case PTLS_PROTOCOL_VERSION_DRAFT18:
         if (!(ch->compression_methods.count == 1 && ch->compression_methods.ids[0] == 0)) {
             ret = PTLS_ALERT_ILLEGAL_PARAMETER;
             goto Exit;
@@ -1748,7 +1748,7 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
         if (ch.key_share.algorithm == &key_exchange_no_match) {
             if (ch.negotiated_group != NULL) {
                 buffer_push_handshake(sendbuf, NULL, PTLS_HANDSHAKE_TYPE_HELLO_RETRY_REQUEST, {
-                    buffer_push16(sendbuf, PTLS_PROTOCOL_VERSION_DRAFT17);
+                    buffer_push16(sendbuf, PTLS_PROTOCOL_VERSION_DRAFT18);
                     buffer_push_block(sendbuf, 2, {
                         buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_KEY_SHARE,
                                               { buffer_push16(sendbuf, ch.negotiated_group->id); });
@@ -1783,7 +1783,7 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
 
     /* send ServerHello */
     buffer_push_handshake(sendbuf, tls->key_schedule, PTLS_HANDSHAKE_TYPE_SERVER_HELLO, {
-        buffer_push16(sendbuf, PTLS_PROTOCOL_VERSION_DRAFT17);
+        buffer_push16(sendbuf, PTLS_PROTOCOL_VERSION_DRAFT18);
         if ((ret = ptls_buffer_reserve(sendbuf, PTLS_HELLO_RANDOM_SIZE)) != 0)
             goto Exit;
         tls->ctx->random_bytes(sendbuf->base + sendbuf->off, PTLS_HELLO_RANDOM_SIZE);
