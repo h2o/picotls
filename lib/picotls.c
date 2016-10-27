@@ -153,6 +153,7 @@ struct st_ptls_t {
                 int (*cb)(void *verify_ctx, ptls_iovec_t data, ptls_iovec_t signature);
                 void *verify_ctx;
             } certificate_verify;
+            int offered_psk : 1;
             int is_psk : 1;
         } client;
         struct {
@@ -547,6 +548,15 @@ static int key_schedule_extract(struct st_ptls_key_schedule_t *sched, ptls_iovec
     return ret;
 }
 
+static int key_schedule_reset_psk(struct st_ptls_key_schedule_t *sched)
+{
+    assert(sched->generation == 1);
+
+    --sched->generation;
+    memset(sched->secret, 0, sizeof(sched->secret));
+    return key_schedule_extract(sched, ptls_iovec_init(NULL, 0));
+}
+
 static void key_schedule_update_hash(struct st_ptls_key_schedule_t *sched, const uint8_t *msg, size_t msglen)
 {
     PTLS_DEBUGF("%s:%zu\n", __FUNCTION__, msglen);
@@ -854,7 +864,7 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_handshake
                                              &resumption_ticket, &max_early_data_size, properties->client.session_ticket.base,
                                              properties->client.session_ticket.base + properties->client.session_ticket.len) == 0 &&
                 resumption_cipher_suite->hash == key_schedule_hash) {
-                tls->client.is_psk = 1;
+                tls->client.offered_psk = 1;
                 if (max_early_data_size != 0 && properties->client.max_early_data_size != NULL) {
                     *properties->client.max_early_data_size = max_early_data_size;
                     send_early_data = 1;
@@ -1061,7 +1071,7 @@ static int decode_server_hello(ptls_t *tls, struct st_ptls_server_hello_t *sh, c
     });
 
     if (selected_psk_identity != UINT16_MAX) {
-        if (!tls->client.is_psk) {
+        if (!tls->client.offered_psk) {
             ret = PTLS_ALERT_ILLEGAL_PARAMETER;
             goto Exit;
         }
@@ -1069,8 +1079,7 @@ static int decode_server_hello(ptls_t *tls, struct st_ptls_server_hello_t *sh, c
             ret = PTLS_ALERT_ILLEGAL_PARAMETER;
             goto Exit;
         }
-    } else {
-        tls->client.is_psk = 0;
+        tls->client.is_psk = 1;
     }
     if (sh->peerkey.base == NULL && !tls->client.is_psk) {
         ret = PTLS_ALERT_ILLEGAL_PARAMETER;
@@ -1096,6 +1105,8 @@ static int client_handle_hello(ptls_t *tls, ptls_iovec_t message)
             return ret;
     }
 
+    if (tls->client.offered_psk && !tls->client.is_psk)
+        key_schedule_reset_psk(tls->key_schedule);
     key_schedule_update_hash(tls->key_schedule, message.base, message.len);
 
     if ((ret = key_schedule_extract(tls->key_schedule, ecdh_secret)) != 0)
