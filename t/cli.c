@@ -431,6 +431,10 @@ int main(int argc, char **argv)
             fprintf(stderr, "-c and -k options must be used together\n");
             return 1;
         }
+        if (session_file != NULL) {
+            fprintf(stderr, "-s option cannot be used for server\n");
+            return 1;
+        }
         ptls_openssl_lookup_certificate_add_identity(&lookup_certificate, "example.com", pkey, certs);
         sk_X509_free(certs);
         EVP_PKEY_free(pkey);
