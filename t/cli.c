@@ -208,7 +208,7 @@ Exit:
 
 /* single-entry session cache */
 static struct {
-    uint8_t id[8];
+    uint8_t id[32];
     ptls_iovec_t data;
 } session_cache = {{0}};
 
