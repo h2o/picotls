@@ -35,6 +35,15 @@
 #include "picotls.h"
 #include "picotls/openssl.h"
 
+#define OPENSSL_1_0_API (OPENSSL_VERSION_NUMBER < 0x10100000L || defined(LIBRESSL_VERSION_NUMBER))
+
+#if OPENSSL_1_0_API
+
+#define EVP_PKEY_up_ref(p) CRYPTO_add(&(p)->references, 1, CRYPTO_LOCK_EVP_PKEY)
+#define X509_STORE_up_ref(p) CRYPTO_add(&(p)->references, 1, CRYPTO_LOCK_X509_STORE)
+
+#endif
+
 void ptls_openssl_random_bytes(void *buf, size_t len)
 {
     RAND_bytes(buf, (int)len);
@@ -311,7 +320,7 @@ static int rsapss_sign(void *data, ptls_iovec_t *output, ptls_iovec_t input)
         ret = PTLS_ERROR_LIBRARY;
         goto Exit;
     }
-    if (key->type == EVP_PKEY_RSA) {
+    if (EVP_PKEY_id(key) == EVP_PKEY_RSA) {
         if (EVP_PKEY_CTX_set_rsa_padding(pkey_ctx, RSA_PKCS1_PSS_PADDING) != 1) {
             ret = PTLS_ERROR_LIBRARY;
             goto Exit;
@@ -533,7 +542,7 @@ static uint16_t select_compatible_signature_algorithm(EVP_PKEY *key, const uint1
 {
     size_t i;
 
-    switch (key->type) {
+    switch (EVP_PKEY_id(key)) {
     case EVP_PKEY_RSA:
         /* Section 4.4.2: RSA signatures MUST use an RSASSA-PSS algorithm, regardless of whether RSASSA-PKCS1-v1_5 algorithms appear
          * in "signature_algorithms". */
@@ -615,7 +624,7 @@ static int verify_sign(void *verify_ctx, ptls_iovec_t data, ptls_iovec_t signatu
         ret = PTLS_ERROR_LIBRARY;
         goto Exit;
     }
-    if (key->type == EVP_PKEY_RSA) {
+    if (EVP_PKEY_id(key) == EVP_PKEY_RSA) {
         if (EVP_PKEY_CTX_set_rsa_padding(pkey_ctx, RSA_PKCS1_PSS_PADDING) != 1) {
             ret = PTLS_ERROR_LIBRARY;
             goto Exit;
@@ -691,9 +700,9 @@ int ptls_openssl_lookup_certificate_add_identity(ptls_openssl_lookup_certificate
     }
     slot->name.len = strlen(server_name);
 
-    CRYPTO_add(&key->references, 1, CRYPTO_LOCK_EVP_PKEY);
+    EVP_PKEY_up_ref(key);
     slot->key = key;
-    switch (key->type) {
+    switch (EVP_PKEY_id(key)) {
     case EVP_PKEY_RSA:
         break;
     case EVP_PKEY_EC:
@@ -817,7 +826,7 @@ int ptls_openssl_init_verify_certificate(ptls_openssl_verify_certificate_t *self
     *self = (ptls_openssl_verify_certificate_t){{verify_certificate}};
 
     if (store != NULL) {
-        CRYPTO_add(&store->references, 1, CRYPTO_LOCK_X509_STORE);
+        X509_STORE_up_ref(store);
         self->cert_store = store;
     } else {
         X509_LOOKUP *lookup;
