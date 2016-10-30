@@ -26,8 +26,9 @@
 
 extern ptls_context_t *ctx;
 
+void test_key_exchange(ptls_key_exchange_algorithm_t *algo);
+
 void test_picotls(void);
 void test_openssl(void);
-ptls_context_t *setup_openssl_context(void);
 
 #endif

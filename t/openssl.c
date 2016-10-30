@@ -78,28 +78,7 @@
 
 static void test_ecdh_key_exchange(void)
 {
-    ptls_key_exchange_context_t *ctx;
-    ptls_iovec_t client_pubkey, client_secret, server_pubkey, server_secret;
-    int ret;
-
-    /* fail */
-    ret = secp256r1_key_exchange(&server_pubkey, &server_secret, (ptls_iovec_t){NULL});
-    ok(ret != 0);
-
-    /* perform ecdh */
-    ret = secp256r1_create_key_exchange(&ctx, &client_pubkey);
-    ok(ret == 0);
-    ret = secp256r1_key_exchange(&server_pubkey, &server_secret, client_pubkey);
-    ok(ret == 0);
-    ret = ctx->on_exchange(ctx, &client_secret, server_pubkey);
-    ok(ret == 0);
-    ok(client_secret.len == server_secret.len);
-    ok(memcmp(client_secret.base, server_secret.base, client_secret.len) == 0);
-
-    free(client_pubkey.base);
-    free(client_secret.base);
-    free(server_pubkey.base);
-    free(server_secret.base);
+    test_key_exchange(&ptls_openssl_secp256r1);
 }
 
 static void test_rsa_sign(void)
@@ -119,13 +98,8 @@ static void test_rsa_sign(void)
     /* TODO verify */
 }
 
-void test_openssl(void)
-{
-    subtest("ecdh-key-exchange", test_ecdh_key_exchange);
-    subtest("rsa-sign", test_rsa_sign);
-}
 
-ptls_context_t *setup_openssl_context(void)
+static ptls_context_t *setup_context(void)
 {
     static int inited = 0;
     static ptls_openssl_lookup_certificate_t lookup_certificate;
@@ -157,4 +131,13 @@ ptls_context_t *setup_openssl_context(void)
 
 Exit:
     return &ctx;
+}
+
+void test_openssl(void)
+{
+    ctx = setup_context();
+
+    subtest("ecdh-key-exchange", test_ecdh_key_exchange);
+    subtest("rsa-sign", test_rsa_sign);
+    subtest("picotls", test_picotls);
 }

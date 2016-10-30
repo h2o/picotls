@@ -137,10 +137,12 @@ struct st_x9_62_keyex_context_t {
     BN_CTX *bn_ctx;
     EC_GROUP *group;
     EC_KEY *privkey;
+    ptls_iovec_t pubkey;
 };
 
 static void x9_62_free_context(struct st_x9_62_keyex_context_t *ctx)
 {
+    free(ctx->pubkey.base);
     if (ctx->privkey != NULL)
         EC_KEY_free(ctx->privkey);
     if (ctx->group != NULL)
@@ -194,11 +196,12 @@ static int x9_62_create_key_exchange(ptls_key_exchange_context_t **_ctx, ptls_io
         goto Exit;
     }
 
-    if ((*pubkey = x9_62_encode_point(ctx->group, EC_KEY_get0_public_key(ctx->privkey), ctx->bn_ctx)).base == NULL) {
+    if ((ctx->pubkey = x9_62_encode_point(ctx->group, EC_KEY_get0_public_key(ctx->privkey), ctx->bn_ctx)).base == NULL) {
         ret = PTLS_ERROR_NO_MEMORY;
         goto Exit;
     }
 
+    *pubkey = ctx->pubkey;
     ret = 0;
 
 Exit:

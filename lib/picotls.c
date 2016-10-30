@@ -936,8 +936,6 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_handshake
                     buffer_push16(sendbuf, tls->client.key_exchange.algo->id);
                     buffer_push_block(sendbuf, 2, { buffer_pushv(sendbuf, pubkey.base, pubkey.len); });
                 });
-                ptls_clear_memory(pubkey.base, pubkey.len);
-                free(pubkey.base);
             });
             if (resumption_secret.base != NULL) {
                 if (tls->client.send_early_data)
