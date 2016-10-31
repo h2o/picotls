@@ -135,5 +135,60 @@ Exit:
     return ret;
 }
 
+struct aes256gcm_context_t {
+    ptls_aead_context_t super;
+    crypto_aead_aes256gcm_state state;
+};
+
+static void aes256gcm_dispose_crypto(ptls_aead_context_t *_ctx)
+{
+    struct aes256gcm_context_t *ctx = (struct aes256gcm_context_t *)_ctx;
+    ptls_clear_memory(&ctx->state, sizeof(ctx->state));
+}
+
+static int aes256gcm_encrypt(ptls_aead_context_t *_ctx, void *output, size_t *outlen, const void *input, size_t inlen,
+                             const void *iv, uint8_t enc_content_type)
+{
+    struct aes256gcm_context_t *ctx = (struct aes256gcm_context_t *)_ctx;
+
+    crypto_aead_aes256gcm_encrypt_detached_afternm(output, (uint8_t *)output + inlen, NULL, input, inlen, NULL, 0, NULL, iv,
+                                                   &ctx->state);
+    *outlen = inlen + crypto_aead_aes256gcm_ABYTES;
+    return 0;
+}
+
+static int aes256gcm_decrypt(ptls_aead_context_t *_ctx, void *output, size_t *outlen, const void *input, size_t inlen,
+                             const void *iv, uint8_t unused)
+{
+    struct aes256gcm_context_t *ctx = (struct aes256gcm_context_t *)_ctx;
+
+    if (inlen < crypto_aead_aes256gcm_ABYTES)
+        return PTLS_ALERT_BAD_RECORD_MAC;
+    if (crypto_aead_aes256gcm_decrypt_detached_afternm(output, NULL, input, inlen - crypto_aead_aes256gcm_ABYTES,
+                                                       (const uint8_t *)input + crypto_aead_aes256gcm_ABYTES, NULL, 0, iv,
+                                                       &ctx->state) != 0)
+        return PTLS_ALERT_BAD_RECORD_MAC;
+
+    *outlen = inlen - crypto_aead_aes256gcm_ABYTES;
+    return 0;
+}
+
+static int aead_aes256gcm_setup_crypto(ptls_aead_context_t *_ctx, int is_enc, const void *key)
+{
+    struct aes256gcm_context_t *ctx = (struct aes256gcm_context_t *)_ctx;
+
+    ctx->super.dispose_crypto = aes256gcm_dispose_crypto;
+    ctx->super.do_transform = is_enc ? aes256gcm_encrypt : aes256gcm_decrypt;
+
+    if (crypto_aead_aes256gcm_is_available())
+        return PTLS_ERROR_LIBRARY;
+
+    crypto_aead_aes256gcm_beforenm(&ctx->state, key);
+    return 0;
+}
+
 ptls_key_exchange_algorithm_t ptls_sodium_x25519 = {PTLS_GROUP_SECP256R1, x25519_create_key_exchange, x25519_key_exchange};
 ptls_key_exchange_algorithm_t *ptls_sodium_key_exchanges[] = {&ptls_sodium_x25519, NULL};
+ptls_aead_algorithm_t ptls_sodium_aes256gcm = {crypto_aead_aes256gcm_KEYBYTES, crypto_aead_aes256gcm_NPUBBYTES,
+                                               sizeof(struct aes256gcm_context_t), aead_aes256gcm_setup_crypto};
+ptls_hash_algorithm_t ptls_sodium_sha384 = crypto_hash_sha256(<#unsigned char *out#>, <#const unsigned char *in#>, <#unsigned long long inlen#>)
