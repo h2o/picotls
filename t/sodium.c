@@ -19,52 +19,20 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
+#include <assert.h>
+#include <stdio.h>
 #include <string.h>
-#include <openssl/err.h>
-#include <openssl/evp.h>
-#include <openssl/engine.h>
 #include "../deps/picotest/picotest.h"
+#include "../lib/sodium.c"
 #include "test.h"
 
-ptls_context_t *ctx;
-
-void test_key_exchange(ptls_key_exchange_algorithm_t *algo)
+static void test_x25519_key_exchange(void)
 {
-    ptls_key_exchange_context_t *ctx;
-    ptls_iovec_t client_pubkey, client_secret, server_pubkey, server_secret;
-    int ret;
-
-    /* fail */
-    ret = algo->exchange(&server_pubkey, &server_secret, (ptls_iovec_t){NULL});
-    ok(ret != 0);
-
-    /* perform ecdh */
-    ret = algo->create(&ctx, &client_pubkey);
-    ok(ret == 0);
-    ret = algo->exchange(&server_pubkey, &server_secret, client_pubkey);
-    ok(ret == 0);
-    ret = ctx->on_exchange(ctx, &client_secret, server_pubkey);
-    ok(ret == 0);
-    ok(client_secret.len == server_secret.len);
-    ok(memcmp(client_secret.base, server_secret.base, client_secret.len) == 0);
-
-    free(client_secret.base);
-    free(server_pubkey.base);
-    free(server_secret.base);
+    test_key_exchange(&ptls_sodium_x25519);
 }
 
 int main(int argc, char **argv)
 {
-    ERR_load_crypto_strings();
-    OpenSSL_add_all_algorithms();
-#if !defined(OPENSSL_NO_ENGINE)
-    /* Load all compiled-in ENGINEs */
-    ENGINE_load_builtin_engines();
-    ENGINE_register_all_ciphers();
-    ENGINE_register_all_digests();
-#endif
-
-    subtest("openssl", test_openssl);
-
+    subtest("x25519", test_x25519_key_exchange);
     return done_testing();
 }

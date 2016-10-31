@@ -19,14 +19,13 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
-#ifndef test_h
-#define test_h
+#ifndef picotls_sodium_h
+#define picotls_sodium_h
 
 #include "picotls.h"
 
-extern ptls_context_t ctx;
+void ptls_sodium_random_bytes(void *buf, size_t len);
 
-void test_key_exchange(ptls_key_exchange_algorithm_t *algo);
-void test_picotls(void);
+extern ptls_key_exchange_algorithm_t ptls_sodium_x25519;
 
 #endif
