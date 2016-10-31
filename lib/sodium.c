@@ -136,3 +136,4 @@ Exit:
 }
 
 ptls_key_exchange_algorithm_t ptls_sodium_x25519 = {PTLS_GROUP_SECP256R1, x25519_create_key_exchange, x25519_key_exchange};
+ptls_key_exchange_algorithm_t *ptls_sodium_key_exchanges[] = {&ptls_sodium_x25519, NULL};

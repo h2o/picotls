@@ -27,5 +27,6 @@
 void ptls_sodium_random_bytes(void *buf, size_t len);
 
 extern ptls_key_exchange_algorithm_t ptls_sodium_x25519;
+extern ptls_key_exchange_algorithm_t *ptls_sodium_key_exchanges[];
 
 #endif
