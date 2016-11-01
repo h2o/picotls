@@ -24,6 +24,7 @@
 #include <string.h>
 #include <openssl/bio.h>
 #include <openssl/pem.h>
+#include <openssl/engine.h>
 #include "../deps/picotest/picotest.h"
 #include "../lib/openssl.c"
 #include "test.h"
@@ -78,33 +79,12 @@
 
 static void test_ecdh_key_exchange(void)
 {
-    ptls_key_exchange_context_t *ctx;
-    ptls_iovec_t client_pubkey, client_secret, server_pubkey, server_secret;
-    int ret;
-
-    /* fail */
-    ret = secp256r1_key_exchange(&server_pubkey, &server_secret, (ptls_iovec_t){NULL});
-    ok(ret != 0);
-
-    /* perform ecdh */
-    ret = secp256r1_create_key_exchange(&ctx, &client_pubkey);
-    ok(ret == 0);
-    ret = secp256r1_key_exchange(&server_pubkey, &server_secret, client_pubkey);
-    ok(ret == 0);
-    ret = ctx->on_exchange(ctx, &client_secret, server_pubkey);
-    ok(ret == 0);
-    ok(client_secret.len == server_secret.len);
-    ok(memcmp(client_secret.base, server_secret.base, client_secret.len) == 0);
-
-    free(client_pubkey.base);
-    free(client_secret.base);
-    free(server_pubkey.base);
-    free(server_secret.base);
+    test_key_exchange(&ptls_openssl_secp256r1);
 }
 
 static void test_rsa_sign(void)
 {
-    ptls_openssl_lookup_certificate_t *lookup_certificate = (ptls_openssl_lookup_certificate_t *)ctx->lookup_certificate;
+    ptls_openssl_lookup_certificate_t *lookup_certificate = (ptls_openssl_lookup_certificate_t *)ctx.lookup_certificate;
 
     ok(select_compatible_signature_algorithm(lookup_certificate->identities[0]->key,
                                              (uint16_t[]){PTLS_SIGNATURE_ECDSA_SECP256R1_SHA256}, 1) == UINT16_MAX);
@@ -119,23 +99,9 @@ static void test_rsa_sign(void)
     /* TODO verify */
 }
 
-void test_openssl(void)
+static void setup_certificate_lookup(ptls_openssl_lookup_certificate_t *lookup)
 {
-    subtest("ecdh-key-exchange", test_ecdh_key_exchange);
-    subtest("rsa-sign", test_rsa_sign);
-}
-
-ptls_context_t *setup_openssl_context(void)
-{
-    static int inited = 0;
-    static ptls_openssl_lookup_certificate_t lookup_certificate;
-    static ptls_context_t ctx = {ptls_openssl_random_bytes, ptls_openssl_key_exchanges, ptls_openssl_cipher_suites,
-                                 &lookup_certificate.super};
-
-    if (inited)
-        goto Exit;
-
-    ptls_openssl_init_lookup_certificate(&lookup_certificate);
+    ptls_openssl_init_lookup_certificate(lookup);
 
     BIO *bio = BIO_new_mem_buf(RSA_PRIVATE_KEY, strlen(RSA_PRIVATE_KEY));
     EVP_PKEY *pkey = PEM_read_bio_PrivateKey(bio, NULL, NULL, NULL);
@@ -149,12 +115,37 @@ ptls_context_t *setup_openssl_context(void)
 
     STACK_OF(X509) *certs = sk_X509_new(NULL);
     sk_X509_push(certs, cert);
-    ptls_openssl_lookup_certificate_add_identity(&lookup_certificate, "example.com", pkey, certs);
+    ptls_openssl_lookup_certificate_add_identity(lookup, "example.com", pkey, certs);
     sk_X509_free(certs);
 
     X509_free(cert);
     EVP_PKEY_free(pkey);
+}
 
-Exit:
-    return &ctx;
+
+int main(int argc, char **argv)
+{
+    ptls_openssl_lookup_certificate_t lookup_certificate;
+
+    ERR_load_crypto_strings();
+    OpenSSL_add_all_algorithms();
+#if !defined(OPENSSL_NO_ENGINE)
+    /* Load all compiled-in ENGINEs */
+    ENGINE_load_builtin_engines();
+    ENGINE_register_all_ciphers();
+    ENGINE_register_all_digests();
+#endif
+
+
+    ctx.random_bytes = ptls_openssl_random_bytes;
+    ctx.key_exchanges = ptls_openssl_key_exchanges;
+    ctx.cipher_suites = ptls_openssl_cipher_suites;
+    setup_certificate_lookup(&lookup_certificate);
+    ctx.lookup_certificate = &lookup_certificate.super;
+
+    subtest("ecdh-key-exchange", test_ecdh_key_exchange);
+    subtest("rsa-sign", test_rsa_sign);
+    subtest("picotls", test_picotls);
+
+    return done_testing();
 }

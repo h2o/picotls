@@ -19,14 +19,20 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
-#ifndef test_h
-#define test_h
+#include <assert.h>
+#include <stdio.h>
+#include <string.h>
+#include "../deps/picotest/picotest.h"
+#include "../lib/sodium.c"
+#include "test.h"
 
-#include "picotls.h"
+static void test_x25519_key_exchange(void)
+{
+    test_key_exchange(&ptls_sodium_x25519);
+}
 
-extern ptls_context_t ctx;
-
-void test_key_exchange(ptls_key_exchange_algorithm_t *algo);
-void test_picotls(void);
-
-#endif
+int main(int argc, char **argv)
+{
+    subtest("x25519", test_x25519_key_exchange);
+    return done_testing();
+}

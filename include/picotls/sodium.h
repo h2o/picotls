@@ -19,29 +19,14 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
-#include <openssl/err.h>
-#include <openssl/evp.h>
-#include <openssl/engine.h>
-#include "../deps/picotest/picotest.h"
-#include "test.h"
+#ifndef picotls_sodium_h
+#define picotls_sodium_h
 
-ptls_context_t *ctx;
+#include "picotls.h"
 
-int main(int argc, char **argv)
-{
-    ERR_load_crypto_strings();
-    OpenSSL_add_all_algorithms();
-#if !defined(OPENSSL_NO_ENGINE)
-    /* Load all compiled-in ENGINEs */
-    ENGINE_load_builtin_engines();
-    ENGINE_register_all_ciphers();
-    ENGINE_register_all_digests();
+void ptls_sodium_random_bytes(void *buf, size_t len);
+
+extern ptls_key_exchange_algorithm_t ptls_sodium_x25519;
+extern ptls_key_exchange_algorithm_t *ptls_sodium_key_exchanges[];
+
 #endif
-
-    ctx = setup_openssl_context();
-
-    subtest("openssl", test_openssl);
-    subtest("picotls", test_picotls);
-
-    return done_testing();
-}
