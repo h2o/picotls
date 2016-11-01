@@ -1607,7 +1607,7 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
         }
         break;
     default:
-        ret = PTLS_ALERT_HANDSHAKE_FAILURE;
+        ret = PTLS_ALERT_PROTOCOL_VERSION;
         goto Exit;
     }
 
