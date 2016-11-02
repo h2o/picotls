@@ -22,20 +22,9 @@
 
 #include <string.h>
 
-/* Incremental GHASH computation. */
-typedef struct
-{
-  cf_gf128 H;
-  cf_gf128 Y;
-  uint8_t buffer[16];
-  size_t buffer_used;
-  uint64_t len_aad;
-  uint64_t len_cipher;
-  unsigned state;
 #define STATE_INVALID 0
 #define STATE_AAD 1
 #define STATE_CIPHER 2
-} ghash_ctx;
 
 static void ghash_init(ghash_ctx *ctx, uint8_t H[16])
 {
@@ -113,15 +102,11 @@ static void ghash_final(ghash_ctx *ctx, uint8_t out[16])
   cf_gf128_tobytes_be(ctx->Y, out);
 }
 
-void cf_gcm_encrypt(const cf_prp *prp, void *prpctx,
-                    const uint8_t *plain, size_t nplain,
-                    const uint8_t *header, size_t nheader,
-                    const uint8_t *nonce, size_t nnonce,
-                    uint8_t *cipher, /* the same size as nplain */
-                    uint8_t *tag, size_t ntag)
+void cf_gcm_encrypt_init(const cf_prp *prp, void *prpctx, cf_gcm_ctx *gcmctx,
+                         const uint8_t *header, size_t nheader,
+                         const uint8_t *nonce, size_t nnonce)
 {
   uint8_t H[16] = { 0 };
-  uint8_t Y0[16]; 
 
   /* H = E_K(0^128) */
   prp->encrypt(prpctx, H, H);
@@ -136,45 +121,59 @@ void cf_gcm_encrypt(const cf_prp *prp, void *prpctx,
 
   if (nnonce == 12)
   {
-    memcpy(Y0, nonce, nnonce);
-    Y0[12] = Y0[13] = Y0[14] = 0x00;
-    Y0[15] = 0x01;
+    memcpy(gcmctx->Y0, nonce, nnonce);
+    gcmctx->Y0[12] = gcmctx->Y0[13] = gcmctx->Y0[14] = 0x00;
+    gcmctx->Y0[15] = 0x01;
   } else {
-    ghash_ctx gh;
-    ghash_init(&gh, H);
-    ghash_add_cipher(&gh, nonce, nnonce);
-    ghash_final(&gh, Y0);
+    ghash_init(&gcmctx->gh, H);
+    ghash_add_cipher(&gcmctx->gh, nonce, nnonce);
+    ghash_final(&gcmctx->gh, gcmctx->Y0);
   }
 
   /* Hash AAD */
-  ghash_ctx gh;
-  ghash_init(&gh, H);
-  ghash_add_aad(&gh, header, nheader);
+  ghash_init(&gcmctx->gh, H);
+  ghash_add_aad(&gcmctx->gh, header, nheader);
 
   /* Produce ciphertext */
-  uint8_t e_Y0[16] = { 0 };
-  cf_ctr ctr;
-  cf_ctr_init(&ctr, prp, prpctx, Y0);
-  cf_ctr_custom_counter(&ctr, 12, 4); /* counter is 2^32 */
-  cf_ctr_cipher(&ctr, e_Y0, e_Y0, sizeof e_Y0); /* first block is tag offset */
-  cf_ctr_cipher(&ctr, plain, cipher, nplain);
-
-  /* Hash ciphertext */
-  ghash_add_cipher(&gh, cipher, nplain);
-
-  /* Post-process ghash output */
-  uint8_t full_tag[16] = { 0 };
-  ghash_final(&gh, full_tag);
-  
-  assert(ntag > 1 && ntag <= 16);
-  xor_bb(tag, full_tag, e_Y0, ntag);
+  memset(gcmctx->e_Y0, 0, sizeof(gcmctx->e_Y0));
+  cf_ctr_init(&gcmctx->ctr, prp, prpctx, gcmctx->Y0);
+  cf_ctr_custom_counter(&gcmctx->ctr, 12, 4); /* counter is 2^32 */
+  cf_ctr_cipher(&gcmctx->ctr, gcmctx->e_Y0, gcmctx->e_Y0, sizeof gcmctx->e_Y0); /* first block is tag offset */
 
   mem_clean(H, sizeof H);
-  mem_clean(Y0, sizeof Y0);
-  mem_clean(e_Y0, sizeof e_Y0);
+}
+
+void cf_gcm_encrypt_update(cf_gcm_ctx *gcmctx, const uint8_t *plain, size_t nplain, uint8_t *cipher)
+{
+  cf_ctr_cipher(&gcmctx->ctr, plain, cipher, nplain);
+  ghash_add_cipher(&gcmctx->gh, cipher, nplain);
+}
+
+void cf_gcm_encrypt_final(cf_gcm_ctx *gcmctx, uint8_t *tag, size_t ntag)
+{
+  /* Post-process ghash output */
+  uint8_t full_tag[16] = { 0 };
+  ghash_final(&gcmctx->gh, full_tag);
+  
+  assert(ntag > 1 && ntag <= 16);
+  xor_bb(tag, full_tag, gcmctx->e_Y0, ntag);
+
   mem_clean(full_tag, sizeof full_tag);
-  mem_clean(&gh, sizeof gh);
-  mem_clean(&ctr, sizeof ctr);
+  mem_clean(gcmctx, sizeof *gcmctx);
+}
+
+void cf_gcm_encrypt(const cf_prp *prp, void *prpctx,
+                    const uint8_t *plain, size_t nplain,
+                    const uint8_t *header, size_t nheader,
+                    const uint8_t *nonce, size_t nnonce,
+                    uint8_t *cipher, /* the same size as nplain */
+                    uint8_t *tag, size_t ntag)
+{
+  cf_gcm_ctx gcmctx;
+
+  cf_gcm_encrypt_init(prp, prpctx, &gcmctx, header, nheader, nonce, nnonce);
+  cf_gcm_encrypt_update(&gcmctx, plain, nplain, cipher);
+  cf_gcm_encrypt_final(&gcmctx, tag, ntag);
 }
 
 int cf_gcm_decrypt(const cf_prp *prp, void *prpctx,

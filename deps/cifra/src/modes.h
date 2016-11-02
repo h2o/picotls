@@ -18,6 +18,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "gf128.h"
 #include "prp.h"
 
 /**
@@ -409,6 +410,32 @@ void cf_gcm_encrypt(const cf_prp *prp, void *prpctx,
                     const uint8_t *nonce, size_t nnonce,
                     uint8_t *cipher,
                     uint8_t *tag, size_t ntag);
+
+/* Incremental GHASH computation. */
+typedef struct
+{
+  cf_gf128 H;
+  cf_gf128 Y;
+  uint8_t buffer[16];
+  size_t buffer_used;
+  uint64_t len_aad;
+  uint64_t len_cipher;
+  unsigned state;
+} ghash_ctx;
+
+typedef struct
+{
+  cf_ctr ctr;
+  ghash_ctx gh;
+  uint8_t Y0[16];
+  uint8_t e_Y0[16];
+} cf_gcm_ctx;
+
+void cf_gcm_encrypt_init(const cf_prp *prp, void *prpctx, cf_gcm_ctx *gcmctx,
+                         const uint8_t *header, size_t nheader,
+                         const uint8_t *nonce, size_t nnonce);
+void cf_gcm_encrypt_update(cf_gcm_ctx *gcmctx, const uint8_t *plain, size_t nplain, uint8_t *cipher);
+void cf_gcm_encrypt_final(cf_gcm_ctx *gcmctx, uint8_t *tag, size_t ntag);
 
 /* .. c:function:: $DECL
  * GCM authenticated decryption.
