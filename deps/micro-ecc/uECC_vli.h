@@ -163,6 +163,13 @@ int uECC_generate_random_int(uECC_word_t *random,
                              const uECC_word_t *top,
                              wordcount_t num_words);
 
+int uECC_sign_with_k(const uint8_t *private_key,
+                     const uint8_t *message_hash,
+                     unsigned hash_size,
+                     uECC_word_t *k,
+                     uint8_t *signature,
+                     uECC_Curve curve);
+
 #endif /* uECC_ENABLE_VLI_API */
 
 #ifdef __cplusplus

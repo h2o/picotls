@@ -26,6 +26,7 @@
 #include "drbg.h"
 #include "sha2.h"
 #include "uECC.h"
+#include "uECC_vli.h"
 #include "picotls.h"
 #include "picotls/embedded.h"
 
@@ -67,21 +68,27 @@ static int ascii_streq_caseless(ptls_iovec_t x, ptls_iovec_t y)
 
 static int secp256r1sha256_sign(void *data, ptls_iovec_t *output, ptls_iovec_t input)
 {
-    uint8_t *sig;
+    uint8_t key_octets[32];
+    uECC_word_t key_native[sizeof(key_octets) / sizeof(uECC_word_t)];
     cf_hmac_drbg ctx;
 
-    if ((sig = malloc(SECP256R1_SIGNATURE_LENGTH)) == NULL)
+    if ((output->base = (uint8_t *)malloc(SECP256R1_SIGNATURE_LENGTH)) == NULL)
         return PTLS_ERROR_NO_MEMORY;
+    output->len = SECP256R1_SIGNATURE_LENGTH;
 
+    /* caclucate hash */
     cf_hmac_drbg_init(&ctx, &cf_sha256, data, SECP256R1_KEY_LENGTH, input.base, input.len, NULL, 0);
     do {
-        cf_hmac_drbg_gen(&ctx, sig, SECP256R1_SIGNATURE_LENGTH);
+        cf_hmac_drbg_gen(&ctx, key_octets, sizeof(key_octets));
     } while (memcmp("\xFF\xFF\xFF\xFF\x00\x00\x00\x00\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xBC\xE6\xFA\xAD\xA7\x17\x9E\x84\xF3\xB9\xCA"
                     "\xC2\xFC\x63\x25\x51",
-                    sig, SECP256R1_SIGNATURE_LENGTH) < 0);
+                    key_octets, sizeof(key_octets)) < 0);
     ptls_clear_memory(&ctx, sizeof(ctx));
 
-    *output = ptls_iovec_init(sig, SECP256R1_SIGNATURE_LENGTH);
+    /* sign */
+    uECC_vli_bytesToNative(key_native, key_octets, sizeof(key_octets));
+    uECC_sign_with_k(data, input.base, (unsigned)input.len, key_native, output->base, uECC_secp256r1());
+
     return 0;
 }
 
