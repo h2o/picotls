@@ -72,7 +72,7 @@ void ptls_embedded_random_bytes(void *buf, size_t len)
 
 #define X25519_KEY_SIZE 32
 
-struct st_x25519_key_exhchange_t {
+struct st_x25519_key_exchange_t {
     ptls_key_exchange_context_t super;
     uint8_t priv[X25519_KEY_SIZE];
     uint8_t pub[X25519_KEY_SIZE];
@@ -113,7 +113,7 @@ Exit:
 
 static int x25519_on_exchange(ptls_key_exchange_context_t *_ctx, ptls_iovec_t *secret, ptls_iovec_t peerkey)
 {
-    struct st_x25519_key_exhchange_t *ctx = (struct st_x25519_key_exhchange_t *)_ctx;
+    struct st_x25519_key_exchange_t *ctx = (struct st_x25519_key_exchange_t *)_ctx;
     int ret;
 
     if (secret == NULL) {
@@ -135,9 +135,9 @@ Exit:
 
 static int x25519_create_key_exchange(ptls_key_exchange_context_t **_ctx, ptls_iovec_t *pubkey)
 {
-    struct st_x25519_key_exhchange_t *ctx;
+    struct st_x25519_key_exchange_t *ctx;
 
-    if ((ctx = (struct st_x25519_key_exhchange_t *)malloc(sizeof(*ctx))) == NULL)
+    if ((ctx = (struct st_x25519_key_exchange_t *)malloc(sizeof(*ctx))) == NULL)
         return PTLS_ERROR_NO_MEMORY;
     ctx->super = (ptls_key_exchange_context_t){x25519_on_exchange};
     x25519_create_keypair(ctx->priv, ctx->pub);
@@ -282,7 +282,6 @@ static ptls_hash_context_t *sha256_create(void)
 }
 
 ptls_key_exchange_algorithm_t ptls_embedded_x25519 = {PTLS_GROUP_SECP256R1, x25519_create_key_exchange, x25519_key_exchange};
-ptls_key_exchange_algorithm_t *ptls_embedded_key_exchanges[] = {&ptls_embedded_x25519, NULL};
 ptls_aead_algorithm_t ptls_embedded_aes128gcm = {AES128GCM_KEY_SIZE, AES128GCM_IV_SIZE, sizeof(struct aes128gcm_context_t),
                                                  aead_aes128gcm_setup_crypto};
 ptls_hash_algorithm_t ptls_embedded_sha256 = {64, 32, sha256_create};

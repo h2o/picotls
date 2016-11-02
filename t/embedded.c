@@ -27,6 +27,11 @@
 #include "../lib/uecc.c"
 #include "test.h"
 
+static void test_secp256r1_key_exchange(void)
+{
+    test_key_exchange(&ptls_embedded_secp256r1);
+}
+
 static void test_x25519_key_exchange(void)
 {
     test_key_exchange(&ptls_embedded_x25519);
@@ -35,12 +40,12 @@ static void test_x25519_key_exchange(void)
 static void test_secp256r1_sign(void)
 {
     const char *msg = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef";
-    uint8_t pub[64], priv[32];
+    uint8_t pub[SECP256R1_PUBLIC_KEY_SIZE], priv[SECP256R1_PRIVATE_KEY_SIZE];
     ptls_iovec_t sig;
 
     uECC_make_key(pub, priv, uECC_secp256r1());
     ok(secp256r1sha256_sign(priv, &sig, ptls_iovec_init(msg, 32)) == 0);
-    ok(sig.len == 32);
+    ok(sig.len == SECP256R1_SIGNATURE_SIZE);
     ok(uECC_verify(pub, (void *)msg, 32, sig.base, uECC_secp256r1()));
 
     free(sig.base);
@@ -48,6 +53,7 @@ static void test_secp256r1_sign(void)
 
 int main(int argc, char **argv)
 {
+    subtest("secp256r1", test_secp256r1_key_exchange);
     subtest("x25519", test_x25519_key_exchange);
     subtest("secp256r1-sign", test_secp256r1_sign);
 

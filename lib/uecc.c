@@ -30,12 +30,104 @@
 #include "picotls.h"
 #include "picotls/embedded.h"
 
-#define SECP256R1_KEY_LENGTH 32
-#define SECP256R1_SIGNATURE_LENGTH 32
+#define SECP256R1_PRIVATE_KEY_SIZE 32
+#define SECP256R1_PUBLIC_KEY_SIZE 64
+#define SECP256R1_SIGNATURE_SIZE 32
+#define SECP256R1_SHARED_SECRET_SIZE 32
+
+struct st_secp256r1_key_exhchange_t {
+    ptls_key_exchange_context_t super;
+    uint8_t priv[SECP256R1_PRIVATE_KEY_SIZE];
+    uint8_t pub[SECP256R1_PUBLIC_KEY_SIZE];
+};
+
+static int secp256r1_on_exchange(ptls_key_exchange_context_t *_ctx, ptls_iovec_t *secret, ptls_iovec_t peerkey)
+{
+    struct st_secp256r1_key_exhchange_t *ctx = (struct st_secp256r1_key_exhchange_t *)_ctx;
+    uint8_t *secbytes = NULL;
+    int ret;
+
+    if (secret == NULL) {
+        ret = 0;
+        goto Exit;
+    }
+
+    if (peerkey.len != SECP256R1_PUBLIC_KEY_SIZE) {
+        ret = PTLS_ALERT_DECRYPT_ERROR;
+        goto Exit;
+    }
+    if ((secbytes = (uint8_t *)malloc(SECP256R1_SHARED_SECRET_SIZE)) == NULL) {
+        ret = PTLS_ERROR_NO_MEMORY;
+        goto Exit;
+    }
+    if (!uECC_shared_secret(peerkey.base, ctx->priv, secbytes, uECC_secp256r1())) {
+        ret = PTLS_ALERT_DECRYPT_ERROR;
+        goto Exit;
+    }
+    *secret = ptls_iovec_init(secbytes, SECP256R1_SHARED_SECRET_SIZE);
+    ret = 0;
+
+Exit:
+    if (ret != 0)
+        free(secbytes);
+    ptls_clear_memory(ctx->priv, sizeof(ctx->priv));
+    free(ctx);
+    return ret;
+}
+
+static int secp256r1_create_key_exchange(ptls_key_exchange_context_t **_ctx, ptls_iovec_t *pubkey)
+{
+    struct st_secp256r1_key_exhchange_t *ctx;
+
+    if ((ctx = (struct st_secp256r1_key_exhchange_t *)malloc(sizeof(*ctx))) == NULL)
+        return PTLS_ERROR_NO_MEMORY;
+    ctx->super = (ptls_key_exchange_context_t){secp256r1_on_exchange};
+    uECC_make_key(ctx->pub, ctx->priv, uECC_secp256r1());
+
+    *_ctx = &ctx->super;
+    *pubkey = ptls_iovec_init(ctx->pub, sizeof(ctx->pub));
+    return 0;
+}
+
+static int secp256r1_key_exchange(ptls_iovec_t *pubkey, ptls_iovec_t *secret, ptls_iovec_t peerkey)
+{
+    uint8_t priv[SECP256R1_PRIVATE_KEY_SIZE], *pub = NULL, *secbytes = NULL;
+    int ret;
+
+    if (peerkey.len != SECP256R1_PUBLIC_KEY_SIZE) {
+        ret = PTLS_ALERT_DECRYPT_ERROR;
+        goto Exit;
+    }
+    if ((pub = malloc(SECP256R1_PUBLIC_KEY_SIZE)) == NULL) {
+        ret = PTLS_ERROR_NO_MEMORY;
+        goto Exit;
+    }
+    if ((secbytes = malloc(SECP256R1_SHARED_SECRET_SIZE)) == NULL) {
+        ret = PTLS_ERROR_NO_MEMORY;
+        goto Exit;
+    }
+
+    uECC_make_key(pub, priv, uECC_secp256r1());
+    if (!uECC_shared_secret(peerkey.base, priv, secbytes, uECC_secp256r1())) {
+        ret = PTLS_ALERT_DECRYPT_ERROR;
+        goto Exit;
+    }
+    *pubkey = ptls_iovec_init(pub, SECP256R1_PUBLIC_KEY_SIZE);
+    *secret = ptls_iovec_init(secbytes, SECP256R1_SHARED_SECRET_SIZE);
+    ret = 0;
+
+Exit:
+    ptls_clear_memory(priv, sizeof(priv));
+    if (ret != 0) {
+        free(secbytes);
+        free(pub);
+    }
+    return ret;
+}
 
 struct st_ptls_embedded_identity_t {
     ptls_iovec_t name;
-    uint8_t key[SECP256R1_KEY_LENGTH];
+    uint8_t key[SECP256R1_PRIVATE_KEY_SIZE];
     size_t num_certs;
     ptls_iovec_t certs[1];
 };
@@ -72,12 +164,12 @@ static int secp256r1sha256_sign(void *data, ptls_iovec_t *output, ptls_iovec_t i
     uECC_word_t key_native[sizeof(key_octets) / sizeof(uECC_word_t)];
     cf_hmac_drbg ctx;
 
-    if ((output->base = (uint8_t *)malloc(SECP256R1_SIGNATURE_LENGTH)) == NULL)
+    if ((output->base = (uint8_t *)malloc(SECP256R1_SIGNATURE_SIZE)) == NULL)
         return PTLS_ERROR_NO_MEMORY;
-    output->len = SECP256R1_SIGNATURE_LENGTH;
+    output->len = SECP256R1_SIGNATURE_SIZE;
 
     /* caclucate hash */
-    cf_hmac_drbg_init(&ctx, &cf_sha256, data, SECP256R1_KEY_LENGTH, input.base, input.len, NULL, 0);
+    cf_hmac_drbg_init(&ctx, &cf_sha256, data, SECP256R1_PRIVATE_KEY_SIZE, input.base, input.len, NULL, 0);
     do {
         cf_hmac_drbg_gen(&ctx, key_octets, sizeof(key_octets));
     } while (memcmp("\xFF\xFF\xFF\xFF\x00\x00\x00\x00\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xBC\xE6\xFA\xAD\xA7\x17\x9E\x84\xF3\xB9\xCA"
@@ -191,3 +283,7 @@ Exit:
         free_identity(identity);
     return ret;
 }
+
+ptls_key_exchange_algorithm_t ptls_embedded_secp256r1 = {PTLS_GROUP_SECP256R1, secp256r1_create_key_exchange,
+                                                         secp256r1_key_exchange};
+ptls_key_exchange_algorithm_t *ptls_embedded_key_exchanges[] = {&ptls_embedded_secp256r1, NULL};
