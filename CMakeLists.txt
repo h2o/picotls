@@ -5,7 +5,7 @@ PROJECT(picotls)
 
 FIND_PACKAGE(OpenSSL REQUIRED)
 
-SET(CMAKE_C_FLAGS "-Wall -O2 -g ${CC_WARNING_FLAGS} ${CMAKE_C_FLAGS}")
+SET(CMAKE_C_FLAGS "-Wall -O2 -g -DuECC_SUPPORTS_secp160r1=0 -DuECC_SUPPORTS_secp192r1=0 -DuECC_SUPPORTS_secp224r1=0 -DuECC_SUPPORTS_secp256k1=0 -DuECC_SUPPORT_COMPRESSED_POINT=0 ${CC_WARNING_FLAGS} ${CMAKE_C_FLAGS}")
 INCLUDE_DIRECTORIES(${OPENSSL_INCLUDE_DIR} deps/micro-ecc deps/cifra/src/ext deps/cifra/src deps/picotest include)
 
 ADD_EXECUTABLE(test-openssl.t deps/picotest/picotest.c t/picotls.c t/openssl.c)
