@@ -26,10 +26,12 @@
 #include "../lib/picotls.c"
 #include "test.h"
 
+ptls_context_t ctx;
+
 static ptls_cipher_suite_t *find_aes128gcmsha256(void)
 {
     ptls_cipher_suite_t **cs;
-    for (cs = ctx->cipher_suites; *cs != NULL; ++cs)
+    for (cs = ctx.cipher_suites; *cs != NULL; ++cs)
         if ((*cs)->id == PTLS_CIPHER_SUITE_AES_128_GCM_SHA256)
             return *cs;
     assert(!"FIXME");
@@ -244,9 +246,9 @@ static int lookup_certificate(ptls_lookup_certificate_t *self, ptls_t *tls, uint
 static void test_full_handshake(void)
 {
     lc_callcnt = 0;
-    test_handshake(ctx, ptls_iovec_init(NULL, 0), 0);
+    test_handshake(&ctx, ptls_iovec_init(NULL, 0), 0);
     ok(lc_callcnt == 1);
-    test_handshake(ctx, ptls_iovec_init(NULL, 0), 0);
+    test_handshake(&ctx, ptls_iovec_init(NULL, 0), 0);
     ok(lc_callcnt == 2);
 }
 
@@ -277,41 +279,42 @@ static void test_resumption(void)
     ptls_encrypt_ticket_t et = {copy_ticket};
     ptls_save_ticket_t st = {save_ticket};
 
-    assert(ctx->ticket_lifetime == 0);
-    assert(ctx->max_early_data_size == 0);
-    assert(ctx->encrypt_ticket == NULL);
-    assert(ctx->decrypt_ticket == NULL);
-    assert(ctx->save_ticket == NULL);
+    assert(ctx.ticket_lifetime == 0);
+    assert(ctx.max_early_data_size == 0);
+    assert(ctx.encrypt_ticket == NULL);
+    assert(ctx.decrypt_ticket == NULL);
+    assert(ctx.save_ticket == NULL);
+    saved_ticket = ptls_iovec_init(NULL, 0);
 
-    ctx->ticket_lifetime = 86400;
-    ctx->max_early_data_size = 8192;
-    ctx->encrypt_ticket = &et;
-    ctx->decrypt_ticket = &et;
-    ctx->save_ticket = &st;
+    ctx.ticket_lifetime = 86400;
+    ctx.max_early_data_size = 8192;
+    ctx.encrypt_ticket = &et;
+    ctx.decrypt_ticket = &et;
+    ctx.save_ticket = &st;
 
     lc_callcnt = 0;
-    test_handshake(ctx, saved_ticket, 0);
+    test_handshake(&ctx, saved_ticket, 0);
     ok(lc_callcnt == 1);
     ok(saved_ticket.base != NULL);
 
     /* psk using saved ticket */
-    test_handshake(ctx, saved_ticket, 0);
+    test_handshake(&ctx, saved_ticket, 0);
     ok(lc_callcnt == 1);
 
     /* psk-dhe using saved ticket */
-    ctx->require_dhe_on_psk = 1;
-    test_handshake(ctx, saved_ticket, 0);
+    ctx.require_dhe_on_psk = 1;
+    test_handshake(&ctx, saved_ticket, 0);
     ok(lc_callcnt == 1);
-    ctx->require_dhe_on_psk = 0;
+    ctx.require_dhe_on_psk = 0;
 
     /* 0-rtt psk using saved ticket */
-    test_handshake(ctx, saved_ticket, 1);
+    test_handshake(&ctx, saved_ticket, 1);
 
-    ctx->ticket_lifetime = 0;
-    ctx->max_early_data_size = 0;
-    ctx->encrypt_ticket = NULL;
-    ctx->decrypt_ticket = NULL;
-    ctx->save_ticket = NULL;
+    ctx.ticket_lifetime = 0;
+    ctx.max_early_data_size = 0;
+    ctx.encrypt_ticket = NULL;
+    ctx.decrypt_ticket = NULL;
+    ctx.save_ticket = NULL;
 }
 
 void test_picotls(void)
@@ -321,11 +324,36 @@ void test_picotls(void)
     subtest("aead-aes128gcm", test_aes128gcm);
 
     ptls_lookup_certificate_t lc = {lookup_certificate};
-    lc_orig = ctx->lookup_certificate;
-    ctx->lookup_certificate = &lc;
+    lc_orig = ctx.lookup_certificate;
+    ctx.lookup_certificate = &lc;
 
     subtest("full-handshake", test_full_handshake);
     subtest("resumption", test_resumption);
 
-    ctx->lookup_certificate = lc_orig;
+    ctx.lookup_certificate = lc_orig;
+}
+
+void test_key_exchange(ptls_key_exchange_algorithm_t *algo)
+{
+    ptls_key_exchange_context_t *ctx;
+    ptls_iovec_t client_pubkey, client_secret, server_pubkey, server_secret;
+    int ret;
+
+    /* fail */
+    ret = algo->exchange(&server_pubkey, &server_secret, (ptls_iovec_t){NULL});
+    ok(ret != 0);
+
+    /* perform ecdh */
+    ret = algo->create(&ctx, &client_pubkey);
+    ok(ret == 0);
+    ret = algo->exchange(&server_pubkey, &server_secret, client_pubkey);
+    ok(ret == 0);
+    ret = ctx->on_exchange(ctx, &client_secret, server_pubkey);
+    ok(ret == 0);
+    ok(client_secret.len == server_secret.len);
+    ok(memcmp(client_secret.base, server_secret.base, client_secret.len) == 0);
+
+    free(client_secret.base);
+    free(server_pubkey.base);
+    free(server_secret.base);
 }

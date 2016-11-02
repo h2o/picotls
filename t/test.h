@@ -24,11 +24,9 @@
 
 #include "picotls.h"
 
-extern ptls_context_t *ctx;
+extern ptls_context_t ctx;
 
 void test_key_exchange(ptls_key_exchange_algorithm_t *algo);
-
 void test_picotls(void);
-void test_openssl(void);
 
 #endif
