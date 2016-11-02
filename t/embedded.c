@@ -32,10 +32,24 @@ static void test_x25519_key_exchange(void)
     test_key_exchange(&ptls_embedded_x25519);
 }
 
+static void test_secp256r1_sign(void)
+{
+    const char *msg = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef";
+    uint8_t pub[64], priv[32];
+    ptls_iovec_t sig;
+
+    uECC_make_key(pub, priv, uECC_secp256r1());
+    ok(secp256r1sha256_sign(priv, &sig, ptls_iovec_init(msg, 32)) == 0);
+    ok(sig.len == 32);
+    ok(uECC_verify(pub, (void *)msg, 32, sig.base, uECC_secp256r1()));
+
+    free(sig.base);
+}
+
 int main(int argc, char **argv)
 {
     subtest("x25519", test_x25519_key_exchange);
-    // subtest("secp256r1-sign", test_secp256r1_sign);
+    subtest("secp256r1-sign", test_secp256r1_sign);
 
     ptls_embedded_lookup_certificate_t lookup_certificate;
 
