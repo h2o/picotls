@@ -56,6 +56,19 @@
 		105900C11DC96A3500FB4085 /* uECC.h in Headers */ = {isa = PBXBuildFile; fileRef = 105900BD1DC96A3500FB4085 /* uECC.h */; };
 		105900C41DC96B2200FB4085 /* uECC.c in Sources */ = {isa = PBXBuildFile; fileRef = 105900BC1DC96A3500FB4085 /* uECC.c */; };
 		105900C61DC9798800FB4085 /* uecc.c in Sources */ = {isa = PBXBuildFile; fileRef = 105900C51DC9798800FB4085 /* uecc.c */; };
+		105900C71DCBECD800FB4085 /* aes.c in Sources */ = {isa = PBXBuildFile; fileRef = 105900241DC8D37500FB4085 /* aes.c */; };
+		105900C81DCBECDD00FB4085 /* blockwise.c in Sources */ = {isa = PBXBuildFile; fileRef = 105900291DC8D39800FB4085 /* blockwise.c */; };
+		105900C91DCBECE100FB4085 /* chash.c in Sources */ = {isa = PBXBuildFile; fileRef = 1059006B1DC8E00400FB4085 /* chash.c */; };
+		105900CA1DCBECE500FB4085 /* curve25519.c in Sources */ = {isa = PBXBuildFile; fileRef = 105900391DC8D46A00FB4085 /* curve25519.c */; };
+		105900CB1DCBECEA00FB4085 /* drbg.c in Sources */ = {isa = PBXBuildFile; fileRef = 105900511DC8D79300FB4085 /* drbg.c */; };
+		105900CC1DCBECF100FB4085 /* hmac.c in Sources */ = {isa = PBXBuildFile; fileRef = 105900651DC8DFD300FB4085 /* hmac.c */; };
+		105900CD1DCBECF400FB4085 /* gcm.c in Sources */ = {isa = PBXBuildFile; fileRef = 105900A91DC941D700FB4085 /* gcm.c */; };
+		105900CE1DCBECF700FB4085 /* gf128.c in Sources */ = {isa = PBXBuildFile; fileRef = 105900AA1DC941D700FB4085 /* gf128.c */; };
+		105900CF1DCBECFB00FB4085 /* modes.c in Sources */ = {isa = PBXBuildFile; fileRef = 105900AF1DC9438200FB4085 /* modes.c */; };
+		105900D01DCBECFE00FB4085 /* sha256.c in Sources */ = {isa = PBXBuildFile; fileRef = 1059005F1DC8DE4400FB4085 /* sha256.c */; };
+		105900D11DCBED0600FB4085 /* cifra.c in Sources */ = {isa = PBXBuildFile; fileRef = 1059003F1DC8D53200FB4085 /* cifra.c */; };
+		105900D21DCBED0A00FB4085 /* uecc.c in Sources */ = {isa = PBXBuildFile; fileRef = 105900C51DC9798800FB4085 /* uecc.c */; };
+		105900D31DCBED1D00FB4085 /* uECC.c in Sources */ = {isa = PBXBuildFile; fileRef = 105900BC1DC96A3500FB4085 /* uECC.c */; };
 		106530E51D9B4021005B2C60 /* picotest.c in Sources */ = {isa = PBXBuildFile; fileRef = 106530E31D9B4021005B2C60 /* picotest.c */; };
 		106530EA1D9B7C13005B2C60 /* picotls.c in Sources */ = {isa = PBXBuildFile; fileRef = 106530E91D9B7C13005B2C60 /* picotls.c */; };
 		106530EB1D9B7C5C005B2C60 /* picotls.c in Sources */ = {isa = PBXBuildFile; fileRef = 106530BF1D998641005B2C60 /* picotls.c */; };
@@ -514,9 +527,22 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				105900CF1DCBECFB00FB4085 /* modes.c in Sources */,
 				106530EA1D9B7C13005B2C60 /* picotls.c in Sources */,
+				105900CD1DCBECF400FB4085 /* gcm.c in Sources */,
+				105900D01DCBECFE00FB4085 /* sha256.c in Sources */,
 				1059004C1DC8D5B700FB4085 /* openssl.c in Sources */,
+				105900D21DCBED0A00FB4085 /* uecc.c in Sources */,
+				105900C81DCBECDD00FB4085 /* blockwise.c in Sources */,
+				105900D31DCBED1D00FB4085 /* uECC.c in Sources */,
+				105900C91DCBECE100FB4085 /* chash.c in Sources */,
 				106530E51D9B4021005B2C60 /* picotest.c in Sources */,
+				105900C71DCBECD800FB4085 /* aes.c in Sources */,
+				105900D11DCBED0600FB4085 /* cifra.c in Sources */,
+				105900CE1DCBECF700FB4085 /* gf128.c in Sources */,
+				105900CC1DCBECF100FB4085 /* hmac.c in Sources */,
+				105900CB1DCBECEA00FB4085 /* drbg.c in Sources */,
+				105900CA1DCBECE500FB4085 /* curve25519.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -692,6 +718,7 @@
 		106530D11D9B3D45005B2C60 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				GCC_PREPROCESSOR_DEFINITIONS = "uECC_ENABLE_VLI_API=1";
 				HEADER_SEARCH_PATHS = (
 					"/usr/local/openssl-1.0.2/include",
 					include,
@@ -705,6 +732,7 @@
 		106530D21D9B3D45005B2C60 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				GCC_PREPROCESSOR_DEFINITIONS = "uECC_ENABLE_VLI_API=1";
 				HEADER_SEARCH_PATHS = (
 					"/usr/local/openssl-1.0.2/include",
 					include,
