@@ -214,6 +214,7 @@ FoundMatchingSig:
 
 FoundIdentity:
     /* setup the rest */
+    *sign_algorithm = PTLS_SIGNATURE_ECDSA_SECP256R1_SHA256;
     *signer = secp256r1sha256_sign;
     *signer_data = identity->key;
     *certs = identity->certs;
