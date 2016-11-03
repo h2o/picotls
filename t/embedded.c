@@ -78,14 +78,15 @@ int main(int argc, char **argv)
     subtest("secp256r1-sign", test_secp256r1_sign);
 
     ptls_embedded_lookup_certificate_t lookup_certificate;
-    ptls_iovec_t key = ptls_iovec_init(PRIVATE_KEY, sizeof(PRIVATE_KEY) - 1), cert = ptls_iovec_init(CERTIFICATE, sizeof(CERTIFICATE) - 1);
+    ptls_iovec_t key = ptls_iovec_init(PRIVATE_KEY, sizeof(PRIVATE_KEY) - 1),
+                 cert = ptls_iovec_init(CERTIFICATE, sizeof(CERTIFICATE) - 1);
     ptls_embedded_init_lookup_certificate(&lookup_certificate);
-    ptls_embedded_lookup_certificate_add_identity(&lookup_certificate, "example.com", PTLS_SIGNATURE_ECDSA_SECP256R1_SHA256, key, &cert, 1);
+    ptls_embedded_lookup_certificate_add_identity(&lookup_certificate, "example.com", PTLS_SIGNATURE_ECDSA_SECP256R1_SHA256, key,
+                                                  &cert, 1);
 
-    ctx.random_bytes = ptls_embedded_random_bytes;
-    ctx.key_exchanges = ptls_embedded_key_exchanges;
-    ctx.cipher_suites = ptls_embedded_cipher_suites;
-    ctx.lookup_certificate = &lookup_certificate.super;
+    ptls_context_t ctxbuf = {ptls_embedded_random_bytes, ptls_embedded_key_exchanges, ptls_embedded_cipher_suites,
+                             &lookup_certificate.super};
+    ctx = ctx_peer = &ctxbuf;
 
     subtest("picotls", test_picotls);
 

@@ -25,6 +25,8 @@
 #include <openssl/bio.h>
 #include <openssl/pem.h>
 #include <openssl/engine.h>
+#include "picotls.h"
+#include "picotls/embedded.h"
 #include "../deps/picotest/picotest.h"
 #include "../lib/openssl.c"
 #include "test.h"
@@ -84,7 +86,7 @@ static void test_ecdh_key_exchange(void)
 
 static void test_rsa_sign(void)
 {
-    ptls_openssl_lookup_certificate_t *lookup_certificate = (ptls_openssl_lookup_certificate_t *)ctx.lookup_certificate;
+    ptls_openssl_lookup_certificate_t *lookup_certificate = (ptls_openssl_lookup_certificate_t *)ctx->lookup_certificate;
 
     ok(select_compatible_signature_algorithm(lookup_certificate->identities[0]->key,
                                              (uint16_t[]){PTLS_SIGNATURE_ECDSA_SECP256R1_SHA256}, 1) == UINT16_MAX);
@@ -122,6 +124,13 @@ static void setup_certificate_lookup(ptls_openssl_lookup_certificate_t *lookup)
     EVP_PKEY_free(pkey);
 }
 
+static void test_main(void)
+{
+    subtest("ecdh-key-exchange", test_ecdh_key_exchange);
+    subtest("rsa-sign", test_rsa_sign);
+    subtest("picotls", test_picotls);
+}
+
 int main(int argc, char **argv)
 {
     ptls_openssl_lookup_certificate_t lookup_certificate;
@@ -135,15 +144,17 @@ int main(int argc, char **argv)
     ENGINE_register_all_digests();
 #endif
 
-    ctx.random_bytes = ptls_openssl_random_bytes;
-    ctx.key_exchanges = ptls_openssl_key_exchanges;
-    ctx.cipher_suites = ptls_openssl_cipher_suites;
     setup_certificate_lookup(&lookup_certificate);
-    ctx.lookup_certificate = &lookup_certificate.super;
+    ptls_context_t openssl_ctx = {ptls_openssl_random_bytes, ptls_openssl_key_exchanges, ptls_openssl_cipher_suites,
+                                  &lookup_certificate.super};
+    ctx = ctx_peer = &openssl_ctx;
 
-    subtest("ecdh-key-exchange", test_ecdh_key_exchange);
-    subtest("rsa-sign", test_rsa_sign);
-    subtest("picotls", test_picotls);
+    subtest("openssl", test_main);
+
+    ptls_context_t embedded_ctx = {ptls_embedded_random_bytes, ptls_embedded_key_exchanges, ptls_embedded_cipher_suites,
+                                   &lookup_certificate.super};
+    ctx_peer = &embedded_ctx;
+    subtest("vs. peer", test_main);
 
     return done_testing();
 }
