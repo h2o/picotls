@@ -156,5 +156,9 @@ int main(int argc, char **argv)
     ctx_peer = &embedded_ctx;
     subtest("vs. peer", test_main);
 
+    ctx = &embedded_ctx;
+    ctx_peer = &openssl_ctx;
+    subtest("peer vs.", test_main);
+
     return done_testing();
 }
