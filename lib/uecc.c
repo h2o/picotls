@@ -22,6 +22,7 @@
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 #include "drbg.h"
 #include "sha2.h"
@@ -31,9 +32,11 @@
 #include "picotls/embedded.h"
 
 #define SECP256R1_PRIVATE_KEY_SIZE 32
-#define SECP256R1_PUBLIC_KEY_SIZE 64
+#define SECP256R1_PUBLIC_KEY_SIZE 65 /* including the header */
 #define SECP256R1_SIGNATURE_SIZE 64
 #define SECP256R1_SHARED_SECRET_SIZE 32
+
+#define TYPE_UNCOMPRESSED_PUBLIC_KEY 4
 
 struct st_secp256r1_key_exhchange_t {
     ptls_key_exchange_context_t super;
@@ -52,7 +55,7 @@ static int secp256r1_on_exchange(ptls_key_exchange_context_t *_ctx, ptls_iovec_t
         goto Exit;
     }
 
-    if (peerkey.len != SECP256R1_PUBLIC_KEY_SIZE) {
+    if (peerkey.len != SECP256R1_PUBLIC_KEY_SIZE || peerkey.base[0] != TYPE_UNCOMPRESSED_PUBLIC_KEY) {
         ret = PTLS_ALERT_DECRYPT_ERROR;
         goto Exit;
     }
@@ -60,7 +63,7 @@ static int secp256r1_on_exchange(ptls_key_exchange_context_t *_ctx, ptls_iovec_t
         ret = PTLS_ERROR_NO_MEMORY;
         goto Exit;
     }
-    if (!uECC_shared_secret(peerkey.base, ctx->priv, secbytes, uECC_secp256r1())) {
+    if (!uECC_shared_secret(peerkey.base + 1, ctx->priv, secbytes, uECC_secp256r1())) {
         ret = PTLS_ALERT_DECRYPT_ERROR;
         goto Exit;
     }
@@ -82,7 +85,8 @@ static int secp256r1_create_key_exchange(ptls_key_exchange_context_t **_ctx, ptl
     if ((ctx = (struct st_secp256r1_key_exhchange_t *)malloc(sizeof(*ctx))) == NULL)
         return PTLS_ERROR_NO_MEMORY;
     ctx->super = (ptls_key_exchange_context_t){secp256r1_on_exchange};
-    uECC_make_key(ctx->pub, ctx->priv, uECC_secp256r1());
+    ctx->pub[0] = TYPE_UNCOMPRESSED_PUBLIC_KEY;
+    uECC_make_key(ctx->pub + 1, ctx->priv, uECC_secp256r1());
 
     *_ctx = &ctx->super;
     *pubkey = ptls_iovec_init(ctx->pub, sizeof(ctx->pub));
@@ -94,7 +98,7 @@ static int secp256r1_key_exchange(ptls_iovec_t *pubkey, ptls_iovec_t *secret, pt
     uint8_t priv[SECP256R1_PRIVATE_KEY_SIZE], *pub = NULL, *secbytes = NULL;
     int ret;
 
-    if (peerkey.len != SECP256R1_PUBLIC_KEY_SIZE) {
+    if (peerkey.len != SECP256R1_PUBLIC_KEY_SIZE || peerkey.base[0] != TYPE_UNCOMPRESSED_PUBLIC_KEY) {
         ret = PTLS_ALERT_DECRYPT_ERROR;
         goto Exit;
     }
@@ -107,8 +111,9 @@ static int secp256r1_key_exchange(ptls_iovec_t *pubkey, ptls_iovec_t *secret, pt
         goto Exit;
     }
 
-    uECC_make_key(pub, priv, uECC_secp256r1());
-    if (!uECC_shared_secret(peerkey.base, priv, secbytes, uECC_secp256r1())) {
+    pub[0] = TYPE_UNCOMPRESSED_PUBLIC_KEY;
+    uECC_make_key(pub + 1, priv, uECC_secp256r1());
+    if (!uECC_shared_secret(peerkey.base + 1, priv, secbytes, uECC_secp256r1())) {
         ret = PTLS_ALERT_DECRYPT_ERROR;
         goto Exit;
     }
