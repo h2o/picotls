@@ -1650,7 +1650,7 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
     ptls_iovec_t *certs = NULL;
     size_t num_certs = 0, psk_index = SIZE_MAX;
     uint16_t sign_algorithm = 0;
-    int (*signer)(void *, ptls_iovec_t *, ptls_iovec_t) = NULL;
+    int (*signer)(void *, ptls_buffer_t *, ptls_iovec_t) = NULL;
     void *signer_data = NULL;
     ptls_iovec_t pubkey = {}, ecdh_secret = {};
     uint8_t finished_key[PTLS_MAX_DIGEST_SIZE];
@@ -1805,17 +1805,14 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
         /* build and send CertificateVerify */
         buffer_encrypt(sendbuf, tls->traffic_protection.enc.aead, {
             buffer_push_handshake(sendbuf, tls->key_schedule, PTLS_HANDSHAKE_TYPE_CERTIFICATE_VERIFY, {
-                uint8_t data[PTLS_MAX_CERTIFICATE_VERIFY_SIGNDATA_SIZE];
-                size_t datalen =
-                    build_certificate_verify_signdata(data, tls->key_schedule, PTLS_SERVER_CERTIFICATE_VERIFY_CONTEXT_STRING);
-                ptls_iovec_t sign;
-                ret = signer(signer_data, &sign, ptls_iovec_init(data, datalen));
-                ptls_clear_memory(data, datalen);
-                if (ret != 0)
-                    goto Exit;
                 ptls_buffer_push16(sendbuf, sign_algorithm);
-                ptls_buffer_push_block(sendbuf, 2, { ptls_buffer_pushv(sendbuf, sign.base, sign.len); });
-                free(sign.base);
+                ptls_buffer_push_block(sendbuf, 2, {
+                    uint8_t data[PTLS_MAX_CERTIFICATE_VERIFY_SIGNDATA_SIZE];
+                    size_t datalen =
+                        build_certificate_verify_signdata(data, tls->key_schedule, PTLS_SERVER_CERTIFICATE_VERIFY_CONTEXT_STRING);
+                    if ((ret = signer(signer_data, sendbuf, ptls_iovec_init(data, datalen))) != 0)
+                        goto Exit;
+                });
             });
         });
     }

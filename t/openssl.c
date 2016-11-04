@@ -95,10 +95,15 @@ static void test_rsa_sign(void)
                                              2) == PTLS_SIGNATURE_RSA_PSS_SHA256);
 
     const void *message = "hello world";
-    ptls_iovec_t signature;
-    ok(rsapss_sign(lookup_certificate->identities[0]->key, &signature, ptls_iovec_init(message, strlen(message))) == 0);
+    ptls_buffer_t sigbuf;
+    uint8_t sigbuf_small[1024];
+
+    ptls_buffer_init(&sigbuf, sigbuf_small, sizeof(sigbuf_small));
+    ok(rsapss_sign(lookup_certificate->identities[0]->key, &sigbuf, ptls_iovec_init(message, strlen(message))) == 0);
 
     /* TODO verify */
+
+    ptls_buffer_dispose(&sigbuf);
 }
 
 static void setup_certificate_lookup(ptls_openssl_lookup_certificate_t *lookup)

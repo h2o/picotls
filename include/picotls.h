@@ -232,7 +232,7 @@ typedef const struct st_ptls_cipher_suite_t {
  * a pointer to a function that should be called for signing the handshake using the private key associated to the certificate
  */
 PTLS_CALLBACK_TYPE(int, lookup_certificate, ptls_t *tls, uint16_t *sign_algorithm,
-                   int (**signer)(void *sign_ctx, ptls_iovec_t *output, ptls_iovec_t input), void **signer_data,
+                   int (**signer)(void *sign_ctx, ptls_buffer_t *outbuf, ptls_iovec_t input), void **signer_data,
                    ptls_iovec_t **certs, size_t *num_certs, const char *server_name, const uint16_t *signature_algorithms,
                    size_t num_signature_algorithms);
 /**

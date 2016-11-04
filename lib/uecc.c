@@ -163,15 +163,15 @@ static int ascii_streq_caseless(ptls_iovec_t x, ptls_iovec_t y)
     return 0;
 }
 
-static int secp256r1sha256_sign(void *data, ptls_iovec_t *output, ptls_iovec_t input)
+static int secp256r1sha256_sign(void *data, ptls_buffer_t *outbuf, ptls_iovec_t input)
 {
     uint8_t key_octets[32];
     uECC_word_t key_native[sizeof(key_octets) / sizeof(uECC_word_t)];
     cf_hmac_drbg ctx;
+    int ret;
 
-    if ((output->base = (uint8_t *)malloc(SECP256R1_SIGNATURE_SIZE)) == NULL)
-        return PTLS_ERROR_NO_MEMORY;
-    output->len = SECP256R1_SIGNATURE_SIZE;
+    if ((ret = ptls_buffer_reserve(outbuf, SECP256R1_SIGNATURE_SIZE)) != 0)
+        return ret;
 
     /* caclucate hash */
     cf_hmac_drbg_init(&ctx, &cf_sha256, data, SECP256R1_PRIVATE_KEY_SIZE, input.base, input.len, NULL, 0);
@@ -184,13 +184,14 @@ static int secp256r1sha256_sign(void *data, ptls_iovec_t *output, ptls_iovec_t i
 
     /* sign */
     uECC_vli_bytesToNative(key_native, key_octets, sizeof(key_octets));
-    uECC_sign_with_k(data, input.base, (unsigned)input.len, key_native, output->base, uECC_secp256r1());
+    uECC_sign_with_k(data, input.base, (unsigned)input.len, key_native, outbuf->base + outbuf->off, uECC_secp256r1());
+    outbuf->off += SECP256R1_SIGNATURE_SIZE;
 
     return 0;
 }
 
 static int lookup_certificate(ptls_lookup_certificate_t *_self, ptls_t *tls, uint16_t *sign_algorithm,
-                              int (**signer)(void *sign_ctx, ptls_iovec_t *output, ptls_iovec_t input), void **signer_data,
+                              int (**signer)(void *sign_ctx, ptls_buffer_t *outbuf, ptls_iovec_t input), void **signer_data,
                               ptls_iovec_t **certs, size_t *num_certs, const char *server_name,
                               const uint16_t *signature_algorithms, size_t num_signature_algorithms)
 {

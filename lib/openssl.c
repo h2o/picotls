@@ -308,11 +308,12 @@ static int secp256r1_key_exchange(ptls_iovec_t *pubkey, ptls_iovec_t *secret, pt
     return secp_key_exchange(NID_X9_62_prime256v1, pubkey, secret, peerkey);
 }
 
-static int rsapss_sign(void *data, ptls_iovec_t *output, ptls_iovec_t input)
+static int rsapss_sign(void *data, ptls_buffer_t *outbuf, ptls_iovec_t input)
 {
     EVP_PKEY *key = data;
     EVP_MD_CTX *ctx = NULL;
     EVP_PKEY_CTX *pkey_ctx;
+    size_t siglen;
     int ret;
 
     if ((ctx = EVP_MD_CTX_create()) == NULL) {
@@ -341,19 +342,17 @@ static int rsapss_sign(void *data, ptls_iovec_t *output, ptls_iovec_t input)
         ret = PTLS_ERROR_LIBRARY;
         goto Exit;
     }
-    if (EVP_DigestSignFinal(ctx, NULL, &output->len) != 1) {
+    if (EVP_DigestSignFinal(ctx, NULL, &siglen) != 1) {
         ret = PTLS_ERROR_LIBRARY;
         goto Exit;
     }
-    if ((output->base = malloc(output->len)) == NULL) {
-        ret = PTLS_ERROR_NO_MEMORY;
+    if ((ret = ptls_buffer_reserve(outbuf, siglen)) != 0)
         goto Exit;
-    }
-    if (EVP_DigestSignFinal(ctx, output->base, &output->len) != 1) {
-        free(output->base);
+    if (EVP_DigestSignFinal(ctx, outbuf->base + outbuf->off, &siglen) != 1) {
         ret = PTLS_ERROR_LIBRARY;
         goto Exit;
     }
+    outbuf->off += siglen;
 
     ret = 0;
 Exit:
@@ -567,7 +566,7 @@ static uint16_t select_compatible_signature_algorithm(EVP_PKEY *key, const uint1
 }
 
 static int lookup_certificate(ptls_lookup_certificate_t *_self, ptls_t *tls, uint16_t *sign_algorithm,
-                              int (**signer)(void *sign_ctx, ptls_iovec_t *output, ptls_iovec_t input), void **signer_data,
+                              int (**signer)(void *sign_ctx, ptls_buffer_t *outbuf, ptls_iovec_t input), void **signer_data,
                               ptls_iovec_t **certs, size_t *num_certs, const char *server_name,
                               const uint16_t *signature_algorithms, size_t num_signature_algorithms)
 {

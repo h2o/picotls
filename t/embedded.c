@@ -41,14 +41,17 @@ static void test_secp256r1_sign(void)
 {
     const char *msg = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef";
     uint8_t pub[SECP256R1_PUBLIC_KEY_SIZE], priv[SECP256R1_PRIVATE_KEY_SIZE];
-    ptls_iovec_t sig;
+    ptls_buffer_t sigbuf;
+    uint32_t sigbuf_small[128];
 
     uECC_make_key(pub, priv, uECC_secp256r1());
-    ok(secp256r1sha256_sign(priv, &sig, ptls_iovec_init(msg, 32)) == 0);
-    ok(sig.len == SECP256R1_SIGNATURE_SIZE);
-    ok(uECC_verify(pub, (void *)msg, 32, sig.base, uECC_secp256r1()));
+    ptls_buffer_init(&sigbuf, sigbuf_small, sizeof(sigbuf_small));
 
-    free(sig.base);
+    ok(secp256r1sha256_sign(priv, &sigbuf, ptls_iovec_init(msg, 32)) == 0);
+    ok(sigbuf.off == SECP256R1_SIGNATURE_SIZE);
+    ok(uECC_verify(pub, (void *)msg, 32, sigbuf.base, uECC_secp256r1()));
+
+    ptls_buffer_dispose(&sigbuf);
 }
 
 int main(int argc, char **argv)
