@@ -124,16 +124,9 @@ static void setup_certificate_lookup(ptls_openssl_lookup_certificate_t *lookup)
     EVP_PKEY_free(pkey);
 }
 
-static void test_main(void)
-{
-    subtest("ecdh-key-exchange", test_ecdh_key_exchange);
-    subtest("rsa-sign", test_rsa_sign);
-    subtest("picotls", test_picotls);
-}
-
 int main(int argc, char **argv)
 {
-    ptls_openssl_lookup_certificate_t lookup_certificate;
+    ptls_openssl_lookup_certificate_t openssl_lookup_certificate;
 
     ERR_load_crypto_strings();
     OpenSSL_add_all_algorithms();
@@ -144,21 +137,29 @@ int main(int argc, char **argv)
     ENGINE_register_all_digests();
 #endif
 
-    setup_certificate_lookup(&lookup_certificate);
+    setup_certificate_lookup(&openssl_lookup_certificate);
     ptls_context_t openssl_ctx = {ptls_openssl_random_bytes, ptls_openssl_key_exchanges, ptls_openssl_cipher_suites,
-                                  &lookup_certificate.super};
+                                  &openssl_lookup_certificate.super};
     ctx = ctx_peer = &openssl_ctx;
 
-    subtest("openssl", test_main);
+    subtest("ecdh-key-exchange", test_ecdh_key_exchange);
+    subtest("rsa-sign", test_rsa_sign);
+    subtest("picotls", test_picotls);
 
+    ptls_embedded_lookup_certificate_t embedded_lookup_certificate;
+    ptls_embedded_init_lookup_certificate(&embedded_lookup_certificate);
+    ptls_iovec_t embedded_certificate = ptls_iovec_init(SECP256R1_CERTIFICATE, sizeof(SECP256R1_CERTIFICATE) - 1);
+    ptls_embedded_lookup_certificate_add_identity(
+        &embedded_lookup_certificate, "example.com", PTLS_SIGNATURE_ECDSA_SECP256R1_SHA256,
+        ptls_iovec_init(SECP256R1_PRIVATE_KEY, sizeof(SECP256R1_PRIVATE_KEY) - 1), &embedded_certificate, 1);
     ptls_context_t embedded_ctx = {ptls_embedded_random_bytes, ptls_embedded_key_exchanges, ptls_embedded_cipher_suites,
-                                   &lookup_certificate.super};
+                                   &embedded_lookup_certificate.super};
     ctx_peer = &embedded_ctx;
-    subtest("vs. peer", test_main);
+    subtest("vs. peer", test_picotls);
 
     ctx = &embedded_ctx;
     ctx_peer = &openssl_ctx;
-    subtest("peer vs.", test_main);
+    subtest("peer vs.", test_picotls);
 
     return done_testing();
 }
