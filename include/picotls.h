@@ -337,15 +337,63 @@ static void ptls_buffer_init(ptls_buffer_t *buf, void *smallbuf, size_t smallbuf
 /**
  * disposes a buffer, freeing resources allocated by the buffer itself (if any)
  */
-static void ptls_buffer_dispose(struct st_ptls_buffer_t *buf);
+static void ptls_buffer_dispose(ptls_buffer_t *buf);
 /**
  * internal
  */
-void ptls_buffer__release_memory(struct st_ptls_buffer_t *buf);
+void ptls_buffer__release_memory(ptls_buffer_t *buf);
 /**
  * reserves space for additional amount of memory
  */
-int ptls_buffer_reserve(struct st_ptls_buffer_t *buf, size_t delta);
+int ptls_buffer_reserve(ptls_buffer_t *buf, size_t delta);
+/**
+ * internal
+ */
+int ptls_buffer__do_pushv(ptls_buffer_t *buf, const void *src, size_t len);
+
+#define ptls_buffer_pushv(buf, src, len)                                                                                           \
+    do {                                                                                                                           \
+        if ((ret = ptls_buffer__do_pushv((buf), (src), (len))) != 0)                                                               \
+            goto Exit;                                                                                                             \
+    } while (0)
+
+#define ptls_buffer_push(buf, ...)                                                                                                 \
+    do {                                                                                                                           \
+        if ((ret = ptls_buffer__do_pushv((buf), (uint8_t[]){__VA_ARGS__}, sizeof((uint8_t[]){__VA_ARGS__}))) != 0)                 \
+            goto Exit;                                                                                                             \
+    } while (0)
+
+#define ptls_buffer_push16(buf, v)                                                                                                 \
+    do {                                                                                                                           \
+        uint16_t _v = (v);                                                                                                         \
+        ptls_buffer_push(buf, (uint8_t)(_v >> 8), (uint8_t)_v);                                                                    \
+    } while (0)
+
+#define ptls_buffer_push32(buf, v)                                                                                                 \
+    do {                                                                                                                           \
+        uint32_t _v = (v);                                                                                                         \
+        ptls_buffer_push(buf, (uint8_t)(_v >> 24), (uint8_t)(_v >> 16), (uint8_t)(_v >> 8), (uint8_t)_v);                          \
+    } while (0)
+
+#define ptls_buffer_push64(buf, v)                                                                                                 \
+    do {                                                                                                                           \
+        uint64_t _v = (v);                                                                                                         \
+        ptls_buffer_push(buf, (uint8_t)(_v >> 56), (uint8_t)(_v >> 48), (uint8_t)(_v >> 40), (uint8_t)(_v >> 32),                  \
+                         (uint8_t)(_v >> 24), (uint8_t)(_v >> 16), (uint8_t)(_v >> 8), (uint8_t)_v);                               \
+    } while (0)
+
+#define ptls_buffer_push_block(buf, _capacity, block)                                                                              \
+    do {                                                                                                                           \
+        size_t capacity = (_capacity);                                                                                             \
+        ptls_buffer_pushv((buf), (uint8_t *)"\0\0\0\0\0\0\0", capacity);                                                           \
+        size_t body_start = (buf)->off;                                                                                            \
+        do {                                                                                                                       \
+            block                                                                                                                  \
+        } while (0);                                                                                                               \
+        size_t body_size = (buf)->off - body_start;                                                                                \
+        for (; capacity != 0; --capacity)                                                                                          \
+            (buf)->base[body_start - capacity] = (uint8_t)(body_size >> (8 * (capacity - 1)));                                     \
+    } while (0)
 
 /**
  * create a object to handle new TLS connection. Client-side of a TLS connection is created if server_name is non-NULL. Otherwise,
