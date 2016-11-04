@@ -164,22 +164,32 @@ static int ascii_streq_caseless(ptls_iovec_t x, ptls_iovec_t y)
 
 static int secp256r1sha256_sign(void *data, ptls_buffer_t *outbuf, ptls_iovec_t input)
 {
-    uint8_t key_octets[32], sig[64];
+    uint8_t hash[32], key_octets[32], sig[64];
     uECC_word_t key_native[sizeof(key_octets) / sizeof(uECC_word_t)];
-    cf_hmac_drbg ctx;
     int ret;
 
-    /* caclucate hash */
-    cf_hmac_drbg_init(&ctx, &cf_sha256, data, SECP256R1_PRIVATE_KEY_SIZE, input.base, input.len, NULL, 0);
-    do {
-        cf_hmac_drbg_gen(&ctx, key_octets, sizeof(key_octets));
-    } while (memcmp("\xFF\xFF\xFF\xFF\x00\x00\x00\x00\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xBC\xE6\xFA\xAD\xA7\x17\x9E\x84\xF3\xB9\xCA"
-                    "\xC2\xFC\x63\x25\x51",
-                    key_octets, sizeof(key_octets)) < 0);
+    { /* calc hash */
+        cf_sha256_context ctx;
+        cf_sha256_init(&ctx);
+        cf_sha256_update(&ctx, input.base, input.len);
+        cf_sha256_digest_final(&ctx, hash);
+        ptls_clear_memory(&ctx, sizeof(ctx));
+    }
+
+    { /* caclucate deterministic rand */
+        cf_hmac_drbg ctx;
+        cf_hmac_drbg_init(&ctx, &cf_sha256, data, SECP256R1_PRIVATE_KEY_SIZE, hash, sizeof(hash), NULL, 0);
+        do {
+            cf_hmac_drbg_gen(&ctx, key_octets, sizeof(key_octets));
+        } while (memcmp("\xFF\xFF\xFF\xFF\x00\x00\x00\x00\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xBC\xE6\xFA\xAD\xA7\x17\x9E\x84\xF3\xB9"
+                        "\xCA\xC2\xFC\x63\x25\x51",
+                        key_octets, sizeof(key_octets)) < 0);
+        ptls_clear_memory(&ctx, sizeof(ctx));
+    }
 
     /* sign */
     uECC_vli_bytesToNative(key_native, key_octets, sizeof(key_octets));
-    uECC_sign_with_k(data, input.base, (unsigned)input.len, key_native, sig, uECC_secp256r1());
+    uECC_sign_with_k(data, hash, sizeof(hash), key_native, sig, uECC_secp256r1());
 
     /* encode using DER */
     ptls_buffer_push_asn1_sequence(outbuf, {
@@ -192,7 +202,6 @@ static int secp256r1sha256_sign(void *data, ptls_buffer_t *outbuf, ptls_iovec_t 
     ret = 0;
 
 Exit:
-    ptls_clear_memory(&ctx, sizeof(ctx));
     return ret;
 }
 
