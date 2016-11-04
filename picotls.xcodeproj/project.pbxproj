@@ -13,7 +13,6 @@
 		1059004E1DC8D61800FB4085 /* embedded.c in Sources */ = {isa = PBXBuildFile; fileRef = 1059003D1DC8D4E300FB4085 /* embedded.c */; };
 		105900501DC8D64E00FB4085 /* embedded.h in Headers */ = {isa = PBXBuildFile; fileRef = 1059004F1DC8D64E00FB4085 /* embedded.h */; };
 		105900611DC8DF8C00FB4085 /* sha256.c in Sources */ = {isa = PBXBuildFile; fileRef = 1059005F1DC8DE4400FB4085 /* sha256.c */; };
-		105900621DC8DFA000FB4085 /* drbg.c in Sources */ = {isa = PBXBuildFile; fileRef = 105900511DC8D79300FB4085 /* drbg.c */; };
 		105900641DC8DFA700FB4085 /* curve25519.c in Sources */ = {isa = PBXBuildFile; fileRef = 105900391DC8D46A00FB4085 /* curve25519.c */; };
 		105900691DC8DFDF00FB4085 /* blockwise.c in Sources */ = {isa = PBXBuildFile; fileRef = 105900291DC8D39800FB4085 /* blockwise.c */; };
 		1059006A1DC8DFE300FB4085 /* hmac.c in Sources */ = {isa = PBXBuildFile; fileRef = 105900651DC8DFD300FB4085 /* hmac.c */; };
@@ -73,6 +72,7 @@
 		106530EA1D9B7C13005B2C60 /* picotls.c in Sources */ = {isa = PBXBuildFile; fileRef = 106530E91D9B7C13005B2C60 /* picotls.c */; };
 		106530EB1D9B7C5C005B2C60 /* picotls.c in Sources */ = {isa = PBXBuildFile; fileRef = 106530BF1D998641005B2C60 /* picotls.c */; };
 		106530FF1DAD8A3C005B2C60 /* cli.c in Sources */ = {isa = PBXBuildFile; fileRef = 106530FE1DAD8A3C005B2C60 /* cli.c */; };
+		10EACAF01DCC843A00CA0341 /* drbg.c in Sources */ = {isa = PBXBuildFile; fileRef = 105900511DC8D79300FB4085 /* drbg.c */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -497,13 +497,13 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				105900621DC8DFA000FB4085 /* drbg.c in Sources */,
 				105900B61DC943D400FB4085 /* aes.c in Sources */,
 				105900431DC8D57000FB4085 /* picotls.c in Sources */,
 				105900C41DC96B2200FB4085 /* uECC.c in Sources */,
 				105900441DC8D57000FB4085 /* picotest.c in Sources */,
 				105900611DC8DF8C00FB4085 /* sha256.c in Sources */,
 				1059004E1DC8D61800FB4085 /* embedded.c in Sources */,
+				10EACAF01DCC843A00CA0341 /* drbg.c in Sources */,
 				1059006A1DC8DFE300FB4085 /* hmac.c in Sources */,
 				1059006F1DC8E00B00FB4085 /* chash.c in Sources */,
 				105900B41DC943B500FB4085 /* gf128.c in Sources */,
@@ -589,7 +589,7 @@
 		105900491DC8D57000FB4085 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				GCC_PREPROCESSOR_DEFINITIONS = "uECC_ENABLE_VLI_API=1";
+				GCC_PREPROCESSOR_DEFINITIONS = "";
 				OTHER_LDFLAGS = "";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 			};
@@ -598,7 +598,7 @@
 		1059004A1DC8D57000FB4085 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				GCC_PREPROCESSOR_DEFINITIONS = "uECC_ENABLE_VLI_API=1";
+				GCC_PREPROCESSOR_DEFINITIONS = "";
 				OTHER_LDFLAGS = "";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 			};
@@ -718,7 +718,7 @@
 		106530D11D9B3D45005B2C60 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				GCC_PREPROCESSOR_DEFINITIONS = "uECC_ENABLE_VLI_API=1";
+				GCC_PREPROCESSOR_DEFINITIONS = "";
 				HEADER_SEARCH_PATHS = (
 					"/usr/local/openssl-1.0.2/include",
 					include,
@@ -732,7 +732,7 @@
 		106530D21D9B3D45005B2C60 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				GCC_PREPROCESSOR_DEFINITIONS = "uECC_ENABLE_VLI_API=1";
+				GCC_PREPROCESSOR_DEFINITIONS = "";
 				HEADER_SEARCH_PATHS = (
 					"/usr/local/openssl-1.0.2/include",
 					include,
@@ -747,7 +747,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				EXECUTABLE_PREFIX = lib;
-				GCC_PREPROCESSOR_DEFINITIONS = "uECC_ENABLE_VLI_API=1";
+				GCC_PREPROCESSOR_DEFINITIONS = "";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 			};
 			name = Debug;
@@ -756,7 +756,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				EXECUTABLE_PREFIX = lib;
-				GCC_PREPROCESSOR_DEFINITIONS = "uECC_ENABLE_VLI_API=1";
+				GCC_PREPROCESSOR_DEFINITIONS = "";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 			};
 			name = Release;

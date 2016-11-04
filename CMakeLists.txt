@@ -5,7 +5,7 @@ PROJECT(picotls)
 
 FIND_PACKAGE(OpenSSL REQUIRED)
 
-SET(CMAKE_C_FLAGS "-std=gnu99 -Wall -O2 -g -DuECC_SUPPORTS_secp160r1=0 -DuECC_SUPPORTS_secp192r1=0 -DuECC_SUPPORTS_secp224r1=0 -DuECC_SUPPORTS_secp256k1=0 -DuECC_SUPPORT_COMPRESSED_POINT=0 -DuECC_ENABLE_VLI_API=1 ${CC_WARNING_FLAGS} ${CMAKE_C_FLAGS}")
+SET(CMAKE_C_FLAGS "-std=gnu99 -Wall -O2 -g -DuECC_SUPPORTS_secp160r1=0 -DuECC_SUPPORTS_secp192r1=0 -DuECC_SUPPORTS_secp224r1=0 -DuECC_SUPPORTS_secp256k1=0 -DuECC_SUPPORT_COMPRESSED_POINT=0 ${CC_WARNING_FLAGS} ${CMAKE_C_FLAGS}")
 INCLUDE_DIRECTORIES(${OPENSSL_INCLUDE_DIR} deps/micro-ecc deps/cifra/src/ext deps/cifra/src deps/picotest include)
 
 SET(EMBEDDED_SOURCE_FILES deps/micro-ecc/uECC.c deps/cifra/src/aes.c deps/cifra/src/blockwise.c deps/cifra/src/chash.c deps/cifra/src/curve25519.c deps/cifra/src/drbg.c deps/cifra/src/hmac.c deps/cifra/src/gcm.c deps/cifra/src/gf128.c deps/cifra/src/modes.c deps/cifra/src/sha256.c)
