@@ -189,6 +189,8 @@ static int secp256r1sha256_sign(void *data, ptls_buffer_t *outbuf, ptls_iovec_t 
     ret = 0;
 
 Exit:
+    ptls_clear_memory(hash, sizeof(hash));
+    ptls_clear_memory(sig, sizeof(sig));
     return ret;
 }
 
