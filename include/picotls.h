@@ -350,6 +350,14 @@ int ptls_buffer_reserve(ptls_buffer_t *buf, size_t delta);
  * internal
  */
 int ptls_buffer__do_pushv(ptls_buffer_t *buf, const void *src, size_t len);
+/**
+ * internal
+ */
+int ptls_buffer__adjust_asn1_blocksize(ptls_buffer_t *buf, size_t body_size);
+/**
+ * pushes an unsigned bigint
+ */
+int ptls_buffer_push_asn1_ubigint(ptls_buffer_t *buf, const void *bignum, size_t size);
 
 #define ptls_buffer_pushv(buf, src, len)                                                                                           \
     do {                                                                                                                           \
@@ -393,6 +401,28 @@ int ptls_buffer__do_pushv(ptls_buffer_t *buf, const void *src, size_t len);
         size_t body_size = (buf)->off - body_start;                                                                                \
         for (; capacity != 0; --capacity)                                                                                          \
             (buf)->base[body_start - capacity] = (uint8_t)(body_size >> (8 * (capacity - 1)));                                     \
+    } while (0)
+
+#define ptls_buffer_push_asn1_block(buf, block)                                                                                    \
+    do {                                                                                                                           \
+        ptls_buffer_push((buf), 0xff); /* dummy */                                                                                 \
+        size_t body_start = (buf)->off;                                                                                            \
+        do {                                                                                                                       \
+            block                                                                                                                  \
+        } while (0);                                                                                                               \
+        size_t body_size = (buf)->off - body_start;                                                                                \
+        if (body_size < 128) {                                                                                                     \
+            (buf)->base[body_start - 1] = (uint8_t)body_size;                                                                      \
+        } else {                                                                                                                   \
+            if ((ret = ptls_buffer__adjust_asn1_blocksize((buf), body_size)) != 0)                                                 \
+                goto Exit;                                                                                                         \
+        }                                                                                                                          \
+    } while (0)
+
+#define ptls_buffer_push_asn1_sequence(buf, block)                                                                                 \
+    do {                                                                                                                           \
+        ptls_buffer_push((buf), 0x30);                                                                                             \
+        ptls_buffer_push_asn1_block((buf), block);                                                                                 \
     } while (0)
 
 /**

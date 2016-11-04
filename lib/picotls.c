@@ -305,6 +305,39 @@ int ptls_buffer__do_pushv(ptls_buffer_t *buf, const void *src, size_t len)
     return 0;
 }
 
+int ptls_buffer__adjust_asn1_blocksize(ptls_buffer_t *buf, size_t body_size)
+{
+    fprintf(stderr, "unimplemented\n");
+    abort();
+}
+
+int ptls_buffer_push_asn1_ubigint(ptls_buffer_t *buf, const void *bignum, size_t size)
+{
+    const uint8_t *p = bignum, *end = p + size;
+    int ret;
+
+    /* skip zeroes */
+    for (; end - p >= 1; ++p)
+        if (*p != 0)
+            break;
+
+    /* emit */
+    ptls_buffer_push(buf, 2);
+    ptls_buffer_push_asn1_block(buf, {
+        if (*p >= 0x80)
+            ptls_buffer_push(buf, 0);
+        if (p != end) {
+            ptls_buffer_pushv(buf, p, end - p);
+        } else {
+            ptls_buffer_pushv(buf, "", 1);
+        }
+    });
+    ret = 0;
+
+Exit:
+    return ret;
+}
+
 static int buffer_encrypt_record(ptls_buffer_t *buf, size_t rec_start, ptls_aead_context_t *aead)
 {
     uint8_t encrypted[PTLS_MAX_ENCRYPTED_RECORD_SIZE];
