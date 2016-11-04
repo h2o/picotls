@@ -829,18 +829,20 @@ int ptls_openssl_init_verify_certificate(ptls_openssl_verify_certificate_t *self
     *self = (ptls_openssl_verify_certificate_t){{verify_certificate}};
 
     if (store != NULL) {
-        X509_STORE_up_ref(store);
-        self->cert_store = store;
-    } else {
-        X509_LOOKUP *lookup;
-        if ((self->cert_store = X509_STORE_new()) == NULL)
-            return -1;
-        if ((lookup = X509_STORE_add_lookup(self->cert_store, X509_LOOKUP_file())) == NULL)
-            return -1;
-        X509_LOOKUP_load_file(lookup, NULL, X509_FILETYPE_DEFAULT);
-        if ((lookup = X509_STORE_add_lookup(self->cert_store, X509_LOOKUP_hash_dir())) == NULL)
-            return -1;
-        X509_LOOKUP_add_dir(lookup, NULL, X509_FILETYPE_DEFAULT);
+        if (store != PTLS_OPENSSL_DEFAULT_CERTIFICATE_STORE) {
+            X509_STORE_up_ref(store);
+            self->cert_store = store;
+        } else {
+            X509_LOOKUP *lookup;
+            if ((self->cert_store = X509_STORE_new()) == NULL)
+                return -1;
+            if ((lookup = X509_STORE_add_lookup(self->cert_store, X509_LOOKUP_file())) == NULL)
+                return -1;
+            X509_LOOKUP_load_file(lookup, NULL, X509_FILETYPE_DEFAULT);
+            if ((lookup = X509_STORE_add_lookup(self->cert_store, X509_LOOKUP_hash_dir())) == NULL)
+                return -1;
+            X509_LOOKUP_add_dir(lookup, NULL, X509_FILETYPE_DEFAULT);
+        }
     }
 
     return 0;

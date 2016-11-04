@@ -127,6 +127,7 @@ static void setup_certificate_lookup(ptls_openssl_lookup_certificate_t *lookup)
 int main(int argc, char **argv)
 {
     ptls_openssl_lookup_certificate_t openssl_lookup_certificate;
+    ptls_openssl_verify_certificate_t openssl_verify_certificate;
 
     ERR_load_crypto_strings();
     OpenSSL_add_all_algorithms();
@@ -138,8 +139,9 @@ int main(int argc, char **argv)
 #endif
 
     setup_certificate_lookup(&openssl_lookup_certificate);
+    ptls_openssl_init_verify_certificate(&openssl_verify_certificate, NULL);
     ptls_context_t openssl_ctx = {ptls_openssl_random_bytes, ptls_openssl_key_exchanges, ptls_openssl_cipher_suites,
-                                  &openssl_lookup_certificate.super};
+                                  &openssl_lookup_certificate.super, &openssl_verify_certificate.super};
     ctx = ctx_peer = &openssl_ctx;
 
     subtest("ecdh-key-exchange", test_ecdh_key_exchange);
