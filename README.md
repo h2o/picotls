@@ -55,4 +55,6 @@ When `-e` option is used, client first waits for user input, and then sends CLIE
 
 License
 ---
-MIT
+
+The software is provided under the MIT license.
+Note that additional licences apply if you use the minicrypto binding (see above).
