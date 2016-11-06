@@ -397,7 +397,7 @@ int main(int argc, char **argv)
                           &encrypt_ticket,
                           &decrypt_ticket,
                           &save_ticket};
-    ptls_openssl_verify_certificate_t verify_certificate;
+    ptls_openssl_verify_certificate_t verify_certificate = {{NULL}};
     ptls_handshake_properties_t hsprop = {{{NULL}}};
     const char *host, *port;
     STACK_OF(X509) *certs = NULL;
@@ -447,7 +447,6 @@ int main(int argc, char **argv)
             break;
         case 'v':
             ptls_openssl_init_verify_certificate(&verify_certificate, NULL);
-            ctx.verify_certificate = &verify_certificate.super;
             break;
         default:
             usage(argv[0]);
@@ -486,6 +485,9 @@ int main(int argc, char **argv)
             hsprop.client.max_early_data_size = &max_early_data_size;
         }
     }
+    if (verify_certificate.super.cb == NULL)
+        ptls_openssl_init_verify_certificate(&verify_certificate, NULL);
+    ctx.verify_certificate = &verify_certificate.super;
     if (argc != 2) {
         fprintf(stderr, "missing host and port\n");
         return 1;

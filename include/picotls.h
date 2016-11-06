@@ -233,7 +233,7 @@ typedef const struct st_ptls_cipher_suite_t {
  * a pointer to a function that should be called for signing the handshake using the private key associated to the certificate
  */
 PTLS_CALLBACK_TYPE(int, lookup_certificate, ptls_t *tls, uint16_t *sign_algorithm,
-                   int (**signer)(void *sign_ctx, ptls_iovec_t *output, ptls_iovec_t input), void **signer_data,
+                   int (**signer)(void *sign_ctx, ptls_buffer_t *outbuf, ptls_iovec_t input), void **signer_data,
                    ptls_iovec_t **certs, size_t *num_certs, const char *server_name, const uint16_t *signature_algorithms,
                    size_t num_signature_algorithms);
 /**
@@ -338,15 +338,93 @@ static void ptls_buffer_init(ptls_buffer_t *buf, void *smallbuf, size_t smallbuf
 /**
  * disposes a buffer, freeing resources allocated by the buffer itself (if any)
  */
-static void ptls_buffer_dispose(struct st_ptls_buffer_t *buf);
+static void ptls_buffer_dispose(ptls_buffer_t *buf);
 /**
  * internal
  */
-void ptls_buffer__release_memory(struct st_ptls_buffer_t *buf);
+void ptls_buffer__release_memory(ptls_buffer_t *buf);
 /**
  * reserves space for additional amount of memory
  */
-int ptls_buffer_reserve(struct st_ptls_buffer_t *buf, size_t delta);
+int ptls_buffer_reserve(ptls_buffer_t *buf, size_t delta);
+/**
+ * internal
+ */
+int ptls_buffer__do_pushv(ptls_buffer_t *buf, const void *src, size_t len);
+/**
+ * internal
+ */
+int ptls_buffer__adjust_asn1_blocksize(ptls_buffer_t *buf, size_t body_size);
+/**
+ * pushes an unsigned bigint
+ */
+int ptls_buffer_push_asn1_ubigint(ptls_buffer_t *buf, const void *bignum, size_t size);
+
+#define ptls_buffer_pushv(buf, src, len)                                                                                           \
+    do {                                                                                                                           \
+        if ((ret = ptls_buffer__do_pushv((buf), (src), (len))) != 0)                                                               \
+            goto Exit;                                                                                                             \
+    } while (0)
+
+#define ptls_buffer_push(buf, ...)                                                                                                 \
+    do {                                                                                                                           \
+        if ((ret = ptls_buffer__do_pushv((buf), (uint8_t[]){__VA_ARGS__}, sizeof((uint8_t[]){__VA_ARGS__}))) != 0)                 \
+            goto Exit;                                                                                                             \
+    } while (0)
+
+#define ptls_buffer_push16(buf, v)                                                                                                 \
+    do {                                                                                                                           \
+        uint16_t _v = (v);                                                                                                         \
+        ptls_buffer_push(buf, (uint8_t)(_v >> 8), (uint8_t)_v);                                                                    \
+    } while (0)
+
+#define ptls_buffer_push32(buf, v)                                                                                                 \
+    do {                                                                                                                           \
+        uint32_t _v = (v);                                                                                                         \
+        ptls_buffer_push(buf, (uint8_t)(_v >> 24), (uint8_t)(_v >> 16), (uint8_t)(_v >> 8), (uint8_t)_v);                          \
+    } while (0)
+
+#define ptls_buffer_push64(buf, v)                                                                                                 \
+    do {                                                                                                                           \
+        uint64_t _v = (v);                                                                                                         \
+        ptls_buffer_push(buf, (uint8_t)(_v >> 56), (uint8_t)(_v >> 48), (uint8_t)(_v >> 40), (uint8_t)(_v >> 32),                  \
+                         (uint8_t)(_v >> 24), (uint8_t)(_v >> 16), (uint8_t)(_v >> 8), (uint8_t)_v);                               \
+    } while (0)
+
+#define ptls_buffer_push_block(buf, _capacity, block)                                                                              \
+    do {                                                                                                                           \
+        size_t capacity = (_capacity);                                                                                             \
+        ptls_buffer_pushv((buf), (uint8_t *)"\0\0\0\0\0\0\0", capacity);                                                           \
+        size_t body_start = (buf)->off;                                                                                            \
+        do {                                                                                                                       \
+            block                                                                                                                  \
+        } while (0);                                                                                                               \
+        size_t body_size = (buf)->off - body_start;                                                                                \
+        for (; capacity != 0; --capacity)                                                                                          \
+            (buf)->base[body_start - capacity] = (uint8_t)(body_size >> (8 * (capacity - 1)));                                     \
+    } while (0)
+
+#define ptls_buffer_push_asn1_block(buf, block)                                                                                    \
+    do {                                                                                                                           \
+        ptls_buffer_push((buf), 0xff); /* dummy */                                                                                 \
+        size_t body_start = (buf)->off;                                                                                            \
+        do {                                                                                                                       \
+            block                                                                                                                  \
+        } while (0);                                                                                                               \
+        size_t body_size = (buf)->off - body_start;                                                                                \
+        if (body_size < 128) {                                                                                                     \
+            (buf)->base[body_start - 1] = (uint8_t)body_size;                                                                      \
+        } else {                                                                                                                   \
+            if ((ret = ptls_buffer__adjust_asn1_blocksize((buf), body_size)) != 0)                                                 \
+                goto Exit;                                                                                                         \
+        }                                                                                                                          \
+    } while (0)
+
+#define ptls_buffer_push_asn1_sequence(buf, block)                                                                                 \
+    do {                                                                                                                           \
+        ptls_buffer_push((buf), 0x30);                                                                                             \
+        ptls_buffer_push_asn1_block((buf), block);                                                                                 \
+    } while (0)
 
 /**
  * create a object to handle new TLS connection. Client-side of a TLS connection is created if server_name is non-NULL. Otherwise,

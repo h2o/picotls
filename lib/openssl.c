@@ -137,10 +137,12 @@ struct st_x9_62_keyex_context_t {
     BN_CTX *bn_ctx;
     EC_GROUP *group;
     EC_KEY *privkey;
+    ptls_iovec_t pubkey;
 };
 
 static void x9_62_free_context(struct st_x9_62_keyex_context_t *ctx)
 {
+    free(ctx->pubkey.base);
     if (ctx->privkey != NULL)
         EC_KEY_free(ctx->privkey);
     if (ctx->group != NULL)
@@ -194,11 +196,12 @@ static int x9_62_create_key_exchange(ptls_key_exchange_context_t **_ctx, ptls_io
         goto Exit;
     }
 
-    if ((*pubkey = x9_62_encode_point(ctx->group, EC_KEY_get0_public_key(ctx->privkey), ctx->bn_ctx)).base == NULL) {
+    if ((ctx->pubkey = x9_62_encode_point(ctx->group, EC_KEY_get0_public_key(ctx->privkey), ctx->bn_ctx)).base == NULL) {
         ret = PTLS_ERROR_NO_MEMORY;
         goto Exit;
     }
 
+    *pubkey = ctx->pubkey;
     ret = 0;
 
 Exit:
@@ -305,11 +308,12 @@ static int secp256r1_key_exchange(ptls_iovec_t *pubkey, ptls_iovec_t *secret, pt
     return secp_key_exchange(NID_X9_62_prime256v1, pubkey, secret, peerkey);
 }
 
-static int rsapss_sign(void *data, ptls_iovec_t *output, ptls_iovec_t input)
+static int rsapss_sign(void *data, ptls_buffer_t *outbuf, ptls_iovec_t input)
 {
     EVP_PKEY *key = data;
     EVP_MD_CTX *ctx = NULL;
     EVP_PKEY_CTX *pkey_ctx;
+    size_t siglen;
     int ret;
 
     if ((ctx = EVP_MD_CTX_create()) == NULL) {
@@ -338,19 +342,17 @@ static int rsapss_sign(void *data, ptls_iovec_t *output, ptls_iovec_t input)
         ret = PTLS_ERROR_LIBRARY;
         goto Exit;
     }
-    if (EVP_DigestSignFinal(ctx, NULL, &output->len) != 1) {
+    if (EVP_DigestSignFinal(ctx, NULL, &siglen) != 1) {
         ret = PTLS_ERROR_LIBRARY;
         goto Exit;
     }
-    if ((output->base = malloc(output->len)) == NULL) {
-        ret = PTLS_ERROR_NO_MEMORY;
+    if ((ret = ptls_buffer_reserve(outbuf, siglen)) != 0)
         goto Exit;
-    }
-    if (EVP_DigestSignFinal(ctx, output->base, &output->len) != 1) {
-        free(output->base);
+    if (EVP_DigestSignFinal(ctx, outbuf->base + outbuf->off, &siglen) != 1) {
         ret = PTLS_ERROR_LIBRARY;
         goto Exit;
     }
+    outbuf->off += siglen;
 
     ret = 0;
 Exit:
@@ -564,7 +566,7 @@ static uint16_t select_compatible_signature_algorithm(EVP_PKEY *key, const uint1
 }
 
 static int lookup_certificate(ptls_lookup_certificate_t *_self, ptls_t *tls, uint16_t *sign_algorithm,
-                              int (**signer)(void *sign_ctx, ptls_iovec_t *output, ptls_iovec_t input), void **signer_data,
+                              int (**signer)(void *sign_ctx, ptls_buffer_t *outbuf, ptls_iovec_t input), void **signer_data,
                               ptls_iovec_t **certs, size_t *num_certs, const char *server_name,
                               const uint16_t *signature_algorithms, size_t num_signature_algorithms)
 {
@@ -826,18 +828,20 @@ int ptls_openssl_init_verify_certificate(ptls_openssl_verify_certificate_t *self
     *self = (ptls_openssl_verify_certificate_t){{verify_certificate}};
 
     if (store != NULL) {
-        X509_STORE_up_ref(store);
-        self->cert_store = store;
-    } else {
-        X509_LOOKUP *lookup;
-        if ((self->cert_store = X509_STORE_new()) == NULL)
-            return -1;
-        if ((lookup = X509_STORE_add_lookup(self->cert_store, X509_LOOKUP_file())) == NULL)
-            return -1;
-        X509_LOOKUP_load_file(lookup, NULL, X509_FILETYPE_DEFAULT);
-        if ((lookup = X509_STORE_add_lookup(self->cert_store, X509_LOOKUP_hash_dir())) == NULL)
-            return -1;
-        X509_LOOKUP_add_dir(lookup, NULL, X509_FILETYPE_DEFAULT);
+        if (store != PTLS_OPENSSL_DEFAULT_CERTIFICATE_STORE) {
+            X509_STORE_up_ref(store);
+            self->cert_store = store;
+        } else {
+            X509_LOOKUP *lookup;
+            if ((self->cert_store = X509_STORE_new()) == NULL)
+                return -1;
+            if ((lookup = X509_STORE_add_lookup(self->cert_store, X509_LOOKUP_file())) == NULL)
+                return -1;
+            X509_LOOKUP_load_file(lookup, NULL, X509_FILETYPE_DEFAULT);
+            if ((lookup = X509_STORE_add_lookup(self->cert_store, X509_LOOKUP_hash_dir())) == NULL)
+                return -1;
+            X509_LOOKUP_add_dir(lookup, NULL, X509_FILETYPE_DEFAULT);
+        }
     }
 
     return 0;
