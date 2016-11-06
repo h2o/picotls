@@ -3,19 +3,21 @@ picotls
 
 Picotls is a [TLS 1.3](https://tlswg.github.io/tls13-spec/) implementation written in C.
 
-At the moment, the library implements Draft 18 of the specification. List of supported features are as follows:
-
-* public-key exchange: P256
-* aead cipher: AES128-GCM-SHA256
-* server-certificates using RSA or ECDSA signatures
-* PSK and PSK-DHE
-* early-data
+At the moment, the library implements Draft 18 of the specification, including support 0-RTT resumption using PSK or PSK-DHE.
 
 Primary goal of the project is to create a fast, tiny TLS 1.3 implementation that can be used with the HTTP/2 protocol stack and possibly the upcoming QUIC stack of the [H2O HTTP/2 server](https://h2o.examp1e.net).
 
-The library only implements the communication protocol.
-Cryptographic operations are delegated to OpenSSL using callbacks.
-It would be easy to write binding to other crypto engines.
+Picotls only implements the communination protocol; cryptographic operations are delegated to cryptographic engines.
+At the moment, _minicrypto_ binding (uses [cifra](https://github.com/ctz/cifra/) and [micro-ecc](https://github.com/kmackay/micro-ecc)) and _openssl_ binding are provided.
+
+License and algorithms supported by the bindings are as follows:
+
+| Binding | License | Key Exchange | Certificate | AEAD cipher |
+|:-----:|:-----:|:-----:|:-----:|:-----:|
+| minicrypto | [CC0](https://github.com/ctz/cifra/) / [2-clause BSD](https://github.com/kmackay/micro-ecc) | secp256r1 | ECDSA (P256)<sup>1</sup> | AES-128-GCM |
+| OpenSSL | OpenSSL | secp256r1 | RSA, ECDSA (P256) | AES-128-GCM |
+
+Note 1: Minicrypto binding is capable of signing a handshake using the certificate's key, but cannot verify a signature sent by the peer.
 
 How to
 ---
