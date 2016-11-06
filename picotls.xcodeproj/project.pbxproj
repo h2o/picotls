@@ -89,6 +89,7 @@
 		10EACB111DCEAF0F00CA0341 /* minicrypto.h in Headers */ = {isa = PBXBuildFile; fileRef = 1059004F1DC8D64E00FB4085 /* minicrypto.h */; };
 		10EACB121DCEAF0F00CA0341 /* gf128.h in Headers */ = {isa = PBXBuildFile; fileRef = 105900AB1DC941D700FB4085 /* gf128.h */; };
 		10EACB131DCEAF0F00CA0341 /* curve25519.h in Headers */ = {isa = PBXBuildFile; fileRef = 105900361DC8D44E00FB4085 /* curve25519.h */; };
+		10EACB1A1DCEC2A300CA0341 /* libpicotls-core.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 106530DA1D9B3E6F005B2C60 /* libpicotls-core.a */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -223,6 +224,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				105900A41DC8E23B00FB4085 /* libpicotls-openssl.a in Frameworks */,
+				10EACB1A1DCEC2A300CA0341 /* libpicotls-core.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
