@@ -29,12 +29,12 @@
 
 static void test_secp256r1_key_exchange(void)
 {
-    test_key_exchange(&ptls_embedded_secp256r1);
+    test_key_exchange(&ptls_minicrypto_secp256r1);
 }
 
 static void test_x25519_key_exchange(void)
 {
-    test_key_exchange(&ptls_embedded_x25519);
+    test_key_exchange(&ptls_minicrypto_x25519);
 }
 
 static void test_secp256r1_sign(void)
@@ -60,14 +60,14 @@ int main(int argc, char **argv)
     subtest("x25519", test_x25519_key_exchange);
     subtest("secp256r1-sign", test_secp256r1_sign);
 
-    ptls_embedded_lookup_certificate_t lookup_certificate;
+    ptls_minicrypto_lookup_certificate_t lookup_certificate;
     ptls_iovec_t key = ptls_iovec_init(SECP256R1_PRIVATE_KEY, sizeof(SECP256R1_PRIVATE_KEY) - 1),
                  cert = ptls_iovec_init(SECP256R1_CERTIFICATE, sizeof(SECP256R1_CERTIFICATE) - 1);
-    ptls_embedded_init_lookup_certificate(&lookup_certificate);
-    ptls_embedded_lookup_certificate_add_identity(&lookup_certificate, "example.com", PTLS_SIGNATURE_ECDSA_SECP256R1_SHA256, key,
-                                                  &cert, 1);
+    ptls_minicrypto_init_lookup_certificate(&lookup_certificate);
+    ptls_minicrypto_lookup_certificate_add_identity(&lookup_certificate, "example.com", PTLS_SIGNATURE_ECDSA_SECP256R1_SHA256, key,
+                                                    &cert, 1);
 
-    ptls_context_t ctxbuf = {ptls_embedded_random_bytes, ptls_embedded_key_exchanges, ptls_embedded_cipher_suites,
+    ptls_context_t ctxbuf = {ptls_minicrypto_random_bytes, ptls_minicrypto_key_exchanges, ptls_minicrypto_cipher_suites,
                              &lookup_certificate.super};
     ctx = ctx_peer = &ctxbuf;
 

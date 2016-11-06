@@ -26,7 +26,7 @@
 #include <openssl/pem.h>
 #include <openssl/engine.h>
 #include "picotls.h"
-#include "picotls/embedded.h"
+#include "picotls/minicrypto.h"
 #include "../deps/picotest/picotest.h"
 #include "../lib/openssl.c"
 #include "test.h"
@@ -153,20 +153,20 @@ int main(int argc, char **argv)
     subtest("rsa-sign", test_rsa_sign);
     subtest("picotls", test_picotls);
 
-    ptls_embedded_lookup_certificate_t embedded_lookup_certificate;
-    ptls_embedded_init_lookup_certificate(&embedded_lookup_certificate);
-    ptls_iovec_t embedded_certificate = ptls_iovec_init(SECP256R1_CERTIFICATE, sizeof(SECP256R1_CERTIFICATE) - 1);
-    ptls_embedded_lookup_certificate_add_identity(
-        &embedded_lookup_certificate, "example.com", PTLS_SIGNATURE_ECDSA_SECP256R1_SHA256,
-        ptls_iovec_init(SECP256R1_PRIVATE_KEY, sizeof(SECP256R1_PRIVATE_KEY) - 1), &embedded_certificate, 1);
-    ptls_context_t embedded_ctx = {ptls_embedded_random_bytes, ptls_embedded_key_exchanges, ptls_embedded_cipher_suites,
-                                   &embedded_lookup_certificate.super};
-    ctx_peer = &embedded_ctx;
-    subtest("vs. peer", test_picotls);
+    ptls_minicrypto_lookup_certificate_t minicrypto_lookup_certificate;
+    ptls_minicrypto_init_lookup_certificate(&minicrypto_lookup_certificate);
+    ptls_iovec_t minicrypto_certificate = ptls_iovec_init(SECP256R1_CERTIFICATE, sizeof(SECP256R1_CERTIFICATE) - 1);
+    ptls_minicrypto_lookup_certificate_add_identity(
+        &minicrypto_lookup_certificate, "example.com", PTLS_SIGNATURE_ECDSA_SECP256R1_SHA256,
+        ptls_iovec_init(SECP256R1_PRIVATE_KEY, sizeof(SECP256R1_PRIVATE_KEY) - 1), &minicrypto_certificate, 1);
+    ptls_context_t minicrypto_ctx = {ptls_minicrypto_random_bytes, ptls_minicrypto_key_exchanges, ptls_minicrypto_cipher_suites,
+                                     &minicrypto_lookup_certificate.super};
+    ctx_peer = &minicrypto_ctx;
+    subtest("vs. minicrypto", test_picotls);
 
-    ctx = &embedded_ctx;
+    ctx = &minicrypto_ctx;
     ctx_peer = &openssl_ctx;
-    subtest("peer vs.", test_picotls);
+    subtest("minicrypto vs.", test_picotls);
 
     return done_testing();
 }

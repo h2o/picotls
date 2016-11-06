@@ -29,7 +29,7 @@
 #include "uECC.h"
 #include "uECC_vli.h"
 #include "picotls.h"
-#include "picotls/embedded.h"
+#include "picotls/minicrypto.h"
 
 #define SECP256R1_PRIVATE_KEY_SIZE 32
 #define SECP256R1_PUBLIC_KEY_SIZE 65 /* including the header */
@@ -129,14 +129,14 @@ Exit:
     return ret;
 }
 
-struct st_ptls_embedded_identity_t {
+struct st_ptls_minicrypto_identity_t {
     ptls_iovec_t name;
     uint8_t key[SECP256R1_PRIVATE_KEY_SIZE];
     size_t num_certs;
     ptls_iovec_t certs[1];
 };
 
-static void free_identity(struct st_ptls_embedded_identity_t *identity)
+static void free_identity(struct st_ptls_minicrypto_identity_t *identity)
 {
     size_t i;
     free(identity->name.base);
@@ -199,8 +199,8 @@ static int lookup_certificate(ptls_lookup_certificate_t *_self, ptls_t *tls, uin
                               ptls_iovec_t **certs, size_t *num_certs, const char *server_name,
                               const uint16_t *signature_algorithms, size_t num_signature_algorithms)
 {
-    ptls_embedded_lookup_certificate_t *self = (ptls_embedded_lookup_certificate_t *)_self;
-    struct st_ptls_embedded_identity_t *identity;
+    ptls_minicrypto_lookup_certificate_t *self = (ptls_minicrypto_lookup_certificate_t *)_self;
+    struct st_ptls_minicrypto_identity_t *identity;
     size_t i;
 
     if (self->count == 0)
@@ -233,23 +233,23 @@ FoundIdentity:
     return 0;
 }
 
-void ptls_embedded_init_lookup_certificate(ptls_embedded_lookup_certificate_t *self)
+void ptls_minicrypto_init_lookup_certificate(ptls_minicrypto_lookup_certificate_t *self)
 {
-    *self = (ptls_embedded_lookup_certificate_t){{lookup_certificate}};
+    *self = (ptls_minicrypto_lookup_certificate_t){{lookup_certificate}};
 }
 
-void ptls_embedded_dispose_lookup_certificate(ptls_embedded_lookup_certificate_t *self)
+void ptls_minicrypto_dispose_lookup_certificate(ptls_minicrypto_lookup_certificate_t *self)
 {
     size_t i;
     for (i = 0; i != self->count; ++i)
         free_identity(self->identities[i]);
 }
 
-int ptls_embedded_lookup_certificate_add_identity(ptls_embedded_lookup_certificate_t *self, const char *server_name,
-                                                  uint16_t signature_algorithm, ptls_iovec_t key, ptls_iovec_t *certs,
-                                                  size_t num_certs)
+int ptls_minicrypto_lookup_certificate_add_identity(ptls_minicrypto_lookup_certificate_t *self, const char *server_name,
+                                                    uint16_t signature_algorithm, ptls_iovec_t key, ptls_iovec_t *certs,
+                                                    size_t num_certs)
 {
-    struct st_ptls_embedded_identity_t *identity = NULL, **list;
+    struct st_ptls_minicrypto_identity_t *identity = NULL, **list;
     int ret;
 
     /* check args */
@@ -259,12 +259,12 @@ int ptls_embedded_lookup_certificate_add_identity(ptls_embedded_lookup_certifica
     }
 
     /* create new identity object */
-    if ((identity = (struct st_ptls_embedded_identity_t *)malloc(offsetof(struct st_ptls_embedded_identity_t, certs) +
-                                                                 sizeof(identity->certs[0]) * num_certs)) == NULL) {
+    if ((identity = (struct st_ptls_minicrypto_identity_t *)malloc(offsetof(struct st_ptls_minicrypto_identity_t, certs) +
+                                                                   sizeof(identity->certs[0]) * num_certs)) == NULL) {
         ret = PTLS_ERROR_NO_MEMORY;
         goto Exit;
     }
-    *identity = (struct st_ptls_embedded_identity_t){{NULL}};
+    *identity = (struct st_ptls_minicrypto_identity_t){{NULL}};
     if ((identity->name.base = (uint8_t *)strdup(server_name)) == NULL) {
         ret = PTLS_ERROR_NO_MEMORY;
         goto Exit;
@@ -295,6 +295,6 @@ Exit:
     return ret;
 }
 
-ptls_key_exchange_algorithm_t ptls_embedded_secp256r1 = {PTLS_GROUP_SECP256R1, secp256r1_create_key_exchange,
-                                                         secp256r1_key_exchange};
-ptls_key_exchange_algorithm_t *ptls_embedded_key_exchanges[] = {&ptls_embedded_secp256r1, NULL};
+ptls_key_exchange_algorithm_t ptls_minicrypto_secp256r1 = {PTLS_GROUP_SECP256R1, secp256r1_create_key_exchange,
+                                                           secp256r1_key_exchange};
+ptls_key_exchange_algorithm_t *ptls_minicrypto_key_exchanges[] = {&ptls_minicrypto_secp256r1, NULL};

@@ -30,7 +30,7 @@
 #include "modes.h"
 #include "sha2.h"
 #include "picotls.h"
-#include "picotls/embedded.h"
+#include "picotls/minicrypto.h"
 
 static void read_entropy(uint8_t *entropy, size_t size)
 {
@@ -38,7 +38,7 @@ static void read_entropy(uint8_t *entropy, size_t size)
 
     if ((fd = open("/dev/urandom", O_RDONLY | O_CLOEXEC)) == -1) {
         if ((fd = open("/dev/random", O_RDONLY | O_CLOEXEC)) == -1) {
-            perror("ptls_embedded_random_bytes: could not open neither /dev/random or /dev/urandom");
+            perror("ptls_minicrypto_random_bytes: could not open neither /dev/random or /dev/urandom");
             abort();
         }
     }
@@ -48,7 +48,7 @@ static void read_entropy(uint8_t *entropy, size_t size)
         while ((rret = read(fd, entropy, sizeof(entropy))) == -1 && errno == EINTR)
             ;
         if (rret < 0) {
-            perror("ptls_embedded_random_bytes");
+            perror("ptls_minicrypto_random_bytes");
             abort();
         }
         entropy += rret;
@@ -58,7 +58,7 @@ static void read_entropy(uint8_t *entropy, size_t size)
     close(fd);
 }
 
-void ptls_embedded_random_bytes(void *buf, size_t len)
+void ptls_minicrypto_random_bytes(void *buf, size_t len)
 {
     static __thread cf_hash_drbg_sha256 ctx;
 
@@ -80,7 +80,7 @@ struct st_x25519_key_exchange_t {
 
 static void x25519_create_keypair(uint8_t *priv, uint8_t *pub)
 {
-    ptls_embedded_random_bytes(priv, X25519_KEY_SIZE);
+    ptls_minicrypto_random_bytes(priv, X25519_KEY_SIZE);
     cf_curve25519_mul_base(pub, priv);
 }
 
@@ -288,10 +288,10 @@ static ptls_hash_context_t *sha256_create(void)
     return &ctx->super;
 }
 
-ptls_key_exchange_algorithm_t ptls_embedded_x25519 = {PTLS_GROUP_SECP256R1, x25519_create_key_exchange, x25519_key_exchange};
-ptls_aead_algorithm_t ptls_embedded_aes128gcm = {AES128GCM_KEY_SIZE, AES128GCM_IV_SIZE, sizeof(struct aes128gcm_context_t),
-                                                 aead_aes128gcm_setup_crypto};
-ptls_hash_algorithm_t ptls_embedded_sha256 = {64, 32, sha256_create};
-ptls_cipher_suite_t ptls_embedded_aes128gcmsha256 = {PTLS_CIPHER_SUITE_AES_128_GCM_SHA256, &ptls_embedded_aes128gcm,
-                                                     &ptls_embedded_sha256};
-ptls_cipher_suite_t *ptls_embedded_cipher_suites[] = {&ptls_embedded_aes128gcmsha256, NULL};
+ptls_key_exchange_algorithm_t ptls_minicrypto_x25519 = {PTLS_GROUP_SECP256R1, x25519_create_key_exchange, x25519_key_exchange};
+ptls_aead_algorithm_t ptls_minicrypto_aes128gcm = {AES128GCM_KEY_SIZE, AES128GCM_IV_SIZE, sizeof(struct aes128gcm_context_t),
+                                                   aead_aes128gcm_setup_crypto};
+ptls_hash_algorithm_t ptls_minicrypto_sha256 = {64, 32, sha256_create};
+ptls_cipher_suite_t ptls_minicrypto_aes128gcmsha256 = {PTLS_CIPHER_SUITE_AES_128_GCM_SHA256, &ptls_minicrypto_aes128gcm,
+                                                       &ptls_minicrypto_sha256};
+ptls_cipher_suite_t *ptls_minicrypto_cipher_suites[] = {&ptls_minicrypto_aes128gcmsha256, NULL};
