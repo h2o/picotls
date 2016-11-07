@@ -30,7 +30,7 @@ If you have cloned picotls from git then ensure that you have initialised the su
 
 Build using cmake:
 ```
-% cmake
+% cmake .
 % make
 % make check
 ```
