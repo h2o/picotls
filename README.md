@@ -22,6 +22,12 @@ Note 1: Minicrypto binding is capable of signing a handshake using the certifica
 How to
 ---
 
+If you have cloned picotls from git then ensure that you have initialised the submodules:
+```
+% git submodule init
+% git submodule update
+```
+
 Build using cmake:
 ```
 % cmake
