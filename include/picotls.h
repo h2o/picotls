@@ -321,7 +321,7 @@ typedef union st_ptls_handshake_properties_t {
         /**
          *
          */
-        int early_data_accepted_by_peer : 1;
+        unsigned early_data_accepted_by_peer : 1;
     } client;
     struct {
     } server;

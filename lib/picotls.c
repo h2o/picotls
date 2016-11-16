@@ -153,16 +153,16 @@ struct st_ptls_t {
                 int (*cb)(void *verify_ctx, ptls_iovec_t data, ptls_iovec_t signature);
                 void *verify_ctx;
             } certificate_verify;
-            int offered_psk : 1;
-            int send_early_data : 1;
-            int is_psk : 1;
+            unsigned offered_psk : 1;
+            unsigned send_early_data : 1;
+            unsigned is_psk : 1;
         } client;
         struct {
-            int send_ticket : 1;
+            unsigned send_ticket : 1;
             /**
              * expecting to recieve undecrytable early-data packets
              */
-            int skip_early_data : 1;
+            unsigned skip_early_data : 1;
             /**
              * if accepting early-data, the value contains the receiving traffic secret to be commisioned after receiving
              * END_OF_EARLY_DATA
