@@ -319,7 +319,8 @@ static int save_ticket_cb(ptls_save_ticket_t *self, ptls_t *tls, ptls_iovec_t sr
     return 0;
 }
 
-static int run_client(struct sockaddr *sa, socklen_t salen, ptls_context_t *ctx, ptls_handshake_properties_t *hsprop)
+static int run_client(struct sockaddr *sa, socklen_t salen, ptls_context_t *ctx, const char *server_name,
+                      ptls_handshake_properties_t *hsprop)
 {
     int fd;
 
@@ -332,7 +333,7 @@ static int run_client(struct sockaddr *sa, socklen_t salen, ptls_context_t *ctx,
         return 1;
     }
 
-    return handle_connection(fd, ctx, "example.com", hsprop);
+    return handle_connection(fd, ctx, server_name, hsprop);
 }
 
 static int resolve_address(struct sockaddr *sa, socklen_t *salen, const char *host, const char *port)
@@ -498,5 +499,9 @@ int main(int argc, char **argv)
     if (resolve_address((struct sockaddr *)&sa, &salen, host, port) != 0)
         exit(1);
 
-    return (certs != NULL ? run_server : run_client)((struct sockaddr *)&sa, salen, &ctx, &hsprop);
+    if (certs != NULL) {
+        return run_server((struct sockaddr *)&sa, salen, &ctx, &hsprop);
+    } else {
+        return run_client((struct sockaddr *)&sa, salen, &ctx, host, &hsprop);
+    }
 }
