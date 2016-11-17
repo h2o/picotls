@@ -68,6 +68,8 @@
 
 #define PTLS_PROTOCOL_VERSION_DRAFT18 0x7f12
 
+#define PTLS_SERVER_NAME_TYPE_HOSTNAME 0
+
 #define PTLS_ALERT_LEVEL_WARNING 1
 #define PTLS_ALERT_LEVEL_FATAL 2
 
@@ -896,6 +898,15 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_handshake
         ptls_buffer_push_block(sendbuf, 1, { ptls_buffer_push(sendbuf, 0); });
         /* extensions */
         ptls_buffer_push_block(sendbuf, 2, {
+            if (tls->server_name != NULL) {
+                buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SERVER_NAME, {
+                    ptls_buffer_push_block(sendbuf, 2, {
+                        ptls_buffer_push(sendbuf, PTLS_SERVER_NAME_TYPE_HOSTNAME);
+                        ptls_buffer_push_block(sendbuf, 2,
+                                               { ptls_buffer_pushv(sendbuf, tls->server_name, strlen(tls->server_name)); });
+                    });
+                });
+            }
             buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SUPPORTED_VERSIONS, {
                 ptls_buffer_push_block(sendbuf, 1, { ptls_buffer_push16(sendbuf, PTLS_PROTOCOL_VERSION_DRAFT18); });
             });
@@ -1324,7 +1335,8 @@ static int client_hello_decode_server_name(char **name, const uint8_t *src, cons
         do {
             uint8_t type = *src++;
             decode_open_block(src, end, 2, {
-                if (type == 0) {
+                switch (type) {
+                case PTLS_SERVER_NAME_TYPE_HOSTNAME:
                     if (memchr(src, '\0', end - src) != 0) {
                         ret = PTLS_ALERT_ILLEGAL_PARAMETER;
                         goto Exit;
@@ -1339,6 +1351,9 @@ static int client_hello_decode_server_name(char **name, const uint8_t *src, cons
                     }
                     memcpy(*name, src, end - src);
                     (*name)[end - src] = '\0';
+                    break;
+                default:
+                    break;
                 }
                 src = end;
             });
