@@ -1415,6 +1415,9 @@ static int client_hello_decode_key_share(ptls_key_exchange_algorithm_t **selecte
         }
     });
 
+    if (*selected_group == NULL)
+        *selected_group = &key_exchange_no_match;
+
 Exit:
     return ret;
 }
