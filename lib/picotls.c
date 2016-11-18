@@ -1759,9 +1759,6 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
                     ptls_buffer_push_block(sendbuf, 2, {
                         buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_KEY_SHARE,
                                               { ptls_buffer_push16(sendbuf, ch.negotiated_group->id); });
-                        /* Section 4.2.3: Servers which are authenticating via a certificate MUST indicate so by sending the client
-                         * an empty "signature_algorithms" extension. */
-                        buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SIGNATURE_ALGORITHMS, {});
                     });
                 });
                 ret = PTLS_ERROR_HANDSHAKE_IN_PROGRESS;
