@@ -232,7 +232,6 @@ struct st_ptls_extension_decoder_t {
 };
 
 static uint8_t zeroes_of_max_digest_size[PTLS_MAX_DIGEST_SIZE] = {};
-static ptls_key_exchange_algorithm_t key_exchange_no_match;
 
 static uint64_t gettime_millis(void)
 {
@@ -1415,9 +1414,6 @@ static int client_hello_decode_key_share(ptls_key_exchange_algorithm_t **selecte
         }
     });
 
-    if (*selected_group == NULL)
-        *selected_group = &key_exchange_no_match;
-
 Exit:
     return ret;
 }
@@ -1425,7 +1421,7 @@ Exit:
 static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, const uint8_t *src, const uint8_t *end)
 {
     uint16_t exttype = 0;
-    int ret;
+    int seen_key_share = 0, ret;
 
     *ch = (struct st_ptls_client_hello_t){};
 
@@ -1512,6 +1508,7 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
             });
             break;
         case PTLS_EXTENSION_TYPE_KEY_SHARE:
+            seen_key_share = 1;
             if ((ret = client_hello_decode_key_share(&ch->key_share.algorithm, &ch->key_share.peer, tls->ctx->key_exchanges, src,
                                                      end)) != 0)
                 goto Exit;
@@ -1595,7 +1592,7 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
         /* cookie can be missing, quote section 4.2.2: When sending a HelloRetryRequest, the server MAY provide a “cookie” extension
          * to the client (this is an exception to the usual rule that the only extensions that may be sent are those that appear in
          * the ClientHello). */
-        if (ch->negotiated_group == NULL || ch->signature_algorithms.count == 0 || ch->key_share.algorithm == NULL) {
+        if (ch->negotiated_group == NULL || ch->signature_algorithms.count == 0 || !seen_key_share) {
             ret = PTLS_ALERT_MISSING_EXTENSION;
             goto Exit;
         }
@@ -1751,7 +1748,7 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
 
     /* send HelloRetryRequest or abort the handshake if failed to obtain the key */
     if (mode != HANDSHAKE_MODE_PSK) {
-        if (ch.key_share.algorithm == &key_exchange_no_match) {
+        if (ch.key_share.algorithm == NULL) {
             if (ch.negotiated_group != NULL) {
                 buffer_push_handshake(sendbuf, tls->key_schedule, PTLS_HANDSHAKE_TYPE_HELLO_RETRY_REQUEST, {
                     ptls_buffer_push16(sendbuf, PTLS_PROTOCOL_VERSION_DRAFT18);
