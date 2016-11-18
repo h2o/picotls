@@ -1607,7 +1607,7 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
                 goto Exit;
             }
         } else {
-            if (ch->psk.ke_modes != 0 || ch->psk.early_data_indication) {
+            if (ch->psk.early_data_indication) {
                 ret = PTLS_ALERT_ILLEGAL_PARAMETER;
                 goto Exit;
             }
