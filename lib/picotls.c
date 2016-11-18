@@ -1707,13 +1707,12 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
     uint8_t finished_key[PTLS_MAX_DIGEST_SIZE];
     int ret;
 
-    assert(tls->key_schedule == NULL);
-
     /* decode ClientHello */
     if ((ret = decode_client_hello(tls, &ch, message.base + PTLS_HANDSHAKE_HEADER_SIZE, message.base + message.len)) != 0)
         goto Exit;
 
-    tls->key_schedule = key_schedule_new(tls->cipher_suite->hash);
+    if (tls->key_schedule == NULL)
+        tls->key_schedule = key_schedule_new(tls->cipher_suite->hash);
 
     /* try psk handshake */
     if (tls->ctx->require_dhe_on_psk)
@@ -1754,7 +1753,7 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
     if (mode != HANDSHAKE_MODE_PSK) {
         if (ch.key_share.algorithm == &key_exchange_no_match) {
             if (ch.negotiated_group != NULL) {
-                buffer_push_handshake(sendbuf, NULL, PTLS_HANDSHAKE_TYPE_HELLO_RETRY_REQUEST, {
+                buffer_push_handshake(sendbuf, tls->key_schedule, PTLS_HANDSHAKE_TYPE_HELLO_RETRY_REQUEST, {
                     ptls_buffer_push16(sendbuf, PTLS_PROTOCOL_VERSION_DRAFT18);
                     ptls_buffer_push_block(sendbuf, 2, {
                         buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_KEY_SHARE,
