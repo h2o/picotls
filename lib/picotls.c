@@ -110,6 +110,7 @@ struct st_ptls_t {
         PTLS_STATE_CLIENT_EXPECT_CERTIFICATE_VERIFY,
         PTLS_STATE_CLIENT_EXPECT_FINISHED,
         PTLS_STATE_SERVER_EXPECT_CLIENT_HELLO,
+        PTLS_STATE_SERVER_EXPECT_SECOND_CLIENT_HELLO,
         /* ptls_send can be called if the state is below here */
         PTLS_STATE_SERVER_EXPECT_FINISHED,
         PTLS_STATE_POST_HANDSHAKE_MIN,
@@ -1691,7 +1692,7 @@ Exit:
     return ret;
 }
 
-static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t message)
+static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t message, int is_second_flight)
 {
     struct st_ptls_client_hello_t ch;
     enum { HANDSHAKE_MODE_FULL, HANDSHAKE_MODE_PSK, HANDSHAKE_MODE_PSK_DHE } mode;
@@ -1708,8 +1709,10 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
     if ((ret = decode_client_hello(tls, &ch, message.base + PTLS_HANDSHAKE_HEADER_SIZE, message.base + message.len)) != 0)
         goto Exit;
 
-    if (tls->key_schedule == NULL)
+    if (!is_second_flight) {
+        assert(tls->key_schedule == NULL);
         tls->key_schedule = key_schedule_new(tls->cipher_suite->hash);
+    }
 
     /* try psk handshake */
     if (tls->ctx->require_dhe_on_psk)
@@ -1726,7 +1729,10 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
 
     /* adjust key_schedule, determine handshake mode */
     if (psk_index == SIZE_MAX) {
-        key_schedule_extract(tls->key_schedule, ptls_iovec_init(NULL, 0));
+        if (!is_second_flight) {
+            assert(tls->key_schedule->generation == 0);
+            key_schedule_extract(tls->key_schedule, ptls_iovec_init(NULL, 0));
+        }
         mode = HANDSHAKE_MODE_FULL;
     } else {
         if ((ch.psk.ke_modes & (1u << PTLS_PSK_KE_MODE_PSK)) != 0) {
@@ -1749,7 +1755,7 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
     /* send HelloRetryRequest or abort the handshake if failed to obtain the key */
     if (mode != HANDSHAKE_MODE_PSK) {
         if (ch.key_share.algorithm == NULL) {
-            if (ch.negotiated_group != NULL) {
+            if (!is_second_flight && ch.negotiated_group != NULL) {
                 buffer_push_handshake(sendbuf, tls->key_schedule, PTLS_HANDSHAKE_TYPE_HELLO_RETRY_REQUEST, {
                     ptls_buffer_push16(sendbuf, PTLS_PROTOCOL_VERSION_DRAFT18);
                     ptls_buffer_push_block(sendbuf, 2, {
@@ -1757,6 +1763,7 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
                                               { ptls_buffer_push16(sendbuf, ch.negotiated_group->id); });
                     });
                 });
+                tls->state = PTLS_STATE_SERVER_EXPECT_SECOND_CLIENT_HELLO;
                 ret = PTLS_ERROR_HANDSHAKE_IN_PROGRESS;
                 goto Exit;
             } else {
@@ -1804,6 +1811,7 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
     });
 
     /* create protection contexts for the handshake */
+    assert(tls->key_schedule->generation == 1);
     key_schedule_extract(tls->key_schedule, ecdh_secret);
     if ((ret = setup_traffic_protection(tls, tls->cipher_suite, 1, "server handshake traffic secret")) != 0)
         goto Exit;
@@ -1863,6 +1871,7 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
 
     send_finished(tls, sendbuf);
 
+    assert(tls->key_schedule->generation == 2);
     if ((ret = key_schedule_extract(tls->key_schedule, ptls_iovec_init(NULL, 0))) != 0)
         return ret;
     if ((ret = setup_traffic_protection(tls, tls->cipher_suite, 1, "server application traffic secret")) != 0)
@@ -2125,8 +2134,9 @@ static int handle_handshake_message(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_io
         }
         break;
     case PTLS_STATE_SERVER_EXPECT_CLIENT_HELLO:
+    case PTLS_STATE_SERVER_EXPECT_SECOND_CLIENT_HELLO:
         if (type == PTLS_HANDSHAKE_TYPE_CLIENT_HELLO) {
-            ret = server_handle_hello(tls, sendbuf, message);
+            ret = server_handle_hello(tls, sendbuf, message, tls->state == PTLS_STATE_SERVER_EXPECT_SECOND_CLIENT_HELLO);
         } else {
             ret = PTLS_ALERT_HANDSHAKE_FAILURE;
         }
