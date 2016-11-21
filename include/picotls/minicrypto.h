@@ -38,7 +38,7 @@ int ptls_minicrypto_lookup_certificate_add_identity(ptls_minicrypto_lookup_certi
                                                     uint16_t signature_algorithm, ptls_iovec_t key, ptls_iovec_t *certs,
                                                     size_t num_certs);
 
-extern ptls_key_exchange_algorithm_t ptls_minicrypto_x25519;
+extern ptls_key_exchange_algorithm_t ptls_minicrypto_secp256r1, ptls_minicrypto_x25519;
 extern ptls_key_exchange_algorithm_t *ptls_minicrypto_key_exchanges[];
 extern ptls_aead_algorithm_t ptls_minicrypto_aes128gcm;
 extern ptls_hash_algorithm_t ptls_minicrypto_sha256;
