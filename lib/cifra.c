@@ -288,7 +288,7 @@ static ptls_hash_context_t *sha256_create(void)
     return &ctx->super;
 }
 
-ptls_key_exchange_algorithm_t ptls_minicrypto_x25519 = {PTLS_GROUP_SECP256R1, x25519_create_key_exchange, x25519_key_exchange};
+ptls_key_exchange_algorithm_t ptls_minicrypto_x25519 = {PTLS_GROUP_X25519, x25519_create_key_exchange, x25519_key_exchange};
 ptls_aead_algorithm_t ptls_minicrypto_aes128gcm = {AES128GCM_KEY_SIZE, AES128GCM_IV_SIZE, sizeof(struct aes128gcm_context_t),
                                                    aead_aes128gcm_setup_crypto};
 ptls_hash_algorithm_t ptls_minicrypto_sha256 = {64, 32, sha256_create};
