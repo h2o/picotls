@@ -1717,12 +1717,42 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
     if (!is_second_flight) {
         assert(tls->key_schedule == NULL);
         tls->key_schedule = key_schedule_new(tls->cipher_suite->hash);
+    } else {
+        if (ch.psk.early_data_indication) {
+            ret = PTLS_ALERT_DECODE_ERROR;
+            goto Exit;
+        }
+    }
+
+    /* send HelloRetryRequest or abort the handshake if failed to obtain the key */
+    if (ch.key_share.algorithm == NULL) {
+        if (!is_second_flight && ch.negotiated_group != NULL) {
+            key_schedule_update_hash(tls->key_schedule, message.base, message.len);
+            assert(tls->key_schedule->generation == 0);
+            key_schedule_extract(tls->key_schedule, ptls_iovec_init(NULL, 0));
+            buffer_push_handshake(sendbuf, tls->key_schedule, PTLS_HANDSHAKE_TYPE_HELLO_RETRY_REQUEST, {
+                ptls_buffer_push16(sendbuf, PTLS_PROTOCOL_VERSION_DRAFT18);
+                ptls_buffer_push_block(sendbuf, 2, {
+                    buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_KEY_SHARE,
+                                          { ptls_buffer_push16(sendbuf, ch.negotiated_group->id); });
+                });
+            });
+            tls->state = PTLS_STATE_SERVER_EXPECT_SECOND_CLIENT_HELLO;
+            if (ch.psk.early_data_indication)
+                tls->server.skip_early_data = 1;
+            ret = PTLS_ERROR_HANDSHAKE_IN_PROGRESS;
+            goto Exit;
+        } else {
+            ret = PTLS_ALERT_HANDSHAKE_FAILURE;
+            goto Exit;
+        }
     }
 
     /* try psk handshake */
     if (tls->ctx->require_dhe_on_psk)
         ch.psk.ke_modes &= ~(1u << PTLS_PSK_KE_MODE_PSK);
-    if (ch.psk.hash_end != 0 && (ch.psk.ke_modes & ((1u << PTLS_PSK_KE_MODE_PSK) | (1u << PTLS_PSK_KE_MODE_PSK_DHE))) != 0 &&
+    if (!is_second_flight && ch.psk.hash_end != 0 &&
+        (ch.psk.ke_modes & ((1u << PTLS_PSK_KE_MODE_PSK) | (1u << PTLS_PSK_KE_MODE_PSK_DHE))) != 0 &&
         tls->ctx->decrypt_ticket != NULL) {
         if ((ret = try_psk_handshake(tls, &psk_index, &ch, ptls_iovec_init(message.base, ch.psk.hash_end - message.base))) != 0)
             goto Exit;
@@ -1753,27 +1783,6 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
         }
         if ((ret = setup_traffic_protection(tls, tls->cipher_suite, 0, "client early traffic secret")) != 0)
             goto Exit;
-    }
-
-    /* send HelloRetryRequest or abort the handshake if failed to obtain the key */
-    if (mode != HANDSHAKE_MODE_PSK) {
-        if (ch.key_share.algorithm == NULL) {
-            if (!is_second_flight && ch.negotiated_group != NULL) {
-                buffer_push_handshake(sendbuf, tls->key_schedule, PTLS_HANDSHAKE_TYPE_HELLO_RETRY_REQUEST, {
-                    ptls_buffer_push16(sendbuf, PTLS_PROTOCOL_VERSION_DRAFT18);
-                    ptls_buffer_push_block(sendbuf, 2, {
-                        buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_KEY_SHARE,
-                                              { ptls_buffer_push16(sendbuf, ch.negotiated_group->id); });
-                    });
-                });
-                tls->state = PTLS_STATE_SERVER_EXPECT_SECOND_CLIENT_HELLO;
-                ret = PTLS_ERROR_HANDSHAKE_IN_PROGRESS;
-                goto Exit;
-            } else {
-                ret = PTLS_ALERT_HANDSHAKE_FAILURE;
-                goto Exit;
-            }
-        }
     }
 
     /* run post-hello callback to determine certificate, etc. */
@@ -2236,6 +2245,9 @@ static int handle_input(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_buffer_t *decr
         if (rec.length == 0)
             return PTLS_ALERT_UNEXPECTED_MESSAGE;
         rec.type = rec.fragment[--rec.length];
+    } else if (rec.type == PTLS_CONTENT_TYPE_APPDATA && tls->server.skip_early_data) {
+        ret = PTLS_ERROR_HANDSHAKE_IN_PROGRESS;
+        goto NextRecord;
     }
 
     if (tls->recvbuf.mess.base != NULL || rec.type == PTLS_CONTENT_TYPE_HANDSHAKE) {
