@@ -942,9 +942,11 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_handshake
                 if (tls->client.send_early_data)
                     buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_EARLY_DATA, {});
                 buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_PSK_KEY_EXCHANGE_MODES, {
-                    if (!tls->ctx->require_dhe_on_psk)
-                        ptls_buffer_push(sendbuf, PTLS_PSK_KE_MODE_PSK);
-                    ptls_buffer_push(sendbuf, PTLS_PSK_KE_MODE_PSK_DHE);
+                    ptls_buffer_push_block(sendbuf, 1, {
+                        if (!tls->ctx->require_dhe_on_psk)
+                            ptls_buffer_push(sendbuf, PTLS_PSK_KE_MODE_PSK);
+                        ptls_buffer_push(sendbuf, PTLS_PSK_KE_MODE_PSK_DHE);
+                    });
                 });
                 /* pre-shared key "MUST be the last extension in the ClientHello" (draft-17 section 4.2.6) */
                 buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_PRE_SHARED_KEY, {
@@ -1565,14 +1567,16 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
             });
         } break;
         case PTLS_EXTENSION_TYPE_PSK_KEY_EXCHANGE_MODES:
-            if (src == end) {
-                ret = PTLS_ALERT_DECODE_ERROR;
-                goto Exit;
-            }
-            for (; src != end; ++src) {
-                if (*src < sizeof(ch->psk.ke_modes) * 8)
-                    ch->psk.ke_modes |= 1u << *src;
-            }
+            decode_block(src, end, 1, {
+                if (src == end) {
+                    ret = PTLS_ALERT_DECODE_ERROR;
+                    goto Exit;
+                }
+                for (; src != end; ++src) {
+                    if (*src < sizeof(ch->psk.ke_modes) * 8)
+                        ch->psk.ke_modes |= 1u << *src;
+                }
+            });
             break;
         case PTLS_EXTENSION_TYPE_EARLY_DATA:
             ch->psk.early_data_indication = 1;
