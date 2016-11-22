@@ -87,28 +87,12 @@ static void x25519_create_keypair(uint8_t *priv, uint8_t *pub)
 static int x25519_derive_secret(ptls_iovec_t *secret, const uint8_t *clientpriv, const uint8_t *clientpub,
                                 const uint8_t *serverpriv, const uint8_t *serverpub)
 {
-    uint8_t q[X25519_KEY_SIZE];
-    cf_sha256_context h;
-    int ret;
+    if ((secret->base = malloc(X25519_KEY_SIZE)) == NULL)
+        return PTLS_ERROR_NO_MEMORY;
 
-    cf_curve25519_mul(q, clientpriv != NULL ? clientpriv : serverpriv, clientpriv != NULL ? serverpub : clientpub);
-
-    if ((secret->base = malloc(CF_SHA256_HASHSZ)) == NULL) {
-        ret = PTLS_ERROR_NO_MEMORY;
-        goto Exit;
-    }
-    secret->len = CF_SHA256_HASHSZ;
-
-    cf_sha256_init(&h);
-    cf_sha256_update(&h, q, X25519_KEY_SIZE);
-    cf_sha256_update(&h, clientpub, X25519_KEY_SIZE);
-    cf_sha256_update(&h, serverpub, X25519_KEY_SIZE);
-    cf_sha256_digest_final(&h, secret->base);
-
-    ret = 0;
-Exit:
-    ptls_clear_memory(q, sizeof(q));
-    return ret;
+    cf_curve25519_mul(secret->base, clientpriv != NULL ? clientpriv : serverpriv, clientpriv != NULL ? serverpub : clientpub);
+    secret->len = X25519_KEY_SIZE;
+    return 0;
 }
 
 static int x25519_on_exchange(ptls_key_exchange_context_t *_ctx, ptls_iovec_t *secret, ptls_iovec_t peerkey)
