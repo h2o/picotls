@@ -971,10 +971,10 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_handshake
     /* update the message hash, filling in the PSK binder HMAC if necessary */
     if (resumption_secret.base != NULL) {
         size_t psk_binder_off = sendbuf->off - (3 + tls->key_schedule->algo->digest_size);
-        key_schedule_update_hash(tls->key_schedule, sendbuf->base + msghash_off, psk_binder_off - msghash_off);
-        msghash_off = psk_binder_off;
         if ((ret = derive_secret(tls->key_schedule, binder_key, "resumption psk binder key")) != 0)
             goto Exit;
+        key_schedule_update_hash(tls->key_schedule, sendbuf->base + msghash_off, psk_binder_off - msghash_off);
+        msghash_off = psk_binder_off;
         if ((ret = calc_verify_data(sendbuf->base + psk_binder_off + 3, tls->key_schedule, binder_key)) != 0)
             goto Exit;
     }
@@ -1625,7 +1625,7 @@ Exit:
     return ret;
 }
 
-static int try_psk_handshake(ptls_t *tls, size_t *psk_index, struct st_ptls_client_hello_t *ch)
+static int try_psk_handshake(ptls_t *tls, size_t *psk_index, struct st_ptls_client_hello_t *ch, ptls_iovec_t ch_trunc)
 {
     ptls_buffer_t decbuf;
     ptls_iovec_t ticket_psk, ticket_server_name;
@@ -1681,6 +1681,7 @@ Found:
         goto Exit;
     if ((ret = derive_secret(tls->key_schedule, binder_key, "resumption psk binder key")) != 0)
         goto Exit;
+    key_schedule_update_hash(tls->key_schedule, ch_trunc.base, ch_trunc.len);
     if ((ret = calc_verify_data(verify_data, tls->key_schedule, binder_key)) != 0)
         goto Exit;
     if (memcmp(ch->psk.identities.list[*psk_index].binder.base, verify_data, tls->key_schedule->algo->digest_size) != 0) {
@@ -1723,22 +1724,20 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
         ch.psk.ke_modes &= ~(1u << PTLS_PSK_KE_MODE_PSK);
     if (ch.psk.hash_end != 0 && (ch.psk.ke_modes & ((1u << PTLS_PSK_KE_MODE_PSK) | (1u << PTLS_PSK_KE_MODE_PSK_DHE))) != 0 &&
         tls->ctx->decrypt_ticket != NULL) {
-        key_schedule_update_hash(tls->key_schedule, message.base, ch.psk.hash_end - message.base);
-        if ((ret = try_psk_handshake(tls, &psk_index, &ch)) != 0)
+        if ((ret = try_psk_handshake(tls, &psk_index, &ch, ptls_iovec_init(message.base, ch.psk.hash_end - message.base))) != 0)
             goto Exit;
-        key_schedule_update_hash(tls->key_schedule, ch.psk.hash_end, message.base + message.len - ch.psk.hash_end);
-    } else {
-        key_schedule_update_hash(tls->key_schedule, message.base, message.len);
     }
 
     /* adjust key_schedule, determine handshake mode */
     if (psk_index == SIZE_MAX) {
+        key_schedule_update_hash(tls->key_schedule, message.base, message.len);
         if (!is_second_flight) {
             assert(tls->key_schedule->generation == 0);
             key_schedule_extract(tls->key_schedule, ptls_iovec_init(NULL, 0));
         }
         mode = HANDSHAKE_MODE_FULL;
     } else {
+        key_schedule_update_hash(tls->key_schedule, ch.psk.hash_end, message.base + message.len - ch.psk.hash_end);
         if ((ch.psk.ke_modes & (1u << PTLS_PSK_KE_MODE_PSK)) != 0) {
             mode = HANDSHAKE_MODE_PSK;
         } else {
