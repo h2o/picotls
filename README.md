@@ -14,7 +14,7 @@ License and algorithms supported by the bindings are as follows:
 
 | Binding | License | Key Exchange | Certificate | AEAD cipher |
 |:-----:|:-----:|:-----:|:-----:|:-----:|
-| minicrypto | [CC0](https://github.com/ctz/cifra/) / [2-clause BSD](https://github.com/kmackay/micro-ecc) | secp256r1 | ECDSA (P256)<sup>1</sup> | AES-128-GCM |
+| minicrypto | [CC0](https://github.com/ctz/cifra/) / [2-clause BSD](https://github.com/kmackay/micro-ecc) | secp256r1, x25519 | ECDSA (P256)<sup>1</sup> | AES-128-GCM |
 | OpenSSL | OpenSSL | secp256r1 | RSA, ECDSA (P256) | AES-128-GCM |
 
 Note 1: Minicrypto binding is capable of signing a handshake using the certificate's key, but cannot verify a signature sent by the peer.
