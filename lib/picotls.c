@@ -938,9 +938,7 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_handshake
                     ptls_buffer_push_block(sendbuf, 2, { ptls_buffer_pushv(sendbuf, pubkey.base, pubkey.len); });
                 });
             });
-            if (resumption_secret.base != NULL) {
-                if (tls->client.send_early_data)
-                    buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_EARLY_DATA, {});
+            if (tls->ctx->save_ticket != NULL) {
                 buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_PSK_KEY_EXCHANGE_MODES, {
                     ptls_buffer_push_block(sendbuf, 1, {
                         if (!tls->ctx->require_dhe_on_psk)
@@ -948,22 +946,26 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_handshake
                         ptls_buffer_push(sendbuf, PTLS_PSK_KE_MODE_PSK_DHE);
                     });
                 });
-                /* pre-shared key "MUST be the last extension in the ClientHello" (draft-17 section 4.2.6) */
-                buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_PRE_SHARED_KEY, {
-                    ptls_buffer_push_block(sendbuf, 2, {
-                        ptls_buffer_push_block(sendbuf, 2,
-                                               { ptls_buffer_pushv(sendbuf, resumption_ticket.base, resumption_ticket.len); });
-                        ptls_buffer_push32(sendbuf, obfuscated_ticket_age);
-                    });
-                    /* allocate space for PSK binder. the space is filled at the bottom of the function */
-                    ptls_buffer_push_block(sendbuf, 2, {
-                        ptls_buffer_push_block(sendbuf, 1, {
-                            if ((ret = ptls_buffer_reserve(sendbuf, tls->key_schedule->algo->digest_size)) != 0)
-                                goto Exit;
-                            sendbuf->off += tls->key_schedule->algo->digest_size;
+                if (resumption_secret.base != NULL) {
+                    if (tls->client.send_early_data)
+                        buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_EARLY_DATA, {});
+                    /* pre-shared key "MUST be the last extension in the ClientHello" (draft-17 section 4.2.6) */
+                    buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_PRE_SHARED_KEY, {
+                        ptls_buffer_push_block(sendbuf, 2, {
+                            ptls_buffer_push_block(sendbuf, 2,
+                                                   { ptls_buffer_pushv(sendbuf, resumption_ticket.base, resumption_ticket.len); });
+                            ptls_buffer_push32(sendbuf, obfuscated_ticket_age);
+                        });
+                        /* allocate space for PSK binder. the space is filled at the bottom of the function */
+                        ptls_buffer_push_block(sendbuf, 2, {
+                            ptls_buffer_push_block(sendbuf, 1, {
+                                if ((ret = ptls_buffer_reserve(sendbuf, tls->key_schedule->algo->digest_size)) != 0)
+                                    goto Exit;
+                                sendbuf->off += tls->key_schedule->algo->digest_size;
+                            });
                         });
                     });
-                });
+                }
             }
         });
     });
