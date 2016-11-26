@@ -367,6 +367,8 @@ static void usage(const char *cmd)
            "  -k key-file          specifies the credentials to be used for running the\n"
            "                       server. If omitted, the command runs as a client.\n"
            "  -s session-file      file to read/write the session ticket\n"
+           "  -e                   when resuming a session, send first 8,192 bytes of input\n"
+           "                       as early data\n"
            "  -v                   verify peer using the default certificates\n"
            "  -h                   print this help\n"
            "\n",
