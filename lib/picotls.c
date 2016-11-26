@@ -938,9 +938,7 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_handshake
                     ptls_buffer_push_block(sendbuf, 2, { ptls_buffer_pushv(sendbuf, pubkey.base, pubkey.len); });
                 });
             });
-            if (resumption_secret.base != NULL) {
-                if (tls->client.send_early_data)
-                    buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_EARLY_DATA, {});
+            if (tls->ctx->save_ticket != NULL) {
                 buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_PSK_KEY_EXCHANGE_MODES, {
                     ptls_buffer_push_block(sendbuf, 1, {
                         if (!tls->ctx->require_dhe_on_psk)
@@ -948,22 +946,26 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_handshake
                         ptls_buffer_push(sendbuf, PTLS_PSK_KE_MODE_PSK_DHE);
                     });
                 });
-                /* pre-shared key "MUST be the last extension in the ClientHello" (draft-17 section 4.2.6) */
-                buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_PRE_SHARED_KEY, {
-                    ptls_buffer_push_block(sendbuf, 2, {
-                        ptls_buffer_push_block(sendbuf, 2,
-                                               { ptls_buffer_pushv(sendbuf, resumption_ticket.base, resumption_ticket.len); });
-                        ptls_buffer_push32(sendbuf, obfuscated_ticket_age);
-                    });
-                    /* allocate space for PSK binder. the space is filled at the bottom of the function */
-                    ptls_buffer_push_block(sendbuf, 2, {
-                        ptls_buffer_push_block(sendbuf, 1, {
-                            if ((ret = ptls_buffer_reserve(sendbuf, tls->key_schedule->algo->digest_size)) != 0)
-                                goto Exit;
-                            sendbuf->off += tls->key_schedule->algo->digest_size;
+                if (resumption_secret.base != NULL) {
+                    if (tls->client.send_early_data)
+                        buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_EARLY_DATA, {});
+                    /* pre-shared key "MUST be the last extension in the ClientHello" (draft-17 section 4.2.6) */
+                    buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_PRE_SHARED_KEY, {
+                        ptls_buffer_push_block(sendbuf, 2, {
+                            ptls_buffer_push_block(sendbuf, 2,
+                                                   { ptls_buffer_pushv(sendbuf, resumption_ticket.base, resumption_ticket.len); });
+                            ptls_buffer_push32(sendbuf, obfuscated_ticket_age);
+                        });
+                        /* allocate space for PSK binder. the space is filled at the bottom of the function */
+                        ptls_buffer_push_block(sendbuf, 2, {
+                            ptls_buffer_push_block(sendbuf, 1, {
+                                if ((ret = ptls_buffer_reserve(sendbuf, tls->key_schedule->algo->digest_size)) != 0)
+                                    goto Exit;
+                                sendbuf->off += tls->key_schedule->algo->digest_size;
+                            });
                         });
                     });
-                });
+                }
             }
         });
     });
@@ -1748,9 +1750,12 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
         }
     }
 
-    /* try psk handshake */
     if (tls->ctx->require_dhe_on_psk)
         ch.psk.ke_modes &= ~(1u << PTLS_PSK_KE_MODE_PSK);
+    if (ch.psk.ke_modes != 0 && tls->ctx->ticket_lifetime != 0)
+        tls->server.send_ticket = 1;
+
+    /* try psk handshake */
     if (!is_second_flight && ch.psk.hash_end != 0 &&
         (ch.psk.ke_modes & ((1u << PTLS_PSK_KE_MODE_PSK) | (1u << PTLS_PSK_KE_MODE_PSK_DHE))) != 0 &&
         tls->ctx->decrypt_ticket != NULL) {
@@ -1951,9 +1956,6 @@ static int server_handle_finished(ptls_t *tls, ptls_iovec_t message)
         return ret;
 
     key_schedule_update_hash(tls->key_schedule, message.base, message.len);
-
-    if (tls->ctx->ticket_lifetime != 0)
-        tls->server.send_ticket = 1;
 
     tls->state = PTLS_STATE_SERVER_POST_HANDSHAKE;
     return 0;
@@ -2343,7 +2345,7 @@ int ptls_handshake(ptls_t *tls, ptls_buffer_t *sendbuf, const void *input, size_
 
     ptls_buffer_dispose(&decryptbuf);
 
-    if (ret == 0 && tls->server.send_ticket) {
+    if (ret == 0 && tls->server.send_ticket && tls->state == PTLS_STATE_SERVER_POST_HANDSHAKE) {
         tls->server.send_ticket = 0;
         ret = send_session_ticket(tls, sendbuf);
     }
@@ -2407,7 +2409,7 @@ int ptls_send(ptls_t *tls, ptls_buffer_t *sendbuf, const void *_input, size_t in
 
     assert(tls->state >= PTLS_STATE_SERVER_EXPECT_FINISHED || tls->state == PTLS_STATE_CLIENT_SEND_EARLY_DATA);
 
-    if (tls->server.send_ticket) {
+    if (tls->server.send_ticket && tls->state == PTLS_STATE_SERVER_POST_HANDSHAKE) {
         tls->server.send_ticket = 0;
         if ((ret = send_session_ticket(tls, sendbuf)) != 0)
             goto Exit;
