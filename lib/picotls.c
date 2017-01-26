@@ -2088,23 +2088,6 @@ int ptls_is_early_data(ptls_t *tls)
     return tls->server.early_data != NULL;
 }
 
-static int test_handshake_message(const uint8_t *src, size_t src_len)
-{
-    uint32_t body_len;
-
-    if (src_len < 4)
-        return PTLS_ERROR_HANDSHAKE_IN_PROGRESS;
-
-    body_len = ntoh24(src + 1);
-    if (body_len > src_len - 4) {
-        return PTLS_ERROR_HANDSHAKE_IN_PROGRESS;
-    } else if (body_len < src_len - 4) {
-        return PTLS_ALERT_DECODE_ERROR;
-    }
-
-    return 0;
-}
-
 static int handle_handshake_message(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t message,
                                     ptls_handshake_properties_t *properties)
 {
@@ -2255,27 +2238,51 @@ static int handle_input(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_buffer_t *decr
     if (tls->recvbuf.mess.base != NULL || rec.type == PTLS_CONTENT_TYPE_HANDSHAKE) {
 
         /* handshake */
-        ptls_iovec_t message = {NULL};
         if (rec.type != PTLS_CONTENT_TYPE_HANDSHAKE)
             return PTLS_ALERT_DECODE_ERROR;
 
-        /* handle the record directly, or buffer the message split into multiple records */
-        if (tls->recvbuf.mess.base == NULL && test_handshake_message(rec.fragment, rec.length) == 0) {
-            message = ptls_iovec_init(rec.fragment, rec.length);
+        /* flatten the unhandled messages */
+        const uint8_t *src, *src_end;
+        if (tls->recvbuf.mess.base == NULL) {
+            src = rec.fragment;
+            src_end = src + rec.length;
         } else {
-            if (tls->recvbuf.mess.base == NULL)
-                ptls_buffer_init(&tls->recvbuf.mess, "", 0);
             if ((ret = ptls_buffer_reserve(&tls->recvbuf.mess, rec.length)) != 0)
                 return ret;
             memcpy(tls->recvbuf.mess.base + tls->recvbuf.mess.off, rec.fragment, rec.length);
             tls->recvbuf.mess.off += rec.length;
-            if ((ret = test_handshake_message(tls->recvbuf.mess.base, tls->recvbuf.mess.off)) == 0)
-                message = ptls_iovec_init(tls->recvbuf.mess.base, tls->recvbuf.mess.off);
+            src = tls->recvbuf.mess.base;
+            src_end = src + tls->recvbuf.mess.off;
         }
 
-        /* handle the complete message, if available */
-        if (message.base != NULL) {
-            ret = handle_handshake_message(tls, sendbuf, message, properties);
+        /* handle the messages */
+        ret = PTLS_ERROR_HANDSHAKE_IN_PROGRESS;
+        while (src_end - src >= 4) {
+            uint32_t body_len = ntoh24(src + 1);
+            if (src_end - src < 4 + body_len)
+                break;
+            ret = handle_handshake_message(tls, sendbuf, ptls_iovec_init(src, 4 + body_len), properties);
+            switch (ret) {
+            case 0:
+            case PTLS_ERROR_HANDSHAKE_IN_PROGRESS:
+                break;
+            default:
+                ptls_buffer_dispose(&tls->recvbuf.mess);
+                return ret;
+            }
+            src += 4 + body_len;
+        }
+
+        /* keep last partial message in buffer */
+        if (src != src_end) {
+            if (tls->recvbuf.mess.base == NULL)
+                ptls_buffer_init(&tls->recvbuf.mess, "", 0);
+            tls->recvbuf.mess.off = 0;
+            if ((ret = ptls_buffer_reserve(&tls->recvbuf.mess, src_end - src)) != 0)
+                return ret;
+            memcpy(tls->recvbuf.mess.base, src, src_end - src);
+            tls->recvbuf.mess.off = src_end - src;
+        } else {
             ptls_buffer_dispose(&tls->recvbuf.mess);
         }
 
