@@ -2263,6 +2263,8 @@ static int handle_input(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_buffer_t *decr
         if (tls->recvbuf.mess.base == NULL && test_handshake_message(rec.fragment, rec.length) == 0) {
             message = ptls_iovec_init(rec.fragment, rec.length);
         } else {
+            if (tls->recvbuf.mess.base == NULL)
+                ptls_buffer_init(&tls->recvbuf.mess, "", 0);
             if ((ret = ptls_buffer_reserve(&tls->recvbuf.mess, rec.length)) != 0)
                 return ret;
             memcpy(tls->recvbuf.mess.base + tls->recvbuf.mess.off, rec.fragment, rec.length);
