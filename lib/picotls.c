@@ -1107,11 +1107,11 @@ static int client_handle_hello(ptls_t *tls, ptls_iovec_t message)
     int ret;
 
     if ((ret = decode_server_hello(tls, &sh, message.base + PTLS_HANDSHAKE_HEADER_SIZE, message.base + message.len)) != 0)
-        return ret;
+        goto Exit;
 
     if (sh.peerkey.base != NULL) {
         if ((ret = tls->client.key_exchange.ctx->on_exchange(tls->client.key_exchange.ctx, &ecdh_secret, sh.peerkey)) != 0)
-            return ret;
+            goto Exit;
     }
 
     if (tls->client.offered_psk && !tls->client.is_psk)
@@ -1119,14 +1119,21 @@ static int client_handle_hello(ptls_t *tls, ptls_iovec_t message)
     key_schedule_update_hash(tls->key_schedule, message.base, message.len);
 
     if ((ret = key_schedule_extract(tls->key_schedule, ecdh_secret)) != 0)
-        return ret;
+        goto Exit;
     if ((ret = setup_traffic_protection(tls, tls->cipher_suite, 1, "client handshake traffic secret")) != 0)
-        return ret;
+        goto Exit;
     if ((ret = setup_traffic_protection(tls, tls->cipher_suite, 0, "server handshake traffic secret")) != 0)
-        return ret;
+        goto Exit;
 
     tls->state = PTLS_STATE_CLIENT_EXPECT_ENCRYPTED_EXTENSIONS;
-    return PTLS_ERROR_HANDSHAKE_IN_PROGRESS;
+    ret = PTLS_ERROR_HANDSHAKE_IN_PROGRESS;
+
+Exit:
+    if (ecdh_secret.base != NULL) {
+        ptls_clear_memory(ecdh_secret.base, ecdh_secret.len);
+        free(ecdh_secret.base);
+    }
+    return ret;
 }
 
 static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message, ptls_handshake_properties_t *properties)
