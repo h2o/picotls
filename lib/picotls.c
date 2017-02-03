@@ -2473,11 +2473,11 @@ static void hmac_final(ptls_hash_context_t *_ctx, void *md, ptls_hash_final_mode
     assert(mode != PTLS_HASH_FINAL_MODE_SNAPSHOT || !"not supported");
 
     if (md != NULL) {
-        ctx->hash->final(ctx->hash, md, 1);
+        ctx->hash->final(ctx->hash, md, PTLS_HASH_FINAL_MODE_RESET);
         hmac_apply_key(ctx, 0x5c);
         ctx->hash->update(ctx->hash, md, ctx->algo->digest_size);
-        ctx->hash->final(ctx->hash, md, mode);
     }
+    ctx->hash->final(ctx->hash, md, mode);
 
     switch (mode) {
     case PTLS_HASH_FINAL_MODE_FREE:
