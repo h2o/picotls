@@ -2074,6 +2074,8 @@ void ptls_free(ptls_t *tls)
     if (tls->traffic_protection.enc.aead != NULL)
         ptls_aead_free(tls->traffic_protection.enc.aead);
     free(tls->server_name);
+    if (tls->client.key_exchange.ctx != NULL)
+        tls->client.key_exchange.ctx->on_exchange(tls->client.key_exchange.ctx, NULL, ptls_iovec_init(NULL, 0));
     if (tls->client.certificate_verify.cb != NULL)
         tls->client.certificate_verify.cb(tls->client.certificate_verify.verify_ctx, ptls_iovec_init(NULL, 0),
                                           ptls_iovec_init(NULL, 0));
