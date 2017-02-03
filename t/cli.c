@@ -179,7 +179,7 @@ static int handle_connection(int fd, ptls_context_t *ctx, const char *server_nam
 
         if (FD_ISSET(0, &readfds)) {
             /* read from stdin, encrypt and send */
-            while ((rret = read(0, rbuf, sizeof(rbuf))) == 1 && errno == EINTR)
+            while ((rret = read(0, rbuf, sizeof(rbuf))) == -1 && errno == EINTR)
                 ;
             if ((ret = ptls_send(tls, &wbuf, rbuf, rret)) != 0) {
                 fprintf(stderr, "ptls_send:%d\n", ret);
@@ -192,7 +192,7 @@ static int handle_connection(int fd, ptls_context_t *ctx, const char *server_nam
 
         if (FD_ISSET(fd, &readfds)) {
             /* read from socket, decrypt and print */
-            while ((rret = read(fd, rbuf, sizeof(rbuf))) == 1 && errno == EINTR)
+            while ((rret = read(fd, rbuf, sizeof(rbuf))) == -1 && errno == EINTR)
                 ;
             if (rret <= 0)
                 goto Exit;
