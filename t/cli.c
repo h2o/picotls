@@ -133,7 +133,7 @@ static int handle_connection(int fd, ptls_context_t *ctx, const char *server_nam
     ptls_t *tls = ptls_new(ctx, server_name);
     uint8_t rbuf[1024], wbuf_small[1024], early_data[1024];
     ptls_buffer_t wbuf;
-    int ret;
+    int stdin_closed = 0, ret;
     size_t early_data_size = 0, roff;
     ssize_t rret;
 
@@ -172,7 +172,8 @@ static int handle_connection(int fd, ptls_context_t *ctx, const char *server_nam
         /* wait for either of STDIN or read-side of the socket to become available */
         fd_set readfds;
         FD_ZERO(&readfds);
-        FD_SET(0, &readfds);
+        if (!stdin_closed)
+            FD_SET(0, &readfds);
         FD_SET(fd, &readfds);
         if (select(fd + 1, &readfds, NULL, NULL, NULL) <= 0)
             continue;
@@ -181,6 +182,8 @@ static int handle_connection(int fd, ptls_context_t *ctx, const char *server_nam
             /* read from stdin, encrypt and send */
             while ((rret = read(0, rbuf, sizeof(rbuf))) == -1 && errno == EINTR)
                 ;
+            if (rret == 0)
+                stdin_closed = 1;
             if ((ret = ptls_send(tls, &wbuf, rbuf, rret)) != 0) {
                 fprintf(stderr, "ptls_send:%d\n", ret);
                 goto Exit;
