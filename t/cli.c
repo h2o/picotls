@@ -113,19 +113,25 @@ static int decrypt_and_print(ptls_t *tls, const uint8_t *input, size_t inlen)
         size_t consumed = inlen;
         if ((ret = ptls_receive(tls, &decryptbuf, input, &consumed)) != 0) {
             fprintf(stderr, "ptls_receive:%d\n", ret);
-            return -1;
+            ret = -1;
+            goto Exit;
         }
         input += consumed;
         inlen -= consumed;
         if (decryptbuf.off != 0) {
-            if (write_all(1, decryptbuf.base, decryptbuf.off) != 0)
-                return -1;
+            if (write_all(1, decryptbuf.base, decryptbuf.off) != 0) {
+                ret = -1;
+                goto Exit;
+            }
             decryptbuf.off = 0;
         }
     }
 
+    ret = 0;
+
+Exit:
     ptls_buffer_dispose(&decryptbuf);
-    return 0;
+    return ret;
 }
 
 static int handle_connection(int fd, ptls_context_t *ctx, const char *server_name, ptls_handshake_properties_t *hsprop)
