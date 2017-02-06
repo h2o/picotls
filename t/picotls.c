@@ -118,7 +118,7 @@ static void test_aes128gcm(void)
     test_ciphersuite(find_aes128gcmsha256(ctx), find_aes128gcmsha256(ctx_peer));
 }
 
-static void test_handshake(ptls_iovec_t ticket, int use_early_data)
+static void test_handshake(ptls_iovec_t ticket, int use_resumption, int use_early_data)
 {
     ptls_t *client, *server;
     ptls_handshake_properties_t client_hs_prop = {{ticket}};
@@ -181,14 +181,16 @@ static void test_handshake(ptls_iovec_t ticket, int use_early_data)
     ok(ret == 0);
     ok(cbuf.off != 0);
 
-    if (use_early_data) {
+    if (use_resumption) {
         ok(consumed < sbuf.off);
         memmove(sbuf.base, sbuf.base + consumed, sbuf.off - consumed);
         sbuf.off -= consumed;
     } else {
         ok(consumed == sbuf.off);
         sbuf.off = 0;
+    }
 
+    if (!use_early_data) {
         ret = ptls_send(client, &cbuf, req, strlen(req));
         ok(ret == 0);
 
@@ -246,9 +248,9 @@ static int lookup_certificate(ptls_lookup_certificate_t *self, ptls_t *tls, uint
 static void test_full_handshake(void)
 {
     lc_callcnt = 0;
-    test_handshake(ptls_iovec_init(NULL, 0), 0);
+    test_handshake(ptls_iovec_init(NULL, 0), 0, 0);
     ok(lc_callcnt == 1);
-    test_handshake(ptls_iovec_init(NULL, 0), 0);
+    test_handshake(ptls_iovec_init(NULL, 0), 0, 0);
     ok(lc_callcnt == 2);
 }
 
@@ -293,22 +295,22 @@ static void test_resumption(void)
     ctx->save_ticket = &st;
 
     lc_callcnt = 0;
-    test_handshake(saved_ticket, 0);
+    test_handshake(saved_ticket, 1, 0);
     ok(lc_callcnt == 1);
     ok(saved_ticket.base != NULL);
 
     /* psk using saved ticket */
-    test_handshake(saved_ticket, 0);
+    test_handshake(saved_ticket, 1, 0);
     ok(lc_callcnt == 1);
 
     /* psk-dhe using saved ticket */
     ctx->require_dhe_on_psk = 1;
-    test_handshake(saved_ticket, 0);
+    test_handshake(saved_ticket, 1, 0);
     ok(lc_callcnt == 1);
     ctx->require_dhe_on_psk = 0;
 
     /* 0-rtt psk using saved ticket */
-    test_handshake(saved_ticket, 1);
+    test_handshake(saved_ticket, 1, 1);
 
     ctx_peer->ticket_lifetime = 0;
     ctx_peer->max_early_data_size = 0;
