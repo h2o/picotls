@@ -514,13 +514,23 @@ static void sha256_final(ptls_hash_context_t *_ctx, void *md, ptls_hash_final_mo
     }
 }
 
+static ptls_hash_context_t *sha256_clone(ptls_hash_context_t *_src)
+{
+    struct sha256_context_t *dst, *src = (struct sha256_context_t *)_src;
+
+    if ((dst = malloc(sizeof(*dst))) == NULL)
+        return NULL;
+    *dst = *src;
+    return &dst->super;
+}
+
 static ptls_hash_context_t *sha256_create(void)
 {
     struct sha256_context_t *ctx;
 
     if ((ctx = malloc(sizeof(*ctx))) == NULL)
         return NULL;
-    ctx->super = (ptls_hash_context_t){sha256_update, sha256_final};
+    ctx->super = (ptls_hash_context_t){sha256_update, sha256_final, sha256_clone};
     SHA256_Init(&ctx->ctx);
     return &ctx->super;
 }
