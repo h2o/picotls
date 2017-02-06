@@ -194,6 +194,7 @@ struct st_ptls_client_hello_t {
         size_t count;
     } compression_methods;
     uint16_t selected_version;
+    ptls_cipher_suite_t *cipher_suite;
     ptls_key_exchange_algorithm_t *negotiated_group;
     struct {
         uint16_t list[16]; /* expand? */
@@ -203,6 +204,7 @@ struct st_ptls_client_hello_t {
         ptls_key_exchange_algorithm_t *algorithm;
         ptls_iovec_t peer;
     } key_share;
+    ptls_iovec_t server_name;
     ptls_iovec_t cookie;
     struct {
         const uint8_t *hash_end;
@@ -1334,7 +1336,7 @@ Exit:
     return ret;
 }
 
-static int client_hello_decode_server_name(char **name, const uint8_t *src, const uint8_t *end)
+static int client_hello_decode_server_name(ptls_iovec_t *name, const uint8_t *src, const uint8_t *end)
 {
     int ret = 0;
 
@@ -1352,16 +1354,7 @@ static int client_hello_decode_server_name(char **name, const uint8_t *src, cons
                         ret = PTLS_ALERT_ILLEGAL_PARAMETER;
                         goto Exit;
                     }
-                    if (*name != NULL) {
-                        ret = PTLS_ALERT_ILLEGAL_PARAMETER;
-                        goto Exit;
-                    }
-                    if ((*name = malloc(end - src + 1)) == NULL) {
-                        ret = PTLS_ERROR_NO_MEMORY;
-                        goto Exit;
-                    }
-                    memcpy(*name, src, end - src);
-                    (*name)[end - src] = '\0';
+                    *name = ptls_iovec_init(src, end - src);
                     break;
                 default:
                     break;
@@ -1430,12 +1423,10 @@ Exit:
     return ret;
 }
 
-static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, const uint8_t *src, const uint8_t *end)
+static int decode_client_hello(ptls_context_t *ctx, struct st_ptls_client_hello_t *ch, const uint8_t *src, const uint8_t *end)
 {
     uint16_t exttype = 0;
     int seen_key_share = 0, ret;
-
-    *ch = (struct st_ptls_client_hello_t){};
 
     { /* check protocol version */
         uint16_t protver;
@@ -1469,18 +1460,18 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
             uint16_t id;
             if ((ret = decode16(&id, &src, end)) != 0)
                 goto Exit;
-            if (tls->cipher_suite == NULL) {
-                ptls_cipher_suite_t **cs = tls->ctx->cipher_suites;
+            if (ch->cipher_suite == NULL) {
+                ptls_cipher_suite_t **cs = ctx->cipher_suites;
                 for (; *cs != NULL; ++cs) {
                     if ((*cs)->id == id) {
-                        tls->cipher_suite = *cs;
+                        ch->cipher_suite = *cs;
                         break;
                     }
                 }
             }
         } while (src != end);
     });
-    if (tls->cipher_suite == NULL) {
+    if (ch->cipher_suite == NULL) {
         ret = PTLS_ALERT_HANDSHAKE_FAILURE;
         goto Exit;
     }
@@ -1500,11 +1491,11 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
     decode_extensions(src, end, &exttype, {
         switch (exttype) {
         case PTLS_EXTENSION_TYPE_SERVER_NAME:
-            if ((ret = client_hello_decode_server_name(&tls->server_name, src, end)) != 0)
+            if ((ret = client_hello_decode_server_name(&ch->server_name, src, end)) != 0)
                 goto Exit;
             break;
         case PTLS_EXTENSION_TYPE_SUPPORTED_GROUPS:
-            if ((ret = client_hello_select_negotiated_group(&ch->negotiated_group, tls->ctx->key_exchanges, src, end)) != 0)
+            if ((ret = client_hello_select_negotiated_group(&ch->negotiated_group, ctx->key_exchanges, src, end)) != 0)
                 goto Exit;
             break;
         case PTLS_EXTENSION_TYPE_SIGNATURE_ALGORITHMS:
@@ -1521,7 +1512,7 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
             break;
         case PTLS_EXTENSION_TYPE_KEY_SHARE:
             seen_key_share = 1;
-            if ((ret = client_hello_decode_key_share(&ch->key_share.algorithm, &ch->key_share.peer, tls->ctx->key_exchanges, src,
+            if ((ret = client_hello_decode_key_share(&ch->key_share.algorithm, &ch->key_share.peer, ctx->key_exchanges, src,
                                                      end)) != 0)
                 goto Exit;
             break;
@@ -1708,7 +1699,7 @@ Exit:
 
 static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t message, int is_second_flight)
 {
-    struct st_ptls_client_hello_t ch;
+    struct st_ptls_client_hello_t ch = {{NULL}};
     enum { HANDSHAKE_MODE_FULL, HANDSHAKE_MODE_PSK, HANDSHAKE_MODE_PSK_DHE } mode;
     ptls_iovec_t *certs = NULL;
     size_t num_certs = 0, psk_index = SIZE_MAX;
@@ -1720,15 +1711,32 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
     int ret;
 
     /* decode ClientHello */
-    if ((ret = decode_client_hello(tls, &ch, message.base + PTLS_HANDSHAKE_HEADER_SIZE, message.base + message.len)) != 0)
+    if ((ret = decode_client_hello(tls->ctx, &ch, message.base + PTLS_HANDSHAKE_HEADER_SIZE, message.base + message.len)) != 0)
         goto Exit;
 
+    assert(ch.cipher_suite != NULL);
     if (!is_second_flight) {
         assert(tls->key_schedule == NULL);
+        tls->cipher_suite = ch.cipher_suite;
         tls->key_schedule = key_schedule_new(tls->cipher_suite->hash);
+        if (ch.server_name.base != NULL) {
+            if ((tls->server_name = malloc(ch.server_name.len + 1)) == NULL) {
+                ret = PTLS_ERROR_NO_MEMORY;
+                goto Exit;
+            }
+            memcpy(tls->server_name, ch.server_name.base, ch.server_name.len);
+            tls->server_name[ch.server_name.len] = '\0';
+        }
     } else {
         if (ch.psk.early_data_indication) {
             ret = PTLS_ALERT_DECODE_ERROR;
+            goto Exit;
+        }
+        if (ch.cipher_suite != tls->cipher_suite || (tls->server_name != NULL) != (ch.server_name.base != NULL) ||
+            (tls->server_name != NULL &&
+             !(strncmp(tls->server_name, (char *)ch.server_name.base, ch.server_name.len) == 0 &&
+               tls->server_name[ch.server_name.len] == '\0'))) {
+            ret = PTLS_ALERT_HANDSHAKE_FAILURE;
             goto Exit;
         }
     }
