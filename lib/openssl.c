@@ -152,11 +152,13 @@ static void x9_62_free_context(struct st_x9_62_keyex_context_t *ctx)
     free(ctx);
 }
 
-static int x9_62_on_exchange(ptls_key_exchange_context_t *_ctx, ptls_iovec_t *secret, ptls_iovec_t peerkey)
+static int x9_62_on_exchange(ptls_key_exchange_context_t **_ctx, ptls_iovec_t *secret, ptls_iovec_t peerkey)
 {
-    struct st_x9_62_keyex_context_t *ctx = (struct st_x9_62_keyex_context_t *)_ctx;
+    struct st_x9_62_keyex_context_t *ctx = (struct st_x9_62_keyex_context_t *)*_ctx;
     EC_POINT *peer_point = NULL;
     int ret;
+
+    *_ctx = NULL;
 
     if ((peer_point = x9_62_decode_point(ctx->group, peerkey, ctx->bn_ctx)) == NULL) {
         ret = PTLS_ALERT_DECODE_ERROR;

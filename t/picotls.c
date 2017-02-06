@@ -348,7 +348,7 @@ void test_key_exchange(ptls_key_exchange_algorithm_t *algo)
     ok(ret == 0);
     ret = algo->exchange(&server_pubkey, &server_secret, client_pubkey);
     ok(ret == 0);
-    ret = ctx->on_exchange(ctx, &client_secret, server_pubkey);
+    ret = ctx->on_exchange(&ctx, &client_secret, server_pubkey);
     ok(ret == 0);
     ok(client_secret.len == server_secret.len);
     ok(memcmp(client_secret.base, server_secret.base, client_secret.len) == 0);

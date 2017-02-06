@@ -42,11 +42,13 @@ struct st_secp256r1_key_exhchange_t {
     uint8_t pub[SECP256R1_PUBLIC_KEY_SIZE];
 };
 
-static int secp256r1_on_exchange(ptls_key_exchange_context_t *_ctx, ptls_iovec_t *secret, ptls_iovec_t peerkey)
+static int secp256r1_on_exchange(ptls_key_exchange_context_t **_ctx, ptls_iovec_t *secret, ptls_iovec_t peerkey)
 {
-    struct st_secp256r1_key_exhchange_t *ctx = (struct st_secp256r1_key_exhchange_t *)_ctx;
+    struct st_secp256r1_key_exhchange_t *ctx = (struct st_secp256r1_key_exhchange_t *)*_ctx;
     uint8_t *secbytes = NULL;
     int ret;
+
+    *_ctx = NULL;
 
     if (secret == NULL) {
         ret = 0;

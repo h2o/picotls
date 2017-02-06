@@ -1110,7 +1110,7 @@ static int client_handle_hello(ptls_t *tls, ptls_iovec_t message)
         goto Exit;
 
     if (sh.peerkey.base != NULL) {
-        if ((ret = tls->client.key_exchange.ctx->on_exchange(tls->client.key_exchange.ctx, &ecdh_secret, sh.peerkey)) != 0)
+        if ((ret = tls->client.key_exchange.ctx->on_exchange(&tls->client.key_exchange.ctx, &ecdh_secret, sh.peerkey)) != 0)
             goto Exit;
     }
 
@@ -2075,7 +2075,7 @@ void ptls_free(ptls_t *tls)
         ptls_aead_free(tls->traffic_protection.enc.aead);
     free(tls->server_name);
     if (tls->client.key_exchange.ctx != NULL)
-        tls->client.key_exchange.ctx->on_exchange(tls->client.key_exchange.ctx, NULL, ptls_iovec_init(NULL, 0));
+        tls->client.key_exchange.ctx->on_exchange(&tls->client.key_exchange.ctx, NULL, ptls_iovec_init(NULL, 0));
     if (tls->client.certificate_verify.cb != NULL)
         tls->client.certificate_verify.cb(tls->client.certificate_verify.verify_ctx, ptls_iovec_init(NULL, 0),
                                           ptls_iovec_init(NULL, 0));

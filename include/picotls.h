@@ -105,10 +105,10 @@ typedef struct st_ptls_buffer_t {
  */
 typedef struct st_ptls_key_exchange_context_t {
     /**
-     * called once per created context. It is the callee's responsibility to free the resources associated to keyex. Secret and
+     * called once per created context. Callee must free resources allocated to the context and set *keyex to NULL. Secret and
      * peerkey will be NULL in case the exchange never happened.
      */
-    int (*on_exchange)(struct st_ptls_key_exchange_context_t *keyex, ptls_iovec_t *secret, ptls_iovec_t peerkey);
+    int (*on_exchange)(struct st_ptls_key_exchange_context_t **keyex, ptls_iovec_t *secret, ptls_iovec_t peerkey);
 } ptls_key_exchange_context_t;
 
 /**

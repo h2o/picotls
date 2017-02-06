@@ -95,10 +95,12 @@ static int x25519_derive_secret(ptls_iovec_t *secret, const uint8_t *clientpriv,
     return 0;
 }
 
-static int x25519_on_exchange(ptls_key_exchange_context_t *_ctx, ptls_iovec_t *secret, ptls_iovec_t peerkey)
+static int x25519_on_exchange(ptls_key_exchange_context_t **_ctx, ptls_iovec_t *secret, ptls_iovec_t peerkey)
 {
-    struct st_x25519_key_exchange_t *ctx = (struct st_x25519_key_exchange_t *)_ctx;
+    struct st_x25519_key_exchange_t *ctx = (struct st_x25519_key_exchange_t *)*_ctx;
     int ret;
+
+    *_ctx = NULL;
 
     if (secret == NULL) {
         ret = 0;
