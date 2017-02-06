@@ -307,6 +307,10 @@ typedef struct st_ptls_context_t {
      *
      */
     ptls_save_ticket_t *save_ticket;
+    /**
+     *
+     */
+    void (*log_secret)(ptls_t *tls, const char *label, ptls_iovec_t secret);
 } ptls_context_t;
 
 /**
@@ -443,6 +447,10 @@ void ptls_free(ptls_t *tls);
  * returns address of the crypto callbacks that the connection is using
  */
 ptls_context_t *ptls_get_context(ptls_t *tls);
+/**
+ * returns the client-random
+ */
+ptls_iovec_t ptls_get_client_random(ptls_t *tls);
 /**
  * returns if the received data is early data
  */
