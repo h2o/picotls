@@ -161,7 +161,6 @@ struct st_ptls_t {
             unsigned is_psk : 1;
         } client;
         struct {
-            unsigned send_ticket : 1;
             /**
              * expecting to recieve undecrytable early-data packets
              */
@@ -377,9 +376,8 @@ Exit:
             goto Exit;                                                                                                             \
     } while (0);
 
-#define buffer_push_handshake(buf, key_sched, type, block)                                                                         \
-    buffer_push_record((buf), PTLS_CONTENT_TYPE_HANDSHAKE, {                                                                       \
-        size_t mess_start = (buf)->off;                                                                                            \
+#define buffer_push_handshake_core(buf, key_sched, type, mess_start, block)                                                        \
+    do {                                                                                                                           \
         ptls_buffer_push((buf), (type));                                                                                           \
         ptls_buffer_push_block((buf), 3, {                                                                                         \
             do {                                                                                                                   \
@@ -387,8 +385,21 @@ Exit:
             } while (0);                                                                                                           \
         });                                                                                                                        \
         if ((key_sched) != NULL)                                                                                                   \
-            key_schedule_update_hash((key_sched), (buf)->base + mess_start, (buf)->off - mess_start);                              \
+            key_schedule_update_hash((key_sched), (buf)->base + mess_start, (buf)->off - (mess_start));                            \
+    } while (0)
+
+#define buffer_push_handshake(buf, key_sched, type, block)                                                                         \
+    buffer_push_record((buf), PTLS_CONTENT_TYPE_HANDSHAKE, {                                                                       \
+        size_t mess_start = (buf)->off;                                                                                            \
+        buffer_push_handshake_core((buf), (key_sched), (type), mess_start, block);                                                 \
     })
+
+#define buffer_calc_handshake_hash(buf, key_sched, type, block)                                                                    \
+    do {                                                                                                                           \
+        size_t mess_start = (buf)->off;                                                                                            \
+        buffer_push_handshake_core((buf), (key_sched), (type), mess_start, block);                                                 \
+        (buf)->off = mess_start;                                                                                                   \
+    } while (0)
 
 #define buffer_push_extension(buf, type, block)                                                                                    \
     do {                                                                                                                           \
@@ -838,6 +849,64 @@ static int send_finished(ptls_t *tls, ptls_buffer_t *sendbuf)
     });
 
 Exit:
+    return ret;
+}
+
+static int send_session_ticket(ptls_t *tls, ptls_buffer_t *sendbuf)
+{
+    ptls_hash_context_t *msghash_backup = tls->key_schedule->msghash->clone_(tls->key_schedule->msghash);
+    ptls_buffer_t session_id;
+    char session_id_smallbuf[128];
+    uint32_t ticket_age_add;
+    int ret = 0;
+
+    assert(tls->ctx->ticket_lifetime != 0);
+    assert(tls->ctx->encrypt_ticket != NULL);
+
+    /* calculate verify-data that will be sent by the client */
+    buffer_calc_handshake_hash(sendbuf, tls->key_schedule, PTLS_HANDSHAKE_TYPE_FINISHED, {
+        if ((ret = ptls_buffer_reserve(sendbuf, tls->key_schedule->algo->digest_size)) != 0)
+            goto Exit;
+        if ((ret = calc_verify_data(sendbuf->base + sendbuf->off, tls->key_schedule,
+                                    tls->server.early_data != NULL ? tls->server.early_data->next_secret
+                                                                   : tls->traffic_protection.dec.secret)) != 0)
+            goto Exit;
+        sendbuf->off += tls->key_schedule->algo->digest_size;
+    });
+
+    tls->ctx->random_bytes(&ticket_age_add, sizeof(ticket_age_add));
+
+    /* build the raw nsk */
+    ptls_buffer_init(&session_id, session_id_smallbuf, sizeof(session_id_smallbuf));
+    ret = encode_session_identifier(&session_id, ticket_age_add, tls->key_schedule, tls->server_name, tls->cipher_suite->id);
+    if (ret != 0)
+        goto Exit;
+
+    /* encrypt and send */
+    buffer_encrypt(sendbuf, tls->traffic_protection.enc.aead, {
+        buffer_push_handshake(sendbuf, tls->key_schedule, PTLS_HANDSHAKE_TYPE_NEW_SESSION_TICKET, {
+            ptls_buffer_push32(sendbuf, tls->ctx->ticket_lifetime);
+            ptls_buffer_push32(sendbuf, ticket_age_add);
+            ptls_buffer_push_block(sendbuf, 2, {
+                if ((ret = tls->ctx->encrypt_ticket->cb(tls->ctx->encrypt_ticket, tls, sendbuf,
+                                                        ptls_iovec_init(session_id.base, session_id.off))) != 0)
+                    goto Exit;
+            });
+            ptls_buffer_push_block(sendbuf, 2, {
+                if (tls->ctx->max_early_data_size != 0)
+                    buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_TICKET_EARLY_DATA_INFO,
+                                          { ptls_buffer_push32(sendbuf, tls->ctx->max_early_data_size); });
+            });
+        });
+    });
+
+Exit:
+    ptls_buffer_dispose(&session_id);
+
+    /* restore handshake state */
+    tls->key_schedule->msghash->final(tls->key_schedule->msghash, NULL, PTLS_HASH_FINAL_MODE_FREE);
+    tls->key_schedule->msghash = msghash_backup;
+
     return ret;
 }
 
@@ -1767,8 +1836,6 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
 
     if (tls->ctx->require_dhe_on_psk)
         ch.psk.ke_modes &= ~(1u << PTLS_PSK_KE_MODE_PSK);
-    if (ch.psk.ke_modes != 0 && tls->ctx->ticket_lifetime != 0)
-        tls->server.send_ticket = 1;
 
     /* try psk handshake */
     if (!is_second_flight && ch.psk.hash_end != 0 &&
@@ -1910,53 +1977,19 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
         return ret;
 
     tls->state = PTLS_STATE_SERVER_EXPECT_FINISHED;
+
+    /* send session ticket if necessary */
+    if (ch.psk.ke_modes != 0 && tls->ctx->ticket_lifetime != 0) {
+        if ((ret = send_session_ticket(tls, sendbuf)) != 0)
+            goto Exit;
+    }
+
     ret = 0;
 
 Exit:
     free(pubkey.base);
     free(ecdh_secret.base);
     ptls_clear_memory(finished_key, sizeof(finished_key));
-    return ret;
-}
-
-static int send_session_ticket(ptls_t *tls, ptls_buffer_t *sendbuf)
-{
-    ptls_buffer_t session_id;
-    char session_id_smallbuf[128];
-    uint32_t ticket_age_add;
-    int ret = 0;
-
-    assert(tls->ctx->ticket_lifetime != 0);
-    assert(tls->ctx->encrypt_ticket != NULL);
-
-    tls->ctx->random_bytes(&ticket_age_add, sizeof(ticket_age_add));
-
-    /* build the raw nsk */
-    ptls_buffer_init(&session_id, session_id_smallbuf, sizeof(session_id_smallbuf));
-    if ((ret = encode_session_identifier(&session_id, ticket_age_add, tls->key_schedule, tls->server_name,
-                                         tls->cipher_suite->id)) != 0)
-        goto Exit;
-
-    /* encrypt and send */
-    buffer_encrypt(sendbuf, tls->traffic_protection.enc.aead, {
-        buffer_push_handshake(sendbuf, tls->key_schedule, PTLS_HANDSHAKE_TYPE_NEW_SESSION_TICKET, {
-            ptls_buffer_push32(sendbuf, tls->ctx->ticket_lifetime);
-            ptls_buffer_push32(sendbuf, ticket_age_add);
-            ptls_buffer_push_block(sendbuf, 2, {
-                if ((ret = tls->ctx->encrypt_ticket->cb(tls->ctx->encrypt_ticket, tls, sendbuf,
-                                                        ptls_iovec_init(session_id.base, session_id.off))) != 0)
-                    goto Exit;
-            });
-            ptls_buffer_push_block(sendbuf, 2, {
-                if (tls->ctx->max_early_data_size != 0)
-                    buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_TICKET_EARLY_DATA_INFO,
-                                          { ptls_buffer_push32(sendbuf, tls->ctx->max_early_data_size); });
-            });
-        });
-    });
-
-Exit:
-    ptls_buffer_dispose(&session_id);
     return ret;
 }
 
@@ -2371,11 +2404,6 @@ int ptls_handshake(ptls_t *tls, ptls_buffer_t *sendbuf, const void *input, size_
 
     ptls_buffer_dispose(&decryptbuf);
 
-    if (ret == 0 && tls->server.send_ticket && tls->state == PTLS_STATE_SERVER_POST_HANDSHAKE) {
-        tls->server.send_ticket = 0;
-        ret = send_session_ticket(tls, sendbuf);
-    }
-
     if (!(ret == 0 || ret == PTLS_ERROR_HANDSHAKE_IN_PROGRESS)) {
         /* flush partially written response */
         ptls_clear_memory(sendbuf->base + sendbuf_orig_off, sendbuf->off - sendbuf_orig_off);
@@ -2434,12 +2462,6 @@ int ptls_send(ptls_t *tls, ptls_buffer_t *sendbuf, const void *_input, size_t in
     int ret = 0;
 
     assert(tls->state >= PTLS_STATE_SERVER_EXPECT_FINISHED || tls->state == PTLS_STATE_CLIENT_SEND_EARLY_DATA);
-
-    if (tls->server.send_ticket && tls->state == PTLS_STATE_SERVER_POST_HANDSHAKE) {
-        tls->server.send_ticket = 0;
-        if ((ret = send_session_ticket(tls, sendbuf)) != 0)
-            goto Exit;
-    }
 
     for (; inlen != 0; input += pt_size, inlen -= pt_size) {
         pt_size = inlen;
