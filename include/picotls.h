@@ -197,6 +197,10 @@ typedef struct st_ptls_hash_context_t {
      * returns the digest and performs necessary operation specified by mode
      */
     void (* final)(struct st_ptls_hash_context_t *ctx, void *md, ptls_hash_final_mode_t mode);
+    /**
+     * creates a copy of the hash context
+     */
+    struct st_ptls_hash_context_t *(*clone_)(struct st_ptls_hash_context_t *src);
 } ptls_hash_context_t;
 
 /**
