@@ -328,6 +328,25 @@ static int save_ticket_cb(ptls_save_ticket_t *self, ptls_t *tls, ptls_iovec_t sr
     return 0;
 }
 
+static FILE *secret_fp = NULL;
+
+static void fprinthex(FILE *fp, ptls_iovec_t vec)
+{
+    size_t i;
+    for (i = 0; i != vec.len; ++i)
+        fprintf(fp, "%02x", vec.base[i]);
+}
+
+static void log_secret(ptls_t *tls, const char *label, ptls_iovec_t secret)
+{
+    fprintf(secret_fp, "%s ", label);
+    fprinthex(secret_fp, ptls_get_client_random(tls));
+    fprintf(secret_fp, " ");
+    fprinthex(secret_fp, secret);
+    fprintf(secret_fp, "\n");
+    fflush(secret_fp);
+}
+
 static int run_client(struct sockaddr *sa, socklen_t salen, ptls_context_t *ctx, const char *server_name,
                       ptls_handshake_properties_t *hsprop)
 {
@@ -375,6 +394,7 @@ static void usage(const char *cmd)
            "  -c certificate-file\n"
            "  -k key-file          specifies the credentials to be used for running the\n"
            "                       server. If omitted, the command runs as a client.\n"
+           "  -l log-file          file to log traffic secrets\n"
            "  -s session-file      file to read/write the session ticket\n"
            "  -e                   when resuming a session, send first 8,192 bytes of input\n"
            "                       as early data\n"
@@ -420,7 +440,7 @@ int main(int argc, char **argv)
 
     ptls_openssl_init_lookup_certificate(&lookup_certificate);
 
-    while ((ch = getopt(argc, argv, "c:k:es:vh")) != -1) {
+    while ((ch = getopt(argc, argv, "c:k:es:l:vh")) != -1) {
         switch (ch) {
         case 'c': {
             FILE *fp;
@@ -456,6 +476,13 @@ int main(int argc, char **argv)
             break;
         case 's':
             session_file = optarg;
+            break;
+        case 'l':
+            if ((secret_fp = fopen(optarg, "at")) == NULL) {
+                fprintf(stderr, "failed to open file:%s:%s\n", optarg, strerror(errno));
+                return 1;
+            }
+            ctx.log_secret = log_secret;
             break;
         case 'v':
             ptls_openssl_init_verify_certificate(&verify_certificate, NULL);
