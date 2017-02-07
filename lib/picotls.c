@@ -1061,7 +1061,7 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_handshake
 
     if (tls->client.send_early_data) {
         if ((ret = setup_traffic_protection(tls, resumption_cipher_suite, 1, "client early traffic secret",
-                                            "EARLY_TRAFFIC_SECRET")) != 0)
+                                            "CLIENT_EARLY_TRAFFIC_SECRET")) != 0)
             goto Exit;
         tls->state = PTLS_STATE_CLIENT_SEND_EARLY_DATA;
     } else {
@@ -1881,7 +1881,8 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
             ret = PTLS_ERROR_NO_MEMORY;
             goto Exit;
         }
-        if ((ret = setup_traffic_protection(tls, tls->cipher_suite, 0, "client early traffic secret", "EARLY_TRAFFIC_SECRET")) != 0)
+        if ((ret = setup_traffic_protection(tls, tls->cipher_suite, 0, "client early traffic secret",
+                                            "CLIENT_EARLY_TRAFFIC_SECRET")) != 0)
             goto Exit;
     }
 
