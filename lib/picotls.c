@@ -1769,13 +1769,9 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
     struct {
         ptls_key_exchange_algorithm_t *algorithm;
         ptls_iovec_t peer_key;
-    } key_share;
+    } key_share = {NULL};
     enum { HANDSHAKE_MODE_FULL, HANDSHAKE_MODE_PSK, HANDSHAKE_MODE_PSK_DHE } mode;
-    ptls_iovec_t *certs = NULL;
-    size_t num_certs = 0, psk_index = SIZE_MAX;
-    uint16_t sign_algorithm = 0;
-    int (*signer)(void *, ptls_buffer_t *, ptls_iovec_t) = NULL;
-    void *signer_data = NULL;
+    size_t psk_index = SIZE_MAX;
     ptls_iovec_t pubkey = {}, ecdh_secret = {};
     uint8_t finished_key[PTLS_MAX_DIGEST_SIZE];
     int ret;
@@ -1809,6 +1805,12 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
             goto Exit;
         }
     }
+
+    /* call post-SNI hook (may swap tls->ctx) */
+    if (tls->ctx->on_client_hello != NULL &&
+        (ret = tls->ctx->on_client_hello->cb(tls->ctx->on_client_hello, tls, tls->server_name, ch.signature_algorithms.list,
+                                             ch.signature_algorithms.count)) != 0)
+        goto Exit;
 
     { /* select (or check) cipher-suite, create key_schedule */
         ptls_cipher_suite_t *cs;
@@ -1898,15 +1900,6 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
             goto Exit;
     }
 
-    /* run post-hello callback to determine certificate, etc. */
-    if (mode == HANDSHAKE_MODE_FULL) {
-        if ((ret = tls->ctx->lookup_certificate->cb(tls->ctx->lookup_certificate, tls, &sign_algorithm, &signer, &signer_data,
-                                                    &certs, &num_certs, tls->server_name, ch.signature_algorithms.list,
-                                                    ch.signature_algorithms.count)) != 0)
-            goto Exit;
-        assert(sign_algorithm != 0);
-    }
-
     /* run key-exchange, to obtain pubkey and secret */
     if (mode != HANDSHAKE_MODE_PSK) {
         if ((ret = key_share.algorithm->exchange(&pubkey, &ecdh_secret, key_share.peer_key)) != 0)
@@ -1974,8 +1967,10 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
                 ptls_buffer_push(sendbuf, 0);
                 ptls_buffer_push_block(sendbuf, 3, {
                     size_t i;
-                    for (i = 0; i != num_certs; ++i) {
-                        ptls_buffer_push_block(sendbuf, 3, { ptls_buffer_pushv(sendbuf, certs[i].base, certs[i].len); });
+                    for (i = 0; i != tls->ctx->certificates.count; ++i) {
+                        ptls_buffer_push_block(sendbuf, 3, {
+                            ptls_buffer_pushv(sendbuf, tls->ctx->certificates.vec[i].base, tls->ctx->certificates.vec[i].len);
+                        });
                         ptls_buffer_push_block(sendbuf, 2, {}); /* extensions */
                     }
                 });
@@ -1984,13 +1979,19 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
         /* build and send CertificateVerify */
         buffer_encrypt(sendbuf, tls->traffic_protection.enc.aead, {
             buffer_push_handshake(sendbuf, tls->key_schedule, PTLS_HANDSHAKE_TYPE_CERTIFICATE_VERIFY, {
-                ptls_buffer_push16(sendbuf, sign_algorithm);
+                size_t algo_off = sendbuf->off;
+                ptls_buffer_push16(sendbuf, 0); /* filled in later */
                 ptls_buffer_push_block(sendbuf, 2, {
+                    uint16_t algo;
                     uint8_t data[PTLS_MAX_CERTIFICATE_VERIFY_SIGNDATA_SIZE];
                     size_t datalen =
                         build_certificate_verify_signdata(data, tls->key_schedule, PTLS_SERVER_CERTIFICATE_VERIFY_CONTEXT_STRING);
-                    if ((ret = signer(signer_data, sendbuf, ptls_iovec_init(data, datalen))) != 0)
+                    if ((ret = tls->ctx->sign_certificate->cb(tls->ctx->sign_certificate, tls, &algo, sendbuf,
+                                                              ptls_iovec_init(data, datalen), ch.signature_algorithms.list,
+                                                              ch.signature_algorithms.count)) != 0)
                         goto Exit;
+                    sendbuf->base[algo_off] = (uint8_t)(algo >> 8);
+                    sendbuf->base[algo_off + 1] = (uint8_t)algo;
                 });
             });
         });
