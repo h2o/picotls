@@ -129,8 +129,8 @@ static void test_handshake(ptls_iovec_t ticket, int use_resumption, int use_earl
     const char *req = "GET / HTTP/1.0\r\n\r\n";
     const char *resp = "HTTP/1.0 200 OK\r\n\r\nhello world\n";
 
-    client = ptls_new(ctx, "example.com");
-    server = ptls_new(ctx_peer, NULL);
+    client = ptls_new(ctx, 0);
+    server = ptls_new(ctx_peer, 1);
     ptls_buffer_init(&cbuf, cbuf_small, sizeof(cbuf_small));
     ptls_buffer_init(&sbuf, sbuf_small, sizeof(sbuf_small));
     ptls_buffer_init(&decbuf, decbuf_small, sizeof(decbuf_small));

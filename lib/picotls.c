@@ -1791,13 +1791,16 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
             memcpy(tls->server_name, ch.server_name.base, ch.server_name.len);
             tls->server_name[ch.server_name.len] = '\0';
         }
+        if (tls->ctx->on_client_hello != NULL &&
+            (ret = tls->ctx->on_client_hello->cb(tls->ctx->on_client_hello, tls, ch.server_name, ch.signature_algorithms.list,
+                                                 ch.signature_algorithms.count)) != 0)
+            goto Exit;
     } else {
         if (ch.psk.early_data_indication) {
             ret = PTLS_ALERT_DECODE_ERROR;
             goto Exit;
         }
         if (memcmp(tls->client_random, ch.random_bytes, sizeof(tls->client_random)) != 0 ||
-            (tls->server_name != NULL) != (ch.server_name.base != NULL) ||
             (tls->server_name != NULL &&
              !(strncmp(tls->server_name, (char *)ch.server_name.base, ch.server_name.len) == 0 &&
                tls->server_name[ch.server_name.len] == '\0'))) {
@@ -1805,12 +1808,6 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
             goto Exit;
         }
     }
-
-    /* call post-SNI hook (may swap tls->ctx) */
-    if (tls->ctx->on_client_hello != NULL &&
-        (ret = tls->ctx->on_client_hello->cb(tls->ctx->on_client_hello, tls, tls->server_name, ch.signature_algorithms.list,
-                                             ch.signature_algorithms.count)) != 0)
-        goto Exit;
 
     { /* select (or check) cipher-suite, create key_schedule */
         ptls_cipher_suite_t *cs;
@@ -2112,7 +2109,7 @@ static int parse_record(ptls_t *tls, struct st_ptls_record_t *rec, const uint8_t
     return ret;
 }
 
-ptls_t *ptls_new(ptls_context_t *ctx, const char *server_name)
+ptls_t *ptls_new(ptls_context_t *ctx, int is_server)
 {
     ptls_t *tls;
 
@@ -2120,20 +2117,14 @@ ptls_t *ptls_new(ptls_context_t *ctx, const char *server_name)
         return NULL;
 
     *tls = (ptls_t){ctx};
-    if (server_name != NULL) {
+    if (!is_server) {
         tls->state = PTLS_STATE_CLIENT_HANDSHAKE_START;
         tls->ctx->random_bytes(tls->client_random, sizeof(tls->client_random));
-        if ((tls->server_name = strdup(server_name)) == NULL)
-            goto Fail;
     } else {
         tls->state = PTLS_STATE_SERVER_EXPECT_CLIENT_HELLO;
     }
 
     return tls;
-
-Fail:
-    ptls_free(tls);
-    return NULL;
 }
 
 void ptls_free(ptls_t *tls)
@@ -2173,6 +2164,30 @@ void ptls_set_context(ptls_t *tls, ptls_context_t *ctx)
 ptls_iovec_t ptls_get_client_random(ptls_t *tls)
 {
     return ptls_iovec_init(tls->client_random, PTLS_HELLO_RANDOM_SIZE);
+}
+
+const char *ptls_get_server_name(ptls_t *tls)
+{
+    return tls->server_name;
+}
+
+int ptls_set_server_name(ptls_t *tls, const char *server_name, size_t server_name_len)
+{
+    char *duped = NULL;
+
+    if (server_name != NULL) {
+        if (server_name_len == 0)
+            server_name_len = strlen(server_name);
+        if ((duped = malloc(server_name_len + 1)) == NULL)
+            return PTLS_ERROR_NO_MEMORY;
+        memcpy(duped, server_name, server_name_len);
+        duped[server_name_len] = '\0';
+    }
+
+    free(tls->server_name);
+    tls->server_name = duped;
+
+    return 0;
 }
 
 int ptls_is_early_data(ptls_t *tls)

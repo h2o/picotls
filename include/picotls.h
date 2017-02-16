@@ -238,9 +238,9 @@ typedef const struct st_ptls_cipher_suite_t {
 
 /**
  * after receiving ClientHello, the core calls the optional callback to give a chance to the swap the context depending on the input
- * values.
+ * values. The callback is required to call `ptls_set_server_name` if an SNI extension needs to be sent to the client.
  */
-PTLS_CALLBACK_TYPE(int, on_client_hello, ptls_t *tls, const char *server_name, const uint16_t *signature_algorithms,
+PTLS_CALLBACK_TYPE(int, on_client_hello, ptls_t *tls, ptls_iovec_t server_name, const uint16_t *signature_algorithms,
                    size_t num_signature_algorithms);
 /**
  * when gerenating CertificateVerify, the core calls the callback to sign the handshake context using the certificate.
@@ -456,7 +456,7 @@ int ptls_buffer_push_asn1_ubigint(ptls_buffer_t *buf, const void *bignum, size_t
  * create a object to handle new TLS connection. Client-side of a TLS connection is created if server_name is non-NULL. Otherwise,
  * a server-side connection is created.
  */
-ptls_t *ptls_new(ptls_context_t *ctx, const char *server_name);
+ptls_t *ptls_new(ptls_context_t *ctx, int is_client);
 /**
  * releases all resources associated to the object
  */
@@ -473,6 +473,15 @@ void ptls_set_context(ptls_t *tls, ptls_context_t *ctx);
  * returns the client-random
  */
 ptls_iovec_t ptls_get_client_random(ptls_t *tls);
+/**
+ * returns the server-name (NULL if SNI is not used or failed to negotiate)
+ */
+const char *ptls_get_server_name(ptls_t *tls);
+/**
+ * sets the server-name (for client the value sent in SNI). If server_name_len is zero, then strlen(server_name) is called to determine
+ * the length of the name.
+ */
+int ptls_set_server_name(ptls_t *tls, const char *server_name, size_t server_name_len);
 /**
  * returns if the received data is early data
  */

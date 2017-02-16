@@ -136,12 +136,15 @@ Exit:
 
 static int handle_connection(int fd, ptls_context_t *ctx, const char *server_name, ptls_handshake_properties_t *hsprop)
 {
-    ptls_t *tls = ptls_new(ctx, server_name);
+    ptls_t *tls = ptls_new(ctx, server_name == NULL);
     uint8_t rbuf[1024], wbuf_small[1024], early_data[1024];
     ptls_buffer_t wbuf;
     int stdin_closed = 0, ret;
     size_t early_data_size = 0, roff;
     ssize_t rret;
+
+    if (server_name != NULL)
+        ptls_set_server_name(tls, server_name, 0);
 
     if (server_name != NULL && hsprop->client.max_early_data_size != NULL) {
         /* using early data */
