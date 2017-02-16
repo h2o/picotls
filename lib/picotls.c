@@ -2165,6 +2165,11 @@ ptls_context_t *ptls_get_context(ptls_t *tls)
     return tls->ctx;
 }
 
+void ptls_set_context(ptls_t *tls, ptls_context_t *ctx)
+{
+    tls->ctx = ctx;
+}
+
 ptls_iovec_t ptls_get_client_random(ptls_t *tls)
 {
     return ptls_iovec_init(tls->client_random, PTLS_HELLO_RANDOM_SIZE);

@@ -466,6 +466,10 @@ void ptls_free(ptls_t *tls);
  */
 ptls_context_t *ptls_get_context(ptls_t *tls);
 /**
+ * updates the context of a connection. Can be called from `on_client_hello` callback.
+ */
+void ptls_set_context(ptls_t *tls, ptls_context_t *ctx);
+/**
  * returns the client-random
  */
 ptls_iovec_t ptls_get_client_random(ptls_t *tls);
