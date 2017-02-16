@@ -232,26 +232,23 @@ static void test_handshake(ptls_iovec_t ticket, int use_resumption, int use_earl
     ptls_free(server);
 }
 
-static ptls_lookup_certificate_t *lc_orig;
-size_t lc_callcnt;
+static ptls_sign_certificate_t *sc_orig;
+size_t sc_callcnt;
 
-static int lookup_certificate(ptls_lookup_certificate_t *self, ptls_t *tls, uint16_t *sign_algorithm,
-                              int (**signer)(void *sign_ctx, ptls_buffer_t *outbuf, ptls_iovec_t input), void **signer_data,
-                              ptls_iovec_t **certs, size_t *num_certs, const char *server_name,
-                              const uint16_t *signature_algorithms, size_t num_signature_algorithms)
+static int sign_certificate(ptls_sign_certificate_t *self, ptls_t *tls, uint16_t *selected_algorithm, ptls_buffer_t *output,
+                            ptls_iovec_t input, const uint16_t *algorithms, size_t num_algorithms)
 {
-    ++lc_callcnt;
-    return lc_orig->cb(lc_orig, tls, sign_algorithm, signer, signer_data, certs, num_certs, server_name, signature_algorithms,
-                       num_signature_algorithms);
+    ++sc_callcnt;
+    return sc_orig->cb(sc_orig, tls, selected_algorithm, output, input, algorithms, num_algorithms);
 }
 
 static void test_full_handshake(void)
 {
-    lc_callcnt = 0;
+    sc_callcnt = 0;
     test_handshake(ptls_iovec_init(NULL, 0), 0, 0);
-    ok(lc_callcnt == 1);
+    ok(sc_callcnt == 1);
     test_handshake(ptls_iovec_init(NULL, 0), 0, 0);
-    ok(lc_callcnt == 2);
+    ok(sc_callcnt == 2);
 }
 
 static int copy_ticket(ptls_encrypt_ticket_t *self, ptls_t *tls, ptls_buffer_t *dst, ptls_iovec_t src)
@@ -294,19 +291,19 @@ static void test_resumption(void)
     ctx_peer->decrypt_ticket = &et;
     ctx->save_ticket = &st;
 
-    lc_callcnt = 0;
+    sc_callcnt = 0;
     test_handshake(saved_ticket, 1, 0);
-    ok(lc_callcnt == 1);
+    ok(sc_callcnt == 1);
     ok(saved_ticket.base != NULL);
 
     /* psk using saved ticket */
     test_handshake(saved_ticket, 1, 0);
-    ok(lc_callcnt == 1);
+    ok(sc_callcnt == 1);
 
     /* psk-dhe using saved ticket */
     ctx->require_dhe_on_psk = 1;
     test_handshake(saved_ticket, 1, 0);
-    ok(lc_callcnt == 1);
+    ok(sc_callcnt == 1);
     ctx->require_dhe_on_psk = 0;
 
     /* 0-rtt psk using saved ticket */
@@ -325,14 +322,14 @@ void test_picotls(void)
     subtest("hkdf", test_hkdf);
     subtest("aead-aes128gcm", test_aes128gcm);
 
-    ptls_lookup_certificate_t lc = {lookup_certificate};
-    lc_orig = ctx_peer->lookup_certificate;
-    ctx_peer->lookup_certificate = &lc;
+    ptls_sign_certificate_t sc = {sign_certificate};
+    sc_orig = ctx_peer->sign_certificate;
+    ctx_peer->sign_certificate = &sc;
 
     subtest("full-handshake", test_full_handshake);
     subtest("resumption", test_resumption);
 
-    ctx_peer->lookup_certificate = lc_orig;
+    ctx_peer->sign_certificate = sc_orig;
 }
 
 void test_key_exchange(ptls_key_exchange_algorithm_t *algo)

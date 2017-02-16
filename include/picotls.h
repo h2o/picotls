@@ -237,13 +237,16 @@ typedef const struct st_ptls_cipher_suite_t {
     } ptls_##name##_t
 
 /**
- * after receiving ClientHello, the core calls the callback to obtain the certificate chain to be sent to the client as well as
- * a pointer to a function that should be called for signing the handshake using the private key associated to the certificate
+ * after receiving ClientHello, the core calls the optional callback to give a chance to the swap the context depending on the input
+ * values.
  */
-PTLS_CALLBACK_TYPE(int, lookup_certificate, ptls_t *tls, uint16_t *sign_algorithm,
-                   int (**signer)(void *sign_ctx, ptls_buffer_t *outbuf, ptls_iovec_t input), void **signer_data,
-                   ptls_iovec_t **certs, size_t *num_certs, const char *server_name, const uint16_t *signature_algorithms,
+PTLS_CALLBACK_TYPE(int, on_client_hello, ptls_t *tls, const char *server_name, const uint16_t *signature_algorithms,
                    size_t num_signature_algorithms);
+/**
+ * when gerenating CertificateVerify, the core calls the callback to sign the handshake context using the certificate.
+ */
+PTLS_CALLBACK_TYPE(int, sign_certificate, ptls_t *tls, uint16_t *selected_algorithm, ptls_buffer_t *output, ptls_iovec_t input,
+                   const uint16_t *algorithms, size_t num_algorithms);
 /**
  * after receiving Certificate, the core calls the callback to verify the certificate chain and to obtain a pointer to a
  * callback that should be used for verifying CertificateVerify. If an error occurs between a successful return from this
@@ -280,9 +283,20 @@ typedef struct st_ptls_context_t {
      */
     ptls_cipher_suite_t **cipher_suites;
     /**
+     * list of certificates
+     */
+    struct {
+        ptls_iovec_t *vec;
+        size_t count;
+    } certificates;
+    /**
      *
      */
-    ptls_lookup_certificate_t *lookup_certificate;
+    ptls_on_client_hello_t *on_client_hello;
+    /**
+     *
+     */
+    ptls_sign_certificate_t *sign_certificate;
     /**
      *
      */
@@ -451,6 +465,10 @@ void ptls_free(ptls_t *tls);
  * returns address of the crypto callbacks that the connection is using
  */
 ptls_context_t *ptls_get_context(ptls_t *tls);
+/**
+ * updates the context of a connection. Can be called from `on_client_hello` callback.
+ */
+void ptls_set_context(ptls_t *tls, ptls_context_t *ctx);
 /**
  * returns the client-random
  */
