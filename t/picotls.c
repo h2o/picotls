@@ -121,7 +121,7 @@ static void test_aes128gcm(void)
 static void test_handshake(ptls_iovec_t ticket, int use_resumption, int use_early_data)
 {
     ptls_t *client, *server;
-    ptls_handshake_properties_t client_hs_prop = {{ticket}};
+    ptls_handshake_properties_t client_hs_prop = {{{NULL}, ticket}};
     uint8_t cbuf_small[16384], sbuf_small[16384], decbuf_small[16384];
     ptls_buffer_t cbuf, sbuf, decbuf;
     size_t consumed, max_early_data_size = 0;

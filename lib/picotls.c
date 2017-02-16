@@ -58,6 +58,7 @@
 #define PTLS_EXTENSION_TYPE_SERVER_NAME 0
 #define PTLS_EXTENSION_TYPE_SUPPORTED_GROUPS 10
 #define PTLS_EXTENSION_TYPE_SIGNATURE_ALGORITHMS 13
+#define PTLS_EXTENSION_TYPE_ALPN 16
 #define PTLS_EXTENSION_TYPE_KEY_SHARE 40
 #define PTLS_EXTENSION_TYPE_PRE_SHARED_KEY 41
 #define PTLS_EXTENSION_TYPE_EARLY_DATA 42
@@ -137,6 +138,10 @@ struct st_ptls_t {
      */
     char *server_name;
     /**
+     * result of ALPN
+     */
+    char *negotiated_protocol;
+    /**
      * selected cipher-suite
      */
     ptls_cipher_suite_t *cipher_suite;
@@ -203,6 +208,10 @@ struct st_ptls_client_hello_t {
         size_t count;
     } signature_algorithms;
     ptls_iovec_t server_name;
+    struct {
+        ptls_iovec_t list[16];
+        size_t count;
+    } alpn;
     ptls_iovec_t cookie;
     struct {
         const uint8_t *hash_end;
@@ -964,6 +973,19 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_handshake
                     });
                 });
             }
+            if (properties->client.negotiated_protocols.count != 0) {
+                buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_ALPN, {
+                    ptls_buffer_push_block(sendbuf, 2, {
+                        size_t i;
+                        for (i = 0; i != properties->client.negotiated_protocols.count; ++i) {
+                            ptls_buffer_push_block(sendbuf, 1, {
+                                ptls_iovec_t p = properties->client.negotiated_protocols.list[i];
+                                ptls_buffer_pushv(sendbuf, p.base, p.len);
+                            });
+                        }
+                    });
+                });
+            }
             buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SUPPORTED_VERSIONS, {
                 ptls_buffer_push_block(sendbuf, 1, { ptls_buffer_push16(sendbuf, PTLS_PROTOCOL_VERSION_DRAFT18); });
             });
@@ -1213,6 +1235,19 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
                 ret = PTLS_ALERT_ILLEGAL_PARAMETER;
                 goto Exit;
             }
+            break;
+        case PTLS_EXTENSION_TYPE_ALPN:
+            decode_block(src, end, 2, {
+                decode_open_block(src, end, 1, {
+                    if ((ret = ptls_set_negotiated_protocol(tls, (const char *)src, end - src)) != 0)
+                        goto Exit;
+                    src = end;
+                });
+                if (src != end) {
+                    ret = PTLS_ALERT_HANDSHAKE_FAILURE;
+                    goto Exit;
+                }
+            });
             break;
         case PTLS_EXTENSION_TYPE_EARLY_DATA:
             if (!tls->client.send_early_data) {
@@ -1564,6 +1599,17 @@ static int decode_client_hello(struct st_ptls_client_hello_t *ch, const uint8_t 
             if ((ret = client_hello_decode_server_name(&ch->server_name, src, end)) != 0)
                 goto Exit;
             break;
+        case PTLS_EXTENSION_TYPE_ALPN:
+            decode_block(src, end, 2, {
+                do {
+                    decode_open_block(src, end, 1, {
+                        if (ch->alpn.count < sizeof(ch->alpn.list) / sizeof(ch->alpn.list[0]))
+                            ch->alpn.list[ch->alpn.count++] = ptls_iovec_init(src, end - src);
+                        src = end;
+                    });
+                } while (src != end);
+            });
+            break;
         case PTLS_EXTENSION_TYPE_SUPPORTED_GROUPS:
             ch->negotiated_groups = ptls_iovec_init(src, end - src);
             break;
@@ -1792,8 +1838,8 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
             tls->server_name[ch.server_name.len] = '\0';
         }
         if (tls->ctx->on_client_hello != NULL &&
-            (ret = tls->ctx->on_client_hello->cb(tls->ctx->on_client_hello, tls, ch.server_name, ch.signature_algorithms.list,
-                                                 ch.signature_algorithms.count)) != 0)
+            (ret = tls->ctx->on_client_hello->cb(tls->ctx->on_client_hello, tls, ch.server_name, ch.alpn.list, ch.alpn.count,
+                                                 ch.signature_algorithms.list, ch.signature_algorithms.count)) != 0)
             goto Exit;
     } else {
         if (ch.psk.early_data_indication) {
@@ -1950,6 +1996,15 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
                     /* In this event, the server SHALL include an extension of type "server_name" in the (extended) server hello.
                      * The "extension_data" field of this extension SHALL be empty. (RFC 6066 section 3) */
                     buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SERVER_NAME, {});
+                }
+                if (tls->negotiated_protocol != NULL) {
+                    buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_ALPN, {
+                        ptls_buffer_push_block(sendbuf, 2, {
+                            ptls_buffer_push_block(sendbuf, 1, {
+                                ptls_buffer_pushv(sendbuf, tls->negotiated_protocol, strlen(tls->negotiated_protocol));
+                            });
+                        });
+                    });
                 }
                 if (tls->server.early_data != NULL && tls->traffic_protection.dec.aead != NULL)
                     buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_EARLY_DATA, {});
@@ -2138,6 +2193,7 @@ void ptls_free(ptls_t *tls)
     if (tls->traffic_protection.enc.aead != NULL)
         ptls_aead_free(tls->traffic_protection.enc.aead);
     free(tls->server_name);
+    free(tls->negotiated_protocol);
     if (tls->client.key_exchange.ctx != NULL)
         tls->client.key_exchange.ctx->on_exchange(&tls->client.key_exchange.ctx, NULL, ptls_iovec_init(NULL, 0));
     if (tls->client.certificate_verify.cb != NULL)
@@ -2186,6 +2242,30 @@ int ptls_set_server_name(ptls_t *tls, const char *server_name, size_t server_nam
 
     free(tls->server_name);
     tls->server_name = duped;
+
+    return 0;
+}
+
+const char *ptls_get_negotiated_protocol(ptls_t *tls)
+{
+    return tls->negotiated_protocol;
+}
+
+int ptls_set_negotiated_protocol(ptls_t *tls, const char *protocol, size_t protocol_len)
+{
+    char *duped = NULL;
+
+    if (protocol != NULL) {
+        if (protocol_len == 0)
+            protocol_len = strlen(protocol);
+        if ((duped = malloc(protocol_len + 1)) == NULL)
+            return PTLS_ERROR_NO_MEMORY;
+        memcpy(duped, protocol, protocol_len);
+        duped[protocol_len] = '\0';
+    }
+
+    free(tls->negotiated_protocol);
+    tls->negotiated_protocol = duped;
 
     return 0;
 }
