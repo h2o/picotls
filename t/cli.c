@@ -452,7 +452,7 @@ int main(int argc, char **argv)
                 return 1;
             }
             while ((cert = PEM_read_X509(fp, NULL, NULL, NULL)) != NULL) {
-                ptls_iovec_t *dst = ctx.certificates.vec + ctx.certificates.count++;
+                ptls_iovec_t *dst = ctx.certificates.list + ctx.certificates.count++;
                 dst->len = i2d_X509(cert, &dst->base);
             }
             fclose(fp);

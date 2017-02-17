@@ -642,6 +642,60 @@ void ptls_openssl_dispose_sign_certificate(ptls_openssl_sign_certificate_t *self
     EVP_PKEY_free(self->key);
 }
 
+static int serialize_cert(X509 *cert, ptls_iovec_t *dst)
+{
+    int len = i2d_X509(cert, NULL);
+    assert(len > 0);
+
+    if ((dst->base = malloc(len)) == NULL)
+        return PTLS_ERROR_NO_MEMORY;
+    unsigned char *p = dst->base;
+    dst->len = i2d_X509(cert, &p);
+    assert(len == dst->len);
+
+    return 0;
+}
+
+int ptls_openssl_load_certificates(ptls_context_t *ctx, X509 *cert, STACK_OF(X509) *chain)
+{
+    ptls_iovec_t *list = NULL;
+    size_t slot = 0, count = (cert != NULL) + (chain != NULL ? sk_X509_num(chain) : 0);
+    int ret;
+
+    assert(ctx->certificates.list == NULL);
+
+    if ((list = malloc(sizeof(*list) * count)) == NULL) {
+        ret = PTLS_ERROR_NO_MEMORY;
+        goto Exit;
+    }
+    if (cert != NULL) {
+        if ((ret = serialize_cert(cert, list + slot++)) != 0)
+            goto Exit;
+    }
+    if (chain != NULL) {
+        int i;
+        for (i = 0; i != sk_X509_num(chain); ++i) {
+            if ((ret = serialize_cert(sk_X509_value(chain, i), list + slot++)) != 0)
+                goto Exit;
+        }
+    }
+
+    assert(slot == count);
+
+    ctx->certificates.list = list;
+    ctx->certificates.count = count;
+    ret = 0;
+
+Exit:
+    if (ret != 0 && list != NULL) {
+        size_t i;
+        for (i = 0; i != slot; ++i)
+            free(list[i].base);
+        free(list);
+    }
+    return ret;
+}
+
 static int verify_certificate(ptls_verify_certificate_t *_self, ptls_t *tls, int (**verifier)(void *, ptls_iovec_t, ptls_iovec_t),
                               void **verify_data, ptls_iovec_t *certs, size_t num_certs)
 {

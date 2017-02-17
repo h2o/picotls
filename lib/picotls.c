@@ -2021,7 +2021,7 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
                     size_t i;
                     for (i = 0; i != tls->ctx->certificates.count; ++i) {
                         ptls_buffer_push_block(sendbuf, 3, {
-                            ptls_buffer_pushv(sendbuf, tls->ctx->certificates.vec[i].base, tls->ctx->certificates.vec[i].len);
+                            ptls_buffer_pushv(sendbuf, tls->ctx->certificates.list[i].base, tls->ctx->certificates.list[i].len);
                         });
                         ptls_buffer_push_block(sendbuf, 2, {}); /* extensions */
                     }

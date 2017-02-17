@@ -289,7 +289,7 @@ typedef struct st_ptls_context_t {
      * list of certificates
      */
     struct {
-        ptls_iovec_t *vec;
+        ptls_iovec_t *list;
         size_t count;
     } certificates;
     /**
