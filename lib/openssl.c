@@ -365,7 +365,6 @@ Exit:
 struct aead_crypto_context_t {
     ptls_aead_context_t super;
     EVP_CIPHER_CTX *evp_ctx;
-    size_t tag_size;
 };
 
 static void aead_dispose_crypto(ptls_aead_context_t *_ctx)
@@ -381,6 +380,7 @@ static int aead_do_encrypt(ptls_aead_context_t *_ctx, void *_output, size_t *out
 {
     struct aead_crypto_context_t *ctx = (struct aead_crypto_context_t *)_ctx;
     uint8_t *output = _output;
+    size_t tag_size = ctx->super.algo->tag_size;
     int blocklen;
 
     *outlen = 0;
@@ -397,9 +397,9 @@ static int aead_do_encrypt(ptls_aead_context_t *_ctx, void *_output, size_t *out
     if (!EVP_EncryptFinal_ex(ctx->evp_ctx, output + *outlen, &blocklen))
         return PTLS_ERROR_LIBRARY;
     *outlen += blocklen;
-    if (!EVP_CIPHER_CTX_ctrl(ctx->evp_ctx, EVP_CTRL_GCM_GET_TAG, (int)ctx->tag_size, output + *outlen))
+    if (!EVP_CIPHER_CTX_ctrl(ctx->evp_ctx, EVP_CTRL_GCM_GET_TAG, (int)tag_size, output + *outlen))
         return PTLS_ERROR_LIBRARY;
-    *outlen += ctx->tag_size;
+    *outlen += tag_size;
 
     return 0;
 }
@@ -409,20 +409,20 @@ static int aead_do_decrypt(ptls_aead_context_t *_ctx, void *_output, size_t *out
 {
     struct aead_crypto_context_t *ctx = (struct aead_crypto_context_t *)_ctx;
     uint8_t *output = _output;
+    size_t tag_size = ctx->super.algo->tag_size;
     int blocklen;
 
     *outlen = 0;
 
-    if (inlen < ctx->tag_size)
+    if (inlen < tag_size)
         return PTLS_ALERT_BAD_RECORD_MAC;
 
     if (!EVP_DecryptInit_ex(ctx->evp_ctx, NULL, NULL, NULL, iv))
         return PTLS_ERROR_LIBRARY;
-    if (!EVP_DecryptUpdate(ctx->evp_ctx, output, &blocklen, input, (int)(inlen - ctx->tag_size)))
+    if (!EVP_DecryptUpdate(ctx->evp_ctx, output, &blocklen, input, (int)(inlen - tag_size)))
         return PTLS_ERROR_LIBRARY;
     *outlen += blocklen;
-    if (!EVP_CIPHER_CTX_ctrl(ctx->evp_ctx, EVP_CTRL_GCM_SET_TAG, (int)ctx->tag_size,
-                             (void *)((uint8_t *)input + inlen - ctx->tag_size)))
+    if (!EVP_CIPHER_CTX_ctrl(ctx->evp_ctx, EVP_CTRL_GCM_SET_TAG, (int)tag_size, (void *)((uint8_t *)input + inlen - tag_size)))
         return PTLS_ERROR_LIBRARY;
     if (!EVP_DecryptFinal_ex(ctx->evp_ctx, output + *outlen, &blocklen))
         return PTLS_ALERT_BAD_RECORD_MAC;
@@ -431,7 +431,7 @@ static int aead_do_decrypt(ptls_aead_context_t *_ctx, void *_output, size_t *out
     return 0;
 }
 
-static int aead_setup_crypto(ptls_aead_context_t *_ctx, int is_enc, const void *key, const EVP_CIPHER *cipher, size_t tag_size)
+static int aead_setup_crypto(ptls_aead_context_t *_ctx, int is_enc, const void *key, const EVP_CIPHER *cipher)
 {
     struct aead_crypto_context_t *ctx = (struct aead_crypto_context_t *)_ctx;
     int ret;
@@ -439,7 +439,6 @@ static int aead_setup_crypto(ptls_aead_context_t *_ctx, int is_enc, const void *
     ctx->super.dispose_crypto = aead_dispose_crypto;
     ctx->super.do_transform = is_enc ? aead_do_encrypt : aead_do_decrypt;
     ctx->evp_ctx = NULL;
-    ctx->tag_size = tag_size;
 
     if ((ctx->evp_ctx = EVP_CIPHER_CTX_new()) == NULL) {
         ret = PTLS_ERROR_NO_MEMORY;
@@ -470,7 +469,7 @@ Error:
 
 static int aead_aes128gcm_setup_crypto(ptls_aead_context_t *ctx, int is_enc, const void *key)
 {
-    return aead_setup_crypto(ctx, is_enc, key, EVP_aes_128_gcm(), 16);
+    return aead_setup_crypto(ctx, is_enc, key, EVP_aes_128_gcm());
 }
 
 struct sha256_context_t {
@@ -746,7 +745,7 @@ void ptls_openssl_dispose_verify_certificate(ptls_openssl_verify_certificate_t *
 ptls_key_exchange_algorithm_t ptls_openssl_secp256r1 = {PTLS_GROUP_SECP256R1, secp256r1_create_key_exchange,
                                                         secp256r1_key_exchange};
 ptls_key_exchange_algorithm_t *ptls_openssl_key_exchanges[] = {&ptls_openssl_secp256r1, NULL};
-ptls_aead_algorithm_t ptls_openssl_aes128gcm = {16, 12, sizeof(struct aead_crypto_context_t), aead_aes128gcm_setup_crypto};
+ptls_aead_algorithm_t ptls_openssl_aes128gcm = {16, 12, 16, sizeof(struct aead_crypto_context_t), aead_aes128gcm_setup_crypto};
 ptls_hash_algorithm_t ptls_openssl_sha256 = {64, 32, sha256_create};
 ptls_cipher_suite_t ptls_openssl_aes128gcmsha256 = {PTLS_CIPHER_SUITE_AES_128_GCM_SHA256, &ptls_openssl_aes128gcm,
                                                     &ptls_openssl_sha256};

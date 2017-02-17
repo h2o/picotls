@@ -28,7 +28,6 @@
 #define PTLS_MAX_SECRET_SIZE 32
 #define PTLS_MAX_IV_SIZE 16
 #define PTLS_MAX_DIGEST_SIZE 64
-#define PTLS_MAX_RECORD_OVERHEAD (5 + 16 + 1) /* maximum per-record overhead (header + tag + type) */
 
 /* cipher-suites */
 #define PTLS_CIPHER_SUITE_AES_128_GCM_SHA256 0x1301
@@ -160,6 +159,10 @@ typedef const struct st_ptls_aead_algorithm_t {
      * size of the IV
      */
     size_t iv_size;
+    /**
+     * size of the tag
+     */
+    size_t tag_size;
     /**
      * size of memory allocated for ptls_aead_context_t. AEAD implementations can set this value to something greater than
      * sizeof(ptls_aead_context_t) and stuff additional data at the bottom of the struct.
@@ -519,6 +522,10 @@ int ptls_receive(ptls_t *tls, ptls_buffer_t *plaintextbuf, const void *input, si
  * encrypts given buffer into multiple TLS records
  */
 int ptls_send(ptls_t *tls, ptls_buffer_t *sendbuf, const void *input, size_t inlen);
+/**
+ * returns per-record overhead
+ */
+size_t ptls_get_record_overhead(ptls_t *tls);
 /**
  * sends an alert
  */
