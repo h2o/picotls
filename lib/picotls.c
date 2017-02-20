@@ -56,6 +56,7 @@
 #define PTLS_HANDSHAKE_HEADER_SIZE 4
 
 #define PTLS_EXTENSION_TYPE_SERVER_NAME 0
+#define PTLS_EXTENSION_TYPE_STATUS_REQUEST 5
 #define PTLS_EXTENSION_TYPE_SUPPORTED_GROUPS 10
 #define PTLS_EXTENSION_TYPE_SIGNATURE_ALGORITHMS 13
 #define PTLS_EXTENSION_TYPE_ALPN 16
@@ -222,6 +223,7 @@ struct st_ptls_client_hello_t {
         unsigned ke_modes;
         int early_data_indication;
     } psk;
+    unsigned status_request : 1;
 };
 
 struct st_ptls_server_hello_t {
@@ -1704,6 +1706,9 @@ static int decode_client_hello(struct st_ptls_client_hello_t *ch, const uint8_t 
         case PTLS_EXTENSION_TYPE_EARLY_DATA:
             ch->psk.early_data_indication = 1;
             break;
+        case PTLS_EXTENSION_TYPE_STATUS_REQUEST:
+            ch->status_request = 1;
+            break;
         default:
             break;
         }
@@ -2035,7 +2040,21 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
                         ptls_buffer_push_block(sendbuf, 3, {
                             ptls_buffer_pushv(sendbuf, tls->ctx->certificates.list[i].base, tls->ctx->certificates.list[i].len);
                         });
-                        ptls_buffer_push_block(sendbuf, 2, {}); /* extensions */
+                        ptls_buffer_push_block(sendbuf, 2, {
+                            /* emit OCSP stapling only when requested and when the callback successfully returns one */
+                            if (ch.status_request && i == 0 && tls->ctx->staple_ocsp != NULL) {
+                                size_t reset_off_to = sendbuf->off;
+                                buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_STATUS_REQUEST, {
+                                    ptls_buffer_push(sendbuf, 1); /* status_type == ocsp */
+                                    ptls_buffer_push_block(sendbuf, 3, {
+                                        if ((ret = tls->ctx->staple_ocsp->cb(tls->ctx->staple_ocsp, tls, sendbuf, i)) == 0)
+                                            reset_off_to = 0;
+                                    });
+                                });
+                                if (reset_off_to != 0)
+                                    sendbuf->off = reset_off_to;
+                            }
+                        });
                     }
                 });
             });

@@ -71,7 +71,7 @@ int main(int argc, char **argv)
                                                           ptls_iovec_init(SECP256R1_PRIVATE_KEY, SECP256R1_PRIVATE_KEY_SIZE));
 
     ptls_context_t ctxbuf = {
-        ptls_minicrypto_random_bytes, ptls_minicrypto_key_exchanges, ptls_minicrypto_cipher_suites, {&cert, 1}, NULL,
+        ptls_minicrypto_random_bytes, ptls_minicrypto_key_exchanges, ptls_minicrypto_cipher_suites, {&cert, 1}, NULL, NULL,
         &sign_certificate.super};
     ctx = ctx_peer = &ctxbuf;
 

@@ -147,7 +147,10 @@ int main(int argc, char **argv)
                                   ptls_openssl_key_exchanges,
                                   ptls_openssl_cipher_suites,
                                   {&cert, 1},
-                                  NULL, &openssl_sign_certificate.super, &openssl_verify_certificate.super};
+                                  NULL,
+                                  NULL,
+                                  &openssl_sign_certificate.super,
+                                  &openssl_verify_certificate.super};
     ctx = ctx_peer = &openssl_ctx;
 
     subtest("ecdh-key-exchange", test_ecdh_key_exchange);
@@ -162,6 +165,7 @@ int main(int argc, char **argv)
                                      ptls_minicrypto_key_exchanges,
                                      ptls_minicrypto_cipher_suites,
                                      {&minicrypto_certificate, 1},
+                                     NULL,
                                      NULL,
                                      &minicrypto_sign_certificate.super};
     ctx_peer = &minicrypto_ctx;

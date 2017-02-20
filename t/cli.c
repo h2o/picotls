@@ -427,6 +427,7 @@ int main(int argc, char **argv)
                           ptls_openssl_cipher_suites,
                           {_certs, 0},
                           NULL,
+                          NULL,
                           &sign_certificate.super,
                           NULL,
                           86400,

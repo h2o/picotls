@@ -251,6 +251,10 @@ typedef const struct st_ptls_cipher_suite_t {
 PTLS_CALLBACK_TYPE(int, on_client_hello, ptls_t *tls, ptls_iovec_t server_name, const ptls_iovec_t *negotiated_protocols,
                    size_t num_negotiated_protocols, const uint16_t *signature_algorithms, size_t num_signature_algorithms);
 /**
+ * when generating Certificate, the core calls the callback to obtain the OCSP response for stapling.
+ */
+PTLS_CALLBACK_TYPE(int, staple_ocsp, ptls_t *tls, ptls_buffer_t *output, size_t cert_index);
+/**
  * when gerenating CertificateVerify, the core calls the callback to sign the handshake context using the certificate.
  */
 PTLS_CALLBACK_TYPE(int, sign_certificate, ptls_t *tls, uint16_t *selected_algorithm, ptls_buffer_t *output, ptls_iovec_t input,
@@ -301,6 +305,10 @@ typedef struct st_ptls_context_t {
      *
      */
     ptls_on_client_hello_t *on_client_hello;
+    /**
+     *
+     */
+    ptls_staple_ocsp_t *staple_ocsp;
     /**
      *
      */
