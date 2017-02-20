@@ -515,6 +515,10 @@ int ptls_set_negotiated_protocol(ptls_t *tls, const char *protocol, size_t proto
  */
 int ptls_is_early_data(ptls_t *tls);
 /**
+ * returns if a PSK (or PSK-DHE) handshake was performed
+ */
+int ptls_is_psk_handshake(ptls_t *tls);
+/**
  * proceeds with the handshake, optionally taking some input from peer. The function returns zero in case the handshake completed
  * successfully. PTLS_ERROR_HANDSHAKE_IN_PROGRESS is returned in case the handshake is incomplete. Otherwise, an error value is
  * returned. The contents of sendbuf should be sent to the client, regardless of whether if an error is returned. inlen is an

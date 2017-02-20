@@ -164,7 +164,6 @@ struct st_ptls_t {
             } certificate_verify;
             unsigned offered_psk : 1;
             unsigned send_early_data : 1;
-            unsigned is_psk : 1;
         } client;
         struct {
             /**
@@ -177,6 +176,7 @@ struct st_ptls_t {
              */
             struct st_ptls_early_data_receiver_t *early_data;
         } server;
+        unsigned is_psk_handshake : 1;
     };
 };
 
@@ -1179,9 +1179,9 @@ static int decode_server_hello(ptls_t *tls, struct st_ptls_server_hello_t *sh, c
             ret = PTLS_ALERT_ILLEGAL_PARAMETER;
             goto Exit;
         }
-        tls->client.is_psk = 1;
+        tls->is_psk_handshake = 1;
     }
-    if (sh->peerkey.base == NULL && !tls->client.is_psk) {
+    if (sh->peerkey.base == NULL && !tls->is_psk_handshake) {
         ret = PTLS_ALERT_ILLEGAL_PARAMETER;
         goto Exit;
     }
@@ -1205,7 +1205,7 @@ static int client_handle_hello(ptls_t *tls, ptls_iovec_t message)
             goto Exit;
     }
 
-    if (tls->client.offered_psk && !tls->client.is_psk)
+    if (tls->client.offered_psk && !tls->is_psk_handshake)
         key_schedule_reset_psk(tls->key_schedule);
     key_schedule_update_hash(tls->key_schedule, message.base, message.len);
 
@@ -1275,7 +1275,7 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
     });
 
     key_schedule_update_hash(tls->key_schedule, message.base, message.len);
-    tls->state = tls->client.is_psk ? PTLS_STATE_CLIENT_EXPECT_FINISHED : PTLS_STATE_CLIENT_EXPECT_CERTIFICATE;
+    tls->state = tls->is_psk_handshake ? PTLS_STATE_CLIENT_EXPECT_FINISHED : PTLS_STATE_CLIENT_EXPECT_CERTIFICATE;
     ret = PTLS_ERROR_HANDSHAKE_IN_PROGRESS;
 
 Exit:
@@ -1942,6 +1942,7 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
             assert((ch.psk.ke_modes & (1u << PTLS_PSK_KE_MODE_PSK_DHE)) != 0);
             mode = HANDSHAKE_MODE_PSK_DHE;
         }
+        tls->is_psk_handshake = 1;
     }
 
     if (ch.psk.early_data_indication && tls->ctx->max_early_data_size != 0 && psk_index == 0) {
@@ -2289,6 +2290,11 @@ int ptls_set_negotiated_protocol(ptls_t *tls, const char *protocol, size_t proto
 int ptls_is_early_data(ptls_t *tls)
 {
     return tls->server.early_data != NULL;
+}
+
+int ptls_is_psk_handshake(ptls_t *tls)
+{
+    return tls->is_psk_handshake;
 }
 
 static int handle_handshake_message(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t message,
