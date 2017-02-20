@@ -153,6 +153,10 @@ typedef struct st_ptls_aead_context_t {
  */
 typedef const struct st_ptls_aead_algorithm_t {
     /**
+     * name (following the convention of `openssl ciphers -v ALL`)
+     */
+    const char *name;
+    /**
      * key size
      */
     size_t key_size;
@@ -484,6 +488,10 @@ void ptls_set_context(ptls_t *tls, ptls_context_t *ctx);
  * returns the client-random
  */
 ptls_iovec_t ptls_get_client_random(ptls_t *tls);
+/**
+ * returns the cipher-suite being used
+ */
+ptls_cipher_suite_t *ptls_get_cipher(ptls_t *tls);
 /**
  * returns the server-name (NULL if SNI is not used or failed to negotiate)
  */

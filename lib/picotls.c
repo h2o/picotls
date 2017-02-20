@@ -2233,6 +2233,11 @@ ptls_iovec_t ptls_get_client_random(ptls_t *tls)
     return ptls_iovec_init(tls->client_random, PTLS_HELLO_RANDOM_SIZE);
 }
 
+ptls_cipher_suite_t *ptls_get_cipher(ptls_t *tls)
+{
+    return tls->cipher_suite;
+}
+
 const char *ptls_get_server_name(ptls_t *tls)
 {
     return tls->server_name;
