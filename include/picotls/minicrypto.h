@@ -34,7 +34,8 @@ typedef struct st_ptls_minicrypto_secp256r1sha256_sign_certificate_t {
 } ptls_minicrypto_secp256r1sha256_sign_certificate_t;
 
 void ptls_minicrypto_random_bytes(void *buf, size_t len);
-int ptls_minicrypto_init_secp256r1sha256_sign_certificate(ptls_minicrypto_secp256r1sha256_sign_certificate_t *self, ptls_iovec_t key);
+int ptls_minicrypto_init_secp256r1sha256_sign_certificate(ptls_minicrypto_secp256r1sha256_sign_certificate_t *self,
+                                                          ptls_iovec_t key);
 
 extern ptls_key_exchange_algorithm_t ptls_minicrypto_secp256r1, ptls_minicrypto_x25519;
 extern ptls_key_exchange_algorithm_t *ptls_minicrypto_key_exchanges[];

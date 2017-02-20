@@ -916,8 +916,8 @@ Exit:
 ptls_key_exchange_algorithm_t ptls_openssl_secp256r1 = {PTLS_GROUP_SECP256R1, secp256r1_create_key_exchange,
                                                         secp256r1_key_exchange};
 ptls_key_exchange_algorithm_t *ptls_openssl_key_exchanges[] = {&ptls_openssl_secp256r1, NULL};
-ptls_aead_algorithm_t ptls_openssl_aes128gcm = {"AES128-GCM", 16, 12, 16, sizeof(struct aead_crypto_context_t),
-                                                aead_aes128gcm_setup_crypto};
+ptls_aead_algorithm_t ptls_openssl_aes128gcm = {
+    "AES128-GCM", 16, 12, 16, sizeof(struct aead_crypto_context_t), aead_aes128gcm_setup_crypto};
 ptls_hash_algorithm_t ptls_openssl_sha256 = {64, 32, sha256_create};
 ptls_cipher_suite_t ptls_openssl_aes128gcmsha256 = {PTLS_CIPHER_SUITE_AES_128_GCM_SHA256, &ptls_openssl_aes128gcm,
                                                     &ptls_openssl_sha256};
