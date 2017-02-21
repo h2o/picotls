@@ -281,6 +281,10 @@ PTLS_CALLBACK_TYPE(int, save_ticket, ptls_t *tls, ptls_iovec_t input);
  * secret logginng
  */
 PTLS_CALLBACK_TYPE(void, log_secret, ptls_t *tls, const char *label, ptls_iovec_t secret);
+/**
+ * reference counting
+ */
+PTLS_CALLBACK_TYPE(void, update_open_count, ssize_t delta);
 
 /**
  * the configuration
@@ -349,6 +353,10 @@ typedef struct st_ptls_context_t {
      *
      */
     ptls_log_secret_t *log_secret;
+    /**
+     *
+     */
+    ptls_update_open_count_t *update_open_count;
 } ptls_context_t;
 
 /**

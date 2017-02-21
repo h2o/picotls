@@ -2196,6 +2196,12 @@ static int parse_record(ptls_t *tls, struct st_ptls_record_t *rec, const uint8_t
     return ret;
 }
 
+static void update_open_count(ptls_context_t *ctx, ssize_t delta)
+{
+    if (ctx->update_open_count != NULL)
+        ctx->update_open_count->cb(ctx->update_open_count, delta);
+}
+
 ptls_t *ptls_new(ptls_context_t *ctx, int is_server)
 {
     ptls_t *tls;
@@ -2203,6 +2209,7 @@ ptls_t *ptls_new(ptls_context_t *ctx, int is_server)
     if ((tls = malloc(sizeof(*tls))) == NULL)
         return NULL;
 
+    update_open_count(ctx, 1);
     *tls = (ptls_t){ctx};
     if (!is_server) {
         tls->state = PTLS_STATE_CLIENT_HANDSHAKE_START;
@@ -2235,6 +2242,7 @@ void ptls_free(ptls_t *tls)
         ptls_clear_memory(tls->server.early_data, sizeof(*tls->server.early_data));
         free(tls->server.early_data);
     }
+    update_open_count(tls->ctx, -1);
     ptls_clear_memory(tls, sizeof(*tls));
     free(tls);
 }
@@ -2246,6 +2254,8 @@ ptls_context_t *ptls_get_context(ptls_t *tls)
 
 void ptls_set_context(ptls_t *tls, ptls_context_t *ctx)
 {
+    update_open_count(ctx, 1);
+    update_open_count(tls->ctx, -1);
     tls->ctx = ctx;
 }
 
