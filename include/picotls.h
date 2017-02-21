@@ -277,6 +277,10 @@ PTLS_CALLBACK_TYPE(int, encrypt_ticket, ptls_t *tls, ptls_buffer_t *dst, ptls_io
  * saves a ticket (client-only)
  */
 PTLS_CALLBACK_TYPE(int, save_ticket, ptls_t *tls, ptls_iovec_t input);
+/**
+ * secret logginng
+ */
+PTLS_CALLBACK_TYPE(void, log_secret, ptls_t *tls, const char *label, ptls_iovec_t secret);
 
 /**
  * the configuration
@@ -344,7 +348,7 @@ typedef struct st_ptls_context_t {
     /**
      *
      */
-    void (*log_secret)(ptls_t *tls, const char *label, ptls_iovec_t secret);
+    ptls_log_secret_t *log_secret;
 } ptls_context_t;
 
 /**

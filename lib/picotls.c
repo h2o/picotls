@@ -710,7 +710,8 @@ static int setup_traffic_protection(ptls_t *tls, ptls_cipher_suite_t *cs, int is
         return PTLS_ERROR_NO_MEMORY; /* TODO obtain error from ptls_aead_new */
 
     if (tls->ctx->log_secret != NULL)
-        tls->ctx->log_secret(tls, log_label, ptls_iovec_init(ctx->secret, tls->key_schedule->algo->digest_size));
+        tls->ctx->log_secret->cb(tls->ctx->log_secret, tls, log_label,
+                                 ptls_iovec_init(ctx->secret, tls->key_schedule->algo->digest_size));
     PTLS_DEBUGF("[%s] %02x%02x,%02x%02x\n", secret_label, (unsigned)ctx->secret[0], (unsigned)ctx->secret[1],
                 (unsigned)ctx->aead->static_iv[0], (unsigned)ctx->aead->static_iv[1]);
 
