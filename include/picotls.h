@@ -24,7 +24,7 @@
 
 #include <assert.h>
 #include <inttypes.h>
-#inculde <sys/types.h>
+#include <sys/types.h>
 
 #define PTLS_MAX_SECRET_SIZE 32
 #define PTLS_MAX_IV_SIZE 16
