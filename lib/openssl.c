@@ -49,16 +49,77 @@ void ptls_openssl_random_bytes(void *buf, size_t len)
     RAND_bytes(buf, (int)len);
 }
 
-static int eckey_is_on_group(EVP_PKEY *pkey, int nid)
+static int eckey_is_on_group(EVP_PKEY *pkey, int nid, int *result)
 {
-    EC_KEY *eckey = EVP_PKEY_get1_EC_KEY(pkey);
-    int ret = 0;
+    /* If the private key file contained EC parameters, then the public key being loaded will not necessarily be associated to a
+     * named curve. In such case, simply calling EC_POINT_is_on_curve may return false even if the private key was on curve due to
+     * the fact that the mismatch of the method that is associated to the point (behavior confirmed on OpenSSL 1.0.2). To take care
+     * of this, we convert the provided point into a hex and reload it (using the provided group) before calling
+     * EC_POINT_is_on_curve.
+     */
+    BN_CTX *bn_ctx = NULL;
+    EC_KEY *eckey = NULL;
+    char *keystr = NULL;
+    EC_GROUP *test_group = NULL;
+    EC_POINT *test_point = NULL;
+    int ret;
 
-    if (eckey != NULL) {
-        ret = EC_GROUP_get_curve_name(EC_KEY_get0_group(eckey)) == nid;
-        EC_KEY_free(eckey);
+    if ((bn_ctx = BN_CTX_new()) == NULL) {
+        ret = PTLS_ERROR_NO_MEMORY;
+        goto Exit;
     }
 
+    /* convert pkey into hexstr */
+    if ((eckey = EVP_PKEY_get1_EC_KEY(pkey)) == NULL) {
+        *result = 0;
+        ret = 0;
+        goto Exit;
+    }
+    if ((keystr = EC_POINT_point2hex(EC_KEY_get0_group(eckey), EC_KEY_get0_public_key(eckey), POINT_CONVERSION_UNCOMPRESSED,
+                                     bn_ctx)) == NULL) {
+        ret = PTLS_ERROR_NO_MEMORY;
+        goto Exit;
+    }
+
+    /* load the key using the specified curve */
+    if ((test_group = EC_GROUP_new_by_curve_name(nid)) == NULL) {
+        ret = PTLS_ERROR_LIBRARY;
+        goto Exit;
+    }
+    if ((test_point = EC_POINT_new(test_group)) == NULL) {
+        ret = PTLS_ERROR_NO_MEMORY;
+        goto Exit;
+    }
+    if (EC_POINT_hex2point(test_group, keystr, test_point, bn_ctx) == NULL) {
+        ret = PTLS_ERROR_LIBRARY;
+        goto Exit;
+    }
+
+    switch (EC_POINT_is_on_curve(test_group, test_point, bn_ctx)) {
+    case 0:
+        *result = 0;
+        ret = 0;
+        break;
+    case 1:
+        *result = 1;
+        ret = 0;
+        break;
+    default:
+        ret = PTLS_ERROR_LIBRARY;
+        goto Exit;
+    }
+
+Exit:
+    if (test_point != NULL)
+        EC_POINT_free(test_point);
+    if (test_group != NULL)
+        EC_GROUP_free(test_group);
+    if (keystr != NULL)
+        OPENSSL_free(keystr);
+    if (eckey != NULL)
+        EC_KEY_free(eckey);
+    if (bn_ctx != NULL)
+        BN_CTX_free(bn_ctx);
     return ret;
 }
 
@@ -622,10 +683,13 @@ int ptls_openssl_init_sign_certificate(ptls_openssl_sign_certificate_t *self, EV
     switch (EVP_PKEY_id(key)) {
     case EVP_PKEY_RSA:
         break;
-    case EVP_PKEY_EC:
-        if (!eckey_is_on_group(key, NID_X9_62_prime256v1))
+    case EVP_PKEY_EC: {
+        int ret, is_on;
+        if ((ret = eckey_is_on_group(key, NID_X9_62_prime256v1, &is_on)) != 0)
+            return ret;
+        if (!is_on)
             return PTLS_ERROR_INCOMPATIBLE_KEY;
-        break;
+    } break;
     default:
         return PTLS_ERROR_INCOMPATIBLE_KEY;
     }
