@@ -310,7 +310,7 @@ static int secp256r1_key_exchange(ptls_iovec_t *pubkey, ptls_iovec_t *secret, pt
     return secp_key_exchange(NID_X9_62_prime256v1, pubkey, secret, peerkey);
 }
 
-static int rsapss_sign(EVP_PKEY *key, ptls_buffer_t *outbuf, ptls_iovec_t input)
+static int do_sign(EVP_PKEY *key, ptls_buffer_t *outbuf, ptls_iovec_t input)
 {
     EVP_MD_CTX *ctx = NULL;
     EVP_PKEY_CTX *pkey_ctx;
@@ -560,7 +560,7 @@ static int sign_certificate(ptls_sign_certificate_t *_self, ptls_t *tls, uint16_
     Found:;
     }
 
-    return rsapss_sign(self->key, outbuf, input);
+    return do_sign(self->key, outbuf, input);
 }
 
 static X509 *to_x509(ptls_iovec_t vec)
