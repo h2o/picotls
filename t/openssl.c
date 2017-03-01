@@ -99,6 +99,30 @@ static void test_rsa_sign(void)
     ptls_buffer_dispose(&sigbuf);
 }
 
+static void test_ecdsa_sign(void)
+{
+    EVP_PKEY *pkey;
+
+    { /* create pkey */
+        EC_KEY *eckey = EC_KEY_new_by_curve_name(NID_X9_62_prime256v1);
+        EC_KEY_generate_key(eckey);
+        pkey = EVP_PKEY_new();
+        EVP_PKEY_set1_EC_KEY(pkey, eckey);
+        EC_KEY_free(eckey);
+    }
+
+    const char *message = "hello world";
+    ptls_buffer_t sigbuf;
+    uint8_t sigbuf_small[1024];
+
+    ptls_buffer_init(&sigbuf, sigbuf_small, sizeof(sigbuf_small));
+    ok(rsapss_sign(pkey, &sigbuf, ptls_iovec_init(message, strlen(message))) == 0);
+    ok(verify_sign(pkey, ptls_iovec_init(message, strlen(message)), ptls_iovec_init(sigbuf.base, sigbuf.off)) == 0);
+
+    ptls_buffer_dispose(&sigbuf);
+    EVP_PKEY_free(pkey);
+}
+
 static void setup_certificate(ptls_iovec_t *dst)
 {
     BIO *bio = BIO_new_mem_buf(RSA_CERTIFICATE, strlen(RSA_CERTIFICATE));
@@ -154,6 +178,7 @@ int main(int argc, char **argv)
 
     subtest("ecdh-key-exchange", test_ecdh_key_exchange);
     subtest("rsa-sign", test_rsa_sign);
+    subtest("ecdsa-sign", test_ecdsa_sign);
     subtest("picotls", test_picotls);
 
     ptls_minicrypto_secp256r1sha256_sign_certificate_t minicrypto_sign_certificate;
