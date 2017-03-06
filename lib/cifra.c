@@ -160,7 +160,7 @@ static int x25519_key_exchange(ptls_iovec_t *pubkey, ptls_iovec_t *secret, ptls_
 Exit:
     ptls_clear_memory(priv, sizeof(priv));
     if (pub != NULL && ret != 0)
-        ptls_clear_memory(pub, sizeof(pub));
+        ptls_clear_memory(pub, X25519_KEY_SIZE);
     return ret;
 }
 
