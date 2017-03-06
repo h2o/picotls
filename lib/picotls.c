@@ -1884,6 +1884,7 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
             goto Exit;
         }
         if (memcmp(tls->client_random, ch.random_bytes, sizeof(tls->client_random)) != 0 ||
+            (tls->server_name != NULL) != (ch.server_name.base != NULL) ||
             (tls->server_name != NULL &&
              !(strncmp(tls->server_name, (char *)ch.server_name.base, ch.server_name.len) == 0 &&
                tls->server_name[ch.server_name.len] == '\0'))) {
