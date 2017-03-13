@@ -244,7 +244,7 @@ struct st_ptls_extension_decoder_t {
 };
 
 struct st_ptls_extension_bitmap_t {
-    uint8_t bits[8]; /* only ids below 256 is tracked */
+    uint8_t bits[8]; /* only ids below 64 is tracked */
 };
 
 static uint8_t zeroes_of_max_digest_size[PTLS_MAX_DIGEST_SIZE] = {};
