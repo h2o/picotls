@@ -243,7 +243,84 @@ struct st_ptls_extension_decoder_t {
     int (*cb)(ptls_t *tls, void *arg, const uint8_t *src, const uint8_t *end);
 };
 
+struct st_ptls_extension_bitmap_t {
+    uint8_t bits[8]; /* only ids below 64 is tracked */
+};
+
 static uint8_t zeroes_of_max_digest_size[PTLS_MAX_DIGEST_SIZE] = {};
+
+static inline int extension_bitmap_is_set(struct st_ptls_extension_bitmap_t *bitmap, uint16_t id)
+{
+    if (id < sizeof(bitmap->bits) * 8)
+        return (bitmap->bits[id / 8] & (1 << (id % 8))) != 0;
+    return 0;
+}
+
+static inline void extension_bitmap_set(struct st_ptls_extension_bitmap_t *bitmap, uint16_t id)
+{
+    if (id < sizeof(bitmap->bits) * 8)
+        bitmap->bits[id / 8] |= 1 << (id % 8);
+}
+
+static inline void init_extension_bitmap(struct st_ptls_extension_bitmap_t *bitmap, uint8_t hstype)
+{
+    *bitmap = (struct st_ptls_extension_bitmap_t){{0}};
+
+#define EXT(extid, proc)                                                                                                           \
+    do {                                                                                                                           \
+        int _found = 0;                                                                                                            \
+        do {                                                                                                                       \
+            proc                                                                                                                   \
+        } while (0);                                                                                                               \
+        if (!_found)                                                                                                               \
+            extension_bitmap_set(bitmap, PTLS_EXTENSION_TYPE_##extid);                                                             \
+    } while (0)
+#define ALLOW(allowed_hstype) _found = _found || hstype == PTLS_HANDSHAKE_TYPE_##allowed_hstype
+
+    /* Implements the table found in section 4.2 of draft-19; "If an implementation receives an extension which it recognizes and
+     * which is not specified for the message in which it appears it MUST abort the handshake with an “illegal_parameter” alert."
+     */
+    EXT(SERVER_NAME, {
+        ALLOW(CLIENT_HELLO);
+        ALLOW(ENCRYPTED_EXTENSIONS);
+    });
+    EXT(STATUS_REQUEST, {
+        ALLOW(CLIENT_HELLO);
+        ALLOW(CERTIFICATE);
+    });
+    EXT(SUPPORTED_GROUPS, {
+        ALLOW(CLIENT_HELLO);
+        ALLOW(ENCRYPTED_EXTENSIONS);
+    });
+    EXT(SIGNATURE_ALGORITHMS, { ALLOW(CLIENT_HELLO); });
+    EXT(ALPN, {
+        ALLOW(CLIENT_HELLO);
+        ALLOW(ENCRYPTED_EXTENSIONS);
+    });
+    EXT(KEY_SHARE, {
+        ALLOW(CLIENT_HELLO);
+        ALLOW(SERVER_HELLO);
+        ALLOW(HELLO_RETRY_REQUEST);
+    });
+    EXT(PRE_SHARED_KEY, {
+        ALLOW(CLIENT_HELLO);
+        ALLOW(SERVER_HELLO);
+    });
+    EXT(PSK_KEY_EXCHANGE_MODES, { ALLOW(CLIENT_HELLO); });
+    EXT(EARLY_DATA, {
+        ALLOW(CLIENT_HELLO);
+        ALLOW(ENCRYPTED_EXTENSIONS);
+    });
+    EXT(COOKIE, {
+        ALLOW(CLIENT_HELLO);
+        ALLOW(HELLO_RETRY_REQUEST);
+    });
+    EXT(SUPPORTED_VERSIONS, { ALLOW(CLIENT_HELLO); });
+    EXT(TICKET_EARLY_DATA_INFO, { ALLOW(NEW_SESSION_TICKET); });
+
+#undef ALLOW
+#undef EXT
+}
 
 static uint64_t gettime_millis(void)
 {
@@ -458,28 +535,27 @@ Exit:
         decode_assert_block_close((src), end);                                                                                     \
     } while (0)
 
-#define decode_open_extensions(src, end, type, block)                                                                              \
+#define decode_open_extensions(src, end, hstype, exttype, block)                                                                   \
     do {                                                                                                                           \
-        uint8_t found[8] = {0}; /* track only first 256 extensions for detecting duplicates */                                     \
+        struct st_ptls_extension_bitmap_t bitmap;                                                                                  \
+        init_extension_bitmap(&bitmap, (hstype));                                                                                  \
         decode_open_block((src), end, 2, {                                                                                         \
             while ((src) != end) {                                                                                                 \
-                if ((ret = decode16((type), &(src), end)) != 0)                                                                    \
+                if ((ret = decode16((exttype), &(src), end)) != 0)                                                                 \
                     goto Exit;                                                                                                     \
-                if (*(type) < sizeof(found[0]) * 8) {                                                                              \
-                    if ((found[*(type) / 8] & (1 << *(type) % 8)) != 0) {                                                          \
-                        ret = PTLS_ALERT_ILLEGAL_PARAMETER;                                                                        \
-                        goto Exit;                                                                                                 \
-                    }                                                                                                              \
-                    found[*(type) / 8] |= 1 << *(type)&7;                                                                          \
+                if (extension_bitmap_is_set(&bitmap, *(exttype)) != 0) {                                                           \
+                    ret = PTLS_ALERT_ILLEGAL_PARAMETER;                                                                            \
+                    goto Exit;                                                                                                     \
                 }                                                                                                                  \
+                extension_bitmap_set(&bitmap, *(exttype));                                                                         \
                 decode_open_block((src), end, 2, block);                                                                           \
             }                                                                                                                      \
         });                                                                                                                        \
     } while (0)
 
-#define decode_extensions(src, end, type, block)                                                                                   \
+#define decode_extensions(src, end, hstype, exttype, block)                                                                        \
     do {                                                                                                                           \
-        decode_open_extensions((src), end, type, block);                                                                           \
+        decode_open_extensions((src), end, hstype, exttype, block);                                                                \
         decode_assert_block_close((src), end);                                                                                     \
     } while (0)
 
@@ -621,7 +697,7 @@ static int decode_new_session_ticket(uint32_t *lifetime, uint32_t *age_add, ptls
     });
 
     *max_early_data_size = 0;
-    decode_extensions(src, end, &exttype, {
+    decode_extensions(src, end, PTLS_HANDSHAKE_TYPE_NEW_SESSION_TICKET, &exttype, {
         switch (exttype) {
         case PTLS_EXTENSION_TYPE_TICKET_EARLY_DATA_INFO:
             if ((ret = decode32(max_early_data_size, &src, end)) != 0)
@@ -1155,7 +1231,7 @@ static int decode_server_hello(ptls_t *tls, struct st_ptls_server_hello_t *sh, c
     }
 
     uint16_t type;
-    decode_extensions(src, end, &type, {
+    decode_extensions(src, end, PTLS_HANDSHAKE_TYPE_SERVER_HELLO, &type, {
         switch (type) {
         case PTLS_EXTENSION_TYPE_SUPPORTED_VERSIONS:
             ret = PTLS_ALERT_DECODE_ERROR;
@@ -1248,7 +1324,7 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
     uint16_t type;
     int ret;
 
-    decode_extensions(src, end, &type, {
+    decode_extensions(src, end, PTLS_HANDSHAKE_TYPE_ENCRYPTED_EXTENSIONS, &type, {
         switch (type) {
         case PTLS_EXTENSION_TYPE_SERVER_NAME:
             if (src != end) {
@@ -1318,7 +1394,7 @@ static int client_handle_certificate(ptls_t *tls, ptls_iovec_t message)
                 src = end;
             });
             uint16_t type;
-            decode_open_extensions(src, end, &type, { src = end; });
+            decode_open_extensions(src, end, PTLS_HANDSHAKE_TYPE_CERTIFICATE, &type, { src = end; });
         } while (src != end);
     });
 
@@ -1617,7 +1693,7 @@ static int decode_client_hello(struct st_ptls_client_hello_t *ch, const uint8_t 
     });
 
     /* decode extensions */
-    decode_extensions(src, end, &exttype, {
+    decode_extensions(src, end, PTLS_HANDSHAKE_TYPE_CLIENT_HELLO, &exttype, {
         switch (exttype) {
         case PTLS_EXTENSION_TYPE_SERVER_NAME:
             if ((ret = client_hello_decode_server_name(&ch->server_name, src, end)) != 0)
