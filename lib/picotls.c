@@ -2456,6 +2456,63 @@ static int handle_alert(ptls_t *tls, const uint8_t *src, size_t len)
     return PTLS_ALERT_TO_PEER_ERROR(desc);
 }
 
+static int handle_handshake_record(ptls_t *tls, int (*cb)(ptls_t *, ptls_buffer_t *, ptls_iovec_t, ptls_handshake_properties_t *),
+                                   ptls_buffer_t *sendbuf, struct st_ptls_record_t *rec, ptls_handshake_properties_t *properties)
+{
+    int ret;
+
+    /* handshake */
+    if (rec->type != PTLS_CONTENT_TYPE_HANDSHAKE)
+        return PTLS_ALERT_DECODE_ERROR;
+
+    /* flatten the unhandled messages */
+    const uint8_t *src, *src_end;
+    if (tls->recvbuf.mess.base == NULL) {
+        src = rec->fragment;
+        src_end = src + rec->length;
+    } else {
+        if ((ret = ptls_buffer_reserve(&tls->recvbuf.mess, rec->length)) != 0)
+            return ret;
+        memcpy(tls->recvbuf.mess.base + tls->recvbuf.mess.off, rec->fragment, rec->length);
+        tls->recvbuf.mess.off += rec->length;
+        src = tls->recvbuf.mess.base;
+        src_end = src + tls->recvbuf.mess.off;
+    }
+
+    /* handle the messages */
+    ret = PTLS_ERROR_IN_PROGRESS;
+    while (src_end - src >= 4) {
+        uint32_t body_len = ntoh24(src + 1);
+        if (src_end - src < 4 + body_len)
+            break;
+        ret = cb(tls, sendbuf, ptls_iovec_init(src, 4 + body_len), properties);
+        switch (ret) {
+        case 0:
+        case PTLS_ERROR_IN_PROGRESS:
+            break;
+        default:
+            ptls_buffer_dispose(&tls->recvbuf.mess);
+            return ret;
+        }
+        src += 4 + body_len;
+    }
+
+    /* keep last partial message in buffer */
+    if (src != src_end) {
+        if (tls->recvbuf.mess.base == NULL)
+            ptls_buffer_init(&tls->recvbuf.mess, "", 0);
+        tls->recvbuf.mess.off = 0;
+        if ((ret = ptls_buffer_reserve(&tls->recvbuf.mess, src_end - src)) != 0)
+            return ret;
+        memcpy(tls->recvbuf.mess.base, src, src_end - src);
+        tls->recvbuf.mess.off = src_end - src;
+    } else {
+        ptls_buffer_dispose(&tls->recvbuf.mess);
+    }
+
+    return ret;
+}
+
 static int handle_input(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_buffer_t *decryptbuf, const void *input, size_t *inlen,
                         ptls_handshake_properties_t *properties)
 {
@@ -2496,58 +2553,9 @@ static int handle_input(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_buffer_t *decr
     }
 
     if (tls->recvbuf.mess.base != NULL || rec.type == PTLS_CONTENT_TYPE_HANDSHAKE) {
-
-        /* handshake */
-        if (rec.type != PTLS_CONTENT_TYPE_HANDSHAKE)
-            return PTLS_ALERT_DECODE_ERROR;
-
-        /* flatten the unhandled messages */
-        const uint8_t *src, *src_end;
-        if (tls->recvbuf.mess.base == NULL) {
-            src = rec.fragment;
-            src_end = src + rec.length;
-        } else {
-            if ((ret = ptls_buffer_reserve(&tls->recvbuf.mess, rec.length)) != 0)
-                return ret;
-            memcpy(tls->recvbuf.mess.base + tls->recvbuf.mess.off, rec.fragment, rec.length);
-            tls->recvbuf.mess.off += rec.length;
-            src = tls->recvbuf.mess.base;
-            src_end = src + tls->recvbuf.mess.off;
-        }
-
-        /* handle the messages */
-        ret = PTLS_ERROR_IN_PROGRESS;
-        while (src_end - src >= 4) {
-            uint32_t body_len = ntoh24(src + 1);
-            if (src_end - src < 4 + body_len)
-                break;
-            ret = handle_handshake_message(tls, sendbuf, ptls_iovec_init(src, 4 + body_len), properties);
-            switch (ret) {
-            case 0:
-            case PTLS_ERROR_IN_PROGRESS:
-                break;
-            default:
-                ptls_buffer_dispose(&tls->recvbuf.mess);
-                return ret;
-            }
-            src += 4 + body_len;
-        }
-
-        /* keep last partial message in buffer */
-        if (src != src_end) {
-            if (tls->recvbuf.mess.base == NULL)
-                ptls_buffer_init(&tls->recvbuf.mess, "", 0);
-            tls->recvbuf.mess.off = 0;
-            if ((ret = ptls_buffer_reserve(&tls->recvbuf.mess, src_end - src)) != 0)
-                return ret;
-            memcpy(tls->recvbuf.mess.base, src, src_end - src);
-            tls->recvbuf.mess.off = src_end - src;
-        } else {
-            ptls_buffer_dispose(&tls->recvbuf.mess);
-        }
-
+        /* handshake record */
+        ret = handle_handshake_record(tls, handle_handshake_message, sendbuf, &rec, properties);
     } else {
-
         /* handling of an alert or an application record */
         switch (rec.type) {
         case PTLS_CONTENT_TYPE_APPDATA:
