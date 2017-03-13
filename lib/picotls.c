@@ -2348,7 +2348,7 @@ int ptls_is_psk_handshake(ptls_t *tls)
     return tls->is_psk_handshake;
 }
 
-static int handle_handshake_message(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t message,
+static int handle_handshake_message(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t message, int is_end_of_record,
                                     ptls_handshake_properties_t *properties)
 {
     uint8_t type = message.base[0];
@@ -2356,7 +2356,7 @@ static int handle_handshake_message(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_io
 
     switch (tls->state) {
     case PTLS_STATE_CLIENT_EXPECT_SERVER_HELLO:
-        if (type == PTLS_HANDSHAKE_TYPE_SERVER_HELLO) {
+        if (type == PTLS_HANDSHAKE_TYPE_SERVER_HELLO && is_end_of_record) {
             ret = client_handle_hello(tls, message);
         } else {
             ret = PTLS_ALERT_UNEXPECTED_MESSAGE;
@@ -2384,7 +2384,7 @@ static int handle_handshake_message(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_io
         }
         break;
     case PTLS_STATE_CLIENT_EXPECT_FINISHED:
-        if (type == PTLS_HANDSHAKE_TYPE_FINISHED) {
+        if (type == PTLS_HANDSHAKE_TYPE_FINISHED && is_end_of_record) {
             ret = client_handle_finished(tls, sendbuf, message);
         } else {
             ret = PTLS_ALERT_UNEXPECTED_MESSAGE;
@@ -2392,14 +2392,14 @@ static int handle_handshake_message(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_io
         break;
     case PTLS_STATE_SERVER_EXPECT_CLIENT_HELLO:
     case PTLS_STATE_SERVER_EXPECT_SECOND_CLIENT_HELLO:
-        if (type == PTLS_HANDSHAKE_TYPE_CLIENT_HELLO) {
+        if (type == PTLS_HANDSHAKE_TYPE_CLIENT_HELLO && is_end_of_record) {
             ret = server_handle_hello(tls, sendbuf, message, tls->state == PTLS_STATE_SERVER_EXPECT_SECOND_CLIENT_HELLO);
         } else {
             ret = PTLS_ALERT_HANDSHAKE_FAILURE;
         }
         break;
     case PTLS_STATE_SERVER_EXPECT_FINISHED:
-        if (type == PTLS_HANDSHAKE_TYPE_FINISHED) {
+        if (type == PTLS_HANDSHAKE_TYPE_FINISHED && is_end_of_record) {
             ret = server_handle_finished(tls, message);
         } else {
             ret = PTLS_ALERT_HANDSHAKE_FAILURE;
@@ -2456,7 +2456,8 @@ static int handle_alert(ptls_t *tls, const uint8_t *src, size_t len)
     return PTLS_ALERT_TO_PEER_ERROR(desc);
 }
 
-static int handle_handshake_record(ptls_t *tls, int (*cb)(ptls_t *, ptls_buffer_t *, ptls_iovec_t, ptls_handshake_properties_t *),
+static int handle_handshake_record(ptls_t *tls, int (*cb)(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t message,
+                                                          int is_end_of_record, ptls_handshake_properties_t *properties),
                                    ptls_buffer_t *sendbuf, struct st_ptls_record_t *rec, ptls_handshake_properties_t *properties)
 {
     int ret;
@@ -2482,10 +2483,10 @@ static int handle_handshake_record(ptls_t *tls, int (*cb)(ptls_t *, ptls_buffer_
     /* handle the messages */
     ret = PTLS_ERROR_IN_PROGRESS;
     while (src_end - src >= 4) {
-        uint32_t body_len = ntoh24(src + 1);
-        if (src_end - src < 4 + body_len)
+        size_t mess_len = 4 + ntoh24(src + 1);
+        if (src_end - src < mess_len)
             break;
-        ret = cb(tls, sendbuf, ptls_iovec_init(src, 4 + body_len), properties);
+        ret = cb(tls, sendbuf, ptls_iovec_init(src, mess_len), src_end - src == mess_len, properties);
         switch (ret) {
         case 0:
         case PTLS_ERROR_IN_PROGRESS:
@@ -2494,7 +2495,7 @@ static int handle_handshake_record(ptls_t *tls, int (*cb)(ptls_t *, ptls_buffer_
             ptls_buffer_dispose(&tls->recvbuf.mess);
             return ret;
         }
-        src += 4 + body_len;
+        src += mess_len;
     }
 
     /* keep last partial message in buffer */
