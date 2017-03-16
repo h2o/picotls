@@ -83,6 +83,10 @@
 #define PTLS_DEBUGF(...)
 #endif
 
+#ifndef PTLS_MEMORY_DEBUG
+#define PTLS_MEMORY_DEBUG 0
+#endif
+
 struct st_ptls_traffic_protection_t {
     uint8_t secret[PTLS_MAX_DIGEST_SIZE];
     ptls_aead_context_t *aead;
@@ -362,14 +366,14 @@ int ptls_buffer_reserve(ptls_buffer_t *buf, size_t delta)
     if (buf->base == NULL)
         return PTLS_ERROR_NO_MEMORY;
 
-    if (buf->capacity < buf->off + delta) {
+    if (PTLS_MEMORY_DEBUG || buf->capacity < buf->off + delta) {
         uint8_t *newp;
         size_t new_capacity = buf->capacity;
         if (new_capacity < 1024)
             new_capacity = 1024;
-        do {
+        while (new_capacity < buf->off + delta) {
             new_capacity *= 2;
-        } while (new_capacity < buf->off + delta);
+        }
         if ((newp = malloc(new_capacity)) == NULL)
             return PTLS_ERROR_NO_MEMORY;
         memcpy(newp, buf->base, buf->off);
