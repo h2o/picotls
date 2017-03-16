@@ -2580,12 +2580,14 @@ static int handle_handshake_record(ptls_t *tls, int (*cb)(ptls_t *tls, ptls_buff
 
     /* keep last partial message in buffer */
     if (src != src_end) {
-        if (tls->recvbuf.mess.base == NULL)
+        if (tls->recvbuf.mess.base == NULL) {
             ptls_buffer_init(&tls->recvbuf.mess, "", 0);
-        tls->recvbuf.mess.off = 0;
-        if ((ret = ptls_buffer_reserve(&tls->recvbuf.mess, src_end - src)) != 0)
-            return ret;
-        memcpy(tls->recvbuf.mess.base, src, src_end - src);
+            if ((ret = ptls_buffer_reserve(&tls->recvbuf.mess, src_end - src)) != 0)
+                return ret;
+            memcpy(tls->recvbuf.mess.base, src, src_end - src);
+        } else {
+            memmove(tls->recvbuf.mess.base, src, src_end - src);
+        }
         tls->recvbuf.mess.off = src_end - src;
     } else {
         ptls_buffer_dispose(&tls->recvbuf.mess);
