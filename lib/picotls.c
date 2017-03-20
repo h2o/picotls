@@ -1020,7 +1020,7 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_handshake
     uint32_t obfuscated_ticket_age = 0;
     size_t msghash_off;
     uint8_t binder_key[PTLS_MAX_DIGEST_SIZE];
-    int ret;
+    int ret, is_second_flight = tls->key_schedule != NULL;
 
     /* TODO postpone the designation of the  digest alrogithm until we receive ServerHello so that we can choose the best hash algo
      * (note: we'd need to retain the entire ClientHello) */
@@ -1047,7 +1047,7 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_handshake
             *properties->client.max_early_data_size = 0;
     }
 
-    if (tls->key_schedule == NULL) {
+    if (!is_second_flight) {
         tls->key_schedule = key_schedule_new(key_schedule_hash);
         if ((ret = key_schedule_extract(tls->key_schedule, resumption_secret)) != 0)
             goto Exit;
@@ -1130,7 +1130,7 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_handshake
                     });
                 });
                 if (resumption_secret.base != NULL) {
-                    if (tls->client.send_early_data)
+                    if (tls->client.send_early_data && !is_second_flight)
                         buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_EARLY_DATA, {});
                     /* pre-shared key "MUST be the last extension in the ClientHello" (draft-17 section 4.2.6) */
                     buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_PRE_SHARED_KEY, {
