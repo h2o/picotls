@@ -1077,7 +1077,7 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_handshake
                     });
                 });
             }
-            if (properties->client.negotiated_protocols.count != 0) {
+            if (properties != NULL && properties->client.negotiated_protocols.count != 0) {
                 buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_ALPN, {
                     ptls_buffer_push_block(sendbuf, 2, {
                         size_t i;
