@@ -108,6 +108,7 @@ struct st_ptls_t {
         PTLS_STATE_CLIENT_HANDSHAKE_START,
         PTLS_STATE_CLIENT_SEND_EARLY_DATA,
         PTLS_STATE_CLIENT_EXPECT_SERVER_HELLO,
+        PTLS_STATE_CLIENT_EXPECT_SECOND_SERVER_HELLO,
         PTLS_STATE_CLIENT_EXPECT_ENCRYPTED_EXTENSIONS,
         PTLS_STATE_CLIENT_EXPECT_CERTIFICATE,
         PTLS_STATE_CLIENT_EXPECT_CERTIFICATE_VERIFY,
@@ -2497,9 +2498,10 @@ static int handle_handshake_message(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_io
 
     switch (tls->state) {
     case PTLS_STATE_CLIENT_EXPECT_SERVER_HELLO:
+    case PTLS_STATE_CLIENT_EXPECT_SECOND_SERVER_HELLO:
         if (type == PTLS_HANDSHAKE_TYPE_SERVER_HELLO && is_end_of_record) {
             ret = client_handle_hello(tls, message);
-        } else if (type == PTLS_HANDSHAKE_TYPE_HELLO_RETRY_REQUEST) {
+        } else if (tls->state != PTLS_STATE_CLIENT_EXPECT_SECOND_SERVER_HELLO && type == PTLS_HANDSHAKE_TYPE_HELLO_RETRY_REQUEST) {
             ret = client_handle_hello_retry_request(tls, sendbuf, message, properties);
         } else {
             ret = PTLS_ALERT_UNEXPECTED_MESSAGE;
