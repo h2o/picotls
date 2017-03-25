@@ -664,6 +664,17 @@ void ptls_openssl_dispose_sign_certificate(ptls_openssl_sign_certificate_t *self
     EVP_PKEY_free(self->key);
 }
 
+int ptls_openssl_sign_delegated_credential(ptls_openssl_sign_certificate_t *self, ptls_buffer_t *buf)
+{
+    int ret;
+
+    ptls_buffer_push16(buf, self->schemes[0].scheme_id);
+    ret = do_sign(self->key, buf, ptls_iovec_init(buf->base, buf->off), self->schemes[0].scheme_md);
+
+Exit:
+    return ret;
+}
+
 static int serialize_cert(X509 *cert, ptls_iovec_t *dst)
 {
     int len = i2d_X509(cert, NULL);
