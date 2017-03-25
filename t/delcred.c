@@ -33,24 +33,10 @@
 #include "picotls.h"
 #include "picotls/openssl.h"
 
-static int build_credential(ptls_buffer_t *output, uint32_t validtime, ptls_iovec_t pubkey, ptls_openssl_sign_certificate_t *signer)
-{
-    int ret;
-
-    ptls_buffer_push32(output, validtime);
-    ptls_buffer_push_block(output, 3, {
-        ptls_buffer_pushv(output, pubkey.base, pubkey.len);
-    });
-    ret = ptls_openssl_sign_delegated_credential(signer, output);
-
-Exit:
-    return ret;
-}
-
 int main(int argc, char **argv)
 {
     int ch;
-    ptls_iovec_t pubkey = {NULL};
+    ptls_iovec_t pubkey = {NULL}, signer_cert = {NULL};
     uint32_t validtime = UINT32_MAX;
     ptls_openssl_sign_certificate_t *signer = NULL;
     ptls_buffer_t output;
@@ -64,7 +50,7 @@ int main(int argc, char **argv)
     ENGINE_register_all_digests();
 #endif
 
-    while ((ch = getopt(argc, argv, "p:V:s:v:h")) != -1) {
+    while ((ch = getopt(argc, argv, "p:V:k:c:v:h")) != -1) {
         switch (ch) {
         case 'p': { /* public key */
             FILE *fp;
@@ -93,7 +79,27 @@ int main(int argc, char **argv)
                 return 1;
             }
             break;
-        case 's': {
+        case 'c': {
+            FILE *fp; X509 *cert;
+            if ((fp = fopen(optarg, "rb")) == NULL) {
+                fprintf(stderr, "failed to open file:%s:%s\n", optarg, strerror(errno));
+                return 1;
+            }
+            if ((cert = PEM_read_X509(fp, NULL, NULL, NULL)) == NULL) {
+                fprintf(stderr, "failed to load certifiate from file:%s\n", optarg);
+                return 1;
+            }
+            signer_cert.len = i2d_X509(cert, NULL);
+            if ((signer_cert.base = malloc(signer_cert.len)) == NULL) {
+                perror("no memory");
+                return 1;
+            }
+            uint8_t *p = signer_cert.base;
+            i2d_X509(cert, &p);
+            X509_free(cert);
+            fclose(fp);
+        } break;
+        case 'k': {
             FILE *fp; EVP_PKEY *pkey;
             if ((fp = fopen(optarg, "rb")) == NULL) {
                 fprintf(stderr, "failed to open file:%s:%s\n", optarg, strerror(errno));
@@ -118,7 +124,7 @@ int main(int argc, char **argv)
             printf("oaenutsaou\n");
             return 0;
         case 'h':
-            printf("%s -p <pubkeyfile.bin> -V <validTime> -s <signkey.pem>\n", argv[0]);
+            printf("%s -p <pubkeyfile.bin> -V <validTime> -c <certificate.pem> -k <certkey.pem>\n", argv[0]);
             return 0;
         default:
             assert("fixme");
@@ -134,14 +140,18 @@ int main(int argc, char **argv)
         return 1;
     }
     if (signer == NULL) {
-        fprintf(stderr, "mandatory option -s is missing\n");
+        fprintf(stderr, "mandatory option -k is missing\n");
+        return 1;
+    }
+    if (signer_cert.base == NULL) {
+        fprintf(stderr, "mandatory option -c is missing\n");
         return 1;
     }
     argc -= optind;
     argv += optind;
 
     ptls_buffer_init(&output, "", 0);
-    if (build_credential(&output, validtime, pubkey, signer) != 0) {
+    if (ptls_openssl_create_delegated_credential(signer, &output, validtime, pubkey, 0x7f12 /* draft-18 */, signer_cert) != 0) {
         fprintf(stderr, "failed to create a delegated credential\n");
         return 1;
     }

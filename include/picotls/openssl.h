@@ -50,7 +50,7 @@ typedef struct st_ptls_openssl_sign_certificate_t {
 int ptls_openssl_init_sign_certificate(ptls_openssl_sign_certificate_t *self, EVP_PKEY *key);
 void ptls_openssl_dispose_sign_certificate(ptls_openssl_sign_certificate_t *self);
 int ptls_openssl_load_certificates(ptls_context_t *ctx, X509 *cert, STACK_OF(X509) * chain);
-int ptls_openssl_sign_delegated_credential(ptls_openssl_sign_certificate_t *self, ptls_buffer_t *buf);
+int ptls_openssl_create_delegated_credential(ptls_openssl_sign_certificate_t *self, ptls_buffer_t *output, uint32_t valid_time, ptls_iovec_t pubkey, uint16_t protocol_version, ptls_iovec_t signer_cert);
 
 typedef struct st_ptls_openssl_verify_certificate_t {
     ptls_verify_certificate_t super;

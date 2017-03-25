@@ -664,14 +664,35 @@ void ptls_openssl_dispose_sign_certificate(ptls_openssl_sign_certificate_t *self
     EVP_PKEY_free(self->key);
 }
 
-int ptls_openssl_sign_delegated_credential(ptls_openssl_sign_certificate_t *self, ptls_buffer_t *buf)
+int ptls_openssl_create_delegated_credential(ptls_openssl_sign_certificate_t *self, ptls_buffer_t *output, uint32_t valid_time, ptls_iovec_t pubkey, uint16_t protocol_version, ptls_iovec_t signer_cert)
 {
+    struct st_ptls_openssl_signature_scheme_t *scheme = self->schemes;
+    ptls_buffer_t signdata;
+    size_t i;
     int ret;
 
-    ptls_buffer_push16(buf, self->schemes[0].scheme_id);
-    ret = do_sign(self->key, buf, ptls_iovec_init(buf->base, buf->off), self->schemes[0].scheme_md);
+    ptls_buffer_init(&signdata, "", 0);
+
+    /* params */
+    ptls_buffer_push32(output, valid_time);
+    ptls_buffer_pushv(output, pubkey.base, pubkey.len);
+
+    /* sign context */
+    for (i = 0; i < 64; ++i)
+        ptls_buffer_push(&signdata, ' ');
+    const char *context_string = "TLS, server delegated credentials";
+    ptls_buffer_pushv(&signdata, context_string, strlen(context_string));
+    ptls_buffer_push16(&signdata, protocol_version);
+    ptls_buffer_pushv(&signdata, signer_cert.base, signer_cert.len);
+    ptls_buffer_push16(&signdata, scheme->scheme_id);
+    ptls_buffer_pushv(&signdata, output->base, output->off);
+
+    /* sign */
+    ptls_buffer_push16(output, scheme->scheme_id);
+    ret = do_sign(self->key, output, ptls_iovec_init(signdata.base, signdata.off), scheme->scheme_md);
 
 Exit:
+    ptls_buffer_dispose(&signdata);
     return ret;
 }
 
