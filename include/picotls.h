@@ -313,6 +313,7 @@ typedef struct st_ptls_context_t {
     struct {
         ptls_iovec_t *list;
         size_t count;
+        ptls_iovec_t delegated_credential;
     } certificates;
     /**
      *

@@ -67,6 +67,7 @@
 #define PTLS_EXTENSION_TYPE_COOKIE 44
 #define PTLS_EXTENSION_TYPE_PSK_KEY_EXCHANGE_MODES 45
 #define PTLS_EXTENSION_TYPE_TICKET_EARLY_DATA_INFO 46
+#define PTLS_EXTENSION_TYPE_DELEGATED_CREDENTIAL 26 /* for now */
 
 #define PTLS_PROTOCOL_VERSION_DRAFT18 0x7f12
 
@@ -229,6 +230,7 @@ struct st_ptls_client_hello_t {
         int early_data_indication;
     } psk;
     unsigned status_request : 1;
+    unsigned delegated_credential : 1;
 };
 
 struct st_ptls_server_hello_t {
@@ -1097,6 +1099,7 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_handshake
             buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SUPPORTED_VERSIONS, {
                 ptls_buffer_push_block(sendbuf, 1, { ptls_buffer_push16(sendbuf, PTLS_PROTOCOL_VERSION_DRAFT18); });
             });
+            buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_DELEGATED_CREDENTIAL, {});
             buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SIGNATURE_ALGORITHMS, {
                 ptls_buffer_push_block(sendbuf, 2, {
                     ptls_buffer_push16(sendbuf, PTLS_SIGNATURE_RSA_PSS_SHA256);
@@ -1862,6 +1865,8 @@ static int decode_client_hello(struct st_ptls_client_hello_t *ch, const uint8_t 
         case PTLS_EXTENSION_TYPE_STATUS_REQUEST:
             ch->status_request = 1;
             break;
+        case PTLS_EXTENSION_TYPE_DELEGATED_CREDENTIAL:
+            ch->delegated_credential = 1;
         default:
             break;
         }
@@ -2217,6 +2222,12 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
                                 });
                                 if (reset_off_to != 0)
                                     sendbuf->off = reset_off_to;
+                            }
+                            if (i == 0 && ch.delegated_credential && tls->ctx->certificates.delegated_credential.base != NULL) {
+                                buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_DELEGATED_CREDENTIAL, {
+                                    ptls_buffer_pushv(sendbuf, tls->ctx->certificates.delegated_credential.base,
+                                                      tls->ctx->certificates.delegated_credential.len);
+                                });
                             }
                         });
                     }
