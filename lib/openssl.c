@@ -675,7 +675,9 @@ int ptls_openssl_create_delegated_credential(ptls_openssl_sign_certificate_t *se
 
     /* params */
     ptls_buffer_push32(output, valid_time);
-    ptls_buffer_pushv(output, pubkey.base, pubkey.len);
+    ptls_buffer_push_block(output, 3, {
+        ptls_buffer_pushv(output, pubkey.base, pubkey.len);
+    });
 
     /* sign context */
     for (i = 0; i < 64; ++i)
@@ -689,7 +691,9 @@ int ptls_openssl_create_delegated_credential(ptls_openssl_sign_certificate_t *se
 
     /* sign */
     ptls_buffer_push16(output, scheme->scheme_id);
-    ret = do_sign(self->key, output, ptls_iovec_init(signdata.base, signdata.off), scheme->scheme_md);
+    ptls_buffer_push_block(output, 2, {
+        ret = do_sign(self->key, output, ptls_iovec_init(signdata.base, signdata.off), scheme->scheme_md);
+    });
 
 Exit:
     ptls_buffer_dispose(&signdata);
