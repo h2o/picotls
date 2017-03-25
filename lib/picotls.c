@@ -42,6 +42,7 @@
 #define PTLS_HANDSHAKE_TYPE_CLIENT_HELLO 1
 #define PTLS_HANDSHAKE_TYPE_SERVER_HELLO 2
 #define PTLS_HANDSHAKE_TYPE_NEW_SESSION_TICKET 4
+#define PTLS_HANDSHAKE_TYPE_END_OF_EARLY_DATA 5
 #define PTLS_HANDSHAKE_TYPE_HELLO_RETRY_REQUEST 6
 #define PTLS_HANDSHAKE_TYPE_ENCRYPTED_EXTENSIONS 8
 #define PTLS_HANDSHAKE_TYPE_CERTIFICATE 11
@@ -115,6 +116,7 @@ struct st_ptls_t {
         PTLS_STATE_SERVER_EXPECT_CLIENT_HELLO,
         PTLS_STATE_SERVER_EXPECT_SECOND_CLIENT_HELLO,
         /* ptls_send can be called if the state is below here */
+        PTLS_STATE_SERVER_EXPECT_END_OF_EARLY_DATA,
         PTLS_STATE_SERVER_EXPECT_FINISHED,
         PTLS_STATE_POST_HANDSHAKE_MIN,
         PTLS_STATE_CLIENT_POST_HANDSHAKE = PTLS_STATE_POST_HANDSHAKE_MIN,
@@ -2260,7 +2262,7 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
                                         "SERVER_TRAFFIC_SECRET_0")) != 0)
         return ret;
 
-    tls->state = PTLS_STATE_SERVER_EXPECT_FINISHED;
+    tls->state = tls->server.early_data != NULL ? PTLS_STATE_SERVER_EXPECT_END_OF_EARLY_DATA : PTLS_STATE_SERVER_EXPECT_FINISHED;
 
     /* send session ticket if necessary */
     if (ch.psk.ke_modes != 0 && tls->ctx->ticket_lifetime != 0) {
@@ -2274,6 +2276,27 @@ Exit:
     free(pubkey.base);
     free(ecdh_secret.base);
     ptls_clear_memory(finished_key, sizeof(finished_key));
+    return ret;
+}
+
+static int server_handle_end_of_early_data(ptls_t *tls, ptls_iovec_t message)
+{
+    int ret;
+
+    /* switch to using the next traffic key */
+    assert(tls->server.early_data != NULL);
+    memcpy(tls->traffic_protection.dec.secret, tls->server.early_data->next_secret, PTLS_MAX_DIGEST_SIZE);
+    ptls_clear_memory(tls->server.early_data, sizeof(*tls->server.early_data));
+    free(tls->server.early_data);
+    tls->server.early_data = NULL;
+    if ((ret = setup_traffic_protection(tls, tls->cipher_suite, 0, NULL, "CLIENT_HANDSHAKE_TRAFFIC_SECRET")) != 0)
+        goto Exit;
+
+    key_schedule_update_hash(tls->key_schedule, message.base, message.len);
+    tls->state = PTLS_STATE_SERVER_EXPECT_FINISHED;
+    ret = PTLS_ERROR_IN_PROGRESS;
+
+Exit:
     return ret;
 }
 
@@ -2550,6 +2573,13 @@ static int handle_handshake_message(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_io
             ret = PTLS_ALERT_HANDSHAKE_FAILURE;
         }
         break;
+    case PTLS_STATE_SERVER_EXPECT_END_OF_EARLY_DATA:
+        if (type == PTLS_HANDSHAKE_TYPE_END_OF_EARLY_DATA) {
+            ret = server_handle_end_of_early_data(tls, message);
+        } else {
+            ret = PTLS_ALERT_UNEXPECTED_MESSAGE;
+        }
+        break;
     case PTLS_STATE_SERVER_EXPECT_FINISHED:
         if (type == PTLS_HANDSHAKE_TYPE_FINISHED && is_end_of_record) {
             ret = server_handle_finished(tls, message);
@@ -2588,15 +2618,6 @@ static int handle_alert(ptls_t *tls, const uint8_t *src, size_t len)
     /* ignore certain warnings */
     if (level == PTLS_ALERT_LEVEL_WARNING) {
         switch (desc) {
-        case PTLS_ALERT_END_OF_EARLY_DATA:
-            /* switch to using the next traffic key */
-            if (tls->server.early_data == NULL)
-                return 0;
-            memcpy(tls->traffic_protection.dec.secret, tls->server.early_data->next_secret, PTLS_MAX_DIGEST_SIZE);
-            ptls_clear_memory(tls->server.early_data, sizeof(*tls->server.early_data));
-            free(tls->server.early_data);
-            tls->server.early_data = NULL;
-            return setup_traffic_protection(tls, tls->cipher_suite, 0, NULL, "CLIENT_HANDSHAKE_TRAFFIC_SECRET");
         case PTLS_ALERT_USER_CANCELED:
             return 0;
         default:
@@ -2799,7 +2820,7 @@ int ptls_receive(ptls_t *tls, ptls_buffer_t *decryptbuf, const void *_input, siz
     size_t decryptbuf_orig_size = decryptbuf->off;
     int ret = 0;
 
-    assert(tls->state >= PTLS_STATE_SERVER_EXPECT_FINISHED);
+    assert(tls->state >= PTLS_STATE_SERVER_EXPECT_END_OF_EARLY_DATA);
 
     /* loop until we decrypt some application data (or an error) */
     while (ret == 0 && input != end && decryptbuf_orig_size == decryptbuf->off) {
@@ -2835,7 +2856,7 @@ int ptls_send(ptls_t *tls, ptls_buffer_t *sendbuf, const void *_input, size_t in
     size_t pt_size, enc_size;
     int ret = 0;
 
-    assert(tls->state >= PTLS_STATE_SERVER_EXPECT_FINISHED || tls->state == PTLS_STATE_CLIENT_SEND_EARLY_DATA);
+    assert(tls->state >= PTLS_STATE_SERVER_EXPECT_END_OF_EARLY_DATA || tls->state == PTLS_STATE_CLIENT_SEND_EARLY_DATA);
 
     for (; inlen != 0; input += pt_size, inlen -= pt_size) {
         pt_size = inlen;
