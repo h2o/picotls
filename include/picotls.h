@@ -89,6 +89,12 @@
 #define PTLS_ERROR_INCOMPATIBLE_KEY (PTLS_ERROR_CLASS_INTERNAL + 4)
 #define PTLS_ERROR_SESSION_NOT_FOUND (PTLS_ERROR_CLASS_INTERNAL + 5)
 
+#define PTLS_ZERO_DIGEST_SHA256                                                                                                    \
+    {                                                                                                                              \
+        0xe3, 0xb0, 0xc4, 0x42, 0x98, 0xfc, 0x1c, 0x14, 0x9a, 0xfb, 0xf4, 0xc8, 0x99, 0x6f, 0xb9, 0x24, 0x27, 0xae, 0x41, 0xe4,    \
+            0x64, 0x9b, 0x93, 0x4c, 0xa4, 0x95, 0x99, 0x1b, 0x78, 0x52, 0xb8, 0x55                                                 \
+    }
+
 typedef struct st_ptls_t ptls_t;
 
 /**
@@ -236,6 +242,10 @@ typedef const struct st_ptls_hash_algorithm_t {
      * constructor that creates the hash context
      */
     ptls_hash_context_t *(*create)(void);
+    /**
+     * digest of zero-length octets
+     */
+    uint8_t empty_digest[PTLS_MAX_DIGEST_SIZE];
 } ptls_hash_algorithm_t;
 
 typedef const struct st_ptls_cipher_suite_t {
