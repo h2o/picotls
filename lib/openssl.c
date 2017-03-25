@@ -553,6 +553,11 @@ static int sign_certificate(ptls_sign_certificate_t *_self, ptls_t *tls, uint16_
 
 Found:
     *selected_algorithm = scheme->scheme_id;
+
+    /* just return the selected algorithm */
+    if (outbuf == NULL)
+        return 0;
+    /* do the hard work */
     return do_sign(self->key, outbuf, input, scheme->scheme_md);
 }
 
