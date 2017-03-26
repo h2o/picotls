@@ -612,6 +612,9 @@ static int verify_sign(void *verify_ctx, ptls_iovec_t data, ptls_iovec_t signatu
 Exit:
     if (ctx != NULL)
         EVP_MD_CTX_destroy(ctx);
+#if 0 /* FIXMEEEE */
+    EVP_PKEY_free(key);
+#endif
     return ret;
 }
 
@@ -669,42 +672,6 @@ void ptls_openssl_dispose_sign_certificate(ptls_openssl_sign_certificate_t *self
     EVP_PKEY_free(self->key);
 }
 
-int ptls_openssl_create_delegated_credential(ptls_openssl_sign_certificate_t *self, ptls_buffer_t *output, uint32_t valid_time, ptls_iovec_t pubkey, uint16_t protocol_version, ptls_iovec_t signer_cert)
-{
-    struct st_ptls_openssl_signature_scheme_t *scheme = self->schemes;
-    ptls_buffer_t signdata;
-    size_t i;
-    int ret;
-
-    ptls_buffer_init(&signdata, "", 0);
-
-    /* params */
-    ptls_buffer_push32(output, valid_time);
-    ptls_buffer_push_block(output, 3, {
-        ptls_buffer_pushv(output, pubkey.base, pubkey.len);
-    });
-
-    /* sign context */
-    for (i = 0; i < 64; ++i)
-        ptls_buffer_push(&signdata, ' ');
-    const char *context_string = "TLS, server delegated credentials";
-    ptls_buffer_pushv(&signdata, context_string, strlen(context_string));
-    ptls_buffer_push16(&signdata, protocol_version);
-    ptls_buffer_pushv(&signdata, signer_cert.base, signer_cert.len);
-    ptls_buffer_push16(&signdata, scheme->scheme_id);
-    ptls_buffer_pushv(&signdata, output->base, output->off);
-
-    /* sign */
-    ptls_buffer_push16(output, scheme->scheme_id);
-    ptls_buffer_push_block(output, 2, {
-        ret = do_sign(self->key, output, ptls_iovec_init(signdata.base, signdata.off), scheme->scheme_md);
-    });
-
-Exit:
-    ptls_buffer_dispose(&signdata);
-    return ret;
-}
-
 static int serialize_cert(X509 *cert, ptls_iovec_t *dst)
 {
     int len = i2d_X509(cert, NULL);
@@ -760,13 +727,15 @@ Exit:
 }
 
 static int verify_certificate(ptls_verify_certificate_t *_self, ptls_t *tls, int (**verifier)(void *, ptls_iovec_t, ptls_iovec_t),
-                              void **verify_data, ptls_iovec_t *certs, size_t num_certs)
+                              void **verify_data, ptls_iovec_t *certs, size_t num_certs, ptls_delegated_credential_t *delegated_cred)
 {
     ptls_openssl_verify_certificate_t *self = (ptls_openssl_verify_certificate_t *)_self;
     X509 *cert = NULL;
     STACK_OF(X509) *chain = NULL;
     X509_STORE_CTX *verify_ctx = NULL;
     int ret = 0;
+
+    *verify_data = NULL;
 
     assert(num_certs != 0);
 
@@ -817,9 +786,23 @@ static int verify_certificate(ptls_verify_certificate_t *_self, ptls_t *tls, int
         ret = PTLS_ALERT_BAD_CERTIFICATE;
         goto Exit;
     }
+
+    if (delegated_cred != NULL) {
+        if ((ret = ptls_verify_delegated_credential(verify_sign, *verify_data, delegated_cred, certs[0])) != 0)
+            goto Exit;
+        const uint8_t *p = delegated_cred->public_key.base;
+        if ((*verify_data = d2i_PUBKEY(NULL, &p, delegated_cred->public_key.len)) == NULL) {
+            ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+            goto Exit;
+        }
+    }
     *verifier = verify_sign;
 
 Exit:
+#if 0
+    if (*verify_data != NULL)
+        EVP_PKEY_free(*verify_data);
+#endif
     if (verify_ctx != NULL)
         X509_STORE_CTX_free(verify_ctx);
     if (chain != NULL)

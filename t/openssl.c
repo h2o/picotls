@@ -60,6 +60,17 @@
     "mRdX+OMdZ7Z5J3Glt8ENFRqe8RlESMpAKxjR+dID0bjwAjVr2KCh\n"                                                                       \
     "-----END RSA PRIVATE KEY-----\n"
 
+#define RSA_PUBLIC_KEY \
+"-----BEGIN PUBLIC KEY-----\n" \
+"MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA5soWzSG7iyawQlHM1yaX\n" \
+"2dUAATUkhpbg2WPFOEem7E3zYzc6A/Z+bViFlfEgL37cbDUb4pnOAHrrsjGgkyBY\n" \
+"h5i9iCTVfCk+H6SOHZJORO1Tq8X9C7WcNcshpSdm2Pa8hmv9hsHbLSeoPNeg8NkT\n" \
+"PwMVaMZ2GpdmiyAmhzSZ2H9mzNI7ntPW/XCchVf+ax2yt9haZ+mQE2NPYwHDjqCt\n" \
+"dGkP5ZXXnYhJSBzSEhxfGckIiKDyOxiNkLFLvUdT4ERSFBjauP2cSI0XoOUsiBxJ\n" \
+"NwHH310AU8jZbveSTcXGYgEuu2MIuDo7Vhkq5+TCqXsIFNbjy0taOoPRvUbPsbqF\n" \
+"lQIDAQAB\n" \
+"-----END PUBLIC KEY-----\n"
+
 #define RSA_CERTIFICATE                                                                                                            \
     "-----BEGIN CERTIFICATE-----\n"                                                                                                \
     "MIICqDCCAZACCQDI5jeEvExN+TANBgkqhkiG9w0BAQUFADAWMRQwEgYDVQQDEwtl\n"                                                           \
@@ -117,6 +128,7 @@ static void test_ecdsa_sign(void)
 
     ptls_buffer_init(&sigbuf, sigbuf_small, sizeof(sigbuf_small));
     ok(do_sign(pkey, &sigbuf, ptls_iovec_init(message, strlen(message)), EVP_sha256()) == 0);
+    EVP_PKEY_up_ref(pkey);
     ok(verify_sign(pkey, ptls_iovec_init(message, strlen(message)), ptls_iovec_init(sigbuf.base, sigbuf.off)) == 0);
 
     ptls_buffer_dispose(&sigbuf);
@@ -136,16 +148,53 @@ static void setup_certificate(ptls_iovec_t *dst)
     X509_free(cert);
 }
 
-static void setup_sign_certificate(ptls_openssl_sign_certificate_t *sc)
+static EVP_PKEY *load_private_key(void)
 {
     BIO *bio = BIO_new_mem_buf(RSA_PRIVATE_KEY, strlen(RSA_PRIVATE_KEY));
     EVP_PKEY *pkey = PEM_read_bio_PrivateKey(bio, NULL, NULL, NULL);
     assert(pkey != NULL || !"failed to load private key");
     BIO_free(bio);
+    return pkey;
+}
 
+static EVP_PKEY *load_public_key(void)
+{
+    BIO *bio = BIO_new_mem_buf(RSA_PUBLIC_KEY, strlen(RSA_PUBLIC_KEY));
+    EVP_PKEY *pkey = PEM_read_bio_PUBKEY(bio, NULL, NULL, NULL);
+    assert(pkey != NULL || !"failed to load public key");
+    BIO_free(bio);
+    return pkey;
+}
+
+
+static void setup_sign_certificate(ptls_openssl_sign_certificate_t *sc)
+{
+    EVP_PKEY *pkey = load_private_key();
     ptls_openssl_init_sign_certificate(sc, pkey);
-
     EVP_PKEY_free(pkey);
+}
+
+static void test_delegated_credential(void)
+{
+    ptls_openssl_sign_certificate_t sc;
+    ptls_iovec_t signer_cert;
+    EVP_PKEY *pub = load_public_key();
+    ptls_buffer_t encbuf, decbuf;
+    int ret;
+    ptls_delegated_credential_t cred = {0x7f12, 12345, ptls_iovec_init("deadbeef", 8), PTLS_SIGNATURE_RSA_PSS_SHA256};
+
+    setup_sign_certificate(&sc);
+    setup_certificate(&signer_cert);
+    ptls_buffer_init(&encbuf, "", 0);
+    ptls_buffer_init(&decbuf, "", 0);
+
+    ret = ptls_sign_delegated_credential(&sc.super, &encbuf, &cred, signer_cert);
+    ok(ret == 0);
+
+    cred.signature.len = encbuf.off - (4 + 3 + cred.public_key.len + 2 + 2);
+    cred.signature.base = encbuf.base + encbuf.off - cred.signature.len;
+    ret = ptls_verify_delegated_credential(verify_sign, pub, &cred, signer_cert);
+    ok(ret == 0);
 }
 
 int main(int argc, char **argv)
@@ -179,6 +228,7 @@ int main(int argc, char **argv)
     subtest("ecdh-key-exchange", test_ecdh_key_exchange);
     subtest("rsa-sign", test_rsa_sign);
     subtest("ecdsa-sign", test_ecdsa_sign);
+    subtest("delegated-credential", test_delegated_credential);
     subtest("picotls", test_picotls);
 
     ptls_minicrypto_secp256r1sha256_sign_certificate_t minicrypto_sign_certificate;

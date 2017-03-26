@@ -36,8 +36,13 @@
 int main(int argc, char **argv)
 {
     int ch;
-    ptls_iovec_t pubkey = {NULL}, signer_cert = {NULL};
-    uint32_t validtime = UINT32_MAX;
+    ptls_delegated_credential_t cred = {
+        0x7f12, /* tied to draft-18 for  now */
+        UINT32_MAX, /* valid_time */
+        {NULL}, /* public_key */
+        PTLS_SIGNATURE_RSA_PSS_SHA256 /* signature_schemes */
+    };
+    ptls_iovec_t signer_cert = {NULL};
     ptls_openssl_sign_certificate_t *signer = NULL;
     ptls_buffer_t output;
 
@@ -50,7 +55,7 @@ int main(int argc, char **argv)
     ENGINE_register_all_digests();
 #endif
 
-    while ((ch = getopt(argc, argv, "p:V:k:c:v:h")) != -1) {
+    while ((ch = getopt(argc, argv, "p:V:k:c:s:v:h")) != -1) {
         switch (ch) {
         case 'p': { /* public key */
             FILE *fp;
@@ -63,18 +68,18 @@ int main(int argc, char **argv)
                 fprintf(stderr, "failed to load public key from file:%s\n", optarg);
                 return 1;
             }
-            pubkey.len = (size_t)i2d_PUBKEY(pkey, NULL);
-            if ((pubkey.base = malloc(pubkey.len)) == NULL) {
+            cred.public_key.len = (size_t)i2d_PUBKEY(pkey, NULL);
+            if ((cred.public_key.base = malloc(cred.public_key.len)) == NULL) {
                 perror("no memory");
                 return 1;
             }
-            uint8_t *p = pubkey.base;
+            uint8_t *p = cred.public_key.base;
             i2d_PUBKEY(pkey, &p);
             EVP_PKEY_free(pkey);
             fclose(fp);
         } break;
         case 'V':
-            if (sscanf(optarg, "%" PRIu32, &validtime) != 1) {
+            if (sscanf(optarg, "%" PRIu32, &cred.valid_time) != 1) {
                 fprintf(stderr, "failed to parse validtime\n");
                 return 1;
             }
@@ -120,22 +125,28 @@ int main(int argc, char **argv)
             EVP_PKEY_free(pkey);
             fclose(fp);
         } break;
+        case 's':
+            if (sscanf(optarg, "%" PRIx16, &cred.signature_scheme) != 1) {
+                fprintf(stderr, "failed to parse signature scheme as a hexadecimal number: %s\n", optarg);
+                return 1;
+            }
+            break;
         case 'v':
             printf("oaenutsaou\n");
             return 0;
         case 'h':
-            printf("%s -p <pubkeyfile.bin> -V <validTime> -c <certificate.pem> -k <certkey.pem>\n", argv[0]);
+            printf("%s -p <pubkeyfile.bin> -V <validTime> -c <certificate.pem> -k <certkey.pem> -s <sigscheme-hex>\n", argv[0]);
             return 0;
         default:
             assert("fixme");
             break;
         }
     }
-    if (pubkey.base == NULL) {
+    if (cred.public_key.base == NULL) {
         fprintf(stderr, "mandatory option -p is missing\n");
         return 1;
     }
-    if (validtime == UINT32_MAX) {
+    if (cred.valid_time == UINT32_MAX) {
         fprintf(stderr, "mandatory option -V is missing\n");
         return 1;
     }
@@ -151,7 +162,7 @@ int main(int argc, char **argv)
     argv += optind;
 
     ptls_buffer_init(&output, "", 0);
-    if (ptls_openssl_create_delegated_credential(signer, &output, validtime, pubkey, 0x7f12 /* draft-18 */, signer_cert) != 0) {
+    if (ptls_sign_delegated_credential(&signer->super, &output, &cred, signer_cert) != 0) {
         fprintf(stderr, "failed to create a delegated credential\n");
         return 1;
     }

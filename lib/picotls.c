@@ -1447,6 +1447,7 @@ static int client_handle_certificate(ptls_t *tls, ptls_iovec_t message)
     const uint8_t *src = message.base + PTLS_HANDSHAKE_HEADER_SIZE, *end = message.base + message.len;
     ptls_iovec_t certs[16];
     size_t num_certs = 0;
+    ptls_delegated_credential_t *delegated_cred = NULL;
     int ret;
 
     /* certificate request context */
@@ -1465,13 +1466,43 @@ static int client_handle_certificate(ptls_t *tls, ptls_iovec_t message)
                 src = end;
             });
             uint16_t type;
-            decode_open_extensions(src, end, PTLS_HANDSHAKE_TYPE_CERTIFICATE, &type, { src = end; });
+            decode_open_extensions(src, end, PTLS_HANDSHAKE_TYPE_CERTIFICATE, &type, {
+                switch (type) {
+                case PTLS_EXTENSION_TYPE_DELEGATED_CREDENTIAL:
+                    if (num_certs != 1) {
+                        ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+                        goto Exit;
+                    }
+                    /* parse the credential */
+                    if ((delegated_cred = malloc(sizeof(*delegated_cred))) == NULL) {
+                        ret = PTLS_ERROR_NO_MEMORY;
+                        goto Exit;
+                    }
+                    delegated_cred->protocol_version = PTLS_PROTOCOL_VERSION_DRAFT18;
+                    if ((ret = decode32(&delegated_cred->valid_time, &src, end)) != 0)
+                        goto Exit;
+                    decode_open_block(src, end, 3, {
+                        delegated_cred->public_key = ptls_iovec_init(src, end - src);
+                        src = end;
+                    });
+                    if ((ret = decode16(&delegated_cred->signature_scheme, &src, end)) != 0)
+                        goto Exit;
+                    decode_block(src, end, 2, {
+                        delegated_cred->signature = ptls_iovec_init(src, end - src);
+                        src = end;
+                    });
+                    break;
+                default:
+                    src = end;
+                    break;
+                }
+            });
         } while (src != end);
     });
 
     if (tls->ctx->verify_certificate != NULL) {
         if ((ret = tls->ctx->verify_certificate->cb(tls->ctx->verify_certificate, tls, &tls->client.certificate_verify.cb,
-                                                    &tls->client.certificate_verify.verify_ctx, certs, num_certs)) != 0)
+                                                    &tls->client.certificate_verify.verify_ctx, certs, num_certs, delegated_cred)) != 0)
             goto Exit;
     }
 
@@ -1480,6 +1511,7 @@ static int client_handle_certificate(ptls_t *tls, ptls_iovec_t message)
     ret = PTLS_ERROR_IN_PROGRESS;
 
 Exit:
+    free(delegated_cred);
     return ret;
 }
 
@@ -3054,6 +3086,86 @@ int ptls_aead_transform(ptls_aead_context_t *ctx, void *output, size_t *outlen, 
 
     ++ctx->seq;
     return 0;
+}
+
+static int serialize_delegated_credential_params(ptls_buffer_t *output, uint32_t valid_time, ptls_iovec_t public_key)
+{
+    int ret;
+
+    ptls_buffer_push32(output, valid_time);
+    ptls_buffer_push_block(output, 3, {
+        ptls_buffer_pushv(output, public_key.base, public_key.len);
+    });
+
+    ret = 0;
+Exit:
+    return ret;
+}
+
+static int serialize_delegated_credential_signdata(ptls_buffer_t *output, ptls_iovec_t cert, ptls_delegated_credential_t *cred)
+{
+    size_t i;
+    int ret;
+
+    for (i = 0; i < 64; ++i)
+        ptls_buffer_push(output, ' ');
+    const char *context_string = "TLS, server delegated credentials";
+    ptls_buffer_pushv(output, context_string, strlen(context_string));
+    ptls_buffer_push16(output, cred->protocol_version);
+    ptls_buffer_pushv(output, cert.base, cert.len);
+    ptls_buffer_push16(output, cred->signature_scheme);
+    if ((ret = serialize_delegated_credential_params(output, cred->valid_time, cred->public_key)) != 0)
+        goto Exit;
+
+    ret = 0;
+Exit:
+    return ret;
+}
+
+int ptls_sign_delegated_credential(ptls_sign_certificate_t *self, ptls_buffer_t *output, ptls_delegated_credential_t *input, ptls_iovec_t signer_cert)
+{
+    ptls_buffer_t signdata;
+    int ret;
+
+    ptls_buffer_init(&signdata, "", 0);
+
+    /* sign context */
+    if ((ret = serialize_delegated_credential_signdata(&signdata, signer_cert, input)) != 0)
+        goto Exit;
+
+    /* sign */
+    if ((ret = serialize_delegated_credential_params(output, input->valid_time, input->public_key)) != 0)
+        goto Exit;
+    ptls_buffer_push16(output, input->signature_scheme);
+    ptls_buffer_push_block(output, 2, {
+        uint16_t dummy;
+        ret = self->cb(self, NULL, &dummy, output, ptls_iovec_init(signdata.base, signdata.off), &input->signature_scheme, 1);
+    });
+
+Exit:
+    ptls_buffer_dispose(&signdata);
+    return ret;
+}
+
+int ptls_verify_delegated_credential(int (*verify_sign)(void *verify_ctx, ptls_iovec_t data, ptls_iovec_t sign), void *verify_ctx,
+                                     ptls_delegated_credential_t *cred, ptls_iovec_t signer_cert)
+{
+    ptls_buffer_t signdata;
+    int ret;
+
+    ptls_buffer_init(&signdata, "", 0);
+
+    if ((ret = serialize_delegated_credential_signdata(&signdata, signer_cert, cred)) != 0)
+        goto Exit;
+    if ((ret = verify_sign(verify_ctx, ptls_iovec_init(signdata.base, signdata.off), cred->signature)) != 0)
+        return ret;
+    verify_sign = NULL;
+
+Exit:
+    if (verify_sign != NULL)
+        verify_sign(verify_ctx, ptls_iovec_init(NULL, 0), ptls_iovec_init(NULL, 0));
+    ptls_buffer_dispose(&signdata);
+    return ret;
 }
 
 static void clear_memory(void *p, size_t len)
