@@ -85,8 +85,10 @@ static int run_handshake(int fd, ptls_t *tls, ptls_buffer_t *wbuf, uint8_t *pend
         /* read from socket */
         while ((rret = read(fd, pending_input, pending_input_bufsz)) == -1 && errno == EINTR)
             ;
-        if (rret <= 0)
+        if (rret <= 0) {
+            if (rret < 0) fprintf(stderr, "I/O failure:%s\n", strerror(errno));
             return -1;
+        }
         *pending_input_len = rret;
     }
 

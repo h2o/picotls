@@ -1478,17 +1478,22 @@ static int client_handle_certificate(ptls_t *tls, ptls_iovec_t message)
                         ret = PTLS_ERROR_NO_MEMORY;
                         goto Exit;
                     }
+fprintf(stderr, "end of extension:%p\n", end);
                     delegated_cred->protocol_version = PTLS_PROTOCOL_VERSION_DRAFT18;
                     if ((ret = decode32(&delegated_cred->valid_time, &src, end)) != 0)
                         goto Exit;
+fprintf(stderr, "****valid_time:%" PRIu32 "\n", delegated_cred->valid_time);
                     decode_open_block(src, end, 3, {
                         delegated_cred->public_key = ptls_iovec_init(src, end - src);
+fprintf(stderr, "****public_key:%zu\n", delegated_cred->public_key.len);
                         src = end;
                     });
                     if ((ret = decode16(&delegated_cred->signature_scheme, &src, end)) != 0)
                         goto Exit;
+fprintf(stderr, "****sigscheme:%" PRIu16 "\n", delegated_cred->signature_scheme);
                     decode_block(src, end, 2, {
                         delegated_cred->signature = ptls_iovec_init(src, end - src);
+fprintf(stderr, "****signature:%zu, end:%p\n", delegated_cred->signature.len, end);
                         src = end;
                     });
                     break;
