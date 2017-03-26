@@ -799,10 +799,8 @@ static int verify_certificate(ptls_verify_certificate_t *_self, ptls_t *tls, int
     *verifier = verify_sign;
 
 Exit:
-#if 0
-    if (*verify_data != NULL)
+    if (ret != 0 && *verify_data != NULL)
         EVP_PKEY_free(*verify_data);
-#endif
     if (verify_ctx != NULL)
         X509_STORE_CTX_free(verify_ctx);
     if (chain != NULL)
