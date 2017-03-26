@@ -85,8 +85,10 @@ static int run_handshake(int fd, ptls_t *tls, ptls_buffer_t *wbuf, uint8_t *pend
         /* read from socket */
         while ((rret = read(fd, pending_input, pending_input_bufsz)) == -1 && errno == EINTR)
             ;
-        if (rret <= 0)
+        if (rret <= 0) {
+            if (rret < 0) fprintf(stderr, "I/O failure:%s\n", strerror(errno));
             return -1;
+        }
         *pending_input_len = rret;
     }
 
@@ -447,7 +449,7 @@ int main(int argc, char **argv)
     struct sockaddr_storage sa;
     socklen_t salen;
 
-    while ((ch = getopt(argc, argv, "c:k:es:l:vh")) != -1) {
+    while ((ch = getopt(argc, argv, "c:k:d:es:l:vh")) != -1) {
         switch (ch) {
         case 'c': {
             FILE *fp;
@@ -480,6 +482,19 @@ int main(int argc, char **argv)
             }
             ptls_openssl_init_sign_certificate(&sign_certificate, pkey);
             EVP_PKEY_free(pkey);
+        } break;
+        case 'd': {
+            FILE *fp;
+            if ((fp = fopen(optarg, "rb")) == NULL) {
+                fprintf(stderr, "failed to open file:%s:%s\n", optarg, strerror(errno));
+                return 1;
+            }
+            if ((ctx.certificates.delegated_credential.base = malloc(16384)) == NULL) {
+                perror("no memory");
+                return 1;
+            }
+            ctx.certificates.delegated_credential.len = fread(ctx.certificates.delegated_credential.base, 1, 16384, fp);
+            fclose(fp);
         } break;
         case 'e':
             use_early_data = 1;

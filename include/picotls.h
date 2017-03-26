@@ -220,6 +220,14 @@ typedef struct st_ptls_hash_context_t {
     struct st_ptls_hash_context_t *(*clone_)(struct st_ptls_hash_context_t *src);
 } ptls_hash_context_t;
 
+typedef struct st_ptls_delegated_credential_t {
+    uint16_t protocol_version;
+    uint32_t valid_time;
+    ptls_iovec_t public_key;
+    uint16_t signature_scheme;
+    ptls_iovec_t signature;
+} ptls_delegated_credential_t;
+
 /**
  * A hash algorithm and its properties.
  */
@@ -273,7 +281,7 @@ PTLS_CALLBACK_TYPE(int, sign_certificate, ptls_t *tls, uint16_t *selected_algori
  */
 PTLS_CALLBACK_TYPE(int, verify_certificate, ptls_t *tls,
                    int (**verify_sign)(void *verify_ctx, ptls_iovec_t data, ptls_iovec_t sign), void **verify_data,
-                   ptls_iovec_t *certs, size_t num_certs);
+                   ptls_iovec_t *certs, size_t num_certs, ptls_delegated_credential_t *delegated_cred);
 /**
  * encrypt-and-signs (or verify-and-decrypts) a ticket (server-only)
  */
@@ -313,6 +321,7 @@ typedef struct st_ptls_context_t {
     struct {
         ptls_iovec_t *list;
         size_t count;
+        ptls_iovec_t delegated_credential;
     } certificates;
     /**
      *
@@ -593,6 +602,17 @@ void ptls_aead_free(ptls_aead_context_t *ctx);
  */
 int ptls_aead_transform(ptls_aead_context_t *ctx, void *output, size_t *outlen, const void *input, size_t inlen,
                         uint8_t enc_content_type);
+/**
+ *
+ */
+int ptls_sign_delegated_credential(ptls_sign_certificate_t *self, ptls_buffer_t *output, ptls_delegated_credential_t *input,
+                                   ptls_iovec_t signer_cert);
+/**
+ *
+ */
+int ptls_verify_delegated_credential(int (*verify_sign)(void *verify_ctx, ptls_iovec_t data, ptls_iovec_t sign), void *verify_ctx,
+                                     ptls_delegated_credential_t *cred, ptls_iovec_t signer_cert);
+
 /**
  * clears memory
  */

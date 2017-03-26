@@ -553,6 +553,11 @@ static int sign_certificate(ptls_sign_certificate_t *_self, ptls_t *tls, uint16_
 
 Found:
     *selected_algorithm = scheme->scheme_id;
+
+    /* just return the selected algorithm */
+    if (outbuf == NULL)
+        return 0;
+    /* do the hard work */
     return do_sign(self->key, outbuf, input, scheme->scheme_md);
 }
 
@@ -607,6 +612,9 @@ static int verify_sign(void *verify_ctx, ptls_iovec_t data, ptls_iovec_t signatu
 Exit:
     if (ctx != NULL)
         EVP_MD_CTX_destroy(ctx);
+#if 0 /* FIXMEEEE */
+    EVP_PKEY_free(key);
+#endif
     return ret;
 }
 
@@ -719,13 +727,15 @@ Exit:
 }
 
 static int verify_certificate(ptls_verify_certificate_t *_self, ptls_t *tls, int (**verifier)(void *, ptls_iovec_t, ptls_iovec_t),
-                              void **verify_data, ptls_iovec_t *certs, size_t num_certs)
+                              void **verify_data, ptls_iovec_t *certs, size_t num_certs, ptls_delegated_credential_t *delegated_cred)
 {
     ptls_openssl_verify_certificate_t *self = (ptls_openssl_verify_certificate_t *)_self;
     X509 *cert = NULL;
     STACK_OF(X509) *chain = NULL;
     X509_STORE_CTX *verify_ctx = NULL;
     int ret = 0;
+
+    *verify_data = NULL;
 
     assert(num_certs != 0);
 
@@ -776,9 +786,21 @@ static int verify_certificate(ptls_verify_certificate_t *_self, ptls_t *tls, int
         ret = PTLS_ALERT_BAD_CERTIFICATE;
         goto Exit;
     }
+
+    if (delegated_cred != NULL) {
+        if ((ret = ptls_verify_delegated_credential(verify_sign, *verify_data, delegated_cred, certs[0])) != 0)
+            goto Exit;
+        const uint8_t *p = delegated_cred->public_key.base;
+        if ((*verify_data = d2i_PUBKEY(NULL, &p, delegated_cred->public_key.len)) == NULL) {
+            ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+            goto Exit;
+        }
+    }
     *verifier = verify_sign;
 
 Exit:
+    if (ret != 0 && *verify_data != NULL)
+        EVP_PKEY_free(*verify_data);
     if (verify_ctx != NULL)
         X509_STORE_CTX_free(verify_ctx);
     if (chain != NULL)
