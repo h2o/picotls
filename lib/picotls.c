@@ -77,6 +77,8 @@
 #define PTLS_MAX_CERTIFICATE_VERIFY_SIGNDATA_SIZE                                                                                  \
     (64 + sizeof(PTLS_SERVER_CERTIFICATE_VERIFY_CONTEXT_STRING) + PTLS_MAX_DIGEST_SIZE * 2)
 
+#define PTLS_EARLY_DATA_MAX_DELAY 10000 /* max. RTT (in msec) to permit early data */
+
 #if defined(PTLS_DEBUG) && PTLS_DEBUG
 #define PTLS_DEBUGF(...) fprintf(stderr, __VA_ARGS__)
 #else
@@ -1911,11 +1913,12 @@ static int vec_is_string(ptls_iovec_t x, const char *y)
     return strncmp((const char *)x.base, y, x.len) == 0 && y[x.len] == '\0';
 }
 
-static int try_psk_handshake(ptls_t *tls, size_t *psk_index, struct st_ptls_client_hello_t *ch, ptls_iovec_t ch_trunc)
+static int try_psk_handshake(ptls_t *tls, size_t *psk_index, int *accept_early_data, struct st_ptls_client_hello_t *ch,
+                             ptls_iovec_t ch_trunc)
 {
     ptls_buffer_t decbuf;
     ptls_iovec_t ticket_psk, ticket_server_name, ticket_negotiated_protocol;
-    uint64_t issue_at;
+    uint64_t issue_at, now = gettime_millis();
     uint32_t age_add;
     uint16_t ticket_csid;
     uint8_t decbuf_small[256], binder_key[PTLS_MAX_DIGEST_SIZE], verify_data[PTLS_MAX_DIGEST_SIZE];
@@ -1924,14 +1927,25 @@ static int try_psk_handshake(ptls_t *tls, size_t *psk_index, struct st_ptls_clie
     ptls_buffer_init(&decbuf, decbuf_small, sizeof(decbuf_small));
 
     for (*psk_index = 0; *psk_index < ch->psk.identities.count; ++*psk_index) {
-        ptls_iovec_t input = ch->psk.identities.list[*psk_index].identity;
+        struct st_ptls_client_hello_psk_t *identity = ch->psk.identities.list + *psk_index;
         /* decrypt and decode */
         decbuf.off = 0;
-        if ((tls->ctx->decrypt_ticket->cb(tls->ctx->decrypt_ticket, tls, &decbuf, input)) != 0)
+        if ((tls->ctx->decrypt_ticket->cb(tls->ctx->decrypt_ticket, tls, &decbuf, identity->identity)) != 0)
             continue;
         if (decode_session_identifier(&issue_at, &ticket_psk, &age_add, &ticket_server_name, &ticket_csid,
                                       &ticket_negotiated_protocol, decbuf.base, decbuf.base + decbuf.off) != 0)
             continue;
+        /* check age */
+        if (now < issue_at)
+            continue;
+        if (now - issue_at > tls->ctx->ticket_lifetime)
+            continue;
+        *accept_early_data = 0;
+        if (ch->psk.early_data_indication) {
+            int64_t delta = (now - issue_at) - (identity->obfuscated_ticket_age - age_add);
+            if (delta <= PTLS_EARLY_DATA_MAX_DELAY)
+                *accept_early_data = 1;
+        }
         /* check server-name */
         if (ticket_server_name.len != 0) {
             if (tls->server_name == NULL)
@@ -1964,6 +1978,7 @@ static int try_psk_handshake(ptls_t *tls, size_t *psk_index, struct st_ptls_clie
 
     /* not found */
     *psk_index = SIZE_MAX;
+    *accept_early_data = 0;
     ret = 0;
     goto Exit;
 
@@ -1999,7 +2014,7 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
     size_t psk_index = SIZE_MAX;
     ptls_iovec_t pubkey = {}, ecdh_secret = {};
     uint8_t finished_key[PTLS_MAX_DIGEST_SIZE];
-    int ret;
+    int accept_early_data = 0, ret;
 
     /* decode ClientHello */
     if ((ret = decode_client_hello(&ch, message.base + PTLS_HANDSHAKE_HEADER_SIZE, message.base + message.len)) != 0)
@@ -2091,7 +2106,8 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
     if (!is_second_flight && ch.psk.hash_end != 0 &&
         (ch.psk.ke_modes & ((1u << PTLS_PSK_KE_MODE_PSK) | (1u << PTLS_PSK_KE_MODE_PSK_DHE))) != 0 &&
         tls->ctx->decrypt_ticket != NULL) {
-        if ((ret = try_psk_handshake(tls, &psk_index, &ch, ptls_iovec_init(message.base, ch.psk.hash_end - message.base))) != 0)
+        if ((ret = try_psk_handshake(tls, &psk_index, &accept_early_data, &ch,
+                                     ptls_iovec_init(message.base, ch.psk.hash_end - message.base))) != 0)
             goto Exit;
     }
 
@@ -2114,7 +2130,7 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
         tls->is_psk_handshake = 1;
     }
 
-    if (ch.psk.early_data_indication && tls->ctx->max_early_data_size != 0 && psk_index == 0) {
+    if (accept_early_data && tls->ctx->max_early_data_size != 0 && psk_index == 0) {
         if ((tls->server.early_data = malloc(sizeof(*tls->server.early_data))) == NULL) {
             ret = PTLS_ERROR_NO_MEMORY;
             goto Exit;
