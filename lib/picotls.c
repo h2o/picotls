@@ -50,6 +50,7 @@
 #define PTLS_HANDSHAKE_TYPE_CERTIFICATE_VERIFY 15
 #define PTLS_HANDSHAKE_TYPE_FINISHED 20
 #define PTLS_HANDSHAKE_TYPE_KEY_UPDATE 24
+#define PTLS_HANDSHAKE_TYPE_MESSAGE_HASH 254
 
 #define PTLS_PSK_KE_MODE_PSK 0
 #define PTLS_PSK_KE_MODE_PSK_DHE 1
@@ -668,6 +669,19 @@ static void key_schedule_update_hash(struct st_ptls_key_schedule_t *sched, const
     sched->msghash->update(sched->msghash, msg, msglen);
 }
 
+static void key_schedule_transform_hash_after_client_hello1(struct st_ptls_key_schedule_t *sched)
+{
+    uint8_t new_input[4 + PTLS_MAX_DIGEST_SIZE];
+
+    new_input[0] = PTLS_HANDSHAKE_TYPE_MESSAGE_HASH;
+    new_input[1] = 0;
+    new_input[2] = 0;
+    new_input[3] = (uint8_t)sched->algo->digest_size;
+    sched->msghash->final(sched->msghash, new_input + 4, PTLS_HASH_FINAL_MODE_RESET);
+
+    sched->msghash->update(sched->msghash, new_input, 4 + sched->algo->digest_size);
+}
+
 static int derive_secret(struct st_ptls_key_schedule_t *sched, void *secret, const char *label)
 {
     uint8_t hash_value[PTLS_MAX_DIGEST_SIZE];
@@ -1274,6 +1288,7 @@ static int client_handle_hello_retry_request(ptls_t *tls, ptls_buffer_t *sendbuf
         goto Exit;
     }
 
+    key_schedule_transform_hash_after_client_hello1(tls->key_schedule);
     key_schedule_update_hash(tls->key_schedule, message.base, message.len);
     ret = send_client_hello(tls, sendbuf, properties, *selected_group, cookie);
 
@@ -2101,6 +2116,7 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
                                                ch.negotiated_groups.base + ch.negotiated_groups.len)) != 0)
                 goto Exit;
             key_schedule_update_hash(tls->key_schedule, message.base, message.len);
+            key_schedule_transform_hash_after_client_hello1(tls->key_schedule);
             assert(tls->key_schedule->generation == 0);
             key_schedule_extract(tls->key_schedule, ptls_iovec_init(NULL, 0));
             buffer_push_handshake(sendbuf, tls->key_schedule, PTLS_HANDSHAKE_TYPE_HELLO_RETRY_REQUEST, {
