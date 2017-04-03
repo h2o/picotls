@@ -157,35 +157,34 @@ struct st_ptls_t {
      * clienthello.random
      */
     uint8_t client_random[PTLS_HELLO_RANDOM_SIZE];
+    /* flags */
+    unsigned is_psk_handshake : 1;
     /**
      * misc.
      */
     struct {
         struct {
-            struct {
-                ptls_key_exchange_algorithm_t *algo;
-                ptls_key_exchange_context_t *ctx;
-            } key_exchange;
-            struct {
-                int (*cb)(void *verify_ctx, ptls_iovec_t data, ptls_iovec_t signature);
-                void *verify_ctx;
-            } certificate_verify;
-            unsigned offered_psk : 1;
-            unsigned send_early_data : 1;
-        } client;
+            ptls_key_exchange_algorithm_t *algo;
+            ptls_key_exchange_context_t *ctx;
+        } key_exchange;
         struct {
-            /**
-             * expecting to recieve undecrytable early-data packets
-             */
-            unsigned skip_early_data : 1;
-            /**
-             * if accepting early-data, the value contains the receiving traffic secret to be commisioned after receiving
-             * END_OF_EARLY_DATA
-             */
-            struct st_ptls_early_data_receiver_t *early_data;
-        } server;
-        unsigned is_psk_handshake : 1;
-    };
+            int (*cb)(void *verify_ctx, ptls_iovec_t data, ptls_iovec_t signature);
+            void *verify_ctx;
+        } certificate_verify;
+        unsigned offered_psk : 1;
+        unsigned send_early_data : 1;
+    } client;
+    struct {
+        /**
+         * expecting to recieve undecrytable early-data packets
+         */
+        unsigned skip_early_data : 1;
+        /**
+         * if accepting early-data, the value contains the receiving traffic secret to be commisioned after receiving
+         * END_OF_EARLY_DATA
+         */
+        struct st_ptls_early_data_receiver_t *early_data;
+    } server;
 };
 
 struct st_ptls_record_t {
