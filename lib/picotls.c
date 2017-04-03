@@ -1233,8 +1233,10 @@ static int client_handle_hello_retry_request(ptls_t *tls, ptls_buffer_t *sendbuf
             uint16_t id;
             if ((ret = decode16(&id, &src, end)) != 0)
                 goto Exit;
-            /* we offer the first method as KEY_SHARE, hence receiving HRR for key_exchanges[0] ends in ILLEGAL PARAMETER */
-            for (selected_group = tls->ctx->key_exchanges + 1; *selected_group != NULL; ++selected_group)
+            /* we offer the first key_exchanges[0] as KEY_SHARE unless client.negotiate_before_key_exchange is set */
+            for (selected_group =
+                     tls->ctx->key_exchanges + (properties != NULL && properties->client.negotiate_before_key_exchange ? 0 : 1);
+                 *selected_group != NULL; ++selected_group)
                 if ((*selected_group)->id == id)
                     break;
             if (*selected_group == NULL) {
