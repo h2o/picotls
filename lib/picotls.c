@@ -1115,13 +1115,15 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_handshake
                 });
             });
             buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_KEY_SHARE, {
-                ptls_iovec_t pubkey;
-                if ((ret = key_share->create(&tls->client.key_exchange.ctx, &pubkey)) != 0)
-                    goto Exit;
-                tls->client.key_exchange.algo = key_share;
                 ptls_buffer_push_block(sendbuf, 2, {
-                    ptls_buffer_push16(sendbuf, tls->client.key_exchange.algo->id);
-                    ptls_buffer_push_block(sendbuf, 2, { ptls_buffer_pushv(sendbuf, pubkey.base, pubkey.len); });
+                    if (key_share != NULL) {
+                        ptls_iovec_t pubkey;
+                        if ((ret = key_share->create(&tls->client.key_exchange.ctx, &pubkey)) != 0)
+                            goto Exit;
+                        tls->client.key_exchange.algo = key_share;
+                        ptls_buffer_push16(sendbuf, tls->client.key_exchange.algo->id);
+                        ptls_buffer_push_block(sendbuf, 2, { ptls_buffer_pushv(sendbuf, pubkey.base, pubkey.len); });
+                    }
                 });
             });
             if (tls->ctx->save_ticket != NULL) {
@@ -1231,8 +1233,10 @@ static int client_handle_hello_retry_request(ptls_t *tls, ptls_buffer_t *sendbuf
             uint16_t id;
             if ((ret = decode16(&id, &src, end)) != 0)
                 goto Exit;
-            /* we offer the first method as KEY_SHARE, hence receiving HRR for key_exchanges[0] ends in ILLEGAL PARAMETER */
-            for (selected_group = tls->ctx->key_exchanges + 1; *selected_group != NULL; ++selected_group)
+            /* we offer the first key_exchanges[0] as KEY_SHARE unless client.negotiate_before_key_exchange is set */
+            for (selected_group =
+                     tls->ctx->key_exchanges + (properties != NULL && properties->client.negotiate_before_key_exchange ? 0 : 1);
+                 *selected_group != NULL; ++selected_group)
                 if ((*selected_group)->id == id)
                     break;
             if (*selected_group == NULL) {
@@ -1314,7 +1318,7 @@ static int decode_server_hello(ptls_t *tls, struct st_ptls_server_hello_t *sh, c
                 ret = PTLS_ALERT_DECODE_ERROR;
                 goto Exit;
             }
-            if (tls->client.key_exchange.algo->id != group) {
+            if (tls->client.key_exchange.algo == NULL || tls->client.key_exchange.algo->id != group) {
                 ret = PTLS_ALERT_ILLEGAL_PARAMETER;
                 goto Exit;
             }
@@ -2760,7 +2764,10 @@ int ptls_handshake(ptls_t *tls, ptls_buffer_t *sendbuf, const void *input, size_
     case PTLS_STATE_CLIENT_HANDSHAKE_START:
         assert(input == NULL || *inlen == 0);
         assert(tls->ctx->key_exchanges[0] != NULL);
-        return send_client_hello(tls, sendbuf, properties, tls->ctx->key_exchanges[0], ptls_iovec_init(NULL, 0));
+        return send_client_hello(
+            tls, sendbuf, properties,
+            properties != NULL && properties->client.negotiate_before_key_exchange ? NULL : tls->ctx->key_exchanges[0],
+            ptls_iovec_init(NULL, 0));
     case PTLS_STATE_CLIENT_SEND_EARLY_DATA:
         if ((ret = ptls_send_alert(tls, sendbuf, PTLS_ALERT_LEVEL_WARNING, PTLS_ALERT_END_OF_EARLY_DATA)) != 0)
             return ret;
