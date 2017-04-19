@@ -364,37 +364,56 @@ typedef struct st_ptls_context_t {
     ptls_update_open_count_t *update_open_count;
 } ptls_context_t;
 
+typedef struct st_ptls_raw_extension_t {
+    uint16_t type;
+    ptls_iovec_t data;
+} ptls_raw_extension_t;
+
 /**
  * optional arguments to client-driven handshake
  */
-typedef union st_ptls_handshake_properties_t {
-    struct {
-        /**
-         * list of protocols offered through ALPN
-         */
+typedef struct st_ptls_handshake_properties_t {
+    union {
         struct {
-            const ptls_iovec_t *list;
-            size_t count;
-        } negotiated_protocols;
-        /**
-         * session ticket sent to the application via save_ticket callback
-         */
-        ptls_iovec_t session_ticket;
-        /**
-         * pointer to store the maximum size of early-data that can be sent immediately (if NULL, early data is not used)
-         */
-        size_t *max_early_data_size;
-        /**
-         *
-         */
-        unsigned early_data_accepted_by_peer : 1;
-        /**
-         * negotiate the key exchange method before sending key_share
-         */
-        unsigned negotiate_before_key_exchange : 1;
-    } client;
-    struct {
-    } server;
+            /**
+             * list of protocols offered through ALPN
+             */
+            struct {
+                const ptls_iovec_t *list;
+                size_t count;
+            } negotiated_protocols;
+            /**
+             * session ticket sent to the application via save_ticket callback
+             */
+            ptls_iovec_t session_ticket;
+            /**
+             * pointer to store the maximum size of early-data that can be sent immediately (if NULL, early data is not used)
+             */
+            size_t *max_early_data_size;
+            /**
+             *
+             */
+            unsigned early_data_accepted_by_peer : 1;
+            /**
+             * negotiate the key exchange method before sending key_share
+             */
+            unsigned negotiate_before_key_exchange : 1;
+        } client;
+        struct {
+        } server;
+    };
+    /**
+     * an optional list of additional extensions to send either in CH or EE, terminated by type == UINT16_MAX
+     */
+    ptls_raw_extension_t *additional_extensions;
+    /**
+     * an optional callback that returns a boolean value indicating if a particular extension should be collected
+     */
+    int (*collect_extension)(ptls_t *tls, struct st_ptls_handshake_properties_t *properties, uint16_t type);
+    /**
+     * an optional callback that reports the extensions being collected
+     */
+    int (*collected_extensions)(ptls_t *tls, struct st_ptls_handshake_properties_t *properties, ptls_raw_extension_t *extensions);
 } ptls_handshake_properties_t;
 
 /**

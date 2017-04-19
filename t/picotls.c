@@ -209,17 +209,12 @@ static int save_client_hello(ptls_on_client_hello_t *self, ptls_t *tls, ptls_iov
     return 0;
 }
 
-enum {
-    TEST_HANDSHAKE_FULL,
-    TEST_HANDSHAKE_HRR,
-    TEST_HANDSHAKE_RESUME,
-    TEST_HANDSHAKE_EARLY_DATA
-};
+enum { TEST_HANDSHAKE_FULL, TEST_HANDSHAKE_HRR, TEST_HANDSHAKE_RESUME, TEST_HANDSHAKE_EARLY_DATA };
 
 static void test_handshake(ptls_iovec_t ticket, int mode, int check_ch)
 {
     ptls_t *client, *server;
-    ptls_handshake_properties_t client_hs_prop = {{{NULL}, ticket}};
+    ptls_handshake_properties_t client_hs_prop = {{{{NULL}, ticket}}};
     uint8_t cbuf_small[16384], sbuf_small[16384], decbuf_small[16384];
     ptls_buffer_t cbuf, sbuf, decbuf;
     size_t consumed, max_early_data_size = 0;

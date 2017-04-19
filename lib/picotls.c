@@ -200,6 +200,8 @@ struct st_ptls_client_hello_psk_t {
     ptls_iovec_t binder;
 };
 
+#define MAX_UNKNOWN_EXTENSIONS 16
+
 struct st_ptls_client_hello_t {
     const uint8_t *random_bytes;
     struct {
@@ -229,6 +231,7 @@ struct st_ptls_client_hello_t {
         unsigned ke_modes;
         int early_data_indication;
     } psk;
+    ptls_raw_extension_t unknown_extensions[MAX_UNKNOWN_EXTENSIONS + 1];
     unsigned status_request : 1;
 };
 
@@ -1014,6 +1017,21 @@ Exit:
     return ret;
 }
 
+static int push_additional_extensions(ptls_handshake_properties_t *properties, ptls_buffer_t *sendbuf)
+{
+    int ret;
+
+    if (properties != NULL && properties->additional_extensions != NULL) {
+        ptls_raw_extension_t *ext;
+        for (ext = properties->additional_extensions; ext->type != UINT16_MAX; ++ext) {
+            buffer_push_extension(sendbuf, ext->type, { ptls_buffer_pushv(sendbuf, ext->data.base, ext->data.len); });
+        }
+    }
+    ret = 0;
+Exit:
+    return ret;
+}
+
 static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_handshake_properties_t *properties,
                              ptls_key_exchange_algorithm_t *key_share, ptls_iovec_t cookie)
 {
@@ -1125,6 +1143,13 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_handshake
                     }
                 });
             });
+            if (cookie.base != NULL) {
+                buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_COOKIE, {
+                    ptls_buffer_push_block(sendbuf, 2, { ptls_buffer_pushv(sendbuf, cookie.base, cookie.len); });
+                });
+            }
+            if ((ret = push_additional_extensions(properties, sendbuf)) != 0)
+                goto Exit;
             if (tls->ctx->save_ticket != NULL) {
                 buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_PSK_KEY_EXCHANGE_MODES, {
                     ptls_buffer_push_block(sendbuf, 1, {
@@ -1153,11 +1178,6 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_handshake
                         });
                     });
                 }
-            }
-            if (cookie.base != NULL) {
-                buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_COOKIE, {
-                    ptls_buffer_push_block(sendbuf, 2, { ptls_buffer_pushv(sendbuf, cookie.base, cookie.len); });
-                });
             }
         });
     });
@@ -1391,11 +1411,44 @@ Exit:
     return ret;
 }
 
+static int handle_unknown_extension(ptls_t *tls, ptls_handshake_properties_t *properties, uint16_t type, const uint8_t *src,
+                                    const uint8_t *end, ptls_raw_extension_t *slots)
+{
+
+    if (properties != NULL && properties->collect_extension != NULL && properties->collect_extension(tls, properties, type)) {
+        size_t i;
+        for (i = 0; slots[i].type != UINT16_MAX; ++i) {
+            assert(i < MAX_UNKNOWN_EXTENSIONS);
+            if (slots[i].type == type)
+                return PTLS_ALERT_ILLEGAL_PARAMETER;
+        }
+        if (i < MAX_UNKNOWN_EXTENSIONS) {
+            slots[i].type = type;
+            slots[i].data = ptls_iovec_init(src, end - src);
+            slots[i + 1].type = UINT16_MAX;
+        }
+    }
+    return 0;
+}
+
+static int report_unknown_extensions(ptls_t *tls, ptls_handshake_properties_t *properties, ptls_raw_extension_t *slots)
+{
+    if (properties != NULL && properties->collect_extension != NULL) {
+        assert(properties->collected_extensions != NULL);
+        return properties->collected_extensions(tls, properties, slots);
+    } else {
+        return 0;
+    }
+}
+
 static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message, ptls_handshake_properties_t *properties)
 {
     const uint8_t *src = message.base + PTLS_HANDSHAKE_HEADER_SIZE, *end = message.base + message.len;
     uint16_t type;
+    ptls_raw_extension_t unknown_extensions[MAX_UNKNOWN_EXTENSIONS + 1];
     int ret;
+
+    unknown_extensions[0].type = UINT16_MAX;
 
     decode_extensions(src, end, PTLS_HANDSHAKE_TYPE_ENCRYPTED_EXTENSIONS, &type, {
         switch (type) {
@@ -1431,10 +1484,14 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
                 properties->client.early_data_accepted_by_peer = 1;
             break;
         default:
+            handle_unknown_extension(tls, properties, type, src, end, unknown_extensions);
             break;
         }
         src = end;
     });
+
+    if ((ret = report_unknown_extensions(tls, properties, unknown_extensions)) != 0)
+        goto Exit;
 
     key_schedule_update_hash(tls->key_schedule, message.base, message.len);
     tls->state = tls->is_psk_handshake ? PTLS_STATE_CLIENT_EXPECT_FINISHED : PTLS_STATE_CLIENT_EXPECT_CERTIFICATE;
@@ -1716,7 +1773,8 @@ Exit:
     return ret;
 }
 
-static int decode_client_hello(struct st_ptls_client_hello_t *ch, const uint8_t *src, const uint8_t *end)
+static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, const uint8_t *src, const uint8_t *end,
+                               ptls_handshake_properties_t *properties)
 {
     uint16_t exttype = 0;
     int ret;
@@ -1868,6 +1926,7 @@ static int decode_client_hello(struct st_ptls_client_hello_t *ch, const uint8_t 
             ch->status_request = 1;
             break;
         default:
+            handle_unknown_extension(tls, properties, exttype, src, end, ch->unknown_extensions);
             break;
         }
         src = end;
@@ -2006,9 +2065,10 @@ Exit:
     return ret;
 }
 
-static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t message, int is_second_flight)
+static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t message, ptls_handshake_properties_t *properties)
 {
-    struct st_ptls_client_hello_t ch = {NULL};
+    struct st_ptls_client_hello_t ch = {NULL,  {NULL}, 0,          {NULL}, {NULL}, {NULL},
+                                        {{0}}, {NULL}, {{{NULL}}}, {NULL}, {NULL}, {{UINT16_MAX}}};
     struct {
         ptls_key_exchange_algorithm_t *algorithm;
         ptls_iovec_t peer_key;
@@ -2017,10 +2077,11 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
     size_t psk_index = SIZE_MAX;
     ptls_iovec_t pubkey = {}, ecdh_secret = {};
     uint8_t finished_key[PTLS_MAX_DIGEST_SIZE];
-    int accept_early_data = 0, ret;
+    int accept_early_data = 0, is_second_flight = tls->state == PTLS_STATE_SERVER_EXPECT_SECOND_CLIENT_HELLO, ret;
 
     /* decode ClientHello */
-    if ((ret = decode_client_hello(&ch, message.base + PTLS_HANDSHAKE_HEADER_SIZE, message.base + message.len)) != 0)
+    if ((ret = decode_client_hello(tls, &ch, message.base + PTLS_HANDSHAKE_HEADER_SIZE, message.base + message.len, properties)) !=
+        0)
         goto Exit;
 
     /* handle client_random and SNI */
@@ -2102,10 +2163,13 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
         }
     }
 
-    if (tls->ctx->require_dhe_on_psk)
-        ch.psk.ke_modes &= ~(1u << PTLS_PSK_KE_MODE_PSK);
+    /* handle unknown extensions */
+    if ((ret = report_unknown_extensions(tls, properties, ch.unknown_extensions)) != 0)
+        goto Exit;
 
     /* try psk handshake */
+    if (tls->ctx->require_dhe_on_psk)
+        ch.psk.ke_modes &= ~(1u << PTLS_PSK_KE_MODE_PSK);
     if (!is_second_flight && ch.psk.hash_end != 0 &&
         (ch.psk.ke_modes & ((1u << PTLS_PSK_KE_MODE_PSK) | (1u << PTLS_PSK_KE_MODE_PSK_DHE))) != 0 &&
         tls->ctx->decrypt_ticket != NULL) {
@@ -2208,6 +2272,8 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
                 }
                 if (tls->server.early_data != NULL && tls->traffic_protection.dec.aead != NULL)
                     buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_EARLY_DATA, {});
+                if ((ret = push_additional_extensions(properties, sendbuf)) != 0)
+                    goto Exit;
             });
         });
     });
@@ -2557,7 +2623,7 @@ static int handle_handshake_message(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_io
     case PTLS_STATE_SERVER_EXPECT_CLIENT_HELLO:
     case PTLS_STATE_SERVER_EXPECT_SECOND_CLIENT_HELLO:
         if (type == PTLS_HANDSHAKE_TYPE_CLIENT_HELLO && is_end_of_record) {
-            ret = server_handle_hello(tls, sendbuf, message, tls->state == PTLS_STATE_SERVER_EXPECT_SECOND_CLIENT_HELLO);
+            ret = server_handle_hello(tls, sendbuf, message, properties);
         } else {
             ret = PTLS_ALERT_HANDSHAKE_FAILURE;
         }
