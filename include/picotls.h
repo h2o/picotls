@@ -515,6 +515,51 @@ int ptls_buffer_push_asn1_ubigint(ptls_buffer_t *buf, const void *bignum, size_t
         ptls_buffer_push_asn1_block((buf), block);                                                                                 \
     } while (0)
 
+int ptls_decode16(uint16_t *value, const uint8_t **src, const uint8_t *end);
+int ptls_decode32(uint32_t *value, const uint8_t **src, const uint8_t *end);
+int ptls_decode64(uint64_t *value, const uint8_t **src, const uint8_t *end);
+
+#define ptls_decode_open_block(src, end, capacity, block)                                                                          \
+    do {                                                                                                                           \
+        size_t _capacity = (capacity);                                                                                             \
+        if (_capacity > end - (src)) {                                                                                             \
+            ret = PTLS_ALERT_DECODE_ERROR;                                                                                         \
+            goto Exit;                                                                                                             \
+        }                                                                                                                          \
+        size_t _block_size = 0;                                                                                                    \
+        do {                                                                                                                       \
+            _block_size = _block_size << 8 | *(src)++;                                                                             \
+        } while (--_capacity != 0);                                                                                                \
+        if (_block_size > end - (src)) {                                                                                           \
+            ret = PTLS_ALERT_DECODE_ERROR;                                                                                         \
+            goto Exit;                                                                                                             \
+        }                                                                                                                          \
+        do {                                                                                                                       \
+            const uint8_t *end = (src) + _block_size;                                                                              \
+            do {                                                                                                                   \
+                block                                                                                                              \
+            } while (0);                                                                                                           \
+            if ((src) != end) {                                                                                                    \
+                ret = PTLS_ALERT_DECODE_ERROR;                                                                                     \
+                goto Exit;                                                                                                         \
+            }                                                                                                                      \
+        } while (0);                                                                                                               \
+    } while (0)
+
+#define ptls_decode_assert_block_close(src, end)                                                                                   \
+    do {                                                                                                                           \
+        if ((src) != end) {                                                                                                        \
+            ret = PTLS_ALERT_DECODE_ERROR;                                                                                         \
+            goto Exit;                                                                                                             \
+        }                                                                                                                          \
+    } while (0);
+
+#define ptls_decode_block(src, end, capacity, block)                                                                               \
+    do {                                                                                                                           \
+        ptls_decode_open_block((src), end, capacity, block);                                                                       \
+        ptls_decode_assert_block_close((src), end);                                                                                \
+    } while (0)
+
 /**
  * create a object to handle new TLS connection. Client-side of a TLS connection is created if server_name is non-NULL. Otherwise,
  * a server-side connection is created.
