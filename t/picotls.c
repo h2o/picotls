@@ -84,18 +84,18 @@ static void test_ciphersuite(ptls_cipher_suite_t *cs1, ptls_cipher_suite_t *cs2)
     /* encrypt */
     c = ptls_aead_new(cs1->aead, cs1->hash, 1, traffic_secret);
     assert(c != NULL);
-    ret = ptls_aead_transform(c, enc1, &enc1len, src1, strlen(src1), 0);
+    ret = ptls_aead_transform(c, enc1, &enc1len, 1, src1, strlen(src1), 0);
     ok(ret == 0);
-    ret = ptls_aead_transform(c, enc2, &enc2len, src2, strlen(src2), &type2);
+    ret = ptls_aead_transform(c, enc2, &enc2len, 2, src2, strlen(src2), &type2);
     ok(ret == 0);
     ptls_aead_free(c);
 
     /* decrypt */
     c = ptls_aead_new(cs2->aead, cs2->hash, 0, traffic_secret);
     assert(c != NULL);
-    ret = ptls_aead_transform(c, dec1, &dec1len, enc1, enc1len, 0);
+    ret = ptls_aead_transform(c, dec1, &dec1len, 1, enc1, enc1len, 0);
     ok(ret == 0);
-    ret = ptls_aead_transform(c, dec2, &dec2len, enc2, enc2len, 0);
+    ret = ptls_aead_transform(c, dec2, &dec2len, 2, enc2, enc2len, 0);
     ok(ret == 0);
     ptls_aead_free(c);
 
@@ -110,7 +110,7 @@ static void test_ciphersuite(ptls_cipher_suite_t *cs1, ptls_cipher_suite_t *cs2)
     enc1[0] ^= 1;
     c = ptls_aead_new(cs2->aead, cs2->hash, 0, traffic_secret);
     assert(c != NULL);
-    ret = ptls_aead_transform(c, dec1, &dec1len, enc1, enc1len, 0);
+    ret = ptls_aead_transform(c, dec1, &dec1len, 1, enc1, enc1len, 0);
     ok(ret == PTLS_ALERT_BAD_RECORD_MAC);
     ptls_aead_free(c);
 }

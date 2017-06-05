@@ -145,7 +145,6 @@ typedef const struct st_ptls_key_exchange_algorithm_t {
  */
 typedef struct st_ptls_aead_context_t {
     const struct st_ptls_aead_algorithm_t *algo;
-    uint64_t seq;
     uint8_t static_iv[PTLS_MAX_IV_SIZE];
     /* field above this line must not be altered by the crypto binding */
     void (*dispose_crypto)(struct st_ptls_aead_context_t *ctx);
@@ -659,7 +658,7 @@ void ptls_aead_free(ptls_aead_context_t *ctx);
 /**
  *
  */
-int ptls_aead_transform(ptls_aead_context_t *ctx, void *output, size_t *outlen, const void *input, size_t inlen,
+int ptls_aead_transform(ptls_aead_context_t *ctx, void *output, size_t *outlen, uint64_t seq, const void *input, size_t inlen,
                         const uint8_t *enc_content_type);
 /**
  * clears memory
