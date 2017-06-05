@@ -77,6 +77,7 @@ static void test_ciphersuite(ptls_cipher_suite_t *cs1, ptls_cipher_suite_t *cs2)
     const char *traffic_secret = "01234567890123456789012345678901", *src1 = "hello world", *src2 = "good bye, all";
     ptls_aead_context_t *c;
     char enc1[256], enc2[256], dec1[256], dec2[256];
+    static const uint8_t type2 = 123;
     size_t enc1len, enc2len, dec1len, dec2len;
     int ret;
 
@@ -85,7 +86,7 @@ static void test_ciphersuite(ptls_cipher_suite_t *cs1, ptls_cipher_suite_t *cs2)
     assert(c != NULL);
     ret = ptls_aead_transform(c, enc1, &enc1len, src1, strlen(src1), 0);
     ok(ret == 0);
-    ret = ptls_aead_transform(c, enc2, &enc2len, src2, strlen(src2), 0);
+    ret = ptls_aead_transform(c, enc2, &enc2len, src2, strlen(src2), &type2);
     ok(ret == 0);
     ptls_aead_free(c);
 
@@ -99,10 +100,11 @@ static void test_ciphersuite(ptls_cipher_suite_t *cs1, ptls_cipher_suite_t *cs2)
     ptls_aead_free(c);
 
     /* compare */
-    ok(strlen(src1) + 1 == dec1len);
+    ok(strlen(src1) == dec1len);
     ok(memcmp(src1, dec1, dec1len) == 0);
     ok(strlen(src2) + 1 == dec2len);
-    ok(memcmp(src2, dec2, dec2len) == 0);
+    ok(memcmp(src2, dec2, dec2len - 1) == 0);
+    ok(dec2[dec2len - 1] == type2);
 
     /* alter and decrypt to detect failure */
     enc1[0] ^= 1;

@@ -445,7 +445,7 @@ static int buffer_encrypt_record(ptls_buffer_t *buf, size_t rec_start, ptls_aead
 
     assert(bodylen <= PTLS_MAX_PLAINTEXT_RECORD_SIZE);
 
-    if ((ret = ptls_aead_transform(aead, encrypted, &enclen, buf->base + rec_start + 5, bodylen, buf->base[rec_start])) != 0)
+    if ((ret = ptls_aead_transform(aead, encrypted, &enclen, buf->base + rec_start + 5, bodylen, buf->base + rec_start)) != 0)
         goto Exit;
     buf->off = rec_start;
     ptls_buffer_push(buf, PTLS_CONTENT_TYPE_APPDATA, 3, 1);
@@ -2723,7 +2723,7 @@ static int handle_input(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_buffer_t *decr
         if ((ret = ptls_buffer_reserve(decryptbuf, 5 + rec.length)) != 0)
             return ret;
         if ((ret = ptls_aead_transform(tls->traffic_protection.dec.aead, decryptbuf->base + decryptbuf->off, &rec.length,
-                                       rec.fragment, rec.length, 0)) != 0) {
+                                       rec.fragment, rec.length, NULL)) != 0) {
             if (tls->server.skip_early_data) {
                 ret = PTLS_ERROR_IN_PROGRESS;
                 goto NextRecord;
@@ -2882,10 +2882,11 @@ int ptls_send(ptls_t *tls, ptls_buffer_t *sendbuf, const void *_input, size_t in
         if (pt_size > PTLS_MAX_PLAINTEXT_RECORD_SIZE)
             pt_size = PTLS_MAX_PLAINTEXT_RECORD_SIZE;
         buffer_push_record(sendbuf, PTLS_CONTENT_TYPE_APPDATA, {
+            static const uint8_t content_type = PTLS_CONTENT_TYPE_APPDATA;
             if ((ret = ptls_buffer_reserve(sendbuf, pt_size + tls->traffic_protection.enc.aead->algo->tag_size + 1)) != 0)
                 goto Exit;
             if ((ret = ptls_aead_transform(tls->traffic_protection.enc.aead, sendbuf->base + sendbuf->off, &enc_size, input,
-                                           pt_size, PTLS_CONTENT_TYPE_APPDATA)) != 0)
+                                           pt_size, &content_type)) != 0)
                 goto Exit;
             sendbuf->off += enc_size;
         });
@@ -3066,7 +3067,7 @@ void ptls_aead_free(ptls_aead_context_t *ctx)
 }
 
 int ptls_aead_transform(ptls_aead_context_t *ctx, void *output, size_t *outlen, const void *input, size_t inlen,
-                        uint8_t enc_content_type)
+                        const uint8_t *enc_content_type)
 {
     uint8_t iv[PTLS_MAX_IV_SIZE];
     size_t iv_size = ctx->algo->iv_size;

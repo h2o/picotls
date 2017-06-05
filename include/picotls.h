@@ -150,7 +150,7 @@ typedef struct st_ptls_aead_context_t {
     /* field above this line must not be altered by the crypto binding */
     void (*dispose_crypto)(struct st_ptls_aead_context_t *ctx);
     int (*do_transform)(struct st_ptls_aead_context_t *ctx, void *output, size_t *outlen, const void *input, size_t inlen,
-                        const void *iv, uint8_t enc_content_type);
+                        const void *iv, const uint8_t *enc_content_type);
 } ptls_aead_context_t;
 
 /**
@@ -660,7 +660,7 @@ void ptls_aead_free(ptls_aead_context_t *ctx);
  *
  */
 int ptls_aead_transform(ptls_aead_context_t *ctx, void *output, size_t *outlen, const void *input, size_t inlen,
-                        uint8_t enc_content_type);
+                        const uint8_t *enc_content_type);
 /**
  * clears memory
  */

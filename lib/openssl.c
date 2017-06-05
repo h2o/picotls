@@ -379,7 +379,7 @@ static void aead_dispose_crypto(ptls_aead_context_t *_ctx)
 }
 
 static int aead_do_encrypt(ptls_aead_context_t *_ctx, void *_output, size_t *outlen, const void *input, size_t inlen,
-                           const void *iv, uint8_t enc_content_type)
+                           const void *iv, const uint8_t *enc_content_type)
 {
     struct aead_crypto_context_t *ctx = (struct aead_crypto_context_t *)_ctx;
     uint8_t *output = _output;
@@ -394,9 +394,11 @@ static int aead_do_encrypt(ptls_aead_context_t *_ctx, void *_output, size_t *out
     if (!EVP_EncryptUpdate(ctx->evp_ctx, output, &blocklen, input, (int)inlen))
         return PTLS_ERROR_LIBRARY;
     *outlen += blocklen;
-    if (!EVP_EncryptUpdate(ctx->evp_ctx, output + *outlen, &blocklen, &enc_content_type, 1))
-        return PTLS_ERROR_LIBRARY;
-    *outlen += blocklen;
+    if (enc_content_type != NULL) {
+        if (!EVP_EncryptUpdate(ctx->evp_ctx, output + *outlen, &blocklen, enc_content_type, 1))
+            return PTLS_ERROR_LIBRARY;
+        *outlen += blocklen;
+    }
     if (!EVP_EncryptFinal_ex(ctx->evp_ctx, output + *outlen, &blocklen))
         return PTLS_ERROR_LIBRARY;
     *outlen += blocklen;
@@ -408,7 +410,7 @@ static int aead_do_encrypt(ptls_aead_context_t *_ctx, void *_output, size_t *out
 }
 
 static int aead_do_decrypt(ptls_aead_context_t *_ctx, void *_output, size_t *outlen, const void *input, size_t inlen,
-                           const void *iv, uint8_t unused)
+                           const void *iv, const uint8_t *unused)
 {
     struct aead_crypto_context_t *ctx = (struct aead_crypto_context_t *)_ctx;
     uint8_t *output = _output;
