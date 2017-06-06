@@ -2136,7 +2136,7 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
         tls->is_psk_handshake = 1;
         if (properties != NULL) {
             ptls_iovec_t *selected = &ch.psk.identities.list[psk_index].binder;
-            memcmp(properties->server.selected_psk_binder.base, selected->base, selected->len);
+            memcpy(properties->server.selected_psk_binder.base, selected->base, selected->len);
             properties->server.selected_psk_binder.len = selected->len;
         }
     }
