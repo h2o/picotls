@@ -651,7 +651,7 @@ static int derive_secret(struct st_ptls_key_schedule_t *sched, void *secret, con
         hkdf_expand_label(sched->algo, secret, sched->algo->digest_size, ptls_iovec_init(sched->secret, sched->algo->digest_size),
                           label, ptls_iovec_init(hash_value, sched->algo->digest_size));
 
-    ptls_clear_memory(hash_value, sched->algo->digest_size * 2);
+    ptls_clear_memory(hash_value, sizeof(hash_value));
     return ret;
 }
 
@@ -2177,6 +2177,8 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
             key_schedule_extract(tls->key_schedule, ptls_iovec_init(NULL, 0));
         }
         mode = HANDSHAKE_MODE_FULL;
+        if (properties != NULL)
+            properties->server.selected_psk_binder.len = 0;
     } else {
         key_schedule_update_hash(tls->key_schedule, ch.psk.hash_end, message.base + message.len - ch.psk.hash_end);
         if ((ch.psk.ke_modes & (1u << PTLS_PSK_KE_MODE_PSK)) != 0) {
@@ -2186,6 +2188,11 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
             mode = HANDSHAKE_MODE_PSK_DHE;
         }
         tls->is_psk_handshake = 1;
+        if (properties != NULL) {
+            ptls_iovec_t *selected = &ch.psk.identities.list[psk_index].binder;
+            memcpy(properties->server.selected_psk_binder.base, selected->base, selected->len);
+            properties->server.selected_psk_binder.len = selected->len;
+        }
     }
 
     if (accept_early_data && tls->ctx->max_early_data_size != 0 && psk_index == 0) {
