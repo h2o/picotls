@@ -441,7 +441,7 @@ int main(int argc, char **argv)
                           &decrypt_ticket,
                           &save_ticket};
     ptls_openssl_verify_certificate_t verify_certificate = {{NULL}};
-    ptls_handshake_properties_t hsprop = {{{NULL}}};
+    ptls_handshake_properties_t hsprop = {{{{NULL}}}};
     const char *host, *port;
     int use_early_data = 0, ch;
     struct sockaddr_storage sa;
