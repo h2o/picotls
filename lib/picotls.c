@@ -674,7 +674,7 @@ static int derive_secret(struct st_ptls_key_schedule_t *sched, void *secret, con
         hkdf_expand_label(sched->algo, secret, sched->algo->digest_size, ptls_iovec_init(sched->secret, sched->algo->digest_size),
                           label, ptls_iovec_init(hash_value, sched->algo->digest_size));
 
-    ptls_clear_memory(hash_value, sched->algo->digest_size * 2);
+    ptls_clear_memory(hash_value, sizeof(hash_value));
     return ret;
 }
 
