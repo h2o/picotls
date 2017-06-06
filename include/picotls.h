@@ -340,7 +340,11 @@ typedef struct st_ptls_context_t {
     /**
      * if set, psk handshakes use (ec)dhe
      */
-    int require_dhe_on_psk;
+    unsigned require_dhe_on_psk : 1;
+    /**
+     * if exporter master secrets should be recorded
+     */
+    unsigned use_exporter : 1;
     /**
      *
      */
@@ -635,6 +639,10 @@ size_t ptls_get_record_overhead(ptls_t *tls);
  * sends an alert
  */
 int ptls_send_alert(ptls_t *tls, ptls_buffer_t *sendbuf, uint8_t level, uint8_t description);
+/**
+ *
+ */
+int ptls_export_secret(ptls_t *tls, void *output, size_t outlen, const char *label, ptls_iovec_t context_value);
 /**
  *
  */

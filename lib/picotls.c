@@ -161,6 +161,10 @@ struct st_ptls_t {
     /* flags */
     unsigned is_psk_handshake : 1;
     /**
+     * exporter master secret (either 0rtt or 1rtt)
+     */
+    uint8_t *exporter_master_secret;
+    /**
      * misc.
      */
     struct {
@@ -649,6 +653,18 @@ static int derive_secret(struct st_ptls_key_schedule_t *sched, void *secret, con
 
     ptls_clear_memory(hash_value, sched->algo->digest_size * 2);
     return ret;
+}
+
+static int derive_exporter_secret(ptls_t *tls, int is_early)
+{
+    if (tls->ctx->use_exporter)
+        return 0;
+
+    if (tls->exporter_master_secret == NULL && (tls->exporter_master_secret = malloc(tls->key_schedule->algo->digest_size)) == NULL)
+        return PTLS_ERROR_NO_MEMORY;
+
+    return derive_secret(tls->key_schedule, tls->exporter_master_secret,
+                         is_early ? "early exporter master secret" : "exporter master secret");
 }
 
 static int derive_resumption_secret(struct st_ptls_key_schedule_t *sched, uint8_t *secret)
@@ -1169,6 +1185,8 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_handshake
         if ((ret = setup_traffic_protection(tls, resumption_cipher_suite, 1, "client early traffic secret",
                                             "CLIENT_EARLY_TRAFFIC_SECRET")) != 0)
             goto Exit;
+        if ((ret = derive_exporter_secret(tls, 1)) != 0)
+            goto Exit;
         tls->state = PTLS_STATE_CLIENT_SEND_EARLY_DATA;
     } else {
         tls->state = PTLS_STATE_CLIENT_EXPECT_SERVER_HELLO;
@@ -1574,6 +1592,8 @@ static int client_handle_finished(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iove
         goto Exit;
     if ((ret = setup_traffic_protection(tls, tls->cipher_suite, 0, "server application traffic secret",
                                         "SERVER_TRAFFIC_SECRET_0")) != 0)
+        goto Exit;
+    if ((ret = derive_exporter_secret(tls, 0)) != 0)
         goto Exit;
     if ((ret = derive_secret(tls->key_schedule, send_secret, "client application traffic secret")) != 0)
         goto Exit;
@@ -2176,6 +2196,8 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
         if ((ret = setup_traffic_protection(tls, tls->cipher_suite, 0, "client early traffic secret",
                                             "CLIENT_EARLY_TRAFFIC_SECRET")) != 0)
             goto Exit;
+        if ((ret = derive_exporter_secret(tls, 1)) != 0)
+            goto Exit;
     }
 
     /* run key-exchange, to obtain pubkey and secret */
@@ -2308,6 +2330,8 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
     if ((ret = setup_traffic_protection(tls, tls->cipher_suite, 1, "server application traffic secret",
                                         "SERVER_TRAFFIC_SECRET_0")) != 0)
         return ret;
+    if ((ret = derive_exporter_secret(tls, 0)) != 0)
+        goto Exit;
 
     tls->state = PTLS_STATE_SERVER_EXPECT_FINISHED;
 
@@ -2444,6 +2468,11 @@ void ptls_free(ptls_t *tls)
 {
     ptls_buffer_dispose(&tls->recvbuf.rec);
     ptls_buffer_dispose(&tls->recvbuf.mess);
+    if (tls->exporter_master_secret != NULL) {
+        assert(tls->key_schedule != NULL);
+        ptls_clear_memory(tls->exporter_master_secret, tls->key_schedule->algo->digest_size);
+        free(tls->exporter_master_secret);
+    }
     if (tls->key_schedule != NULL)
         key_schedule_free(tls->key_schedule);
     if (tls->traffic_protection.dec.aead != NULL)
@@ -2925,6 +2954,15 @@ int ptls_send_alert(ptls_t *tls, ptls_buffer_t *sendbuf, uint8_t level, uint8_t 
 
 Exit:
     return ret;
+}
+
+int ptls_export_secret(ptls_t *tls, void *output, size_t outlen, const char *label, ptls_iovec_t context_value)
+{
+    if (tls->exporter_master_secret == NULL)
+        return PTLS_ERROR_IN_PROGRESS;
+    return hkdf_expand_label(tls->key_schedule->algo, output, outlen,
+                             ptls_iovec_init(tls->exporter_master_secret, tls->key_schedule->algo->digest_size), label,
+                             context_value);
 }
 
 struct st_picotls_hmac_context_t {

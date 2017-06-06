@@ -437,6 +437,7 @@ int main(int argc, char **argv)
                           86400,
                           8192,
                           0,
+                          0,
                           &encrypt_ticket,
                           &decrypt_ticket,
                           &save_ticket};
