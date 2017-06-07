@@ -37,6 +37,11 @@ Build using cmake:
 % make check
 ```
 
+Developer documentation
+---
+
+Developer documentation should be available on [the wiki]((https://github.com/h2o/picotls/wiki).
+
 Using the cli command
 ---
 
