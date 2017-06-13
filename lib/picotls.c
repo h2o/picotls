@@ -2014,7 +2014,8 @@ Exit:
     return ret;
 }
 
-static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t message, int is_second_flight)
+static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t message, ptls_handshake_properties_t *properties,
+                               int is_second_flight)
 {
     struct st_ptls_client_hello_t ch = {NULL};
     struct {
@@ -2143,7 +2144,7 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
         tls->is_psk_handshake = 1;
         if (properties != NULL) {
             ptls_iovec_t *selected = &ch.psk.identities.list[psk_index].binder;
-            memcmp(properties->server.selected_psk_binder.base, selected->base, selected->len);
+            memcpy(properties->server.selected_psk_binder.base, selected->base, selected->len);
             properties->server.selected_psk_binder.len = selected->len;
         }
     }
@@ -2572,7 +2573,8 @@ static int handle_handshake_message(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_io
     case PTLS_STATE_SERVER_EXPECT_CLIENT_HELLO:
     case PTLS_STATE_SERVER_EXPECT_SECOND_CLIENT_HELLO:
         if (type == PTLS_HANDSHAKE_TYPE_CLIENT_HELLO && is_end_of_record) {
-            ret = server_handle_hello(tls, sendbuf, message, tls->state == PTLS_STATE_SERVER_EXPECT_SECOND_CLIENT_HELLO);
+            ret =
+                server_handle_hello(tls, sendbuf, message, properties, tls->state == PTLS_STATE_SERVER_EXPECT_SECOND_CLIENT_HELLO);
         } else {
             ret = PTLS_ALERT_HANDSHAKE_FAILURE;
         }
