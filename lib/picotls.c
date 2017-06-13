@@ -450,7 +450,7 @@ static int buffer_encrypt_record(ptls_buffer_t *buf, size_t rec_start, ptls_aead
         goto Exit;
     buf->off = rec_start;
     ptls_buffer_push(buf, PTLS_CONTENT_TYPE_APPDATA, 3, 1);
-    ptls_buffer_push16(buf, enclen);
+    ptls_buffer_push16(buf, (uint16_t) enclen);
     ptls_buffer_pushv(buf, encrypted, enclen);
 
 Exit:
@@ -507,7 +507,7 @@ Exit:
 #define decode_open_block(src, end, capacity, block)                                                                               \
     do {                                                                                                                           \
         size_t _capacity = (capacity);                                                                                             \
-        if (_capacity > end - (src)) {                                                                                             \
+        if (_capacity > (size_t)(end - (src))) {                                                                                             \
             ret = PTLS_ALERT_DECODE_ERROR;                                                                                         \
             goto Exit;                                                                                                             \
         }                                                                                                                          \
@@ -515,7 +515,7 @@ Exit:
         do {                                                                                                                       \
             _block_size = _block_size << 8 | *(src)++;                                                                             \
         } while (--_capacity != 0);                                                                                                \
-        if (_block_size > end - (src)) {                                                                                           \
+        if (_block_size > (size_t)(end - (src))) {                                                                                           \
             ret = PTLS_ALERT_DECODE_ERROR;                                                                                         \
             goto Exit;                                                                                                             \
         }                                                                                                                          \
@@ -605,7 +605,7 @@ static int hkdf_expand_label(ptls_hash_algorithm_t *algo, void *output, size_t o
 
     ptls_buffer_init(&hkdf_label, hkdf_label_buf, sizeof(hkdf_label_buf));
 
-    ptls_buffer_push16(&hkdf_label, outlen);
+    ptls_buffer_push16(&hkdf_label, (uint16_t) outlen);
     ptls_buffer_push_block(&hkdf_label, 1, {
         const char *prefix = "TLS 1.3, ";
         ptls_buffer_pushv(&hkdf_label, prefix, strlen(prefix));
@@ -2328,7 +2328,8 @@ static int parse_record_header(struct st_ptls_record_t *rec, const uint8_t *src)
     rec->version = ntoh16(src + 1);
     rec->length = ntoh16(src + 3);
 
-    if (rec->length > (rec->type == PTLS_CONTENT_TYPE_APPDATA ? PTLS_MAX_ENCRYPTED_RECORD_SIZE : PTLS_MAX_PLAINTEXT_RECORD_SIZE))
+    if (rec->length > (size_t)
+        (rec->type == PTLS_CONTENT_TYPE_APPDATA ? PTLS_MAX_ENCRYPTED_RECORD_SIZE : PTLS_MAX_PLAINTEXT_RECORD_SIZE))
         return PTLS_ALERT_DECODE_ERROR;
 
     return 0;
@@ -2373,7 +2374,7 @@ static int parse_record(ptls_t *tls, struct st_ptls_record_t *rec, const uint8_t
     if (addlen != 0) {
         if ((ret = ptls_buffer_reserve(&tls->recvbuf.rec, addlen)) != 0)
             return ret;
-        if (addlen > end - src)
+        if (addlen > (size_t)(end - src))
             addlen = end - src;
         if (addlen != 0) {
             memcpy(tls->recvbuf.rec.base + tls->recvbuf.rec.off, src, addlen);
@@ -2665,7 +2666,7 @@ static int handle_handshake_record(ptls_t *tls, int (*cb)(ptls_t *tls, ptls_buff
     ret = PTLS_ERROR_IN_PROGRESS;
     while (src_end - src >= 4) {
         size_t mess_len = 4 + ntoh24(src + 1);
-        if (src_end - src < mess_len)
+        if (src_end - src < (int) mess_len)
             break;
         ret = cb(tls, sendbuf, ptls_iovec_init(src, mess_len), src_end - src == mess_len, properties);
         switch (ret) {
@@ -3005,7 +3006,7 @@ int ptls_hkdf_expand(ptls_hash_algorithm_t *algo, void *output, size_t outlen, p
             hmac->update(hmac, digest, algo->digest_size);
         }
         hmac->update(hmac, info.base, info.len);
-        uint8_t gen = i + 1;
+        uint8_t gen = (uint8_t) (i + 1);
         hmac->update(hmac, &gen, 1);
         hmac->final(hmac, digest, 1);
 

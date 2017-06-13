@@ -14,6 +14,7 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+#ifdef WIN32
 #include "wincompat.h"
 
  /*
@@ -21,7 +22,6 @@
   * which is not available on Windows
   */
 
-#ifdef WIN32
 int wintimeofday(struct timeval* tv, struct timezone* tz)
 {
 	FILETIME ft;

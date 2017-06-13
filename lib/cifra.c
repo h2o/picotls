@@ -27,7 +27,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #ifdef WIN32
-#include <stdint.h>
+#include "wincompat.h"
 #else
 #include <unistd.h>
 #endif
@@ -39,6 +39,25 @@
 #include "picotls.h"
 #include "picotls/minicrypto.h"
 
+#ifdef WIN32
+#include <wincrypt.h>
+static void read_entropy(uint8_t *entropy, size_t size)
+{
+    HCRYPTPROV   hCryptProv = 0;
+    BOOL ret = FALSE;
+
+    if (CryptAcquireContext(&hCryptProv, NULL, NULL, PROV_RSA_FULL, 0))
+    {
+        ret = CryptGenRandom(hCryptProv, size, entropy);
+        (void)CryptReleaseContext(hCryptProv, 0);
+    }
+
+    if (ret == FALSE)
+    {
+        abort();
+    }
+}
+#else
 static void read_entropy(uint8_t *entropy, size_t size)
 {
     int fd;
@@ -64,10 +83,15 @@ static void read_entropy(uint8_t *entropy, size_t size)
 
     close(fd);
 }
+#endif
 
 void ptls_minicrypto_random_bytes(void *buf, size_t len)
 {
+#ifdef WIN32
+    static __declspec(thread) cf_hash_drbg_sha256 ctx;
+#else
     static __thread cf_hash_drbg_sha256 ctx;
+#endif
 
     if (cf_hash_drbg_sha256_needs_reseed(&ctx)) {
         uint8_t entropy[256];
