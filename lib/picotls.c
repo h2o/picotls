@@ -24,7 +24,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef WIN32
+#include "wincompat.h"
+#else
 #include <sys/time.h>
+#endif
 #include "picotls.h"
 
 #define PTLS_MAX_PLAINTEXT_RECORD_SIZE 16384
@@ -253,7 +257,7 @@ struct st_ptls_extension_bitmap_t {
     uint8_t bits[8]; /* only ids below 64 is tracked */
 };
 
-static uint8_t zeroes_of_max_digest_size[PTLS_MAX_DIGEST_SIZE] = {};
+static uint8_t zeroes_of_max_digest_size[PTLS_MAX_DIGEST_SIZE] = {0};
 
 static inline int extension_bitmap_is_set(struct st_ptls_extension_bitmap_t *bitmap, uint16_t id)
 {
@@ -1273,7 +1277,11 @@ static int decode_server_hello(ptls_t *tls, struct st_ptls_server_hello_t *sh, c
     uint16_t selected_psk_identity = UINT16_MAX;
     int ret;
 
+#ifdef WIN32
+    memset(sh, 0, sizeof(struct st_ptls_server_hello_t));
+#else
     *sh = (struct st_ptls_server_hello_t){};
+#endif
 
     { /* check protocol version */
         uint16_t ver;
@@ -2015,7 +2023,7 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
     } key_share = {NULL};
     enum { HANDSHAKE_MODE_FULL, HANDSHAKE_MODE_PSK, HANDSHAKE_MODE_PSK_DHE } mode;
     size_t psk_index = SIZE_MAX;
-    ptls_iovec_t pubkey = {}, ecdh_secret = {};
+    ptls_iovec_t pubkey = {0}, ecdh_secret = {0};
     uint8_t finished_key[PTLS_MAX_DIGEST_SIZE];
     int accept_early_data = 0, ret;
 

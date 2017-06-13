@@ -26,7 +26,11 @@
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
+#ifdef WIN32
+#include <stdint.h>
+#else
 #include <unistd.h>
+#endif
 #include "aes.h"
 #include "drbg.h"
 #include "curve25519.h"
