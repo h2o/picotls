@@ -442,14 +442,25 @@ Exit:
     return ret;
 }
 
-static int aead_transform(struct st_ptls_traffic_protection_t *ctx, void *output, size_t *outlen, const void *input, size_t inlen,
-                          const uint8_t *enc_content_type)
+static size_t aead_encrypt(struct st_ptls_traffic_protection_t *ctx, void *output, const void *input, size_t inlen,
+                           uint8_t content_type)
 {
-    int ret;
+    size_t off = 0;
 
-    if ((ret = ptls_aead_transform(ctx->aead, output, outlen, ctx->seq, input, inlen, enc_content_type)) == 0)
-        ++ctx->seq;
-    return ret;
+    ptls_aead_encrypt_init(ctx->aead, ctx->seq++);
+    off += ptls_aead_encrypt_update(ctx->aead, output + off, input, inlen);
+    off += ptls_aead_encrypt_update(ctx->aead, output + off, &content_type, 1);
+    off += ptls_aead_encrypt_final(ctx->aead, output + off);
+
+    return off;
+}
+
+static int aead_decrypt(struct st_ptls_traffic_protection_t *ctx, void *output, size_t *outlen, const void *input, size_t inlen)
+{
+    if ((*outlen = ptls_aead_decrypt(ctx->aead, output, input, inlen, ctx->seq)) == SIZE_MAX)
+        return PTLS_ALERT_BAD_RECORD_MAC;
+    ++ctx->seq;
+    return 0;
 }
 
 static int buffer_encrypt_record(ptls_buffer_t *buf, size_t rec_start, struct st_ptls_traffic_protection_t *enc)
@@ -460,8 +471,7 @@ static int buffer_encrypt_record(ptls_buffer_t *buf, size_t rec_start, struct st
 
     assert(bodylen <= PTLS_MAX_PLAINTEXT_RECORD_SIZE);
 
-    if ((ret = aead_transform(enc, encrypted, &enclen, buf->base + rec_start + 5, bodylen, buf->base + rec_start)) != 0)
-        goto Exit;
+    enclen = aead_encrypt(enc, encrypted, buf->base + rec_start + 5, bodylen, buf->base[rec_start]);
     buf->off = rec_start;
     ptls_buffer_push(buf, PTLS_CONTENT_TYPE_APPDATA, 3, 1);
     ptls_buffer_push16(buf, enclen);
@@ -2770,8 +2780,8 @@ static int handle_input(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_buffer_t *decr
             return PTLS_ALERT_HANDSHAKE_FAILURE;
         if ((ret = ptls_buffer_reserve(decryptbuf, 5 + rec.length)) != 0)
             return ret;
-        if ((ret = aead_transform(&tls->traffic_protection.dec, decryptbuf->base + decryptbuf->off, &rec.length, rec.fragment,
-                                  rec.length, NULL)) != 0) {
+        if ((ret = aead_decrypt(&tls->traffic_protection.dec, decryptbuf->base + decryptbuf->off, &rec.length, rec.fragment,
+                                rec.length)) != 0) {
             if (tls->server.skip_early_data) {
                 ret = PTLS_ERROR_IN_PROGRESS;
                 goto NextRecord;
@@ -2920,7 +2930,7 @@ int ptls_receive(ptls_t *tls, ptls_buffer_t *decryptbuf, const void *_input, siz
 int ptls_send(ptls_t *tls, ptls_buffer_t *sendbuf, const void *_input, size_t inlen)
 {
     const uint8_t *input = (const uint8_t *)_input;
-    size_t pt_size, enc_size;
+    size_t pt_size;
     int ret = 0;
 
     assert(tls->state >= PTLS_STATE_SERVER_EXPECT_FINISHED || tls->state == PTLS_STATE_CLIENT_SEND_EARLY_DATA);
@@ -2930,13 +2940,10 @@ int ptls_send(ptls_t *tls, ptls_buffer_t *sendbuf, const void *_input, size_t in
         if (pt_size > PTLS_MAX_PLAINTEXT_RECORD_SIZE)
             pt_size = PTLS_MAX_PLAINTEXT_RECORD_SIZE;
         buffer_push_record(sendbuf, PTLS_CONTENT_TYPE_APPDATA, {
-            static const uint8_t content_type = PTLS_CONTENT_TYPE_APPDATA;
             if ((ret = ptls_buffer_reserve(sendbuf, pt_size + tls->traffic_protection.enc.aead->algo->tag_size + 1)) != 0)
                 goto Exit;
-            if ((ret = aead_transform(&tls->traffic_protection.enc, sendbuf->base + sendbuf->off, &enc_size, input, pt_size,
-                                      &content_type)) != 0)
-                goto Exit;
-            sendbuf->off += enc_size;
+            sendbuf->off +=
+                aead_encrypt(&tls->traffic_protection.enc, sendbuf->base + sendbuf->off, input, pt_size, PTLS_CONTENT_TYPE_APPDATA);
         });
     }
 
@@ -3123,30 +3130,20 @@ void ptls_aead_free(ptls_aead_context_t *ctx)
     free(ctx);
 }
 
-int ptls_aead_transform(ptls_aead_context_t *ctx, void *output, size_t *outlen, uint64_t seq, const void *input, size_t inlen,
-                        const uint8_t *enc_content_type)
+void ptls_aead__build_iv(ptls_aead_context_t *ctx, uint8_t *iv, uint64_t seq)
 {
-    uint8_t iv[PTLS_MAX_IV_SIZE];
-    size_t iv_size = ctx->algo->iv_size;
-    int ret;
+    size_t iv_size = ctx->algo->iv_size, i;
+    const uint8_t *s = ctx->static_iv;
+    uint8_t *d = iv;
 
-    { /* build iv */
-        const uint8_t *s = ctx->static_iv;
-        uint8_t *d = iv;
-        size_t i = iv_size - 8;
-        for (; i != 0; --i)
-            *d++ = *s++;
-        i = 64;
-        do {
-            i -= 8;
-            *d++ = *s++ ^ (uint8_t)(seq >> i);
-        } while (i != 0);
-    }
-
-    if ((ret = ctx->do_transform(ctx, output, outlen, input, inlen, iv, enc_content_type)) != 0)
-        return ret;
-
-    return 0;
+    /* build iv */
+    for (i = iv_size - 8; i != 0; --i)
+        *d++ = *s++;
+    i = 64;
+    do {
+        i -= 8;
+        *d++ = *s++ ^ (uint8_t)(seq >> i);
+    } while (i != 0);
 }
 
 static void clear_memory(void *p, size_t len)

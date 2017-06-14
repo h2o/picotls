@@ -77,41 +77,37 @@ static void test_ciphersuite(ptls_cipher_suite_t *cs1, ptls_cipher_suite_t *cs2)
     const char *traffic_secret = "01234567890123456789012345678901", *src1 = "hello world", *src2 = "good bye, all";
     ptls_aead_context_t *c;
     char enc1[256], enc2[256], dec1[256], dec2[256];
-    static const uint8_t type2 = 123;
     size_t enc1len, enc2len, dec1len, dec2len;
-    int ret;
 
     /* encrypt */
     c = ptls_aead_new(cs1->aead, cs1->hash, 1, traffic_secret);
     assert(c != NULL);
-    ret = ptls_aead_transform(c, enc1, &enc1len, 1, src1, strlen(src1), 0);
-    ok(ret == 0);
-    ret = ptls_aead_transform(c, enc2, &enc2len, 2, src2, strlen(src2), &type2);
-    ok(ret == 0);
+    ptls_aead_encrypt_init(c, 0);
+    enc1len = ptls_aead_encrypt_update(c, enc1, src1, strlen(src1));
+    enc1len += ptls_aead_encrypt_final(c, enc1 + enc1len);
+    ptls_aead_encrypt_init(c, 1);
+    enc2len = ptls_aead_encrypt_update(c, enc2, src2, strlen(src2));
+    enc2len += ptls_aead_encrypt_final(c, enc2 + enc2len);
     ptls_aead_free(c);
 
-    /* decrypt */
     c = ptls_aead_new(cs2->aead, cs2->hash, 0, traffic_secret);
     assert(c != NULL);
-    ret = ptls_aead_transform(c, dec1, &dec1len, 1, enc1, enc1len, 0);
-    ok(ret == 0);
-    ret = ptls_aead_transform(c, dec2, &dec2len, 2, enc2, enc2len, 0);
-    ok(ret == 0);
-    ptls_aead_free(c);
 
-    /* compare */
+    /* decrypt and compare */
+    dec1len = ptls_aead_decrypt(c, dec1, enc1, enc1len, 0);
+    ok(dec1len != SIZE_MAX);
+    dec2len = ptls_aead_decrypt(c, dec2, enc2, enc2len, 1);
+    ok(dec2len != SIZE_MAX);
     ok(strlen(src1) == dec1len);
     ok(memcmp(src1, dec1, dec1len) == 0);
-    ok(strlen(src2) + 1 == dec2len);
+    ok(strlen(src2) == dec2len);
     ok(memcmp(src2, dec2, dec2len - 1) == 0);
-    ok(dec2[dec2len - 1] == type2);
 
     /* alter and decrypt to detect failure */
     enc1[0] ^= 1;
-    c = ptls_aead_new(cs2->aead, cs2->hash, 0, traffic_secret);
-    assert(c != NULL);
-    ret = ptls_aead_transform(c, dec1, &dec1len, 1, enc1, enc1len, 0);
-    ok(ret == PTLS_ALERT_BAD_RECORD_MAC);
+    dec1len = ptls_aead_decrypt(c, dec1, enc1, enc1len, 0);
+    ok(dec1len == SIZE_MAX);
+
     ptls_aead_free(c);
 }
 
