@@ -666,27 +666,35 @@ int ptls_hkdf_extract(ptls_hash_algorithm_t *hash, void *output, ptls_iovec_t sa
  */
 int ptls_hkdf_expand(ptls_hash_algorithm_t *hash, void *output, size_t outlen, ptls_iovec_t prk, ptls_iovec_t info);
 /**
- *
+ * instantiates an AEAD cipher given a secret, which is expanded using hkdf to a set of key and iv
+ * @param aead
+ * @param hash
+ * @param is_enc 1 if creating a context for encryption, 0 if creating a context for decryption
+ * @param secret the secret. The size must be the digest length of the hash algorithm
+ * @return pointer to an AEAD context if successful, otherwise NULL
  */
 ptls_aead_context_t *ptls_aead_new(ptls_aead_algorithm_t *aead, ptls_hash_algorithm_t *hash, int is_enc, const void *secret);
 /**
- *
+ * destroys an AEAD cipher context
  */
 void ptls_aead_free(ptls_aead_context_t *ctx);
 /**
- *
+ * initializes the internal state of the encryptor
  */
 static void ptls_aead_encrypt_init(ptls_aead_context_t *ctx, uint64_t seq, const void *aad, size_t aadlen);
 /**
- *
+ * encrypts the input and updates the GCM state
+ * @return number of bytes emitted to output
  */
 static size_t ptls_aead_encrypt_update(ptls_aead_context_t *ctx, void *output, const void *input, size_t inlen);
 /**
- *
+ * emits buffered data (if any) and the GCM tag
+ * @return number of bytes emitted to output
  */
 static size_t ptls_aead_encrypt_final(ptls_aead_context_t *ctx, void *output);
 /**
- *
+ * decrypts an AEAD record
+ * @return number of bytes emitted to output if successful, or SIZE_MAX if the input is invalid (e.g. broken MAC)
  */
 static size_t ptls_aead_decrypt(ptls_aead_context_t *ctx, void *output, const void *input, size_t inlen, uint64_t seq,
                                 const void *aad, size_t aadlen);
