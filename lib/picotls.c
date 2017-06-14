@@ -447,7 +447,7 @@ static size_t aead_encrypt(struct st_ptls_traffic_protection_t *ctx, void *outpu
 {
     size_t off = 0;
 
-    ptls_aead_encrypt_init(ctx->aead, ctx->seq++);
+    ptls_aead_encrypt_init(ctx->aead, ctx->seq++, NULL, 0);
     off += ptls_aead_encrypt_update(ctx->aead, output + off, input, inlen);
     off += ptls_aead_encrypt_update(ctx->aead, output + off, &content_type, 1);
     off += ptls_aead_encrypt_final(ctx->aead, output + off);
@@ -457,7 +457,7 @@ static size_t aead_encrypt(struct st_ptls_traffic_protection_t *ctx, void *outpu
 
 static int aead_decrypt(struct st_ptls_traffic_protection_t *ctx, void *output, size_t *outlen, const void *input, size_t inlen)
 {
-    if ((*outlen = ptls_aead_decrypt(ctx->aead, output, input, inlen, ctx->seq)) == SIZE_MAX)
+    if ((*outlen = ptls_aead_decrypt(ctx->aead, output, input, inlen, ctx->seq, NULL, 0)) == SIZE_MAX)
         return PTLS_ALERT_BAD_RECORD_MAC;
     ++ctx->seq;
     return 0;

@@ -82,10 +82,10 @@ static void test_ciphersuite(ptls_cipher_suite_t *cs1, ptls_cipher_suite_t *cs2)
     /* encrypt */
     c = ptls_aead_new(cs1->aead, cs1->hash, 1, traffic_secret);
     assert(c != NULL);
-    ptls_aead_encrypt_init(c, 0);
+    ptls_aead_encrypt_init(c, 0, NULL, 0);
     enc1len = ptls_aead_encrypt_update(c, enc1, src1, strlen(src1));
     enc1len += ptls_aead_encrypt_final(c, enc1 + enc1len);
-    ptls_aead_encrypt_init(c, 1);
+    ptls_aead_encrypt_init(c, 1, NULL, 0);
     enc2len = ptls_aead_encrypt_update(c, enc2, src2, strlen(src2));
     enc2len += ptls_aead_encrypt_final(c, enc2 + enc2len);
     ptls_aead_free(c);
@@ -94,9 +94,9 @@ static void test_ciphersuite(ptls_cipher_suite_t *cs1, ptls_cipher_suite_t *cs2)
     assert(c != NULL);
 
     /* decrypt and compare */
-    dec1len = ptls_aead_decrypt(c, dec1, enc1, enc1len, 0);
+    dec1len = ptls_aead_decrypt(c, dec1, enc1, enc1len, 0, NULL, 0);
     ok(dec1len != SIZE_MAX);
-    dec2len = ptls_aead_decrypt(c, dec2, enc2, enc2len, 1);
+    dec2len = ptls_aead_decrypt(c, dec2, enc2, enc2len, 1, NULL, 0);
     ok(dec2len != SIZE_MAX);
     ok(strlen(src1) == dec1len);
     ok(memcmp(src1, dec1, dec1len) == 0);
@@ -105,7 +105,7 @@ static void test_ciphersuite(ptls_cipher_suite_t *cs1, ptls_cipher_suite_t *cs2)
 
     /* alter and decrypt to detect failure */
     enc1[0] ^= 1;
-    dec1len = ptls_aead_decrypt(c, dec1, enc1, enc1len, 0);
+    dec1len = ptls_aead_decrypt(c, dec1, enc1, enc1len, 0, NULL, 0);
     ok(dec1len == SIZE_MAX);
 
     ptls_aead_free(c);
@@ -114,6 +114,37 @@ static void test_ciphersuite(ptls_cipher_suite_t *cs1, ptls_cipher_suite_t *cs2)
 static void test_aes128gcm(void)
 {
     test_ciphersuite(find_aes128gcmsha256(ctx), find_aes128gcmsha256(ctx_peer));
+}
+
+static void test_aad_ciphersuite(ptls_cipher_suite_t *cs1, ptls_cipher_suite_t *cs2)
+{
+    const char *traffic_secret = "01234567890123456789012345678901", *src = "hello world", *aad = "my true aad";
+    ptls_aead_context_t *c;
+    char enc[256], dec[256];
+    size_t enclen, declen;
+
+    /* encrypt */
+    c = ptls_aead_new(cs1->aead, cs1->hash, 1, traffic_secret);
+    assert(c != NULL);
+    ptls_aead_encrypt_init(c, 123, aad, strlen(aad));
+    enclen = ptls_aead_encrypt_update(c, enc, src, strlen(src));
+    enclen += ptls_aead_encrypt_final(c, enc + enclen);
+    ptls_aead_free(c);
+
+    /* decrypt */
+    c = ptls_aead_new(cs2->aead, cs2->hash, 0, traffic_secret);
+    assert(c != NULL);
+    declen = ptls_aead_decrypt(c, dec, enc, enclen, 123, aad, strlen(aad));
+    ok(declen == strlen(src));
+    ok(memcmp(src, dec, declen) == 0);
+    declen = ptls_aead_decrypt(c, dec, enc, enclen, 123, "my fake aad", strlen(aad));
+    ok(declen == SIZE_MAX);
+    ptls_aead_free(c);
+}
+
+void test_aad(void)
+{
+    test_aad_ciphersuite(find_aes128gcmsha256(ctx), find_aes128gcmsha256(ctx_peer));
 }
 
 static struct {

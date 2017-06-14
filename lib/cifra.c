@@ -182,11 +182,11 @@ static void aes128gcm_dispose_crypto(ptls_aead_context_t *_ctx)
     ptls_clear_memory((uint8_t *)ctx + sizeof(ctx->super), sizeof(*ctx) - sizeof(ctx->super));
 }
 
-static void aes128gcm_encrypt_init(ptls_aead_context_t *_ctx, const void *iv)
+static void aes128gcm_encrypt_init(ptls_aead_context_t *_ctx, const void *iv, const void *aad, size_t aadlen)
 {
     struct aes128gcm_context_t *ctx = (struct aes128gcm_context_t *)_ctx;
 
-    cf_gcm_encrypt_init(&cf_aes, &ctx->aes, &ctx->gcm, NULL, 0, iv, AES128GCM_IV_SIZE);
+    cf_gcm_encrypt_init(&cf_aes, &ctx->aes, &ctx->gcm, aad, aadlen, iv, AES128GCM_IV_SIZE);
 }
 
 static size_t aes128gcm_encrypt_update(ptls_aead_context_t *_ctx, void *output, const void *input, size_t inlen)
@@ -205,7 +205,8 @@ static size_t aes128gcm_encrypt_final(ptls_aead_context_t *_ctx, void *output)
     return AES128GCM_TAG_SIZE;
 }
 
-static size_t aes128gcm_decrypt(ptls_aead_context_t *_ctx, void *output, const void *input, size_t inlen, const void *iv)
+static size_t aes128gcm_decrypt(ptls_aead_context_t *_ctx, void *output, const void *input, size_t inlen, const void *iv,
+                                const void *aad, size_t aadlen)
 {
     struct aes128gcm_context_t *ctx = (struct aes128gcm_context_t *)_ctx;
 
@@ -213,7 +214,7 @@ static size_t aes128gcm_decrypt(ptls_aead_context_t *_ctx, void *output, const v
         return SIZE_MAX;
     size_t tag_offset = inlen - AES128GCM_TAG_SIZE;
 
-    if (cf_gcm_decrypt(&cf_aes, &ctx->aes, input, tag_offset, NULL, 0, iv, AES128GCM_IV_SIZE, (uint8_t *)input + tag_offset,
+    if (cf_gcm_decrypt(&cf_aes, &ctx->aes, input, tag_offset, aad, aadlen, iv, AES128GCM_IV_SIZE, (uint8_t *)input + tag_offset,
                        AES128GCM_TAG_SIZE, output) != 0)
         return SIZE_MAX;
 
