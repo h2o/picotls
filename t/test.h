@@ -48,6 +48,5 @@ extern ptls_context_t *ctx, *ctx_peer;
 
 void test_key_exchange(ptls_key_exchange_algorithm_t *algo);
 void test_picotls(void);
-void test_aad(void);
 
 #endif

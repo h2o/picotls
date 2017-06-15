@@ -154,7 +154,6 @@ int main(int argc, char **argv)
 
     subtest("picotls", test_picotls);
     subtest("hrr", test_hrr);
-    subtest("aad", test_aad);
 
     return done_testing();
     return done_testing();

@@ -111,11 +111,6 @@ static void test_ciphersuite(ptls_cipher_suite_t *cs1, ptls_cipher_suite_t *cs2)
     ptls_aead_free(c);
 }
 
-static void test_aes128gcm(void)
-{
-    test_ciphersuite(find_aes128gcmsha256(ctx), find_aes128gcmsha256(ctx_peer));
-}
-
 static void test_aad_ciphersuite(ptls_cipher_suite_t *cs1, ptls_cipher_suite_t *cs2)
 {
     const char *traffic_secret = "01234567890123456789012345678901", *src = "hello world", *aad = "my true aad";
@@ -142,9 +137,12 @@ static void test_aad_ciphersuite(ptls_cipher_suite_t *cs1, ptls_cipher_suite_t *
     ptls_aead_free(c);
 }
 
-void test_aad(void)
+static void test_aes128gcm(void)
 {
-    test_aad_ciphersuite(find_aes128gcmsha256(ctx), find_aes128gcmsha256(ctx_peer));
+    ptls_cipher_suite_t *cs = find_aes128gcmsha256(ctx), *cs_peer = find_aes128gcmsha256(ctx);
+
+    test_ciphersuite(cs, cs_peer);
+    test_aad_ciphersuite(cs, cs_peer);
 }
 
 static struct {

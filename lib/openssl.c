@@ -389,11 +389,15 @@ static void aead_do_encrypt_init(ptls_aead_context_t *_ctx, const void *iv, cons
     struct aead_crypto_context_t *ctx = (struct aead_crypto_context_t *)_ctx;
     int ret;
 
-    assert(aadlen == 0 || !"openssl does not support GCM with aad");
-
     /* FIXME for performance, preserve the expanded key instead of the raw key */
     ret = EVP_EncryptInit_ex(ctx->evp_ctx, NULL, NULL, NULL, iv);
     assert(ret);
+
+    if (aadlen != 0) {
+        int blocklen;
+        ret = EVP_EncryptUpdate(ctx->evp_ctx, NULL, &blocklen, aad, (int)aadlen);
+        assert(ret);
+    }
 }
 
 static size_t aead_do_encrypt_update(ptls_aead_context_t *_ctx, void *output, const void *input, size_t inlen)
@@ -432,13 +436,15 @@ static size_t aead_do_decrypt(ptls_aead_context_t *_ctx, void *_output, const vo
     size_t off = 0, tag_size = ctx->super.algo->tag_size;
     int blocklen, ret;
 
-    assert(aadlen == 0 || !"openssl does not support GCM with aad");
-
     if (inlen < tag_size)
         return SIZE_MAX;
 
     ret = EVP_DecryptInit_ex(ctx->evp_ctx, NULL, NULL, NULL, iv);
     assert(ret);
+    if (aadlen != 0) {
+        ret = EVP_DecryptUpdate(ctx->evp_ctx, NULL, &blocklen, aad, (int)aadlen);
+        assert(ret);
+    }
     ret = EVP_DecryptUpdate(ctx->evp_ctx, output + off, &blocklen, input, (int)(inlen - tag_size));
     assert(ret);
     off += blocklen;
