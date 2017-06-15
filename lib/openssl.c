@@ -384,60 +384,71 @@ static void aead_dispose_crypto(ptls_aead_context_t *_ctx)
         EVP_CIPHER_CTX_free(ctx->evp_ctx);
 }
 
-static int aead_do_encrypt(ptls_aead_context_t *_ctx, void *_output, size_t *outlen, const void *input, size_t inlen,
-                           const void *iv, uint8_t enc_content_type)
+static void aead_do_encrypt_init(ptls_aead_context_t *_ctx, const void *iv, const void *aad, size_t aadlen)
 {
     struct aead_crypto_context_t *ctx = (struct aead_crypto_context_t *)_ctx;
-    uint8_t *output = _output;
-    size_t tag_size = ctx->super.algo->tag_size;
-    int blocklen;
+    int ret;
 
-    *outlen = 0;
+    assert(aadlen == 0 || !"openssl does not support GCM with aad");
 
     /* FIXME for performance, preserve the expanded key instead of the raw key */
-    if (!EVP_EncryptInit_ex(ctx->evp_ctx, NULL, NULL, NULL, iv))
-        return PTLS_ERROR_LIBRARY;
-    if (!EVP_EncryptUpdate(ctx->evp_ctx, output, &blocklen, input, (int)inlen))
-        return PTLS_ERROR_LIBRARY;
-    *outlen += blocklen;
-    if (!EVP_EncryptUpdate(ctx->evp_ctx, output + *outlen, &blocklen, &enc_content_type, 1))
-        return PTLS_ERROR_LIBRARY;
-    *outlen += blocklen;
-    if (!EVP_EncryptFinal_ex(ctx->evp_ctx, output + *outlen, &blocklen))
-        return PTLS_ERROR_LIBRARY;
-    *outlen += blocklen;
-    if (!EVP_CIPHER_CTX_ctrl(ctx->evp_ctx, EVP_CTRL_GCM_GET_TAG, (int)tag_size, output + *outlen))
-        return PTLS_ERROR_LIBRARY;
-    *outlen += tag_size;
-
-    return 0;
+    ret = EVP_EncryptInit_ex(ctx->evp_ctx, NULL, NULL, NULL, iv);
+    assert(ret);
 }
 
-static int aead_do_decrypt(ptls_aead_context_t *_ctx, void *_output, size_t *outlen, const void *input, size_t inlen,
-                           const void *iv, uint8_t unused)
+static size_t aead_do_encrypt_update(ptls_aead_context_t *_ctx, void *output, const void *input, size_t inlen)
+{
+    struct aead_crypto_context_t *ctx = (struct aead_crypto_context_t *)_ctx;
+    int blocklen, ret;
+
+    ret = EVP_EncryptUpdate(ctx->evp_ctx, output, &blocklen, input, (int)inlen);
+    assert(ret);
+
+    return blocklen;
+}
+
+static size_t aead_do_encrypt_final(ptls_aead_context_t *_ctx, void *_output)
 {
     struct aead_crypto_context_t *ctx = (struct aead_crypto_context_t *)_ctx;
     uint8_t *output = _output;
-    size_t tag_size = ctx->super.algo->tag_size;
-    int blocklen;
+    size_t off = 0, tag_size = ctx->super.algo->tag_size;
+    int blocklen, ret;
 
-    *outlen = 0;
+    ret = EVP_EncryptFinal_ex(ctx->evp_ctx, output + off, &blocklen);
+    assert(ret);
+    off += blocklen;
+    ret = EVP_CIPHER_CTX_ctrl(ctx->evp_ctx, EVP_CTRL_GCM_GET_TAG, (int)tag_size, output + off);
+    assert(ret);
+    off += tag_size;
+
+    return off;
+}
+
+static size_t aead_do_decrypt(ptls_aead_context_t *_ctx, void *_output, const void *input, size_t inlen, const void *iv,
+                              const void *aad, size_t aadlen)
+{
+    struct aead_crypto_context_t *ctx = (struct aead_crypto_context_t *)_ctx;
+    uint8_t *output = _output;
+    size_t off = 0, tag_size = ctx->super.algo->tag_size;
+    int blocklen, ret;
+
+    assert(aadlen == 0 || !"openssl does not support GCM with aad");
 
     if (inlen < tag_size)
-        return PTLS_ALERT_BAD_RECORD_MAC;
+        return SIZE_MAX;
 
-    if (!EVP_DecryptInit_ex(ctx->evp_ctx, NULL, NULL, NULL, iv))
-        return PTLS_ERROR_LIBRARY;
-    if (!EVP_DecryptUpdate(ctx->evp_ctx, output, &blocklen, input, (int)(inlen - tag_size)))
-        return PTLS_ERROR_LIBRARY;
-    *outlen += blocklen;
+    ret = EVP_DecryptInit_ex(ctx->evp_ctx, NULL, NULL, NULL, iv);
+    assert(ret);
+    ret = EVP_DecryptUpdate(ctx->evp_ctx, output + off, &blocklen, input, (int)(inlen - tag_size));
+    assert(ret);
+    off += blocklen;
     if (!EVP_CIPHER_CTX_ctrl(ctx->evp_ctx, EVP_CTRL_GCM_SET_TAG, (int)tag_size, (void *)((uint8_t *)input + inlen - tag_size)))
-        return PTLS_ERROR_LIBRARY;
-    if (!EVP_DecryptFinal_ex(ctx->evp_ctx, output + *outlen, &blocklen))
-        return PTLS_ALERT_BAD_RECORD_MAC;
-    *outlen += blocklen;
+        return SIZE_MAX;
+    if (!EVP_DecryptFinal_ex(ctx->evp_ctx, output + off, &blocklen))
+        return SIZE_MAX;
+    off += blocklen;
 
-    return 0;
+    return off;
 }
 
 static int aead_setup_crypto(ptls_aead_context_t *_ctx, int is_enc, const void *key, const EVP_CIPHER *cipher)
@@ -446,7 +457,17 @@ static int aead_setup_crypto(ptls_aead_context_t *_ctx, int is_enc, const void *
     int ret;
 
     ctx->super.dispose_crypto = aead_dispose_crypto;
-    ctx->super.do_transform = is_enc ? aead_do_encrypt : aead_do_decrypt;
+    if (is_enc) {
+        ctx->super.do_encrypt_init = aead_do_encrypt_init;
+        ctx->super.do_encrypt_update = aead_do_encrypt_update;
+        ctx->super.do_encrypt_final = aead_do_encrypt_final;
+        ctx->super.do_decrypt = NULL;
+    } else {
+        ctx->super.do_encrypt_init = NULL;
+        ctx->super.do_encrypt_update = NULL;
+        ctx->super.do_encrypt_final = NULL;
+        ctx->super.do_decrypt = aead_do_decrypt;
+    }
     ctx->evp_ctx = NULL;
 
     if ((ctx->evp_ctx = EVP_CIPHER_CTX_new()) == NULL) {
