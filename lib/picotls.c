@@ -24,7 +24,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef WIN32
+#include "wincompat.h"
+#else
 #include <sys/time.h>
+#endif
 #include "picotls.h"
 
 #define PTLS_MAX_PLAINTEXT_RECORD_SIZE 16384
@@ -261,7 +265,7 @@ struct st_ptls_extension_bitmap_t {
     uint8_t bits[8]; /* only ids below 64 is tracked */
 };
 
-static uint8_t zeroes_of_max_digest_size[PTLS_MAX_DIGEST_SIZE] = {};
+static uint8_t zeroes_of_max_digest_size[PTLS_MAX_DIGEST_SIZE] = {0};
 
 static inline int extension_bitmap_is_set(struct st_ptls_extension_bitmap_t *bitmap, uint16_t id)
 {
@@ -474,7 +478,7 @@ static int buffer_encrypt_record(ptls_buffer_t *buf, size_t rec_start, struct st
     enclen = aead_encrypt(enc, encrypted, buf->base + rec_start + 5, bodylen, buf->base[rec_start]);
     buf->off = rec_start;
     ptls_buffer_push(buf, PTLS_CONTENT_TYPE_APPDATA, 3, 1);
-    ptls_buffer_push16(buf, enclen);
+    ptls_buffer_push16(buf, (uint16_t)enclen);
     ptls_buffer_pushv(buf, encrypted, enclen);
 
 Exit:
@@ -588,7 +592,7 @@ static int hkdf_expand_label(ptls_hash_algorithm_t *algo, void *output, size_t o
 
     ptls_buffer_init(&hkdf_label, hkdf_label_buf, sizeof(hkdf_label_buf));
 
-    ptls_buffer_push16(&hkdf_label, outlen);
+    ptls_buffer_push16(&hkdf_label, (uint16_t)outlen);
     ptls_buffer_push_block(&hkdf_label, 1, {
         const char *prefix = "TLS 1.3, ";
         ptls_buffer_pushv(&hkdf_label, prefix, strlen(prefix));
@@ -1292,7 +1296,7 @@ static int decode_server_hello(ptls_t *tls, struct st_ptls_server_hello_t *sh, c
     uint16_t selected_psk_identity = UINT16_MAX;
     int ret;
 
-    *sh = (struct st_ptls_server_hello_t){};
+    *sh = (struct st_ptls_server_hello_t){{0}};
 
     { /* check protocol version */
         uint16_t ver;
@@ -2076,7 +2080,7 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
     } key_share = {NULL};
     enum { HANDSHAKE_MODE_FULL, HANDSHAKE_MODE_PSK, HANDSHAKE_MODE_PSK_DHE } mode;
     size_t psk_index = SIZE_MAX;
-    ptls_iovec_t pubkey = {}, ecdh_secret = {};
+    ptls_iovec_t pubkey = {0}, ecdh_secret = {0};
     uint8_t finished_key[PTLS_MAX_DIGEST_SIZE];
     int accept_early_data = 0, is_second_flight = tls->state == PTLS_STATE_SERVER_EXPECT_SECOND_CLIENT_HELLO, ret;
 
@@ -2390,7 +2394,8 @@ static int parse_record_header(struct st_ptls_record_t *rec, const uint8_t *src)
     rec->version = ntoh16(src + 1);
     rec->length = ntoh16(src + 3);
 
-    if (rec->length > (rec->type == PTLS_CONTENT_TYPE_APPDATA ? PTLS_MAX_ENCRYPTED_RECORD_SIZE : PTLS_MAX_PLAINTEXT_RECORD_SIZE))
+    if (rec->length >
+        (size_t)(rec->type == PTLS_CONTENT_TYPE_APPDATA ? PTLS_MAX_ENCRYPTED_RECORD_SIZE : PTLS_MAX_PLAINTEXT_RECORD_SIZE))
         return PTLS_ALERT_DECODE_ERROR;
 
     return 0;
@@ -2435,7 +2440,7 @@ static int parse_record(ptls_t *tls, struct st_ptls_record_t *rec, const uint8_t
     if (addlen != 0) {
         if ((ret = ptls_buffer_reserve(&tls->recvbuf.rec, addlen)) != 0)
             return ret;
-        if (addlen > end - src)
+        if (addlen > (size_t)(end - src))
             addlen = end - src;
         if (addlen != 0) {
             memcpy(tls->recvbuf.rec.base + tls->recvbuf.rec.off, src, addlen);
@@ -2731,7 +2736,7 @@ static int handle_handshake_record(ptls_t *tls, int (*cb)(ptls_t *tls, ptls_buff
     ret = PTLS_ERROR_IN_PROGRESS;
     while (src_end - src >= 4) {
         size_t mess_len = 4 + ntoh24(src + 1);
-        if (src_end - src < mess_len)
+        if (src_end - src < (int)mess_len)
             break;
         ret = cb(tls, sendbuf, ptls_iovec_init(src, mess_len), src_end - src == mess_len, properties);
         switch (ret) {
@@ -3078,7 +3083,7 @@ int ptls_hkdf_expand(ptls_hash_algorithm_t *algo, void *output, size_t outlen, p
             hmac->update(hmac, digest, algo->digest_size);
         }
         hmac->update(hmac, info.base, info.len);
-        uint8_t gen = i + 1;
+        uint8_t gen = (uint8_t)(i + 1);
         hmac->update(hmac, &gen, 1);
         hmac->final(hmac, digest, 1);
 

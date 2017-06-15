@@ -535,7 +535,7 @@ int ptls_decode64(uint64_t *value, const uint8_t **src, const uint8_t *end);
 #define ptls_decode_open_block(src, end, capacity, block)                                                                          \
     do {                                                                                                                           \
         size_t _capacity = (capacity);                                                                                             \
-        if (_capacity > end - (src)) {                                                                                             \
+        if (_capacity > (size_t)(end - (src))) {                                                                                   \
             ret = PTLS_ALERT_DECODE_ERROR;                                                                                         \
             goto Exit;                                                                                                             \
         }                                                                                                                          \
@@ -543,7 +543,7 @@ int ptls_decode64(uint64_t *value, const uint8_t **src, const uint8_t *end);
         do {                                                                                                                       \
             _block_size = _block_size << 8 | *(src)++;                                                                             \
         } while (--_capacity != 0);                                                                                                \
-        if (_block_size > end - (src)) {                                                                                           \
+        if (_block_size > (size_t)(end - (src))) {                                                                                 \
             ret = PTLS_ALERT_DECODE_ERROR;                                                                                         \
             goto Exit;                                                                                                             \
         }                                                                                                                          \
