@@ -43,17 +43,15 @@
 #include <wincrypt.h>
 static void read_entropy(uint8_t *entropy, size_t size)
 {
-    HCRYPTPROV   hCryptProv = 0;
+    HCRYPTPROV hCryptProv = 0;
     BOOL ret = FALSE;
 
-    if (CryptAcquireContext(&hCryptProv, NULL, NULL, PROV_RSA_FULL, 0))
-    {
+    if (CryptAcquireContext(&hCryptProv, NULL, NULL, PROV_RSA_FULL, 0)) {
         ret = CryptGenRandom(hCryptProv, size, entropy);
         (void)CryptReleaseContext(hCryptProv, 0);
     }
 
-    if (ret == FALSE)
-    {
+    if (ret == FALSE) {
         abort();
     }
 }
