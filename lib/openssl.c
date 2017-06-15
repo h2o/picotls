@@ -19,6 +19,12 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
+
+#ifdef WIN32
+#include "wincompat.h"
+#else
+#include <unistd.h>
+#endif
 #include <assert.h>
 #include <stdlib.h>
 #include <string.h>
