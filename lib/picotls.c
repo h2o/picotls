@@ -1277,11 +1277,7 @@ static int decode_server_hello(ptls_t *tls, struct st_ptls_server_hello_t *sh, c
     uint16_t selected_psk_identity = UINT16_MAX;
     int ret;
 
-#ifdef WIN32
-    memset(sh, 0, sizeof(struct st_ptls_server_hello_t));
-#else
-    *sh = (struct st_ptls_server_hello_t){};
-#endif
+    *sh = (struct st_ptls_server_hello_t){{0}};
 
     { /* check protocol version */
         uint16_t ver;
