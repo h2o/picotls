@@ -28,13 +28,13 @@
 
 ptls_context_t *ctx, *ctx_peer;
 
-static ptls_cipher_suite_t *find_aes128gcmsha256(ptls_context_t *ctx)
+static ptls_cipher_suite_t *find_cipher(ptls_context_t *ctx, uint16_t id)
 {
     ptls_cipher_suite_t **cs;
     for (cs = ctx->cipher_suites; *cs != NULL; ++cs)
-        if ((*cs)->id == PTLS_CIPHER_SUITE_AES_128_GCM_SHA256)
+        if ((*cs)->id == id)
             return *cs;
-    assert(!"FIXME");
+    return NULL;
 }
 
 static void test_hmac_sha256(void)
@@ -43,7 +43,8 @@ static void test_hmac_sha256(void)
     const char *secret = "\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b", *message = "Hi There";
     uint8_t digest[32];
 
-    ptls_hash_context_t *hctx = ptls_hmac_create(find_aes128gcmsha256(ctx)->hash, secret, strlen(secret));
+    ptls_hash_context_t *hctx =
+        ptls_hmac_create(find_cipher(ctx, PTLS_CIPHER_SUITE_AES_128_GCM_SHA256)->hash, secret, strlen(secret));
     hctx->update(hctx, message, strlen(message));
     hctx->final(hctx, digest, 0);
 
@@ -54,7 +55,7 @@ static void test_hmac_sha256(void)
 
 static void test_hkdf(void)
 {
-    ptls_hash_algorithm_t *sha256 = find_aes128gcmsha256(ctx)->hash;
+    ptls_hash_algorithm_t *sha256 = find_cipher(ctx, PTLS_CIPHER_SUITE_AES_128_GCM_SHA256)->hash;
     const char salt[] = "\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c";
     const char ikm[] = "\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b";
     const char info[] = "\xf0\xf1\xf2\xf3\xf4\xf5\xf6\xf7\xf8\xf9";
@@ -139,10 +140,22 @@ static void test_aad_ciphersuite(ptls_cipher_suite_t *cs1, ptls_cipher_suite_t *
 
 static void test_aes128gcm(void)
 {
-    ptls_cipher_suite_t *cs = find_aes128gcmsha256(ctx), *cs_peer = find_aes128gcmsha256(ctx);
+    ptls_cipher_suite_t *cs = find_cipher(ctx, PTLS_CIPHER_SUITE_AES_128_GCM_SHA256),
+                        *cs_peer = find_cipher(ctx, PTLS_CIPHER_SUITE_AES_128_GCM_SHA256);
 
     test_ciphersuite(cs, cs_peer);
     test_aad_ciphersuite(cs, cs_peer);
+}
+
+static void test_chacha20poly1305(void)
+{
+    ptls_cipher_suite_t *cs = find_cipher(ctx, PTLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256),
+                        *cs_peer = find_cipher(ctx, PTLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256);
+
+    if (cs != NULL && cs_peer != NULL) {
+        test_ciphersuite(cs, cs_peer);
+        test_aad_ciphersuite(cs, cs_peer);
+    }
 }
 
 static struct {
@@ -500,7 +513,8 @@ void test_picotls(void)
 {
     subtest("hmac-sha256", test_hmac_sha256);
     subtest("hkdf", test_hkdf);
-    subtest("aead-aes128gcm", test_aes128gcm);
+    subtest("aes128gcm", test_aes128gcm);
+    subtest("chacha20poly1305", test_chacha20poly1305);
 
     subtest("fragmented-message", test_fragmented_message);
 
