@@ -3135,6 +3135,18 @@ void ptls_aead_free(ptls_aead_context_t *ctx)
     free(ctx);
 }
 
+size_t ptls_aead_encrypt(ptls_aead_context_t *ctx, void *output, const void *input, size_t inlen, uint64_t seq, const void *aad,
+                         size_t aadlen)
+{
+    size_t off = 0;
+
+    ptls_aead_encrypt_init(ctx, seq, aad, aadlen);
+    off += ptls_aead_encrypt_update(ctx, output + off, input, inlen);
+    off += ptls_aead_encrypt_final(ctx, output + off);
+
+    return off;
+}
+
 void ptls_aead__build_iv(ptls_aead_context_t *ctx, uint8_t *iv, uint64_t seq)
 {
     size_t iv_size = ctx->algo->iv_size, i;

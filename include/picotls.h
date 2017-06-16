@@ -679,6 +679,11 @@ ptls_aead_context_t *ptls_aead_new(ptls_aead_algorithm_t *aead, ptls_hash_algori
  */
 void ptls_aead_free(ptls_aead_context_t *ctx);
 /**
+ *
+ */
+size_t ptls_aead_encrypt(ptls_aead_context_t *ctx, void *output, const void *input, size_t inlen, uint64_t seq, const void *aad,
+                         size_t aadlen);
+/**
  * initializes the internal state of the encryptor
  */
 static void ptls_aead_encrypt_init(ptls_aead_context_t *ctx, uint64_t seq, const void *aad, size_t aadlen);
