@@ -508,6 +508,13 @@ static int aead_aes128gcm_setup_crypto(ptls_aead_context_t *ctx, int is_enc, con
     return aead_setup_crypto(ctx, is_enc, key, EVP_aes_128_gcm());
 }
 
+#if defined(PTLS_OPENSSL_HAVE_CHACHA20_POLY1305)
+static int aead_chacha20poly1305_setup_crypto(ptls_aead_context_t *ctx, int is_enc, const void *key)
+{
+    return aead_setup_crypto(ctx, is_enc, key, EVP_chacha20_poly1305());
+}
+#endif
+
 struct sha256_context_t {
     ptls_hash_context_t super;
     SHA256_CTX ctx;
@@ -649,7 +656,11 @@ int ptls_openssl_init_sign_certificate(ptls_openssl_sign_certificate_t *self, EV
     *self = (ptls_openssl_sign_certificate_t){{sign_certificate}};
     size_t scheme_index = 0;
 
-#define PUSH_SCHEME(id, md) self->schemes[scheme_index++] = (struct st_ptls_openssl_signature_scheme_t){id, md}
+#define PUSH_SCHEME(id, md)                                                                                                        \
+    self->schemes[scheme_index++] = (struct st_ptls_openssl_signature_scheme_t)                                                    \
+    {                                                                                                                              \
+        id, md                                                                                                                     \
+    }
 
     switch (EVP_PKEY_id(key)) {
     case EVP_PKEY_RSA:
@@ -993,4 +1004,14 @@ ptls_aead_algorithm_t ptls_openssl_aes128gcm = {
 ptls_hash_algorithm_t ptls_openssl_sha256 = {64, 32, sha256_create};
 ptls_cipher_suite_t ptls_openssl_aes128gcmsha256 = {PTLS_CIPHER_SUITE_AES_128_GCM_SHA256, &ptls_openssl_aes128gcm,
                                                     &ptls_openssl_sha256};
-ptls_cipher_suite_t *ptls_openssl_cipher_suites[] = {&ptls_openssl_aes128gcmsha256, NULL};
+#if defined(PTLS_OPENSSL_HAVE_CHACHA20_POLY1305)
+ptls_aead_algorithm_t ptls_openssl_chacha20poly1305 = {
+    "CHACHA20-POLY1305", 32, 12, 16, sizeof(struct aead_crypto_context_t), aead_chacha20poly1305_setup_crypto};
+ptls_cipher_suite_t ptls_openssl_chacha20poly1305sha256 = {PTLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256,
+                                                           &ptls_openssl_chacha20poly1305, &ptls_openssl_sha256};
+#endif
+ptls_cipher_suite_t *ptls_openssl_cipher_suites[] = {&ptls_openssl_aes128gcmsha256,
+#if defined(PTLS_OPENSSL_HAVE_CHACHA20_POLY1305)
+                                                     &ptls_openssl_chacha20poly1305sha256,
+#endif
+                                                     NULL};
