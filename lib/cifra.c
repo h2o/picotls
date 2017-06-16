@@ -407,7 +407,7 @@ static int aead_chacha20poly1305_setup_crypto(ptls_aead_context_t *_ctx, int is_
         ctx->super.do_decrypt = chacha20poly1305_decrypt;
     }
 
-    memcpy(ctx->key, key, sizeof(key));
+    memcpy(ctx->key, key, sizeof(ctx->key));
     return 0;
 }
 
