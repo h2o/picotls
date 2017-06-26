@@ -35,7 +35,7 @@
 #include "bitops.h"
 #include "drbg.h"
 #include "curve25519.h"
-#include "handy.h"
+#include "ext/handy.h"
 #include "modes.h"
 #include "poly1305.h"
 #include "salsa20.h"

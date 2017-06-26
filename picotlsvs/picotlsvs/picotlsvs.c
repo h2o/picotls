@@ -167,6 +167,6 @@ int main()
         printf("Exit handshake after %d rounds, ret = %d.\n", nb_rounds, ret);
     }
 
-    return 0;
+    return ret;
 }
 
