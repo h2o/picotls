@@ -2587,9 +2587,9 @@ int ptls_set_negotiated_protocol(ptls_t *tls, const char *protocol, size_t proto
     return 0;
 }
 
-int ptls_is_early_data(ptls_t *tls)
+int ptls_handshake_is_complete(ptls_t *tls)
 {
-    return tls->server.early_data != NULL;
+    return tls->state >= PTLS_STATE_POST_HANDSHAKE_MIN;
 }
 
 int ptls_is_psk_handshake(ptls_t *tls)

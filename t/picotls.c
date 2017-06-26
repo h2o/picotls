@@ -337,7 +337,7 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int check_ch)
         ok(consumed == cbuf.off);
         ok(decbuf.off == strlen(req));
         ok(memcmp(decbuf.base, req, decbuf.off) == 0);
-        ok(ptls_is_early_data(server));
+        ok(!ptls_handshake_is_complete(server));
         cbuf.off = 0;
         decbuf.off = 0;
 
@@ -381,7 +381,7 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int check_ch)
         ok(consumed == cbuf.off);
         ok(decbuf.off == strlen(req));
         ok(memcmp(decbuf.base, req, strlen(req)) == 0);
-        ok(!ptls_is_early_data(server));
+        ok(ptls_handshake_is_complete(server));
         decbuf.off = 0;
 
         ret = ptls_send(server, &sbuf, resp, strlen(resp));
@@ -394,7 +394,7 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int check_ch)
     ok(consumed == sbuf.off);
     ok(decbuf.off == strlen(resp));
     ok(memcmp(decbuf.base, resp, strlen(resp)) == 0);
-    ok(!ptls_is_early_data(client));
+    ok(ptls_handshake_is_complete(client));
     decbuf.off = 0;
 
     if (mode == TEST_HANDSHAKE_EARLY_DATA) {
@@ -403,7 +403,7 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int check_ch)
         ok(ret == 0);
         ok(cbuf.off == consumed);
         ok(decbuf.off == 0);
-        ok(!ptls_is_early_data(client));
+        ok(ptls_handshake_is_complete(client));
     }
 
     ptls_buffer_dispose(&cbuf);
