@@ -1,4 +1,4 @@
-/* picotlsvs: test program for the TLS 1.3 library */
+/* picotlsvs: test program for the TLS 1.3 library. */
 #include <stdio.h>
 #include <openssl/pem.h>
 #include "../picotls/wincompat.h"
