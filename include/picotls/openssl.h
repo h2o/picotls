@@ -25,7 +25,7 @@
 #include <openssl/evp.h>
 #include <openssl/hmac.h>
 #include <openssl/x509.h>
-#include "picotls.h"
+#include "../../include/picotls.h"
 
 extern ptls_key_exchange_algorithm_t ptls_openssl_secp256r1;
 extern ptls_key_exchange_algorithm_t *ptls_openssl_key_exchanges[];
