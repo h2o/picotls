@@ -93,10 +93,11 @@ void cf_poly1305_update(cf_poly1305 *ctx,
  */
 #ifdef WIN32
 void cf_poly1305_finish(cf_poly1305 *ctx,
-    uint8_t out[16]);
+                        uint8_t out[16]);
 #else
 void cf_poly1305_finish(cf_poly1305 *ctx,
-                        uint8_t out[static 16]);
+    uint8_t out[static 16]);
 #endif
+
 
 #endif
