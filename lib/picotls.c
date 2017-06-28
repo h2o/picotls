@@ -452,9 +452,9 @@ static size_t aead_encrypt(struct st_ptls_traffic_protection_t *ctx, void *outpu
     size_t off = 0;
 
     ptls_aead_encrypt_init(ctx->aead, ctx->seq++, NULL, 0);
-    off += ptls_aead_encrypt_update(ctx->aead, output + off, input, inlen);
-    off += ptls_aead_encrypt_update(ctx->aead, output + off, &content_type, 1);
-    off += ptls_aead_encrypt_final(ctx->aead, output + off);
+    off += ptls_aead_encrypt_update(ctx->aead, ((uint8_t *)output) + off, input, inlen);
+    off += ptls_aead_encrypt_update(ctx->aead, ((uint8_t *)output) + off, &content_type, 1);
+    off += ptls_aead_encrypt_final(ctx->aead, ((uint8_t *)output) + off);
 
     return off;
 }
@@ -3141,8 +3141,8 @@ size_t ptls_aead_encrypt(ptls_aead_context_t *ctx, void *output, const void *inp
     size_t off = 0;
 
     ptls_aead_encrypt_init(ctx, seq, aad, aadlen);
-    off += ptls_aead_encrypt_update(ctx, output + off, input, inlen);
-    off += ptls_aead_encrypt_final(ctx, output + off);
+    off += ptls_aead_encrypt_update(ctx, ((uint8_t *)output) + off, input, inlen);
+    off += ptls_aead_encrypt_final(ctx, ((uint8_t *)output) + off);
 
     return off;
 }

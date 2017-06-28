@@ -160,7 +160,7 @@ static inline uint32_t mask_u32(uint32_t x, uint32_t y)
 {
   uint32_t diff = x ^ y;
   uint32_t diff_is_zero = ~diff & (diff - 1);
-  return - (diff_is_zero >> 31);
+  return (uint32_t)(-(int32_t)(diff_is_zero >> 31));
 }
 
 /** Product 0xff if x == y, zero otherwise, without branching. */
