@@ -51,8 +51,9 @@ static void poly1305_add(uint32_t h[static 17],
                          const uint32_t x[static 17])
 {
   uint32_t carry = 0;
+  int i;
 
-  for (int i = 0; i < 17; i++)
+  for (i = 0; i < 17; i++)
   {
     carry += h[i] + x[i];
     h[i] = carry & 0xff;
@@ -64,7 +65,8 @@ static void poly1305_add(uint32_t h[static 17],
 static void poly1305_min_reduce(uint32_t x[static 17])
 {
   uint32_t carry = 0;
-  for (int i = 0; i < 16; i++)
+  int i;
+  for (i = 0; i < 16; i++)
   {
     carry += x[i];
     x[i] = carry & 0xff;
@@ -80,7 +82,7 @@ static void poly1305_min_reduce(uint32_t x[static 17])
   x[16] = carry & 0x03;
   carry = 5 * (carry >> 2);
 
-  for (int i = 0; i < 16; i++)
+  for (i = 0; i < 16; i++)
   {
     carry += x[i];
     x[i] = carry & 0xff;
@@ -99,8 +101,9 @@ static const uint32_t negative_1305[17] = {
 static void poly1305_full_reduce(uint32_t x[static 17])
 {
   uint32_t xsub[17];
+  size_t i;
 
-  for (size_t i = 0; i < 17; i++)
+  for (i = 0; i < 17; i++)
     xsub[i] = x[i];
 
   poly1305_add(xsub, negative_1305);
@@ -111,7 +114,7 @@ static void poly1305_full_reduce(uint32_t x[static 17])
   uint32_t negative_mask = mask_u32(xsub[16] & 0x80, 0x80);
   uint32_t positive_mask = negative_mask ^ 0xffffffff;
 
-  for (size_t i = 0; i < 17; i++)
+  for (i = 0; i < 17; i++)
     x[i] = (x[i] & negative_mask) | (xsub[i] & positive_mask);
 }
 
@@ -119,12 +122,14 @@ static void poly1305_mul(uint32_t x[static 17],
                          const uint32_t y[static 17])
 {
   uint32_t r[17];
+  int i;
 
-  for (int i = 0; i < 17; i++)
+  for (i = 0; i < 17; i++)
   {
     uint32_t accum = 0;
+    int j;
 
-    for (int j = 0; j <= i; j++)
+    for (j = 0; j <= i; j++)
       accum += x[j] * y[i - j];
 
     /* Add in carries.  These get shifted 130 bits
@@ -137,7 +142,7 @@ static void poly1305_mul(uint32_t x[static 17],
      *     17 * 8: byte indexing shift (136 bits)
      *     130: desired shift
      */
-    for (int j = i + 1; j < 17; j++)
+    for (j = i + 1; j < 17; j++)
       accum += (5 << 6) * x[j] * y[i + 17 - j];
 
     r[i] = accum;
@@ -145,7 +150,7 @@ static void poly1305_mul(uint32_t x[static 17],
 
   poly1305_min_reduce(r);
 
-  for (size_t i = 0; i < 17; i++)
+  for (i = 0; i < 17; i++)
     x[i] = r[i];
 }
 
@@ -161,8 +166,9 @@ static void poly1305_whole_block(void *vctx,
 {
   cf_poly1305 *ctx = vctx;
   uint32_t c[17];
+  int i;
 
-  for (int i = 0; i < 16; i++)
+  for (i = 0; i < 16; i++)
     c[i] = buf[i];
 
   c[16] = 1;
@@ -172,8 +178,9 @@ static void poly1305_whole_block(void *vctx,
 static void poly1305_last_block(cf_poly1305 *ctx)
 {
   uint32_t c[17] = { 0 };
+  size_t i;
 
-  for (size_t i = 0; i < ctx->npartial; i++)
+  for (i = 0; i < ctx->npartial; i++)
     c[i] = ctx->partial[i];
 
   c[ctx->npartial] = 1;
@@ -198,14 +205,15 @@ void cf_poly1305_finish(cf_poly1305 *ctx,
     poly1305_last_block(ctx);
 
   uint32_t s[17];
-  for (size_t i = 0; i < 16; i++)
+  size_t i;
+  for (i = 0; i < 16; i++)
     s[i] = ctx->s[i];
   s[16] = 0;
 
   poly1305_full_reduce(ctx->h);
   poly1305_add(ctx->h, s);
 
-  for (size_t i = 0; i < 16; i++)
+  for (i = 0; i < 16; i++)
     out[i] = ctx->h[i];
 
   mem_clean(ctx, sizeof *ctx);
