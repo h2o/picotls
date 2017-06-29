@@ -42,12 +42,21 @@
  * :param ciphertext: ciphertext output buffer, nbytes in length.
  * :param tag: authentication tag output buffer.
  */
+#ifdef WIN32
+void cf_chacha20poly1305_encrypt(const uint8_t key[32],
+    const uint8_t nonce[12],
+    const uint8_t *header, size_t nheader,
+    const uint8_t *plaintext, size_t nbytes,
+    uint8_t *ciphertext,
+    uint8_t tag[16]);
+#else
 void cf_chacha20poly1305_encrypt(const uint8_t key[static 32],
                                  const uint8_t nonce[static 12],
                                  const uint8_t *header, size_t nheader,
                                  const uint8_t *plaintext, size_t nbytes,
                                  uint8_t *ciphertext,
                                  uint8_t tag[static 16]);
+#endif
 
 /* .. c:function:: $DECL
  * ChaCha20-Poly1305 authenticated decryption.
@@ -63,11 +72,20 @@ void cf_chacha20poly1305_encrypt(const uint8_t key[static 32],
  * :param plaintext: plaintext output buffer, nbytes in length.
  * :param tag: authentication tag output buffer.
  */
+#ifdef WIN32
+int cf_chacha20poly1305_decrypt(const uint8_t key[32],
+    const uint8_t nonce[12],
+    const uint8_t *header, size_t nheader,
+    const uint8_t *ciphertext, size_t nbytes,
+    const uint8_t tag[16],
+    uint8_t *plaintext);
+#else
 int cf_chacha20poly1305_decrypt(const uint8_t key[static 32],
                                 const uint8_t nonce[static 12],
                                 const uint8_t *header, size_t nheader,
                                 const uint8_t *ciphertext, size_t nbytes,
                                 const uint8_t tag[static 16],
                                 uint8_t *plaintext);
+#endif
 
 #endif

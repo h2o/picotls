@@ -18,6 +18,10 @@
 #include <stdint.h>
 #include <stddef.h>
 
+#ifdef WIN32
+#include <intrin.h>
+#endif
+
 /* Assorted bitwise and common operations used in ciphers. */
 
 /** Circularly rotate right x by n bits.
@@ -294,7 +298,13 @@ static inline void copy_bytes_unaligned(uint8_t *out, const uint8_t *in, size_t 
 
 static inline uint32_t count_trailing_zeroes(uint32_t x)
 {
-  return (uint32_t) __builtin_ctzl(x);
+#ifdef WIN32
+    uint32_t r = 0;
+    _BitScanReverse(&r, x);
+    return (31 - r);
+#else
+    return (uint32_t) __builtin_ctzl(x);
+#endif
 }
 
 #endif

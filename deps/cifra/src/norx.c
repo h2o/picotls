@@ -40,7 +40,11 @@ typedef struct
 #define RATE_BYTES 48
 #define RATE_WORDS 12
 
+#ifdef WIN32
+static void permute(norx32_ctx *ctx)
+#else
 static void permute(norx32_ctx *restrict ctx)
+#endif
 {
 #ifdef CORTEX_M0
   /* Register usage: A-D r2, r3, r4, r5.
@@ -127,9 +131,15 @@ static void permute(norx32_ctx *restrict ctx)
 #undef P
 }
 
+#ifdef WIN32
 static void init(norx32_ctx *ctx,
-                 const uint8_t key[static 16],
-                 const uint8_t nonce[static 8])
+                 const uint8_t key[16],
+                 const uint8_t nonce[8])
+#else
+static void init(norx32_ctx *ctx,
+    const uint8_t key[static 16],
+    const uint8_t nonce[static 8])
+#endif
 {
   /* 1. Basic setup */
   ctx->s[0] = read32_le(nonce + 0);
@@ -240,9 +250,15 @@ static void do_trailer(norx32_ctx *ctx, const uint8_t *buf, size_t nbuf)
   }
 }
 
+#ifdef WIN32
 static void body_block_encrypt(norx32_ctx *ctx,
-                               const uint8_t plain[static RATE_BYTES],
-                               uint8_t cipher[static RATE_BYTES])
+                               const uint8_t plain[RATE_BYTES],
+                               uint8_t cipher[RATE_BYTES])
+#else
+static void body_block_encrypt(norx32_ctx *ctx,
+    const uint8_t plain[static RATE_BYTES],
+    uint8_t cipher[static RATE_BYTES])
+#endif
 {
   for (int i = 0; i < RATE_WORDS; i++)
   {
@@ -282,10 +298,17 @@ static void encrypt_body(norx32_ctx *ctx,
   memcpy(cipher, partial, nbytes);
 }
 
+#ifdef WIN32
 static void body_block_decrypt(norx32_ctx *ctx,
-                               const uint8_t cipher[static RATE_BYTES],
-                               uint8_t plain[static RATE_BYTES],
+                               const uint8_t cipher[RATE_BYTES],
+                               uint8_t plain[RATE_BYTES],
                                size_t start, size_t end)
+#else
+static void body_block_decrypt(norx32_ctx *ctx,
+    const uint8_t cipher[static RATE_BYTES],
+    uint8_t plain[static RATE_BYTES],
+    size_t start, size_t end)
+#endif
 {
   for (size_t i = start; i < end; i++)
   {
@@ -350,7 +373,11 @@ static void decrypt_body(norx32_ctx *ctx,
   ctx->s[offset] = read32_le(tmp);
 }
 
+#ifdef WIN32
+static void get_tag(norx32_ctx *ctx, uint8_t tag[16])
+#else
 static void get_tag(norx32_ctx *ctx, uint8_t tag[static 16])
+#endif
 {
   switch_domain(ctx, DOMAIN_TAG);
   permute(ctx);
@@ -360,6 +387,15 @@ static void get_tag(norx32_ctx *ctx, uint8_t tag[static 16])
   write32_le(ctx->s[3], tag + 12);
 }
 
+#ifdef WIN32
+void cf_norx32_encrypt(const uint8_t key[16],
+                       const uint8_t nonce[8],
+                       const uint8_t *header, size_t nheader,
+                       const uint8_t *plaintext, size_t nbytes,
+                       const uint8_t *trailer, size_t ntrailer,
+                       uint8_t *ciphertext,
+                       uint8_t tag[16])
+#else
 void cf_norx32_encrypt(const uint8_t key[static 16],
                        const uint8_t nonce[static 8],
                        const uint8_t *header, size_t nheader,
@@ -367,6 +403,7 @@ void cf_norx32_encrypt(const uint8_t key[static 16],
                        const uint8_t *trailer, size_t ntrailer,
                        uint8_t *ciphertext,
                        uint8_t tag[static 16])
+#endif
 {
   norx32_ctx ctx;
 
@@ -379,6 +416,15 @@ void cf_norx32_encrypt(const uint8_t key[static 16],
   mem_clean(&ctx, sizeof ctx);
 }
 
+#ifdef WIN32
+int cf_norx32_decrypt(const uint8_t key[16],
+                      const uint8_t nonce[8],
+                      const uint8_t *header, size_t nheader,
+                      const uint8_t *ciphertext, size_t nbytes,
+                      const uint8_t *trailer, size_t ntrailer,
+                      const uint8_t tag[16],
+                      uint8_t *plaintext)
+#else
 int cf_norx32_decrypt(const uint8_t key[static 16],
                       const uint8_t nonce[static 8],
                       const uint8_t *header, size_t nheader,
@@ -386,6 +432,7 @@ int cf_norx32_decrypt(const uint8_t key[static 16],
                       const uint8_t *trailer, size_t ntrailer,
                       const uint8_t tag[static 16],
                       uint8_t *plaintext)
+#endif
 {
   norx32_ctx ctx;
   uint8_t ourtag[16];

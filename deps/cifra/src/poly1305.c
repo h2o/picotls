@@ -20,9 +20,15 @@
 #include <string.h>
 #include <stdio.h>
 
+#ifdef WIN32
+void cf_poly1305_init(cf_poly1305 *ctx,
+    const uint8_t r[16],
+    const uint8_t s[16])
+#else
 void cf_poly1305_init(cf_poly1305 *ctx,
                       const uint8_t r[static 16],
                       const uint8_t s[static 16])
+#endif
 {
   memset(ctx, 0, sizeof *ctx);
 
@@ -46,9 +52,13 @@ void cf_poly1305_init(cf_poly1305 *ctx,
 
   memcpy(ctx->s, s, 16);
 }
-
+#ifdef WIN32
+static void poly1305_add(uint32_t h[17],
+    const uint32_t x[17])
+#else
 static void poly1305_add(uint32_t h[static 17],
                          const uint32_t x[static 17])
+#endif
 {
   uint32_t carry = 0;
 
@@ -61,7 +71,11 @@ static void poly1305_add(uint32_t h[static 17],
 }
 
 /* Minimal reduction/carry chain. */
+#ifdef WIN32
+static void poly1305_min_reduce(uint32_t x[17])
+#else
 static void poly1305_min_reduce(uint32_t x[static 17])
+#endif
 {
   uint32_t carry = 0;
   for (int i = 0; i < 16; i++)
@@ -96,7 +110,11 @@ static const uint32_t negative_1305[17] = {
   0, 0, 0, 0, 0, 0, 0xfc
 };
 
+#ifdef WIN32
+static void poly1305_full_reduce(uint32_t x[17])
+#else
 static void poly1305_full_reduce(uint32_t x[static 17])
+#endif
 {
   uint32_t xsub[17];
 
@@ -115,8 +133,13 @@ static void poly1305_full_reduce(uint32_t x[static 17])
     x[i] = (x[i] & negative_mask) | (xsub[i] & positive_mask);
 }
 
+#ifdef WIN32
+static void poly1305_mul(uint32_t x[17],
+                         const uint32_t y[17])
+#else
 static void poly1305_mul(uint32_t x[static 17],
-                         const uint32_t y[static 17])
+    const uint32_t y[static 17])
+#endif
 {
   uint32_t r[17];
 
@@ -149,8 +172,13 @@ static void poly1305_mul(uint32_t x[static 17],
     x[i] = r[i];
 }
 
+#ifdef WIN32
 static void poly1305_block(cf_poly1305 *ctx,
-                           const uint32_t c[static 17])
+                           const uint32_t c[17])
+#else
+static void poly1305_block(cf_poly1305 *ctx,
+    const uint32_t c[static 17])
+#endif
 {
   poly1305_add(ctx->h, c);
   poly1305_mul(ctx->h, ctx->r);
@@ -191,8 +219,13 @@ void cf_poly1305_update(cf_poly1305 *ctx,
                           ctx);
 }
 
+#ifdef WIN32
 void cf_poly1305_finish(cf_poly1305 *ctx,
-                        uint8_t out[static 16])
+                        uint8_t out[16])
+#else
+void cf_poly1305_finish(cf_poly1305 *ctx,
+    uint8_t out[static 16])
+#endif
 {
   if (ctx->npartial)
     poly1305_last_block(ctx);

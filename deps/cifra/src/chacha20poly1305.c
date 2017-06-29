@@ -24,6 +24,15 @@
 #define SUCCESS 0
 #define FAILURE 1
 
+#ifdef WIN32
+static int process(const uint8_t key[32],
+    const uint8_t nonce[12],
+    const uint8_t *header, size_t nheader,
+    const uint8_t *input, size_t nbytes,
+    uint8_t *output,
+    int mode,
+    uint8_t tag[16])
+#else
 static int process(const uint8_t key[static 32],
                    const uint8_t nonce[static 12],
                    const uint8_t *header, size_t nheader,
@@ -31,6 +40,7 @@ static int process(const uint8_t key[static 32],
                    uint8_t *output,
                    int mode,
                    uint8_t tag[static 16])
+#endif
 {
   /* First, generate the Poly1305 key by running ChaCha20 with the
    * given key and a zero counter.  The first half of the
@@ -111,12 +121,21 @@ static int process(const uint8_t key[static 32],
   }
 }
 
+#ifdef WIN32
+void cf_chacha20poly1305_encrypt(const uint8_t key[32],
+    const uint8_t nonce[12],
+    const uint8_t *header, size_t nheader,
+    const uint8_t *plaintext, size_t nbytes,
+    uint8_t *ciphertext,
+    uint8_t tag[16])
+#else
 void cf_chacha20poly1305_encrypt(const uint8_t key[static 32],
                                  const uint8_t nonce[static 12],
                                  const uint8_t *header, size_t nheader,
                                  const uint8_t *plaintext, size_t nbytes,
                                  uint8_t *ciphertext,
                                  uint8_t tag[static 16])
+#endif
 {
   process(key,
           nonce,
@@ -127,12 +146,21 @@ void cf_chacha20poly1305_encrypt(const uint8_t key[static 32],
           tag);
 }
 
+#ifdef WIN32
+int cf_chacha20poly1305_decrypt(const uint8_t key[32],
+    const uint8_t nonce[12],
+    const uint8_t *header, size_t nheader,
+    const uint8_t *ciphertext, size_t nbytes,
+    const uint8_t tag[16],
+    uint8_t *plaintext)
+#else
 int cf_chacha20poly1305_decrypt(const uint8_t key[static 32],
                                 const uint8_t nonce[static 12],
                                 const uint8_t *header, size_t nheader,
                                 const uint8_t *ciphertext, size_t nbytes,
                                 const uint8_t tag[static 16],
                                 uint8_t *plaintext)
+#endif
 {
   uint8_t ourtag[16];
   memcpy(ourtag, tag, sizeof ourtag);

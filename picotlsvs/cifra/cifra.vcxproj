@@ -20,9 +20,9 @@
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>15.0</VCProjectVersion>
-    <ProjectGuid>{46E6D6E9-7A30-4058-9661-DF70CC07E821}</ProjectGuid>
+    <ProjectGuid>{5D4DA3A3-7851-4CAE-AE4F-C421A2C8C440}</ProjectGuid>
     <Keyword>Win32Proj</Keyword>
-    <RootNamespace>picotls</RootNamespace>
+    <RootNamespace>cifra</RootNamespace>
     <WindowsTargetPlatformVersion>10.0.14393.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
@@ -73,11 +73,12 @@
   <PropertyGroup />
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
-      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <PrecompiledHeader>
+      </PrecompiledHeader>
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)\..\..\picotls;$(ProjectDir)\..\..\include;$(ProjectDir)\..\..\deps\cifra\src;$(ProjectDir)\..\..\deps\cifra\src\ext;$(ProjectDir)\..\..\deps\micro-ecc;$(OPENSSLDIR)\include\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)\..\..\picotls;$(ProjectDir)\..\..\include;$(ProjectDir)\..\..\deps\cifra\src;$(ProjectDir)\..\..\deps\cifra\src\ext;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -85,11 +86,11 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
-      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <PrecompiledHeader>
+      </PrecompiledHeader>
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)\..\..\picotls;$(ProjectDir)\..\..\include;$(ProjectDir)\..\..\deps\cifra\src;$(ProjectDir)\..\..\deps\micro-ecc;C:\openssl\openssl-1.1.0e\include\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -98,12 +99,12 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
-      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <PrecompiledHeader>
+      </PrecompiledHeader>
       <Optimization>MaxSpeed</Optimization>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions>WIN32;NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)\..\..\picotls;$(ProjectDir)\..\..\include;$(ProjectDir)\..\..\deps\cifra\src;$(ProjectDir)\..\..\deps\micro-ecc;C:\openssl\openssl-1.1.0e\include\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -114,12 +115,12 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
-      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <PrecompiledHeader>
+      </PrecompiledHeader>
       <Optimization>MaxSpeed</Optimization>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions>NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)\..\..\picotls;$(ProjectDir)\..\..\include;$(ProjectDir)\..\..\deps\cifra\src;$(ProjectDir)\..\..\deps\micro-ecc;C:\openssl\openssl-1.1.0e\include\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -129,6 +130,32 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <Text Include="ReadMe.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="..\..\deps\cifra\src\aes.c" />
+    <ClCompile Include="..\..\deps\cifra\src\blockwise.c" />
+    <ClCompile Include="..\..\deps\cifra\src\cbcmac.c" />
+    <ClCompile Include="..\..\deps\cifra\src\ccm.c" />
+    <ClCompile Include="..\..\deps\cifra\src\chacha20.c" />
+    <ClCompile Include="..\..\deps\cifra\src\chacha20poly1305.c" />
+    <ClCompile Include="..\..\deps\cifra\src\chash.c" />
+    <ClCompile Include="..\..\deps\cifra\src\cmac.c" />
+    <ClCompile Include="..\..\deps\cifra\src\curve25519.c" />
+    <ClCompile Include="..\..\deps\cifra\src\drbg.c" />
+    <ClCompile Include="..\..\deps\cifra\src\eax.c" />
+    <ClCompile Include="..\..\deps\cifra\src\gcm.c" />
+    <ClCompile Include="..\..\deps\cifra\src\gf128.c" />
+    <ClCompile Include="..\..\deps\cifra\src\hmac.c" />
+    <ClCompile Include="..\..\deps\cifra\src\modes.c" />
+    <ClCompile Include="..\..\deps\cifra\src\norx.c" />
+    <ClCompile Include="..\..\deps\cifra\src\ocb.c" />
+    <ClCompile Include="..\..\deps\cifra\src\pbkdf2.c" />
+    <ClCompile Include="..\..\deps\cifra\src\poly1305.c" />
+    <ClCompile Include="..\..\deps\cifra\src\salsa20.c" />
+    <ClCompile Include="..\..\deps\cifra\src\sha1.c" />
+    <ClCompile Include="..\..\deps\cifra\src\sha256.c" />
+    <ClCompile Include="..\..\deps\cifra\src\sha3.c" />
+    <ClCompile Include="..\..\deps\cifra\src\sha512.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\deps\cifra\src\aes.h" />
@@ -151,15 +178,6 @@
     <ClInclude Include="..\..\deps\cifra\src\sha2.h" />
     <ClInclude Include="..\..\deps\cifra\src\sha3.h" />
     <ClInclude Include="..\..\deps\cifra\src\tassert.h" />
-    <ClInclude Include="targetver.h" />
-    <ClInclude Include="wincompat.h" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClCompile Include="..\..\lib\cifra.c" />
-    <ClCompile Include="..\..\lib\openssl.c" />
-    <ClCompile Include="..\..\lib\picotls.c" />
-    <ClCompile Include="..\..\lib\uecc.c" />
-    <ClCompile Include="wintimeofday.c" />
   </ItemGroup>
   <ItemGroup>
     <None Include="..\..\deps\cifra\src\poly1305.py" />
