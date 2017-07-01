@@ -5,6 +5,9 @@
 #include "../../include/picotls.h"
 #include "../../include/picotls/openssl.h"
 
+int ptls_export_secret(ptls_t *tls, void *output, size_t outlen, const char *label, ptls_iovec_t context_value);
+
+
 /*
  * Using the open ssl library to load the test certificate
  */
@@ -96,6 +99,89 @@ int handshake_progress(ptls_t * tls, ptls_buffer_t * sendbuf, ptls_buffer_t * re
     return ret;
 }
 
+/*
+Verify the secret extraction functionality
+at the end of the handshake.
+ */
+
+int extract_1rtt_secret( 
+    ptls_t *tls, const char *label, 
+    ptls_cipher_suite_t ** cipher,
+    uint8_t * secret, size_t secret_max)
+{
+    int ret = 0;
+    *cipher = ptls_get_cipher(tls);
+
+    if (*cipher == NULL)
+    {
+        ret = -1;
+    }
+    else if ((*cipher)->hash->digest_size > secret_max)
+    {
+        ret = -1;
+    }
+    else
+    {
+        ret = ptls_export_secret(tls, secret, (*cipher)->hash->digest_size,
+            label, ptls_iovec_init(NULL, 0));
+    }
+
+    return 0;
+}
+
+int verify_1rtt_secret_extraction(ptls_t *tls_client, ptls_t *tls_server)
+{
+    int ret = 0;
+    ptls_cipher_suite_t * cipher_client;
+    ptls_cipher_suite_t * cipher_server;
+    uint8_t secret_client[64];
+    uint8_t secret_server[64];
+    char const * label = "This is just a test";
+
+    ret = extract_1rtt_secret(tls_client, label, &cipher_client, 
+        secret_client, sizeof(secret_client));
+
+    if (ret != 0)
+    {
+        fprintf(stderr, "Cannot extract client 1RTT secret, ret=%d\n", ret);
+    }
+    else
+    {
+        ret = extract_1rtt_secret(tls_server, label, &cipher_server,
+            secret_server, sizeof(secret_server));
+        if (ret != 0)
+        {
+            fprintf(stderr, "Cannot extract client 1RTT secret, ret=%d\n", ret);
+        }
+    }
+
+    if (ret == 0)
+    {
+        if (strcmp(cipher_client->aead->name, cipher_server->aead->name) != 0)
+        {
+            fprintf(stderr, "AEAD differ, client:%s, server:%s\n",
+                cipher_client->aead->name, cipher_server->aead->name);
+            ret = -1;
+        }
+        else if (cipher_client->hash->digest_size != cipher_server->hash->digest_size)
+        {
+            fprintf(stderr, "Key length differ, client:%d, server:%d\n",
+                cipher_client->hash->digest_size, cipher_server->hash->digest_size);
+            ret = -1;
+        }
+        else if (memcmp(secret_client, secret_server, cipher_client->hash->digest_size) != 0)
+        {
+            fprintf(stderr, "Key of client and server differ!\n");
+            ret = -1;
+        }
+    }
+
+    return ret;
+}
+
+
+
+
 int main()
 {
     /* Create a client context  and a server context */
@@ -165,6 +251,16 @@ int main()
         }
 
         printf("Exit handshake after %d rounds, ret = %d.\n", nb_rounds, ret);
+
+        if (ret == 0)
+        {
+            ret = verify_1rtt_secret_extraction(tls_client, tls_server);
+
+            if (ret == 0)
+            {
+                printf("Key extracted and matches!\n");
+            }
+        }
     }
 
     return ret;
