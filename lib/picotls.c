@@ -2005,7 +2005,7 @@ static int try_psk_handshake(ptls_t *tls, size_t *psk_index, int *accept_early_d
         /* check age */
         if (now < issue_at)
             continue;
-        if (now - issue_at > tls->ctx->ticket_lifetime)
+        if (now - issue_at > (uint64_t)tls->ctx->ticket_lifetime * 1000)
             continue;
         *accept_early_data = 0;
         if (ch->psk.early_data_indication) {

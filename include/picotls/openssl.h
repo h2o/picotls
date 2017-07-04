@@ -26,7 +26,7 @@
 #include <openssl/evp.h>
 #include <openssl/hmac.h>
 #include <openssl/x509.h>
-#include "../../include/picotls.h"
+#include "../picotls.h"
 
 #if OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)
 #define PTLS_OPENSSL_HAVE_CHACHA20_POLY1305

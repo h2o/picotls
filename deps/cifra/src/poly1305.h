@@ -68,15 +68,9 @@ typedef struct
  * :param s: preprocessed nonce.
  *
  */
-#ifdef WIN32
 void cf_poly1305_init(cf_poly1305 *ctx,
     const uint8_t r[16],
     const uint8_t s[16]);
-#else
-void cf_poly1305_init(cf_poly1305 *ctx,
-                      const uint8_t r[static 16],
-                      const uint8_t s[static 16]);
-#endif
 
 /* .. c:function:: $DECL
  * Processes `nbytes` at `data`.  Copies the data if there isn't enough to make
@@ -91,13 +85,7 @@ void cf_poly1305_update(cf_poly1305 *ctx,
  *
  * This destroys `ctx`.
  */
-#ifdef WIN32
 void cf_poly1305_finish(cf_poly1305 *ctx,
                         uint8_t out[16]);
-#else
-void cf_poly1305_finish(cf_poly1305 *ctx,
-    uint8_t out[static 16]);
-#endif
-
 
 #endif
