@@ -996,7 +996,7 @@ static int send_session_ticket(ptls_t *tls, ptls_buffer_t *sendbuf)
             ptls_buffer_push32(sendbuf, tls->ctx->ticket_lifetime);
             ptls_buffer_push32(sendbuf, ticket_age_add);
             ptls_buffer_push_block(sendbuf, 2, {
-                if ((ret = tls->ctx->encrypt_ticket->cb(tls->ctx->encrypt_ticket, tls, sendbuf,
+                if ((ret = tls->ctx->encrypt_ticket->cb(tls->ctx->encrypt_ticket, tls, 1, sendbuf,
                                                         ptls_iovec_init(session_id.base, session_id.off))) != 0)
                     goto Exit;
             });
@@ -1997,7 +1997,7 @@ static int try_psk_handshake(ptls_t *tls, size_t *psk_index, int *accept_early_d
         struct st_ptls_client_hello_psk_t *identity = ch->psk.identities.list + *psk_index;
         /* decrypt and decode */
         decbuf.off = 0;
-        if ((tls->ctx->decrypt_ticket->cb(tls->ctx->decrypt_ticket, tls, &decbuf, identity->identity)) != 0)
+        if ((tls->ctx->encrypt_ticket->cb(tls->ctx->encrypt_ticket, tls, 0, &decbuf, identity->identity)) != 0)
             continue;
         if (decode_session_identifier(&issue_at, &ticket_psk, &age_add, &ticket_server_name, &ticket_csid,
                                       &ticket_negotiated_protocol, decbuf.base, decbuf.base + decbuf.off) != 0)
@@ -2177,7 +2177,7 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
         ch.psk.ke_modes &= ~(1u << PTLS_PSK_KE_MODE_PSK);
     if (!is_second_flight && ch.psk.hash_end != 0 &&
         (ch.psk.ke_modes & ((1u << PTLS_PSK_KE_MODE_PSK) | (1u << PTLS_PSK_KE_MODE_PSK_DHE))) != 0 &&
-        tls->ctx->decrypt_ticket != NULL) {
+        tls->ctx->encrypt_ticket != NULL) {
         if ((ret = try_psk_handshake(tls, &psk_index, &accept_early_data, &ch,
                                      ptls_iovec_init(message.base, ch.psk.hash_end - message.base))) != 0)
             goto Exit;

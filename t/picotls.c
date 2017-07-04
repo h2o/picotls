@@ -447,7 +447,7 @@ static void test_hrr_handshake(void)
     ok(sc_callcnt == 1);
 }
 
-static int copy_ticket(ptls_encrypt_ticket_t *self, ptls_t *tls, ptls_buffer_t *dst, ptls_iovec_t src)
+static int copy_ticket(ptls_encrypt_ticket_t *self, ptls_t *tls, int is_encrypt, ptls_buffer_t *dst, ptls_iovec_t src)
 {
     int ret;
 
@@ -477,14 +477,12 @@ static void test_resumption(void)
     assert(ctx_peer->ticket_lifetime == 0);
     assert(ctx_peer->max_early_data_size == 0);
     assert(ctx_peer->encrypt_ticket == NULL);
-    assert(ctx_peer->decrypt_ticket == NULL);
     assert(ctx_peer->save_ticket == NULL);
     saved_ticket = ptls_iovec_init(NULL, 0);
 
     ctx_peer->ticket_lifetime = 86400;
     ctx_peer->max_early_data_size = 8192;
     ctx_peer->encrypt_ticket = &et;
-    ctx_peer->decrypt_ticket = &et;
     ctx->save_ticket = &st;
 
     sc_callcnt = 0;
@@ -508,7 +506,6 @@ static void test_resumption(void)
     ctx_peer->ticket_lifetime = 0;
     ctx_peer->max_early_data_size = 0;
     ctx_peer->encrypt_ticket = NULL;
-    ctx_peer->decrypt_ticket = NULL;
     ctx->save_ticket = NULL;
 }
 
