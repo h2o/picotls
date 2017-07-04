@@ -1,0 +1,35 @@
+﻿  aes.c
+  blockwise.c
+  cbcmac.c
+..\..\deps\cifra\src\cbcmac.c(74): warning C4267: 'initializing': conversion from 'size_t' to 'uint8_t', possible loss of data
+  ccm.c
+..\..\deps\cifra\src\ccm.c(71): warning C4267: '=': conversion from 'size_t' to 'uint8_t', possible loss of data
+..\..\deps\cifra\src\ccm.c(82): warning C4267: '=': conversion from 'size_t' to 'uint8_t', possible loss of data
+  chacha20.c
+  chacha20poly1305.c
+  chash.c
+  cmac.c
+  curve25519.c
+c:\users\christian\documents\github\picotls\deps\cifra\src\curve25519.tweetnacl.c(99): warning C4244: '=': conversion from 'int64_t' to 'uint8_t', possible loss of data
+c:\users\christian\documents\github\picotls\deps\cifra\src\curve25519.tweetnacl.c(201): warning C4244: 'function': conversion from 'int64_t' to 'int', possible loss of data
+c:\users\christian\documents\github\picotls\deps\cifra\src\curve25519.tweetnacl.c(202): warning C4244: 'function': conversion from 'int64_t' to 'int', possible loss of data
+c:\users\christian\documents\github\picotls\deps\cifra\src\curve25519.tweetnacl.c(221): warning C4244: 'function': conversion from 'int64_t' to 'int', possible loss of data
+c:\users\christian\documents\github\picotls\deps\cifra\src\curve25519.tweetnacl.c(222): warning C4244: 'function': conversion from 'int64_t' to 'int', possible loss of data
+  drbg.c
+  eax.c
+  gcm.c
+  gf128.c
+  hmac.c
+  modes.c
+  norx.c
+  ocb.c
+  pbkdf2.c
+  poly1305.c
+  salsa20.c
+  Compiling...
+  sha1.c
+  sha256.c
+  sha3.c
+..\..\deps\cifra\src\sha3.c(230): warning C4267: 'initializing': conversion from 'size_t' to 'uint16_t', possible loss of data
+  sha512.c
+  cifra.vcxproj -> C:\Users\Christian\Documents\GitHub\picotls\picotlsvs\Release\cifra.lib

@@ -103,7 +103,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions>WIN32;NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)\..\..\picotls;$(ProjectDir)\..\..\include;$(ProjectDir)\..\..\deps\cifra\src;$(ProjectDir)\..\..\deps\micro-ecc;C:\openssl\openssl-1.1.0e\include\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)\..\..\picotls;$(ProjectDir)\..\..\include;$(ProjectDir)\..\..\deps\cifra\src;$(ProjectDir)\..\..\deps\micro-ecc;$(OPENSSLDIR)\include\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
