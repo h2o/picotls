@@ -279,7 +279,7 @@ PTLS_CALLBACK_TYPE(int, verify_certificate, ptls_t *tls,
 /**
  * encrypt-and-signs (or verify-and-decrypts) a ticket (server-only)
  */
-PTLS_CALLBACK_TYPE(int, encrypt_ticket, ptls_t *tls, ptls_buffer_t *dst, ptls_iovec_t src);
+PTLS_CALLBACK_TYPE(int, encrypt_ticket, ptls_t *tls, int is_encrypt, ptls_buffer_t *dst, ptls_iovec_t src);
 /**
  * saves a ticket (client-only)
  */
@@ -352,10 +352,6 @@ typedef struct st_ptls_context_t {
      *
      */
     ptls_encrypt_ticket_t *encrypt_ticket;
-    /**
-     *
-     */
-    ptls_encrypt_ticket_t *decrypt_ticket;
     /**
      *
      */
