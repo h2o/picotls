@@ -48,7 +48,6 @@ void cf_chacha20poly1305_encrypt(const uint8_t key[32],
                                  const uint8_t *plaintext, size_t nbytes,
                                  uint8_t *ciphertext,
                                  uint8_t tag[16]);
-#endif
 
 /* .. c:function:: $DECL
  * ChaCha20-Poly1305 authenticated decryption.
