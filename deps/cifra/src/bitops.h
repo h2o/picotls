@@ -299,11 +299,11 @@ static inline void copy_bytes_unaligned(uint8_t *out, const uint8_t *in, size_t 
 static inline uint32_t count_trailing_zeroes(uint32_t x)
 {
 #ifdef WIN32
-    uint32_t r = 0;
-    _BitScanReverse(&r, x);
-    return (31 - r);
+  uint32_t r = 0;
+  _BitScanReverse(&r, x);
+  return (31 - r);
 #else
-    return (uint32_t) __builtin_ctzl(x);
+  return (uint32_t) __builtin_ctzl(x);
 #endif
 }
 
