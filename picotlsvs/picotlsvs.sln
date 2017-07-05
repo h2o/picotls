@@ -1,11 +1,13 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 15
-VisualStudioVersion = 15.0.26127.0
+VisualStudioVersion = 15.0.26228.9
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "picotlsvs", "picotlsvs\picotlsvs.vcxproj", "{D0265367-FCCF-47A4-95FD-C33BECAB3486}"
 	ProjectSection(ProjectDependencies) = postProject
+		{5D4DA3A3-7851-4CAE-AE4F-C421A2C8C440} = {5D4DA3A3-7851-4CAE-AE4F-C421A2C8C440}
 		{46E6D6E9-7A30-4058-9661-DF70CC07E821} = {46E6D6E9-7A30-4058-9661-DF70CC07E821}
+		{3440FDEA-84D2-4424-BB19-B4B26A6ADC8A} = {3440FDEA-84D2-4424-BB19-B4B26A6ADC8A}
 	EndProjectSection
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "picotls", "picotls\picotls.vcxproj", "{46E6D6E9-7A30-4058-9661-DF70CC07E821}"
