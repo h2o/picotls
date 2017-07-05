@@ -1,6 +1,0 @@
-﻿  cifra.c
-  openssl.c
-  picotls.c
-  uecc.c
-  wintimeofday.c
-  picotls.vcxproj -> C:\Users\Christian\Documents\GitHub\picotls\picotlsvs\Release\picotls.lib

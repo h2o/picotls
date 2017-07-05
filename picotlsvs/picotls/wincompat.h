@@ -8,6 +8,10 @@
 #ifndef gettimeofday
 #define gettimeofday wintimeofday
 
+#ifndef __attribute__
+#define __attribute__(X)
+#endif
+
 #ifdef  __cplusplus
 extern "C" {
 #endif
