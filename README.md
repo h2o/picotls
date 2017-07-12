@@ -37,6 +37,8 @@ Build using cmake:
 % make check
 ```
 
+A dedicated documentation for using picotls with Visual Studio can be found in [WindowsPort.md](WindowsPort.md).
+
 Developer documentation
 ---
 
