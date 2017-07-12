@@ -22,6 +22,12 @@
 #ifndef util_h
 #define util_h
 
+#include <errno.h>
+#include <stdio.h>
+#include <string.h>
+#include <openssl/pem.h>
+#include "picotls/openssl.h"
+
 static inline void load_certificate_chain(ptls_context_t *ctx, const char *fn)
 {
     static ptls_iovec_t certs[16];
