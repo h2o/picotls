@@ -155,6 +155,7 @@
     <ClInclude Include="wincompat.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="..\..\lib\Base64.c" />
     <ClCompile Include="..\..\lib\cifra.c" />
     <ClCompile Include="..\..\lib\openssl.c" />
     <ClCompile Include="..\..\lib\picotls.c" />

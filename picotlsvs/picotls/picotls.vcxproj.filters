@@ -101,6 +101,9 @@
     <ClCompile Include="..\..\lib\cifra.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\lib\Base64.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="..\..\deps\cifra\src\poly1305.py" />
