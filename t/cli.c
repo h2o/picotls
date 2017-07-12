@@ -19,16 +19,11 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
-#ifndef _XOPEN_SOURCE
-#define _XOPEN_SOURCE 700 /* required for glibc to use getaddrinfo, etc. */
-#endif
 #include <arpa/inet.h>
 #include <assert.h>
 #include <errno.h>
 #include <getopt.h>
 #include <inttypes.h>
-#include <netdb.h>
-#include <netinet/in.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/select.h>
@@ -271,28 +266,6 @@ static int run_client(struct sockaddr *sa, socklen_t salen, ptls_context_t *ctx,
     return handle_connection(fd, ctx, server_name, hsprop);
 }
 
-static int resolve_address(struct sockaddr *sa, socklen_t *salen, const char *host, const char *port)
-{
-    struct addrinfo hints, *res;
-    int err;
-
-    memset(&hints, 0, sizeof(hints));
-    hints.ai_socktype = SOCK_STREAM;
-    hints.ai_protocol = IPPROTO_TCP;
-    hints.ai_flags = AI_ADDRCONFIG | AI_NUMERICSERV | AI_PASSIVE;
-    if ((err = getaddrinfo(host, port, &hints, &res)) != 0 || res == NULL) {
-        fprintf(stderr, "failed to resolve address:%s:%s:%s\n", host, port,
-                err != 0 ? gai_strerror(err) : "getaddrinfo returned NULL");
-        return -1;
-    }
-
-    memcpy(sa, res->ai_addr, res->ai_addrlen);
-    *salen = res->ai_addrlen;
-
-    freeaddrinfo(res);
-    return 0;
-}
-
 static void usage(const char *cmd)
 {
     printf("Usage: %s [options] host port\n"
@@ -377,7 +350,7 @@ int main(int argc, char **argv)
     host = (--argc, *argv++);
     port = (--argc, *argv++);
 
-    if (resolve_address((struct sockaddr *)&sa, &salen, host, port) != 0)
+    if (resolve_address((struct sockaddr *)&sa, &salen, host, port, SOCK_STREAM, IPPROTO_TCP) != 0)
         exit(1);
 
     if (ctx.certificates.count != 0) {

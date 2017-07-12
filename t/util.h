@@ -22,9 +22,17 @@
 #ifndef util_h
 #define util_h
 
+#ifndef _XOPEN_SOURCE
+#define _XOPEN_SOURCE 700 /* required for glibc to use getaddrinfo, etc. */
+#endif
+
 #include <errno.h>
+#include <netdb.h>
+#include <netinet/in.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/socket.h>
+#include <sys/types.h>
 #include <openssl/pem.h>
 #include "picotls/openssl.h"
 
@@ -220,6 +228,28 @@ static inline void setup_session_cache(ptls_context_t *ctx)
     ctx->ticket_lifetime = 86400;
     ctx->max_early_data_size = 8192;
     ctx->encrypt_ticket = &sc.super;
+}
+
+static inline int resolve_address(struct sockaddr *sa, socklen_t *salen, const char *host, const char *port, int type, int proto)
+{
+    struct addrinfo hints, *res;
+    int err;
+
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_socktype = type;
+    hints.ai_protocol = proto;
+    hints.ai_flags = AI_ADDRCONFIG | AI_NUMERICSERV | AI_PASSIVE;
+    if ((err = getaddrinfo(host, port, &hints, &res)) != 0 || res == NULL) {
+        fprintf(stderr, "failed to resolve address:%s:%s:%s\n", host, port,
+                err != 0 ? gai_strerror(err) : "getaddrinfo returned NULL");
+        return -1;
+    }
+
+    memcpy(sa, res->ai_addr, res->ai_addrlen);
+    *salen = res->ai_addrlen;
+
+    freeaddrinfo(res);
+    return 0;
 }
 
 #endif
