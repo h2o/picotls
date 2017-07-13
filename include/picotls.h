@@ -89,6 +89,7 @@
 #define PTLS_ERROR_INCOMPATIBLE_KEY (PTLS_ERROR_CLASS_INTERNAL + 4)
 #define PTLS_ERROR_SESSION_NOT_FOUND (PTLS_ERROR_CLASS_INTERNAL + 5)
 #define PTLS_ERROR_INCORRECT_BASE64 (PTLS_ERROR_CLASS_INTERNAL + 6)
+#define PTLS_ERROR_PEM_LABEL_NOT_FOUND (PTLS_ERROR_CLASS_INTERNAL + 7)
 
 
 typedef struct st_ptls_t ptls_t;
@@ -782,11 +783,11 @@ struct ptls_base64_decode_state_st {
     uint32_t v;
 };
 
-int base64_encode(unsigned char * data, int data_len, char * base64_text);
+int ptls_base64_encode(unsigned char * data, int data_len, char * base64_text);
 
-int base64_howlong(int data_length);
+int ptls_base64_howlong(int data_length);
 
-void base64_decode_init(struct ptls_base64_decode_state_st * state);
-int base64_decode(char * base64_text, struct ptls_base64_decode_state_st * state, ptls_buffer_t *buf);
+void ptls_base64_decode_init(struct ptls_base64_decode_state_st * state);
+int ptls_base64_decode(char * base64_text, struct ptls_base64_decode_state_st * state, ptls_buffer_t *buf);
 
 #endif

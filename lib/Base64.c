@@ -23,9 +23,10 @@
 #include <sys/time.h>
 #endif
 #include <string.h>
+#include <stdio.h>
 #include "picotls.h"
 
-static char base64_alphabet[] = {
+static char ptls_base64_alphabet[] = {
     'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
     'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
     'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
@@ -33,7 +34,7 @@ static char base64_alphabet[] = {
     '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '+', '/'
 };
 
-static char base64_values[] = {
+static char ptls_base64_values[] = {
     /* 0x00 to 0x0F */
     -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
     /* 0x10 to 0x1F */
@@ -52,7 +53,7 @@ static char base64_values[] = {
     41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, -1, -1, -1, -1, -1
 };
 
-static void base64_cell(unsigned char * data, char * text)
+static void ptls_base64_cell(unsigned char * data, char * text)
 {
     int n[4];
 
@@ -63,23 +64,23 @@ static void base64_cell(unsigned char * data, char * text)
 
     for (int i = 0; i < 4; i++)
     {
-        text[i] = base64_alphabet[n[i]];
+        text[i] = ptls_base64_alphabet[n[i]];
     }
 }
 
-int base64_howlong(int data_length)
+int ptls_base64_howlong(int data_length)
 {
     return (((data_length + 2) / 3) * 4);
 }
 
-int base64_encode(unsigned char * data, int data_len, char * base64_text)
+int ptls_base64_encode(unsigned char * data, int data_len, char * ptls_base64_text)
 {
     int l = 0;
     int lt = 0;
 
     while ((data_len - l) >= 3)
     {
-        base64_cell(data + l, base64_text + lt);
+        ptls_base64_cell(data + l, ptls_base64_text + lt);
         l += 3;
         lt += 4;
     }
@@ -89,31 +90,33 @@ int base64_encode(unsigned char * data, int data_len, char * base64_text)
     case 0:
         break;
     case 1:
-        base64_text[lt++] = base64_alphabet[data[l] >> 2];
-        base64_text[lt++] = base64_alphabet[(data[l] & 3) << 4];
-        base64_text[lt++] = '=';
-        base64_text[lt++] = '=';
+        ptls_base64_text[lt++] = ptls_base64_alphabet[data[l] >> 2];
+        ptls_base64_text[lt++] = ptls_base64_alphabet[(data[l] & 3) << 4];
+        ptls_base64_text[lt++] = '=';
+        ptls_base64_text[lt++] = '=';
         break;
     case 2:
-        base64_text[lt++] = base64_alphabet[data[l] >> 2];
-        base64_text[lt++] = base64_alphabet[((data[l] & 3) << 4) | (data[l + 1] >> 4)];
-        base64_text[lt++] = base64_alphabet[((data[l + 1] & 15) << 2)];
-        base64_text[lt++] = '=';
+        ptls_base64_text[lt++] = ptls_base64_alphabet[data[l] >> 2];
+        ptls_base64_text[lt++] = ptls_base64_alphabet[((data[l] & 3) << 4) | (data[l + 1] >> 4)];
+        ptls_base64_text[lt++] = ptls_base64_alphabet[((data[l + 1] & 15) << 2)];
+        ptls_base64_text[lt++] = '=';
         break;
     default:
         break;
     }
-    base64_text[lt++] = 0;
+    ptls_base64_text[lt++] = 0;
 
     return lt;
 }
 
 /*
- * TODO: should take into input a line of text, so as to work by increments.
- * Or, find ways to read text into long strings...
+ * Take into input a line of text, so as to work by increments.
+ * The intermediate text of the decoding is kept in a state variable.
+ * The decoded data is accumulated in a PTLS buffer.
+ * The parsing is consistent with the lax definition in RFC 7468
  */
 
-void base64_decode_init(struct ptls_base64_decode_state_st * state)
+void ptls_base64_decode_init(struct ptls_base64_decode_state_st * state)
 {
     state->nbc = 0;
     state->nbo = 3;
@@ -121,7 +124,7 @@ void base64_decode_init(struct ptls_base64_decode_state_st * state)
     state->status = PTLS_BASE64_DECODE_IN_PROGRESS;
 }
 
-int base64_decode(char * text, struct ptls_base64_decode_state_st * state, ptls_buffer_t *buf)
+int ptls_base64_decode(char * text, struct ptls_base64_decode_state_st * state, ptls_buffer_t *buf)
 {
     int ret = 0;
     int decoded[3];
@@ -144,7 +147,7 @@ int base64_decode(char * text, struct ptls_base64_decode_state_st * state, ptls_
     {
         c = text[text_index++];
         
-        vc = base64_values[c];
+        vc = ptls_base64_values[c];
         if (vc == -1)
         {
             if (state->nbc == 2 && c == '=' && text[text_index] == '=')
@@ -168,7 +171,7 @@ int base64_decode(char * text, struct ptls_base64_decode_state_st * state, ptls_
                 {
                     c = text[text_index++];
 
-                    if (c == ' ' || c == '/t' || c == '/r' || c == '/n')
+                    if (c == ' ' || c == '/t' || c == '/r' || c == '/n' || c == 0x0B || c == 0x0C)
                     {
                         continue;
                     }
@@ -215,7 +218,7 @@ int base64_decode(char * text, struct ptls_base64_decode_state_st * state, ptls_
                     {
                         c = text[text_index++];
 
-                        if (c == ' ' || c == '/t' || c == '/r' || c == '/n')
+                        if (c == ' ' || c == '/t' || c == '/r' || c == '/n' || c == 0x0B || c == 0x0C)
                         {
                             continue;
                         }
@@ -241,4 +244,174 @@ int base64_decode(char * text, struct ptls_base64_decode_state_st * state, ptls_
         }
     }
     return ret;
+}
+
+/*
+ * Reading a PEM file, to get an object:
+ *
+ * - Find first object, get the object name.
+ * - If object label is what the application expects, parse, else skip to end.
+ *
+ * The following labels are defined in RFC 7468:
+ * 
+ * Sec. Label                  ASN.1 Type              Reference Module
+ * ----+----------------------+-----------------------+---------+----------
+ * 5  CERTIFICATE            Certificate             [RFC5280] id-pkix1-e
+ * 6  X509 CRL               CertificateList         [RFC5280] id-pkix1-e
+ * 7  CERTIFICATE REQUEST    CertificationRequest    [RFC2986] id-pkcs10
+ * 8  PKCS7                  ContentInfo             [RFC2315] id-pkcs7*
+ * 9  CMS                    ContentInfo             [RFC5652] id-cms2004
+ * 10 PRIVATE KEY            PrivateKeyInfo ::=      [RFC5208] id-pkcs8
+ *                           OneAsymmetricKey        [RFC5958] id-aKPV1
+ * 11 ENCRYPTED PRIVATE KEY  EncryptedPrivateKeyInfo [RFC5958] id-aKPV1
+ * 12 ATTRIBUTE CERTIFICATE  AttributeCertificate    [RFC5755] id-acv2
+ * 13 PUBLIC KEY             SubjectPublicKeyInfo    [RFC5280] id-pkix1-e
+ */
+
+static int ptls_compare_separator_line(char * line, char* begin_or_end, char * label)
+{
+    int ret = strncmp(line, "-----", 5);
+    int text_index = 5;
+
+    if (ret == 0)
+    {
+        int begin_or_end_length = strlen(begin_or_end);
+        ret = strncmp(line + text_index, begin_or_end, begin_or_end_length);
+        text_index += begin_or_end_length;
+    }
+
+    if (ret == 0)
+    {   
+        ret = line[text_index] - ' ';
+        text_index++;
+    }
+
+    if (ret == 0)
+    {
+        int label_length = strlen(label);
+        ret = strncmp(line + text_index, label, label_length);
+        text_index += label_length;
+    }
+
+    if (ret == 0)
+    {
+        ret = strncmp(line + text_index, "-----", 5);
+    }
+
+    return ret;
+}
+
+static int ptls_get_pem_object(FILE * F, char * label, ptls_buffer_t *buf)
+{
+    int ret = PTLS_ERROR_PEM_LABEL_NOT_FOUND;
+    char line[256];
+    struct ptls_base64_decode_state_st state;
+
+    /* Get the label on a line by itself */
+    while (fgets(line, 256, F))
+    {
+        if (ptls_compare_separator_line(line, "BEGIN", label))
+        {
+            ret = 0;
+            ptls_base64_decode_init(&state);
+            break;
+        }
+    }
+    /* Get the data in the buffer */
+    while (ret == 0 && fgets(line, 256, F))
+    {
+        if (ptls_compare_separator_line(line, "END", label))
+        {
+            if (state.status == PTLS_BASE64_DECODE_DONE ||
+                (state.status == PTLS_BASE64_DECODE_IN_PROGRESS && state.nbc == 0))
+            {
+                ret = 0;
+            }
+            else
+            {
+                ret = PTLS_ERROR_INCORRECT_BASE64;
+            }
+        }
+        else
+        {
+            ret = ptls_base64_decode(line, &state, buf);
+        }
+    }
+
+    return ret;
+}
+
+int ptls_pem_get_objects(char * pem_fname, char * label, ptls_iovec_t ** list, size_t list_max, size_t * nb_objects)
+{
+    FILE * F;
+    int ret = 0;
+    ptls_buffer_t *buf;
+    size_t count = 0;
+#ifdef WIN32
+    errno_t err = fopen_s(&F, pem_fname, "r");
+    if (err != 0)
+    {
+        ret = -1;
+    }
+#else
+    F = fopen(F, pem_fname, "r");
+    if (F == NULL)
+    {
+        ret = -1;
+    }
+#endif
+
+
+    *nb_objects = 0;
+
+    if (ret == 0)
+    {
+        ptls_buffer_t buf;
+
+        ptls_buffer_init(&buf, "", 0);
+
+        while (count < list_max)
+        {
+            ret = ptls_get_pem_object(F, label, &buf);
+
+            if (ret == 0)
+            {
+                if (buf.off > 0 && buf.is_allocated)
+                {
+                    list[count]->base = buf.base;
+                    list[count]->len = buf.off;
+                    count++;
+                }
+            }
+            else
+            {
+                ptls_buffer_dispose(&buf);
+                break;
+            }
+        }
+    }
+    
+    if (ret == PTLS_ERROR_PEM_LABEL_NOT_FOUND && count > 0)
+    {
+        ret = 0;
+    }
+
+    *nb_objects = count;
+
+    if (F != NULL)
+    {
+        fclose(F);
+    }
+
+    return ret;
+}
+
+int ptls_pem_get_certificates(char * pem_fname, ptls_iovec_t ** list, size_t list_max, size_t * nb_certs)
+{
+    return ptls_pem_get_objects(pem_fname, "CERTIFICATE", list, list_max, nb_certs);
+}
+
+int ptls_pem_get_private_key(char * pem_fname, ptls_iovec_t ** list, size_t list_max, size_t * nb_certs)
+{
+    return ptls_pem_get_objects(pem_fname, "PRIVATE KEY", list, list_max, nb_certs);
 }
