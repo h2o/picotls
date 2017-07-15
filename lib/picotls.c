@@ -693,13 +693,12 @@ static int derive_exporter_secret(ptls_t *tls, int is_early)
     if (tls->exporter_master_secret == NULL && (tls->exporter_master_secret = malloc(tls->key_schedule->algo->digest_size)) == NULL)
         return PTLS_ERROR_NO_MEMORY;
 
-    return derive_secret(tls->key_schedule, tls->exporter_master_secret,
-                         is_early ? "early exporter master secret" : "exporter master secret");
+    return derive_secret(tls->key_schedule, tls->exporter_master_secret, is_early ? "e exp master" : "exp master");
 }
 
 static int derive_resumption_secret(struct st_ptls_key_schedule_t *sched, uint8_t *secret)
 {
-    return derive_secret(sched, secret, "resumption master secret");
+    return derive_secret(sched, secret, "resumption");
 }
 
 static int decode_new_session_ticket(uint32_t *lifetime, uint32_t *age_add, ptls_iovec_t *ticket, uint32_t *max_early_data_size,
@@ -1217,7 +1216,7 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_handshake
     /* update the message hash, filling in the PSK binder HMAC if necessary */
     if (resumption_secret.base != NULL) {
         size_t psk_binder_off = sendbuf->off - (3 + tls->key_schedule->algo->digest_size);
-        if ((ret = derive_secret(tls->key_schedule, binder_key, "resumption psk binder key")) != 0)
+        if ((ret = derive_secret(tls->key_schedule, binder_key, "res binder")) != 0)
             goto Exit;
         key_schedule_update_hash(tls->key_schedule, sendbuf->base + msghash_off, psk_binder_off - msghash_off);
         msghash_off = psk_binder_off;
@@ -1227,8 +1226,7 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_handshake
     key_schedule_update_hash(tls->key_schedule, sendbuf->base + msghash_off, sendbuf->off - msghash_off);
 
     if (tls->early_data != NULL) {
-        if ((ret = setup_traffic_protection(tls, resumption_cipher_suite, 1, "client early traffic secret",
-                                            "CLIENT_EARLY_TRAFFIC_SECRET")) != 0)
+        if ((ret = setup_traffic_protection(tls, resumption_cipher_suite, 1, "c e traffic", "CLIENT_EARLY_TRAFFIC_SECRET")) != 0)
             goto Exit;
         if ((ret = derive_exporter_secret(tls, 1)) != 0)
             goto Exit;
@@ -1426,8 +1424,7 @@ static int client_handle_hello(ptls_t *tls, ptls_iovec_t message)
 
     if ((ret = key_schedule_extract(tls->key_schedule, ecdh_secret)) != 0)
         goto Exit;
-    if ((ret = setup_traffic_protection(tls, tls->cipher_suite, 0, "server handshake traffic secret",
-                                        "SERVER_HANDSHAKE_TRAFFIC_SECRET")) != 0)
+    if ((ret = setup_traffic_protection(tls, tls->cipher_suite, 0, "s hs traffic", "SERVER_HANDSHAKE_TRAFFIC_SECRET")) != 0)
         goto Exit;
 
     tls->state = PTLS_STATE_CLIENT_EXPECT_ENCRYPTED_EXTENSIONS;
@@ -1523,11 +1520,10 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
         tls->skip_early_data = skip_early_data;
         if (properties != NULL && !skip_early_data)
             properties->client.early_data_accepted_by_peer = 1;
-        if ((ret = derive_secret(tls->key_schedule, tls->early_data->next_secret, "client handshake traffic secret")) != 0)
+        if ((ret = derive_secret(tls->key_schedule, tls->early_data->next_secret, "c hs traffic")) != 0)
             goto Exit;
     } else {
-        if ((ret = setup_traffic_protection(tls, tls->cipher_suite, 1, "client handshake traffic secret",
-                                            "CLIENT_HANDSHAKE_TRAFFIC_SECRET")) != 0)
+        if ((ret = setup_traffic_protection(tls, tls->cipher_suite, 1, "c hs traffic", "CLIENT_HANDSHAKE_TRAFFIC_SECRET")) != 0)
             goto Exit;
     }
     if ((ret = report_unknown_extensions(tls, properties, unknown_extensions)) != 0)
@@ -1641,12 +1637,11 @@ static int client_handle_finished(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iove
     /* update traffic keys by using messages upto ServerFinished, but commission them after sending ClientFinished */
     if ((ret = key_schedule_extract(tls->key_schedule, ptls_iovec_init(NULL, 0))) != 0)
         goto Exit;
-    if ((ret = setup_traffic_protection(tls, tls->cipher_suite, 0, "server application traffic secret",
-                                        "SERVER_TRAFFIC_SECRET_0")) != 0)
+    if ((ret = setup_traffic_protection(tls, tls->cipher_suite, 0, "s ap traffic", "SERVER_TRAFFIC_SECRET_0")) != 0)
         goto Exit;
     if ((ret = derive_exporter_secret(tls, 0)) != 0)
         goto Exit;
-    if ((ret = derive_secret(tls->key_schedule, send_secret, "client application traffic secret")) != 0)
+    if ((ret = derive_secret(tls->key_schedule, send_secret, "c ap traffic")) != 0)
         goto Exit;
 
     /* if sending early data, emit EOED and commision the client handshake traffic secret */
@@ -2100,7 +2095,7 @@ static int try_psk_handshake(ptls_t *tls, size_t *psk_index, int *accept_early_d
 Found:
     if ((ret = key_schedule_extract(tls->key_schedule, ticket_psk)) != 0)
         goto Exit;
-    if ((ret = derive_secret(tls->key_schedule, binder_key, "resumption psk binder key")) != 0)
+    if ((ret = derive_secret(tls->key_schedule, binder_key, "res binder")) != 0)
         goto Exit;
     key_schedule_update_hash(tls->key_schedule, ch_trunc.base, ch_trunc.len);
     if ((ret = calc_verify_data(verify_data, tls->key_schedule, binder_key)) != 0)
@@ -2263,8 +2258,7 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
             ret = PTLS_ERROR_NO_MEMORY;
             goto Exit;
         }
-        if ((ret = setup_traffic_protection(tls, tls->cipher_suite, 0, "client early traffic secret",
-                                            "CLIENT_EARLY_TRAFFIC_SECRET")) != 0)
+        if ((ret = setup_traffic_protection(tls, tls->cipher_suite, 0, "c e traffic", "CLIENT_EARLY_TRAFFIC_SECRET")) != 0)
             goto Exit;
         if ((ret = derive_exporter_secret(tls, 1)) != 0)
             goto Exit;
@@ -2301,15 +2295,13 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
     /* create protection contexts for the handshake */
     assert(tls->key_schedule->generation == 1);
     key_schedule_extract(tls->key_schedule, ecdh_secret);
-    if ((ret = setup_traffic_protection(tls, tls->cipher_suite, 1, "server handshake traffic secret",
-                                        "SERVER_HANDSHAKE_TRAFFIC_SECRET")) != 0)
+    if ((ret = setup_traffic_protection(tls, tls->cipher_suite, 1, "s hs traffic", "SERVER_HANDSHAKE_TRAFFIC_SECRET")) != 0)
         goto Exit;
     if (tls->early_data != NULL) {
-        if ((ret = derive_secret(tls->key_schedule, tls->early_data->next_secret, "client handshake traffic secret")) != 0)
+        if ((ret = derive_secret(tls->key_schedule, tls->early_data->next_secret, "c hs traffic")) != 0)
             goto Exit;
     } else {
-        if ((ret = setup_traffic_protection(tls, tls->cipher_suite, 0, "client handshake traffic secret",
-                                            "CLIENT_HANDSHAKE_TRAFFIC_SECRET")) != 0)
+        if ((ret = setup_traffic_protection(tls, tls->cipher_suite, 0, "c hs traffic", "CLIENT_HANDSHAKE_TRAFFIC_SECRET")) != 0)
             goto Exit;
         if (ch.psk.early_data_indication)
             tls->skip_early_data = 1;
@@ -2397,8 +2389,7 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
     assert(tls->key_schedule->generation == 2);
     if ((ret = key_schedule_extract(tls->key_schedule, ptls_iovec_init(NULL, 0))) != 0)
         return ret;
-    if ((ret = setup_traffic_protection(tls, tls->cipher_suite, 1, "server application traffic secret",
-                                        "SERVER_TRAFFIC_SECRET_0")) != 0)
+    if ((ret = setup_traffic_protection(tls, tls->cipher_suite, 1, "s ap traffic", "SERVER_TRAFFIC_SECRET_0")) != 0)
         return ret;
     if ((ret = derive_exporter_secret(tls, 0)) != 0)
         goto Exit;
@@ -2442,8 +2433,7 @@ static int server_handle_finished(ptls_t *tls, ptls_iovec_t message)
     if ((ret = verify_finished(tls, message)) != 0)
         return ret;
 
-    if ((ret = setup_traffic_protection(tls, tls->cipher_suite, 0, "client application traffic secret",
-                                        "CLIENT_TRAFFIC_SECRET_0")) != 0)
+    if ((ret = setup_traffic_protection(tls, tls->cipher_suite, 0, "c ap traffic", "CLIENT_TRAFFIC_SECRET_0")) != 0)
         return ret;
 
     key_schedule_update_hash(tls->key_schedule, message.base, message.len);
