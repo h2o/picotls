@@ -19,6 +19,9 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
+#ifdef WIN32
+#include "wincompat.h"
+#endif
 #include <assert.h>
 #include <string.h>
 #include "picotls.h"
@@ -28,19 +31,19 @@
 
 ptls_context_t *ctx, *ctx_peer;
 
-static ptls_cipher_suite_t *find_aes128gcmsha256(ptls_context_t *ctx)
+static ptls_cipher_suite_t *find_cipher(ptls_context_t *ctx, uint16_t id)
 {
     ptls_cipher_suite_t **cs;
     for (cs = ctx->cipher_suites; *cs != NULL; ++cs)
-        if ((*cs)->id == PTLS_CIPHER_SUITE_AES_128_GCM_SHA256)
+        if ((*cs)->id == id)
             return *cs;
-    assert(!"FIXME");
+    return NULL;
 }
 
 static void test_sha256(void)
 {
-    ptls_hash_algorithm_t *algo = find_aes128gcmsha256(ctx)->hash;
-    ptls_hash_context_t *hctx = find_aes128gcmsha256(ctx)->hash->create();
+    ptls_hash_algorithm_t *algo = find_cipher(ctx, PTLS_CIPHER_SUITE_AES_128_GCM_SHA256)->hash;
+    ptls_hash_context_t *hctx = find_cipher(ctx, PTLS_CIPHER_SUITE_AES_128_GCM_SHA256)->hash->create();
 
     uint8_t digest[PTLS_MAX_DIGEST_SIZE];
     hctx->final(hctx, digest, PTLS_HASH_FINAL_MODE_FREE);
@@ -53,7 +56,8 @@ static void test_hmac_sha256(void)
     const char *secret = "\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b", *message = "Hi There";
     uint8_t digest[32];
 
-    ptls_hash_context_t *hctx = ptls_hmac_create(find_aes128gcmsha256(ctx)->hash, secret, strlen(secret));
+    ptls_hash_context_t *hctx =
+        ptls_hmac_create(find_cipher(ctx, PTLS_CIPHER_SUITE_AES_128_GCM_SHA256)->hash, secret, strlen(secret));
     hctx->update(hctx, message, strlen(message));
     hctx->final(hctx, digest, 0);
 
@@ -64,7 +68,7 @@ static void test_hmac_sha256(void)
 
 static void test_hkdf(void)
 {
-    ptls_hash_algorithm_t *sha256 = find_aes128gcmsha256(ctx)->hash;
+    ptls_hash_algorithm_t *sha256 = find_cipher(ctx, PTLS_CIPHER_SUITE_AES_128_GCM_SHA256)->hash;
     const char salt[] = "\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c";
     const char ikm[] = "\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b";
     const char info[] = "\xf0\xf1\xf2\xf3\xf4\xf5\xf6\xf7\xf8\xf9";
@@ -88,44 +92,83 @@ static void test_ciphersuite(ptls_cipher_suite_t *cs1, ptls_cipher_suite_t *cs2)
     ptls_aead_context_t *c;
     char enc1[256], enc2[256], dec1[256], dec2[256];
     size_t enc1len, enc2len, dec1len, dec2len;
-    int ret;
 
     /* encrypt */
     c = ptls_aead_new(cs1->aead, cs1->hash, 1, traffic_secret);
     assert(c != NULL);
-    ret = ptls_aead_transform(c, enc1, &enc1len, src1, strlen(src1), 0);
-    ok(ret == 0);
-    ret = ptls_aead_transform(c, enc2, &enc2len, src2, strlen(src2), 0);
-    ok(ret == 0);
+    ptls_aead_encrypt_init(c, 0, NULL, 0);
+    enc1len = ptls_aead_encrypt_update(c, enc1, src1, strlen(src1));
+    enc1len += ptls_aead_encrypt_final(c, enc1 + enc1len);
+    ptls_aead_encrypt_init(c, 1, NULL, 0);
+    enc2len = ptls_aead_encrypt_update(c, enc2, src2, strlen(src2));
+    enc2len += ptls_aead_encrypt_final(c, enc2 + enc2len);
+    ptls_aead_free(c);
+
+    c = ptls_aead_new(cs2->aead, cs2->hash, 0, traffic_secret);
+    assert(c != NULL);
+
+    /* decrypt and compare */
+    dec1len = ptls_aead_decrypt(c, dec1, enc1, enc1len, 0, NULL, 0);
+    ok(dec1len != SIZE_MAX);
+    dec2len = ptls_aead_decrypt(c, dec2, enc2, enc2len, 1, NULL, 0);
+    ok(dec2len != SIZE_MAX);
+    ok(strlen(src1) == dec1len);
+    ok(memcmp(src1, dec1, dec1len) == 0);
+    ok(strlen(src2) == dec2len);
+    ok(memcmp(src2, dec2, dec2len - 1) == 0);
+
+    /* alter and decrypt to detect failure */
+    enc1[0] ^= 1;
+    dec1len = ptls_aead_decrypt(c, dec1, enc1, enc1len, 0, NULL, 0);
+    ok(dec1len == SIZE_MAX);
+
+    ptls_aead_free(c);
+}
+
+static void test_aad_ciphersuite(ptls_cipher_suite_t *cs1, ptls_cipher_suite_t *cs2)
+{
+    const char *traffic_secret = "01234567890123456789012345678901", *src = "hello world", *aad = "my true aad";
+    ptls_aead_context_t *c;
+    char enc[256], dec[256];
+    size_t enclen, declen;
+
+    /* encrypt */
+    c = ptls_aead_new(cs1->aead, cs1->hash, 1, traffic_secret);
+    assert(c != NULL);
+    ptls_aead_encrypt_init(c, 123, aad, strlen(aad));
+    enclen = ptls_aead_encrypt_update(c, enc, src, strlen(src));
+    enclen += ptls_aead_encrypt_final(c, enc + enclen);
     ptls_aead_free(c);
 
     /* decrypt */
     c = ptls_aead_new(cs2->aead, cs2->hash, 0, traffic_secret);
     assert(c != NULL);
-    ret = ptls_aead_transform(c, dec1, &dec1len, enc1, enc1len, 0);
-    ok(ret == 0);
-    ret = ptls_aead_transform(c, dec2, &dec2len, enc2, enc2len, 0);
-    ok(ret == 0);
-    ptls_aead_free(c);
-
-    /* compare */
-    ok(strlen(src1) + 1 == dec1len);
-    ok(memcmp(src1, dec1, dec1len) == 0);
-    ok(strlen(src2) + 1 == dec2len);
-    ok(memcmp(src2, dec2, dec2len) == 0);
-
-    /* alter and decrypt to detect failure */
-    enc1[0] ^= 1;
-    c = ptls_aead_new(cs2->aead, cs2->hash, 0, traffic_secret);
-    assert(c != NULL);
-    ret = ptls_aead_transform(c, dec1, &dec1len, enc1, enc1len, 0);
-    ok(ret == PTLS_ALERT_BAD_RECORD_MAC);
+    declen = ptls_aead_decrypt(c, dec, enc, enclen, 123, aad, strlen(aad));
+    ok(declen == strlen(src));
+    ok(memcmp(src, dec, declen) == 0);
+    declen = ptls_aead_decrypt(c, dec, enc, enclen, 123, "my fake aad", strlen(aad));
+    ok(declen == SIZE_MAX);
     ptls_aead_free(c);
 }
 
 static void test_aes128gcm(void)
 {
-    test_ciphersuite(find_aes128gcmsha256(ctx), find_aes128gcmsha256(ctx_peer));
+    ptls_cipher_suite_t *cs = find_cipher(ctx, PTLS_CIPHER_SUITE_AES_128_GCM_SHA256),
+                        *cs_peer = find_cipher(ctx, PTLS_CIPHER_SUITE_AES_128_GCM_SHA256);
+
+    test_ciphersuite(cs, cs_peer);
+    test_aad_ciphersuite(cs, cs_peer);
+}
+
+static void test_chacha20poly1305(void)
+{
+    ptls_cipher_suite_t *cs = find_cipher(ctx, PTLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256),
+                        *cs_peer = find_cipher(ctx, PTLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256);
+
+    if (cs != NULL && cs_peer != NULL) {
+        test_ciphersuite(cs, cs_peer);
+        test_aad_ciphersuite(cs, cs_peer);
+    }
 }
 
 static struct {
@@ -219,17 +262,12 @@ static int save_client_hello(ptls_on_client_hello_t *self, ptls_t *tls, ptls_iov
     return 0;
 }
 
-enum {
-    TEST_HANDSHAKE_FULL,
-    TEST_HANDSHAKE_HRR,
-    TEST_HANDSHAKE_RESUME,
-    TEST_HANDSHAKE_EARLY_DATA
-};
+enum { TEST_HANDSHAKE_FULL, TEST_HANDSHAKE_HRR, TEST_HANDSHAKE_RESUME, TEST_HANDSHAKE_EARLY_DATA };
 
 static void test_handshake(ptls_iovec_t ticket, int mode, int check_ch)
 {
     ptls_t *client, *server;
-    ptls_handshake_properties_t client_hs_prop = {{{NULL}, ticket}};
+    ptls_handshake_properties_t client_hs_prop = {{{{NULL}, ticket}}};
     uint8_t cbuf_small[16384], sbuf_small[16384], decbuf_small[16384];
     ptls_buffer_t cbuf, sbuf, decbuf;
     size_t consumed, max_early_data_size = 0;
@@ -312,7 +350,7 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int check_ch)
         ok(consumed == cbuf.off);
         ok(decbuf.off == strlen(req));
         ok(memcmp(decbuf.base, req, decbuf.off) == 0);
-        ok(ptls_is_early_data(server));
+        ok(!ptls_handshake_is_complete(server));
         cbuf.off = 0;
         decbuf.off = 0;
 
@@ -356,7 +394,7 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int check_ch)
         ok(consumed == cbuf.off);
         ok(decbuf.off == strlen(req));
         ok(memcmp(decbuf.base, req, strlen(req)) == 0);
-        ok(!ptls_is_early_data(server));
+        ok(ptls_handshake_is_complete(server));
         decbuf.off = 0;
 
         ret = ptls_send(server, &sbuf, resp, strlen(resp));
@@ -369,7 +407,7 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int check_ch)
     ok(consumed == sbuf.off);
     ok(decbuf.off == strlen(resp));
     ok(memcmp(decbuf.base, resp, strlen(resp)) == 0);
-    ok(!ptls_is_early_data(client));
+    ok(ptls_handshake_is_complete(client));
     decbuf.off = 0;
 
     if (mode == TEST_HANDSHAKE_EARLY_DATA) {
@@ -378,7 +416,7 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int check_ch)
         ok(ret == 0);
         ok(cbuf.off == consumed);
         ok(decbuf.off == 0);
-        ok(!ptls_is_early_data(client));
+        ok(ptls_handshake_is_complete(client));
     }
 
     ptls_buffer_dispose(&cbuf);
@@ -419,7 +457,7 @@ static void test_hrr_handshake(void)
     ok(sc_callcnt == 1);
 }
 
-static int copy_ticket(ptls_encrypt_ticket_t *self, ptls_t *tls, ptls_buffer_t *dst, ptls_iovec_t src)
+static int copy_ticket(ptls_encrypt_ticket_t *self, ptls_t *tls, int is_encrypt, ptls_buffer_t *dst, ptls_iovec_t src)
 {
     int ret;
 
@@ -449,14 +487,12 @@ static void test_resumption(void)
     assert(ctx_peer->ticket_lifetime == 0);
     assert(ctx_peer->max_early_data_size == 0);
     assert(ctx_peer->encrypt_ticket == NULL);
-    assert(ctx_peer->decrypt_ticket == NULL);
     assert(ctx_peer->save_ticket == NULL);
     saved_ticket = ptls_iovec_init(NULL, 0);
 
     ctx_peer->ticket_lifetime = 86400;
     ctx_peer->max_early_data_size = 8192;
     ctx_peer->encrypt_ticket = &et;
-    ctx_peer->decrypt_ticket = &et;
     ctx->save_ticket = &st;
 
     sc_callcnt = 0;
@@ -480,7 +516,6 @@ static void test_resumption(void)
     ctx_peer->ticket_lifetime = 0;
     ctx_peer->max_early_data_size = 0;
     ctx_peer->encrypt_ticket = NULL;
-    ctx_peer->decrypt_ticket = NULL;
     ctx->save_ticket = NULL;
 }
 
@@ -489,7 +524,8 @@ void test_picotls(void)
     subtest("sha256", test_sha256);
     subtest("hmac-sha256", test_hmac_sha256);
     subtest("hkdf", test_hkdf);
-    subtest("aead-aes128gcm", test_aes128gcm);
+    subtest("aes128gcm", test_aes128gcm);
+    subtest("chacha20poly1305", test_chacha20poly1305);
 
     subtest("fragmented-message", test_fragmented_message);
 
