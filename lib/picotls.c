@@ -73,7 +73,7 @@
 #define PTLS_EXTENSION_TYPE_COOKIE 44
 #define PTLS_EXTENSION_TYPE_PSK_KEY_EXCHANGE_MODES 45
 
-#define PTLS_PROTOCOL_VERSION_DRAFT19 0x7f13
+#define PTLS_PROTOCOL_VERSION_DRAFT21 0x7f15
 
 #define PTLS_SERVER_NAME_TYPE_HOSTNAME 0
 
@@ -1145,7 +1145,7 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_handshake
                 });
             }
             buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SUPPORTED_VERSIONS, {
-                ptls_buffer_push_block(sendbuf, 1, { ptls_buffer_push16(sendbuf, PTLS_PROTOCOL_VERSION_DRAFT19); });
+                ptls_buffer_push_block(sendbuf, 1, { ptls_buffer_push16(sendbuf, PTLS_PROTOCOL_VERSION_DRAFT21); });
             });
             buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SIGNATURE_ALGORITHMS, {
                 ptls_buffer_push_block(sendbuf, 2, {
@@ -1256,7 +1256,7 @@ Exit:
 
 static int check_server_hello_version(uint16_t ver)
 {
-    if (ver != PTLS_PROTOCOL_VERSION_DRAFT19)
+    if (ver != PTLS_PROTOCOL_VERSION_DRAFT21)
         return PTLS_ALERT_HANDSHAKE_FAILURE;
     return 0;
 }
@@ -1913,7 +1913,7 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
                     uint16_t v;
                     if ((ret = ptls_decode16(&v, &src, end)) != 0)
                         goto Exit;
-                    if (ch->selected_version == 0 && v == PTLS_PROTOCOL_VERSION_DRAFT19)
+                    if (ch->selected_version == 0 && v == PTLS_PROTOCOL_VERSION_DRAFT21)
                         ch->selected_version = v;
                 } while (src != end);
             });
@@ -1982,7 +1982,7 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
 
     /* check if client hello make sense */
     switch (ch->selected_version) {
-    case PTLS_PROTOCOL_VERSION_DRAFT19:
+    case PTLS_PROTOCOL_VERSION_DRAFT21:
         if (!(ch->compression_methods.count == 1 && ch->compression_methods.ids[0] == 0)) {
             ret = PTLS_ALERT_ILLEGAL_PARAMETER;
             goto Exit;
@@ -2195,7 +2195,7 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
             assert(tls->key_schedule->generation == 0);
             key_schedule_extract(tls->key_schedule, ptls_iovec_init(NULL, 0));
             buffer_push_handshake(sendbuf, tls->key_schedule, PTLS_HANDSHAKE_TYPE_HELLO_RETRY_REQUEST, {
-                ptls_buffer_push16(sendbuf, PTLS_PROTOCOL_VERSION_DRAFT19);
+                ptls_buffer_push16(sendbuf, PTLS_PROTOCOL_VERSION_DRAFT21);
                 ptls_buffer_push_block(sendbuf, 2, {
                     buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_KEY_SHARE,
                                           { ptls_buffer_push16(sendbuf, negotiated_group->id); });
@@ -2272,7 +2272,7 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
 
     /* send ServerHello */
     buffer_push_handshake(sendbuf, tls->key_schedule, PTLS_HANDSHAKE_TYPE_SERVER_HELLO, {
-        ptls_buffer_push16(sendbuf, PTLS_PROTOCOL_VERSION_DRAFT19);
+        ptls_buffer_push16(sendbuf, PTLS_PROTOCOL_VERSION_DRAFT21);
         if ((ret = ptls_buffer_reserve(sendbuf, PTLS_HELLO_RANDOM_SIZE)) != 0)
             goto Exit;
         tls->ctx->random_bytes(sendbuf->base + sendbuf->off, PTLS_HELLO_RANDOM_SIZE);
