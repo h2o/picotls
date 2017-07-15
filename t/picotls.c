@@ -40,6 +40,16 @@ static ptls_cipher_suite_t *find_cipher(ptls_context_t *ctx, uint16_t id)
     return NULL;
 }
 
+static void test_sha256(void)
+{
+    ptls_hash_algorithm_t *algo = find_cipher(ctx, PTLS_CIPHER_SUITE_AES_128_GCM_SHA256)->hash;
+    ptls_hash_context_t *hctx = find_cipher(ctx, PTLS_CIPHER_SUITE_AES_128_GCM_SHA256)->hash->create();
+
+    uint8_t digest[PTLS_MAX_DIGEST_SIZE];
+    hctx->final(hctx, digest, PTLS_HASH_FINAL_MODE_FREE);
+    ok(memcmp(digest, algo->empty_digest, algo->digest_size) == 0);
+}
+
 static void test_hmac_sha256(void)
 {
     /* test vector from RFC 4231 */
@@ -447,7 +457,7 @@ static void test_hrr_handshake(void)
     ok(sc_callcnt == 1);
 }
 
-static int copy_ticket(ptls_encrypt_ticket_t *self, ptls_t *tls, ptls_buffer_t *dst, ptls_iovec_t src)
+static int copy_ticket(ptls_encrypt_ticket_t *self, ptls_t *tls, int is_encrypt, ptls_buffer_t *dst, ptls_iovec_t src)
 {
     int ret;
 
@@ -477,14 +487,12 @@ static void test_resumption(void)
     assert(ctx_peer->ticket_lifetime == 0);
     assert(ctx_peer->max_early_data_size == 0);
     assert(ctx_peer->encrypt_ticket == NULL);
-    assert(ctx_peer->decrypt_ticket == NULL);
     assert(ctx_peer->save_ticket == NULL);
     saved_ticket = ptls_iovec_init(NULL, 0);
 
     ctx_peer->ticket_lifetime = 86400;
     ctx_peer->max_early_data_size = 8192;
     ctx_peer->encrypt_ticket = &et;
-    ctx_peer->decrypt_ticket = &et;
     ctx->save_ticket = &st;
 
     sc_callcnt = 0;
@@ -508,12 +516,12 @@ static void test_resumption(void)
     ctx_peer->ticket_lifetime = 0;
     ctx_peer->max_early_data_size = 0;
     ctx_peer->encrypt_ticket = NULL;
-    ctx_peer->decrypt_ticket = NULL;
     ctx->save_ticket = NULL;
 }
 
 void test_picotls(void)
 {
+    subtest("sha256", test_sha256);
     subtest("hmac-sha256", test_hmac_sha256);
     subtest("hkdf", test_hkdf);
     subtest("aes128gcm", test_aes128gcm);
