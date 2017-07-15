@@ -2721,7 +2721,7 @@ static int handle_handshake_message(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_io
     case PTLS_STATE_CLIENT_POST_HANDSHAKE:
         switch (type) {
         case PTLS_HANDSHAKE_TYPE_NEW_SESSION_TICKET:
-            ret = client_handle_new_session_ticket(tls, message);
+            ret = 0; // FIXME ret = client_handle_new_session_ticket(tls, message);
             break;
         default:
             ret = PTLS_ALERT_UNEXPECTED_MESSAGE;
