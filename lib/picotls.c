@@ -3025,22 +3025,29 @@ Exit:
 
 int ptls_export_secret(ptls_t *tls, void *output, size_t outlen, const char *label, ptls_iovec_t context_value)
 {
+    ptls_hash_algorithm_t *algo = tls->key_schedule->algo;
     ptls_hash_context_t *hctx;
-    uint8_t context_value_hash[PTLS_MAX_DIGEST_SIZE];
+    uint8_t derived_secret[PTLS_MAX_DIGEST_SIZE], context_value_hash[PTLS_MAX_DIGEST_SIZE];
     int ret;
 
     if (tls->exporter_master_secret == NULL)
         return PTLS_ERROR_IN_PROGRESS;
 
-    if ((hctx = tls->key_schedule->algo->create()) == NULL)
+    if ((hctx = algo->create()) == NULL)
         return PTLS_ERROR_NO_MEMORY;
     hctx->update(hctx, context_value.base, context_value.len);
     hctx->final(hctx, context_value_hash, PTLS_HASH_FINAL_MODE_FREE);
 
+    if ((ret = hkdf_expand_label(algo, derived_secret, algo->digest_size,
+                                 ptls_iovec_init(tls->exporter_master_secret, algo->digest_size), label,
+                                 ptls_iovec_init(algo->empty_digest, algo->digest_size))) != 0)
+        goto Exit;
     ret = hkdf_expand_label(tls->key_schedule->algo, output, outlen,
-                             ptls_iovec_init(tls->exporter_master_secret, tls->key_schedule->algo->digest_size), label,
-                             ptls_iovec_init(context_value_hash, tls->key_schedule->algo->digest_size));
+                            ptls_iovec_init(derived_secret, tls->key_schedule->algo->digest_size), "exporter",
+                            ptls_iovec_init(context_value_hash, tls->key_schedule->algo->digest_size));
 
+Exit:
+    ptls_clear_memory(derived_secret, sizeof(derived_secret));
     ptls_clear_memory(context_value_hash, sizeof(context_value_hash));
     return ret;
 }
