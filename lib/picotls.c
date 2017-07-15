@@ -633,7 +633,7 @@ static int key_schedule_extract(struct st_ptls_key_schedule_t *sched, ptls_iovec
 
     if (sched->generation != 0 &&
         (ret = hkdf_expand_label(sched->algo, sched->secret, sched->algo->digest_size,
-                                 ptls_iovec_init(sched->secret, sched->algo->digest_size), "derived secret",
+                                 ptls_iovec_init(sched->secret, sched->algo->digest_size), "derived",
                                  ptls_iovec_init(sched->algo->empty_digest, sched->algo->digest_size))) != 0)
         return ret;
 
