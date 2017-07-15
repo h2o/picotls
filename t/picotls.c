@@ -40,6 +40,16 @@ static ptls_cipher_suite_t *find_cipher(ptls_context_t *ctx, uint16_t id)
     return NULL;
 }
 
+static void test_sha256(void)
+{
+    ptls_hash_algorithm_t *algo = find_cipher(ctx, PTLS_CIPHER_SUITE_AES_128_GCM_SHA256)->hash;
+    ptls_hash_context_t *hctx = find_cipher(ctx, PTLS_CIPHER_SUITE_AES_128_GCM_SHA256)->hash->create();
+
+    uint8_t digest[PTLS_MAX_DIGEST_SIZE];
+    hctx->final(hctx, digest, PTLS_HASH_FINAL_MODE_FREE);
+    ok(memcmp(digest, algo->empty_digest, algo->digest_size) == 0);
+}
+
 static void test_hmac_sha256(void)
 {
     /* test vector from RFC 4231 */
@@ -511,6 +521,7 @@ static void test_resumption(void)
 
 void test_picotls(void)
 {
+    subtest("sha256", test_sha256);
     subtest("hmac-sha256", test_hmac_sha256);
     subtest("hkdf", test_hkdf);
     subtest("aes128gcm", test_aes128gcm);
