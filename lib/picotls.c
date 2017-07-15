@@ -3035,11 +3035,24 @@ Exit:
 
 int ptls_export_secret(ptls_t *tls, void *output, size_t outlen, const char *label, ptls_iovec_t context_value)
 {
+    ptls_hash_context_t *hctx;
+    uint8_t context_value_hash[PTLS_MAX_DIGEST_SIZE];
+    int ret;
+
     if (tls->exporter_master_secret == NULL)
         return PTLS_ERROR_IN_PROGRESS;
-    return hkdf_expand_label(tls->key_schedule->algo, output, outlen,
+
+    if ((hctx = tls->key_schedule->algo->create()) == NULL)
+        return PTLS_ERROR_NO_MEMORY;
+    hctx->update(hctx, context_value.base, context_value.len);
+    hctx->final(hctx, context_value_hash, PTLS_HASH_FINAL_MODE_FREE);
+
+    ret = hkdf_expand_label(tls->key_schedule->algo, output, outlen,
                              ptls_iovec_init(tls->exporter_master_secret, tls->key_schedule->algo->digest_size), label,
-                             context_value);
+                             ptls_iovec_init(context_value_hash, tls->key_schedule->algo->digest_size));
+
+    ptls_clear_memory(context_value_hash, sizeof(context_value_hash));
+    return ret;
 }
 
 struct st_picotls_hmac_context_t {
