@@ -589,7 +589,7 @@ static int hkdf_expand_label(ptls_hash_algorithm_t *algo, void *output, size_t o
 
     ptls_buffer_push16(&hkdf_label, (uint16_t)outlen);
     ptls_buffer_push_block(&hkdf_label, 1, {
-        const char *prefix = "TLS 1.3, ";
+        const char *prefix = "tls13 ";
         ptls_buffer_pushv(&hkdf_label, prefix, strlen(prefix));
         ptls_buffer_pushv(&hkdf_label, label, strlen(label));
     });
