@@ -87,6 +87,9 @@
 #define PTLS_ERROR_LIBRARY (PTLS_ERROR_CLASS_INTERNAL + 3)
 #define PTLS_ERROR_INCOMPATIBLE_KEY (PTLS_ERROR_CLASS_INTERNAL + 4)
 #define PTLS_ERROR_SESSION_NOT_FOUND (PTLS_ERROR_CLASS_INTERNAL + 5)
+#define PTLS_ERROR_INCORRECT_BASE64 (PTLS_ERROR_CLASS_INTERNAL + 6)
+#define PTLS_ERROR_PEM_LABEL_NOT_FOUND (PTLS_ERROR_CLASS_INTERNAL + 7)
+
 
 #define PTLS_ZERO_DIGEST_SHA256                                                                                                    \
     {                                                                                                                              \
@@ -769,5 +772,27 @@ inline size_t ptls_aead_decrypt(ptls_aead_context_t *ctx, void *output, const vo
     ptls_aead__build_iv(ctx, iv, seq);
     return ctx->do_decrypt(ctx, output, input, inlen, iv, aad, aadlen);
 }
+
+/*
+ * Base64 functions used in encoding and decoding of PEM files
+ */
+
+#define PTLS_BASE64_DECODE_DONE 0
+#define PTLS_BASE64_DECODE_IN_PROGRESS 1
+#define PTLS_BASE64_DECODE_FAILED -1
+
+struct ptls_base64_decode_state_st {
+    int nbc;
+    int nbo;
+    int status;
+    uint32_t v;
+};
+
+int ptls_base64_encode(unsigned char * data, int data_len, char * base64_text);
+
+int ptls_base64_howlong(int data_length);
+
+void ptls_base64_decode_init(struct ptls_base64_decode_state_st * state);
+int ptls_base64_decode(char * base64_text, struct ptls_base64_decode_state_st * state, ptls_buffer_t *buf);
 
 #endif
