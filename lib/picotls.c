@@ -698,8 +698,18 @@ static int derive_exporter_secret(ptls_t *tls, int is_early)
 
 static int derive_resumption_secret(struct st_ptls_key_schedule_t *sched, uint8_t *secret, ptls_iovec_t nonce)
 {
-    return hkdf_expand_label(sched->algo, secret, sched->algo->digest_size,
-                             ptls_iovec_init(sched->secret, sched->algo->digest_size), "resumption", nonce);
+    int ret;
+
+    if ((ret = derive_secret(sched, secret, "res master")) != 0)
+        goto Exit;
+    if ((ret = hkdf_expand_label(sched->algo, secret, sched->algo->digest_size, ptls_iovec_init(secret, sched->algo->digest_size),
+                                 "resumption", nonce)) != 0)
+        goto Exit;
+
+Exit:
+    if (ret != 0)
+        ptls_clear_memory(secret, sched->algo->digest_size);
+    return ret;
 }
 
 static int decode_new_session_ticket(uint32_t *lifetime, uint32_t *age_add, ptls_iovec_t *nonce, ptls_iovec_t *ticket,
