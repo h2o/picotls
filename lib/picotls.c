@@ -713,10 +713,6 @@ static int decode_new_session_ticket(uint32_t *lifetime, uint32_t *age_add, ptls
     if ((ret = ptls_decode32(age_add, &src, end)) != 0)
         goto Exit;
     ptls_decode_open_block(src, end, 1, {
-        if (src == end) {
-            ret = PTLS_ALERT_DECODE_ERROR;
-            goto Exit;
-        }
         *nonce = ptls_iovec_init(src, end - src);
         src = end;
     });
