@@ -89,6 +89,7 @@
 #define PTLS_ERROR_SESSION_NOT_FOUND (PTLS_ERROR_CLASS_INTERNAL + 5)
 #define PTLS_ERROR_INCORRECT_BASE64 (PTLS_ERROR_CLASS_INTERNAL + 6)
 #define PTLS_ERROR_PEM_LABEL_NOT_FOUND (PTLS_ERROR_CLASS_INTERNAL + 7)
+#define PTLS_ERROR_INCORRECT_BER_ENCODING (PTLS_ERROR_CLASS_INTERNAL + 8)
 
 
 #define PTLS_ZERO_DIGEST_SHA256                                                                                                    \
@@ -794,5 +795,9 @@ int ptls_base64_howlong(int data_length);
 
 void ptls_base64_decode_init(struct ptls_base64_decode_state_st * state);
 int ptls_base64_decode(char * base64_text, struct ptls_base64_decode_state_st * state, ptls_buffer_t *buf);
+
+int ptls_set_context_certificates(ptls_context_t * ctx, char * cert_pem_file, FILE* log_file);
+
+int picotls_asn1_validation(uint8_t * bytes, size_t length, FILE * F);
 
 #endif

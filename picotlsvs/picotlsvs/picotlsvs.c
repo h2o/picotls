@@ -206,11 +206,19 @@ int main()
     ctx_server.key_exchanges = ptls_openssl_key_exchanges;
     ctx_server.cipher_suites = ptls_openssl_cipher_suites;
 
+#if 0
     if (get_certificates("cert.pem", &ctx_server.certificates.list, &ctx_server.certificates.count) != 0)
     {
         fprintf(stderr, "Could not read the server certificates\n");
         ret = -1;
     }
+#else
+    ret = ptls_set_context_certificates(&ctx_server, "cert.pem", stdout);
+    if (ret != 0)
+    {
+        fprintf(stderr, "Could not read the server certificates\n");
+    }
+#endif
     else
     {
         SetSignCertificate("key.pem", &ctx_server);

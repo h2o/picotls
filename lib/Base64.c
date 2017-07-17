@@ -135,11 +135,15 @@ int ptls_base64_decode(char * text, struct ptls_base64_decode_state_st * state, 
     /* skip initial blanks */
     while (text[text_index] != 0)
     {
-        c = text[text_index++];
+        c = text[text_index];
 
         if (c == ' ' || c == '/t' || c == '/r' || c == '/n')
         {
-            continue;
+            text_index++;
+        }
+        else
+        {
+            break;
         }
     }
 
@@ -247,6 +251,294 @@ int ptls_base64_decode(char * text, struct ptls_base64_decode_state_st * state, 
 }
 
 /*
+ * Basic ASN1 validation and optional print-out
+ */
+
+static char const * asn1_type_classes[4] = {
+	"Universal",
+	"Application",
+	"Context-specific",
+	"Private"
+};
+
+static char const * asn1_universal_types[] = {
+	"End-of-Content",
+	"BOOLEAN",
+	"INTEGER",
+	"BIT STRING",
+	"OCTET STRING",
+	"NULL",
+	"OBJECT IDENTIFIER",
+	"Object Descriptor",
+	"EXTERNAL",
+	"REAL",
+	"ENUMERATED",
+	"EMBEDDED PDV",
+	"UTF8String",
+	"RELATIVE-OID",
+	"Reserved (16)",
+	"Reserved (17)",
+	"SEQUENCE",
+	"SET",
+	"NumericString",
+	"PrintableString",
+	"T61String",
+	"VideotexString",
+	"IA5String",
+	"UTCTime",
+	"GeneralizedTime",
+	"GraphicString",
+	"VisibleString",
+	"GeneralString",
+	"UniversalString",
+	"CHARACTER STRING",
+	"BMPString"
+};
+
+static size_t nb_asn1_universal_types = sizeof(asn1_universal_types) / sizeof(char const *);
+
+static void ptls_asn1_print_indent(int level, FILE * F)
+{
+	for (int indent = 0; indent <= level; indent++)
+	{
+		fprintf(F, "   ");
+	}
+}
+
+
+static size_t ptls_asn1_error_message(char const * error_label, size_t bytes_max, size_t byte_index, 
+	int * decode_error, int level, FILE * F)
+{
+	if (F != NULL)
+	{
+		ptls_asn1_print_indent(level, F);
+		fprintf(F, "Error: %s (near position: %d out of %d)", error_label, byte_index, bytes_max);
+	}
+	*decode_error = 1;
+	return bytes_max;
+}
+
+static void ptls_asn1_dump_content(uint8_t * bytes, size_t bytes_max, size_t byte_index, int level, FILE * F)
+{
+	if (F != NULL && bytes_max > byte_index)
+	{
+		size_t nb_bytes = bytes_max - byte_index;
+		ptls_asn1_print_indent(level, F);
+
+		for (size_t i = 0; i < 8 && i < nb_bytes; i++)
+		{
+			fprintf(F, "%02x", bytes[byte_index + i]);
+		}
+
+		if (nb_bytes > 8)
+		{
+			fprintf(F, "...");
+		}
+
+		fprintf(F, ",\n");
+	}
+}
+
+size_t ptls_asn1_validation_recursive(uint8_t * bytes, size_t bytes_max, 
+    int * decode_error, int level, FILE * F)
+{
+    /* Get the type byte */
+    int ret = 0;
+    size_t byte_index = 1;
+    uint8_t first_byte = bytes[0];
+    int structure_bit = (first_byte >> 5) & 1;
+    int type_class = (first_byte >> 6) & 3;
+    uint32_t type_number = first_byte & 31;
+    int length = 0;
+    int length_of_length = 0;
+    int indefinite_length = 0;
+    int type_extensions = 0;
+    size_t last_byte = 0;
+
+    if (type_number == 31)
+    {
+        uint32_t long_type = 0;
+		const uint32_t type_number_limit = 0x07FFFFFFF;
+        int next_byte;
+		int end_found = 0;
+
+        while (byte_index < bytes_max && long_type <= type_number_limit) {
+            next_byte = bytes[byte_index++];
+            long_type <<= 7;
+            long_type |= next_byte & 127;
+			if ((next_byte & 128) == 0)
+			{
+				end_found = 1;
+				break;
+			}
+        }
+
+		if (end_found)
+		{
+			type_number = long_type;
+		}
+		else
+		{
+			/* This is an error */
+			byte_index = ptls_asn1_error_message("Incorrect type coding", bytes_max, byte_index,
+				decode_error, level, F);
+		}
+    }
+
+	if (*decode_error == 0)
+	{
+		/* Print the type */
+		ptls_asn1_print_indent(level, F);
+		if (type_class == 0 && type_number < nb_asn1_universal_types)
+		{
+			fprintf(F, "%s", asn1_universal_types[type_number]);
+		}
+		else if (type_class == 2)
+		{
+			fprintf(F, "[%d]", type_number);
+		}
+		else
+		{
+			fprintf(F, "%s[%d]", asn1_type_classes[type_class], type_number);
+		}
+	}
+
+
+    /* Get the length */
+    if (byte_index < bytes_max)
+    {
+        length = bytes[byte_index++];
+        if ((length & 128) != 0)
+        {
+            length_of_length = length & 127;
+            length = 0;
+
+            if (byte_index + length_of_length >= bytes_max)
+            {
+				/* This is an error */
+				byte_index = ptls_asn1_error_message("Incorrect length coding", bytes_max, byte_index,
+					decode_error, level, F);
+            }
+			else
+			{
+				for (int i = 0; i < length_of_length && byte_index < bytes_max; i++)
+				{
+					length <<= 8;
+					length |= bytes[byte_index++];
+				}
+
+				if (length_of_length == 0)
+				{
+					last_byte = bytes_max;
+					indefinite_length = 1;
+				}
+				else
+				{
+					last_byte = byte_index + length;
+				}
+			}
+        }
+        else
+        {
+            last_byte = byte_index + length;
+        }
+
+		if (*decode_error == 0)
+		{
+			/* TODO: verify that the length makes sense */
+			if (last_byte > bytes_max)
+			{
+				byte_index = ptls_asn1_error_message("Length larger than message", bytes_max, byte_index,
+					decode_error, level, F);
+			}
+		}
+    }
+
+	if (last_byte <= bytes_max)
+	{
+		if (structure_bit)
+		{
+			/* If structured, recurse on a loop */
+			if (F != NULL)
+			{
+				ptls_asn1_print_indent(level, F);
+				fprintf(F, "{\n");
+			}
+
+			while (byte_index < last_byte)
+			{
+				if (indefinite_length != 0 &&
+					bytes[byte_index] == 0)
+				{
+					if (byte_index + 2 > bytes_max ||
+						bytes[byte_index + 1] != 0)
+					{
+						byte_index = ptls_asn1_error_message("EOC: Incorrect indefinite length",
+							bytes_max, byte_index, decode_error, level + 1, F);
+					}
+					else
+					{
+						byte_index += 2;
+						break;
+					}
+				}
+				else
+				{
+					byte_index += ptls_asn1_validation_recursive(
+						bytes, bytes + byte_index, last_byte - byte_index,
+						decode_error, level + 1, F);
+
+					if (decode_error)
+					{
+						byte_index = bytes_max;
+						break;
+					}
+				}
+			}
+
+
+			if (F != NULL)
+			{
+				ptls_asn1_print_indent(level, F);
+				fprintf(F, "},\n");
+			}
+		}
+		else
+		{
+			ptls_asn1_dump_content(bytes, last_byte, byte_index, level, F);
+			byte_index = last_byte;
+		}
+	}
+
+    return byte_index;
+}
+
+int ptls_asn1_validation(uint8_t * bytes, size_t length, FILE * F)
+{
+	int ret = 0;
+	int decode_error = 0;
+	size_t decoded = ptls_asn1_validation_recursive(bytes, length,
+		&decode_error, 0, F);
+
+	if (decode_error)
+	{
+		ret = PTLS_ERROR_INCORRECT_BER_ENCODING;
+	}
+	else
+	if (decoded < length)
+	{
+		ret = PTLS_ERROR_INCORRECT_BER_ENCODING;
+		if (F != NULL)
+		{
+			fprintf(F, "Type too short, %d bytes only out of %d\n",
+				decoded, length);
+		}
+	}
+
+	return ret;
+}
+
+/*
  * Reading a PEM file, to get an object:
  *
  * - Find first object, get the object name.
@@ -301,7 +593,7 @@ static int ptls_compare_separator_line(char * line, char* begin_or_end, char * l
     return ret;
 }
 
-static int ptls_get_pem_object(FILE * F, char * label, ptls_buffer_t *buf)
+static int ptls_get_pem_object(FILE * F, char * label, ptls_buffer_t *buf, FILE* log_file)
 {
     int ret = PTLS_ERROR_PEM_LABEL_NOT_FOUND;
     char line[256];
@@ -310,7 +602,7 @@ static int ptls_get_pem_object(FILE * F, char * label, ptls_buffer_t *buf)
     /* Get the label on a line by itself */
     while (fgets(line, 256, F))
     {
-        if (ptls_compare_separator_line(line, "BEGIN", label))
+        if (ptls_compare_separator_line(line, "BEGIN", label) == 0)
         {
             ret = 0;
             ptls_base64_decode_init(&state);
@@ -320,7 +612,7 @@ static int ptls_get_pem_object(FILE * F, char * label, ptls_buffer_t *buf)
     /* Get the data in the buffer */
     while (ret == 0 && fgets(line, 256, F))
     {
-        if (ptls_compare_separator_line(line, "END", label))
+        if (ptls_compare_separator_line(line, "END", label) == 0)
         {
             if (state.status == PTLS_BASE64_DECODE_DONE ||
                 (state.status == PTLS_BASE64_DECODE_IN_PROGRESS && state.nbc == 0))
@@ -331,21 +623,25 @@ static int ptls_get_pem_object(FILE * F, char * label, ptls_buffer_t *buf)
             {
                 ret = PTLS_ERROR_INCORRECT_BASE64;
             }
+            break;
         }
         else
         {
             ret = ptls_base64_decode(line, &state, buf);
         }
     }
-
+	if (ret == 0)
+	{
+		ret = ptls_asn1_validation(buf->base, buf->off, log_file);
+	}
     return ret;
 }
 
-int ptls_pem_get_objects(char * pem_fname, char * label, ptls_iovec_t ** list, size_t list_max, size_t * nb_objects)
+int ptls_pem_get_objects(char * pem_fname, char * label, 
+	ptls_iovec_t ** list, size_t list_max, size_t * nb_objects, FILE* log_file)
 {
     FILE * F;
     int ret = 0;
-    ptls_buffer_t *buf;
     size_t count = 0;
 #ifdef WIN32
     errno_t err = fopen_s(&F, pem_fname, "r");
@@ -372,7 +668,7 @@ int ptls_pem_get_objects(char * pem_fname, char * label, ptls_iovec_t ** list, s
 
         while (count < list_max)
         {
-            ret = ptls_get_pem_object(F, label, &buf);
+            ret = ptls_get_pem_object(F, label, &buf, log_file);
 
             if (ret == 0)
             {
@@ -406,12 +702,81 @@ int ptls_pem_get_objects(char * pem_fname, char * label, ptls_iovec_t ** list, s
     return ret;
 }
 
-int ptls_pem_get_certificates(char * pem_fname, ptls_iovec_t ** list, size_t list_max, size_t * nb_certs)
+int ptls_pem_get_certificates(char * pem_fname, ptls_iovec_t ** list, size_t list_max, 
+	size_t * nb_certs, FILE * log_file)
 {
-    return ptls_pem_get_objects(pem_fname, "CERTIFICATE", list, list_max, nb_certs);
+    return ptls_pem_get_objects(pem_fname, "CERTIFICATE", list, list_max, nb_certs, log_file);
 }
 
-int ptls_pem_get_private_key(char * pem_fname, ptls_iovec_t ** list, size_t list_max, size_t * nb_certs)
+int ptls_pem_get_private_key(char * pem_fname, ptls_iovec_t ** list, size_t list_max, size_t * nb_certs,
+	FILE * log_file)
 {
-    return ptls_pem_get_objects(pem_fname, "PRIVATE KEY", list, list_max, nb_certs);
+    return ptls_pem_get_objects(pem_fname, "PRIVATE KEY", list, list_max, nb_certs, log_file);
 }
+
+/*
+IMO it could be implemented in either of the three ways :
+
+a) a function that accepts `ptls_context_t *` and a filename as
+arguments.The function will populate `ptls_context_t::certificates`.
+A function that disposes of the memory allocated for the certificates
+stored in the context needs to be defined as well.
+b) a function that accepts `ptls_context_t *` and `FILE *` as
+arguments.The function will populate `ptls_context_t::certificates`.
+A function that disposes of the memory allocated for the certificates
+stored in the context needs to be defined as well.
+c) a function that accepts `FILE *` and returns at most one
+certificate(in type ptls_iovec_t, with `ptls_iovec_t::base` being
+    allocated using malloc).User should call the function repeatedly
+    until it returns an EOF.It is the users' responsibility to setup
+    `ptls_context_t::certificates` by using the values returned the
+    function.
+
+    I do not have a strong preference between the three, though it might
+    make sense to implement(c) and optionally provide a wrapper in the
+    style of either(a) or (b).
+*/
+#define PTLS_MAX_CERTS_IN_CONTEXT 16
+
+int ptls_set_context_certificates(ptls_context_t * ctx, 
+    char * cert_pem_file, FILE* log_file)
+{
+    int ret = 0;
+
+    ctx->certificates.list = (ptls_iovec_t *)
+        malloc(PTLS_MAX_CERTS_IN_CONTEXT * sizeof(ptls_iovec_t));
+
+    if (ctx->certificates.list == NULL)
+    {
+        ret = PTLS_ERROR_NO_MEMORY;
+    }
+    else
+    {
+        ret = ptls_pem_get_objects(cert_pem_file, "CERTIFICATE",
+            &ctx->certificates.list, PTLS_MAX_CERTS_IN_CONTEXT, &ctx->certificates.count, log_file);
+    }
+
+    return ret;
+}
+
+
+/*
+> 2) What is the proper API to push signing keys in mini crypto.
+
+IMO it should either be :
+
+a) a function that initializes
+`ptls_minicrypto_secp256r1sha256_sign_certificate_t` (much like
+    ptls_minicrypto_init_secp256r1sha256_sign_certificate), taking address
+    of the object and a filename of the private key as arguments
+    b) a function that initializes
+    `ptls_minicrypto_secp256r1sha256_sign_certificate_t` (much like
+        ptls_minicrypto_init_secp256r1sha256_sign_certificate), taking address
+    of the object and `FILE *` of the private key as arguments
+    c) a function that reads a private key from file(either specified by
+    a filename or a file pointer) and returns it as `ptls_iovec_t`
+
+    For the matter, I think that having(c), as well as optionally having
+    either(a) or (b)might make sense.
+*/
+
