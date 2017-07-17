@@ -295,6 +295,29 @@ static char const * asn1_universal_types[] = {
 	"BMPString"
 };
 
+
+/* For debugging
+*/
+
+static void data_dump(uint8_t * bytes, size_t length, FILE* F)
+{
+	size_t byte_index = 0;
+
+	while (byte_index < length)
+	{
+		fprintf(F, "%06x ", byte_index);
+		for (size_t i = 0; i < 32 && byte_index < length; i++, byte_index++)
+		{
+			fprintf(F, "%02x", bytes[byte_index]);
+			if ((i & 3) == 3)
+			{
+				fprintf(F, " ");
+			}
+		}
+		fprintf(F, "\n");
+	}
+}
+
 static size_t nb_asn1_universal_types = sizeof(asn1_universal_types) / sizeof(char const *);
 
 static void ptls_asn1_print_indent(int level, FILE * F)
@@ -312,7 +335,8 @@ static size_t ptls_asn1_error_message(char const * error_label, size_t bytes_max
 	if (F != NULL)
 	{
 		ptls_asn1_print_indent(level, F);
-		fprintf(F, "Error: %s (near position: %d out of %d)", error_label, byte_index, bytes_max);
+		fprintf(F, "Error: %s (near position: %d (0x%x) out of %d)", 
+			error_label, byte_index, byte_index, bytes_max);
 	}
 	*decode_error = 1;
 	return bytes_max;
@@ -485,7 +509,7 @@ size_t ptls_asn1_validation_recursive(uint8_t * bytes, size_t bytes_max,
 				else
 				{
 					byte_index += ptls_asn1_validation_recursive(
-						bytes, bytes + byte_index, last_byte - byte_index,
+						bytes + byte_index, last_byte - byte_index,
 						decode_error, level + 1, F);
 
 					if (decode_error)
@@ -633,6 +657,11 @@ static int ptls_get_pem_object(FILE * F, char * label, ptls_buffer_t *buf, FILE*
 	if (ret == 0)
 	{
 		ret = ptls_asn1_validation(buf->base, buf->off, log_file);
+
+		if (ret != 0)
+		{
+			data_dump(buf->base, buf->off, log_file);
+		}
 	}
     return ret;
 }
