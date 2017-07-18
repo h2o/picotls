@@ -348,6 +348,8 @@ static void ptls_asn1_dump_content(uint8_t * bytes, size_t bytes_max, size_t byt
 	{
 		size_t nb_bytes = bytes_max - byte_index;
 
+		fprintf(F, " ");
+
 		for (size_t i = 0; i < 8 && i < nb_bytes; i++)
 		{
 			fprintf(F, "%02x", bytes[byte_index + i]);
@@ -357,8 +359,6 @@ static void ptls_asn1_dump_content(uint8_t * bytes, size_t bytes_max, size_t byt
 		{
 			fprintf(F, "...");
 		}
-
-		fprintf(F, ",\n");
 	}
 }
 
@@ -484,7 +484,7 @@ size_t ptls_asn1_validation_recursive(uint8_t * bytes, size_t bytes_max,
 			/* If structured, recurse on a loop */
 			if (F != NULL)
 			{
-				fprintf(F, "{\n");
+				fprintf(F, " {\n");
 			}
 
 			while (byte_index < last_byte)
@@ -532,6 +532,7 @@ size_t ptls_asn1_validation_recursive(uint8_t * bytes, size_t bytes_max,
 
 			if (F != NULL)
 			{
+				ptls_asn1_print_indent(level, F);
 				fprintf(F, "}");
 			}
 		}
@@ -665,6 +666,10 @@ static int ptls_get_pem_object(FILE * F, char * label, ptls_buffer_t *buf, FILE*
 	if (ret == 0)
 	{
 		ret = ptls_asn1_validation(buf->base, buf->off, log_file);
+		if (F != NULL)
+		{
+			fprintf(F, "\n");
+		}
 
 		if (ret != 0)
 		{
