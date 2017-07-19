@@ -1009,7 +1009,6 @@ static int send_session_ticket(ptls_t *tls, ptls_buffer_t *sendbuf)
     ptls_buffer_t session_id;
     char session_id_smallbuf[128];
     uint32_t ticket_age_add;
-    uint8_t ticket_nonce[PTLS_MAX_DIGEST_SIZE];
     int ret = 0;
 
     assert(tls->ctx->ticket_lifetime != 0);
@@ -1027,13 +1026,11 @@ static int send_session_ticket(ptls_t *tls, ptls_buffer_t *sendbuf)
     });
 
     tls->ctx->random_bytes(&ticket_age_add, sizeof(ticket_age_add));
-    tls->ctx->random_bytes(ticket_nonce, tls->key_schedule->algo->digest_size);
 
     /* build the raw nsk */
     ptls_buffer_init(&session_id, session_id_smallbuf, sizeof(session_id_smallbuf));
-    ret =
-        encode_session_identifier(&session_id, ticket_age_add, ptls_iovec_init(ticket_nonce, tls->key_schedule->algo->digest_size),
-                                  tls->key_schedule, tls->server_name, tls->cipher_suite->id, tls->negotiated_protocol);
+    ret = encode_session_identifier(&session_id, ticket_age_add, ptls_iovec_init(NULL, 0), tls->key_schedule, tls->server_name,
+                                    tls->cipher_suite->id, tls->negotiated_protocol);
     if (ret != 0)
         goto Exit;
 
@@ -1042,7 +1039,7 @@ static int send_session_ticket(ptls_t *tls, ptls_buffer_t *sendbuf)
         buffer_push_handshake(sendbuf, tls->key_schedule, PTLS_HANDSHAKE_TYPE_NEW_SESSION_TICKET, {
             ptls_buffer_push32(sendbuf, tls->ctx->ticket_lifetime);
             ptls_buffer_push32(sendbuf, ticket_age_add);
-            ptls_buffer_push_block(sendbuf, 1, { ptls_buffer_pushv(sendbuf, ticket_nonce, tls->key_schedule->algo->digest_size); });
+            ptls_buffer_push_block(sendbuf, 1, {});
             ptls_buffer_push_block(sendbuf, 2, {
                 if ((ret = tls->ctx->encrypt_ticket->cb(tls->ctx->encrypt_ticket, tls, 1, sendbuf,
                                                         ptls_iovec_init(session_id.base, session_id.off))) != 0)
