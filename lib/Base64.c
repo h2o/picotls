@@ -127,7 +127,7 @@ void ptls_base64_decode_init(struct ptls_base64_decode_state_st * state)
 int ptls_base64_decode(char * text, struct ptls_base64_decode_state_st * state, ptls_buffer_t *buf)
 {
     int ret = 0;
-    int decoded[3];
+    uint8_t decoded[3];
     int text_index = 0;
     char c;
     char vc;
@@ -342,12 +342,11 @@ static size_t ptls_asn1_error_message(char const * error_label, size_t bytes_max
 	return bytes_max;
 }
 
-static void ptls_asn1_dump_content(uint8_t * bytes, size_t bytes_max, size_t byte_index, int level, FILE * F)
+static void ptls_asn1_dump_content(uint8_t * bytes, size_t bytes_max, size_t byte_index, FILE * F)
 {
 	if (F != NULL && bytes_max > byte_index)
 	{
 		size_t nb_bytes = bytes_max - byte_index;
-		ptls_asn1_print_indent(level, F);
 
 		for (size_t i = 0; i < 8 && i < nb_bytes; i++)
 		{
@@ -485,7 +484,6 @@ size_t ptls_asn1_validation_recursive(uint8_t * bytes, size_t bytes_max,
 			/* If structured, recurse on a loop */
 			if (F != NULL)
 			{
-				ptls_asn1_print_indent(level, F);
 				fprintf(F, "{\n");
 			}
 
@@ -502,6 +500,11 @@ size_t ptls_asn1_validation_recursive(uint8_t * bytes, size_t bytes_max,
 					}
 					else
 					{
+						if (F != NULL)
+						{
+							ptls_asn1_print_indent(level, F);
+							fprintf(F, "EOC\n");
+						}
 						byte_index += 2;
 						break;
 					}
@@ -512,24 +515,29 @@ size_t ptls_asn1_validation_recursive(uint8_t * bytes, size_t bytes_max,
 						bytes + byte_index, last_byte - byte_index,
 						decode_error, level + 1, F);
 
-					if (decode_error)
+					if (*decode_error)
 					{
 						byte_index = bytes_max;
 						break;
 					}
 				}
+
+				if (byte_index < last_byte)
+				{
+					fprintf(F, ",");
+				}
+				fprintf(F, "\n");
 			}
 
 
 			if (F != NULL)
 			{
-				ptls_asn1_print_indent(level, F);
-				fprintf(F, "},\n");
+				fprintf(F, "}");
 			}
 		}
 		else
 		{
-			ptls_asn1_dump_content(bytes, last_byte, byte_index, level, F);
+			ptls_asn1_dump_content(bytes, last_byte, byte_index, F);
 			byte_index = last_byte;
 		}
 	}

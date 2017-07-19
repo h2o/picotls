@@ -7,6 +7,20 @@
 
 int ptls_export_secret(ptls_t *tls, void *output, size_t outlen, const char *label, ptls_iovec_t context_value);
 
+/*
+ * Testing the Base64 and ASN1 verifiers
+ */
+int openPemTest(char* filename)
+{
+	ptls_iovec_t buf;
+	ptls_iovec_t * list = &buf;
+	size_t count = 1;
+
+	int ret = ptls_pem_get_objects(filename, "TEST",
+		&list, 1, &count, stderr);
+
+	return ret;
+}
 
 /*
  * Using the open ssl library to load the test certificate
@@ -190,6 +204,11 @@ int main()
     ptls_t *tls_client = NULL, *tls_server = NULL;
     int ret = 0;
     ptls_buffer_t client_buf, server_buf;
+
+#if 0
+	/* TODO: move to ASN.1 unit test*/
+	ret = openPemTest("test.pem");
+#endif
 
 
     /* Initialize the client context */
