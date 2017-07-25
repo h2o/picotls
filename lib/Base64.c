@@ -350,55 +350,51 @@ static void ptls_asn1_dump_content(uint8_t * bytes, size_t bytes_max, size_t byt
 
 		fprintf(F, " ");
 
-		for (size_t i = 0; i < 8 && i < nb_bytes; i++)
+		for (size_t i = 0; i < 16 && i < nb_bytes; i++)
 		{
 			fprintf(F, "%02x", bytes[byte_index + i]);
 		}
 
-		if (nb_bytes > 8)
+		if (nb_bytes > 16)
 		{
 			fprintf(F, "...");
 		}
 	}
 }
 
-size_t ptls_asn1_validation_recursive(uint8_t * bytes, size_t bytes_max, 
-    int * decode_error, int level, FILE * F)
+size_t ptls_asn1_read_type(uint8_t * bytes, size_t bytes_max,
+	int * structure_bit, int * type_class, uint32_t * type_number,
+	int * decode_error, int level, FILE * F)
 {
-    /* Get the type byte */
-    int ret = 0;
-    size_t byte_index = 1;
-    uint8_t first_byte = bytes[0];
-    int structure_bit = (first_byte >> 5) & 1;
-    int type_class = (first_byte >> 6) & 3;
-    uint32_t type_number = first_byte & 31;
-    int length = 0;
-    int length_of_length = 0;
-    int indefinite_length = 0;
-    int type_extensions = 0;
-    size_t last_byte = 0;
+	/* Get the type byte */
+	int ret = 0;
+	size_t byte_index = 1;
+	uint8_t first_byte = bytes[0];
+	*structure_bit = (first_byte >> 5) & 1;
+	*type_class = (first_byte >> 6) & 3;
+	*type_number = first_byte & 31;
 
-    if (type_number == 31)
-    {
-        uint32_t long_type = 0;
+	if (*type_number == 31)
+	{
+		uint32_t long_type = 0;
 		const uint32_t type_number_limit = 0x07FFFFFFF;
-        int next_byte;
+		int next_byte;
 		int end_found = 0;
 
-        while (byte_index < bytes_max && long_type <= type_number_limit) {
-            next_byte = bytes[byte_index++];
-            long_type <<= 7;
-            long_type |= next_byte & 127;
+		while (byte_index < bytes_max && long_type <= type_number_limit) {
+			next_byte = bytes[byte_index++];
+			long_type <<= 7;
+			long_type |= next_byte & 127;
 			if ((next_byte & 128) == 0)
 			{
 				end_found = 1;
 				break;
 			}
-        }
+		}
 
 		if (end_found)
 		{
-			type_number = long_type;
+			*type_number = long_type;
 		}
 		else
 		{
@@ -406,76 +402,153 @@ size_t ptls_asn1_validation_recursive(uint8_t * bytes, size_t bytes_max,
 			byte_index = ptls_asn1_error_message("Incorrect type coding", bytes_max, byte_index,
 				decode_error, level, F);
 		}
-    }
-
-	if (*decode_error == 0)
-	{
-		/* Print the type */
-		ptls_asn1_print_indent(level, F);
-		if (type_class == 0 && type_number < nb_asn1_universal_types)
-		{
-			fprintf(F, "%s", asn1_universal_types[type_number]);
-		}
-		else if (type_class == 2)
-		{
-			fprintf(F, "[%d]", type_number);
-		}
-		else
-		{
-			fprintf(F, "%s[%d]", asn1_type_classes[type_class], type_number);
-		}
 	}
 
+	return byte_index;
+}
 
-    /* Get the length */
-    if (byte_index < bytes_max)
-    {
-        length = bytes[byte_index++];
-        if ((length & 128) != 0)
-        {
-            length_of_length = length & 127;
-            length = 0;
+void ptls_asn1_print_type(int type_class, uint32_t type_number, int level, FILE * F)
+{
+	/* Print the type */
+	ptls_asn1_print_indent(level, F);
+	if (type_class == 0 && type_number < nb_asn1_universal_types)
+	{
+		fprintf(F, "%s", asn1_universal_types[type_number]);
+	}
+	else if (type_class == 2)
+	{
+		fprintf(F, "[%d]", type_number);
+	}
+	else
+	{
+		fprintf(F, "%s[%d]", asn1_type_classes[type_class], type_number);
+	}
+}
 
-            if (byte_index + length_of_length >= bytes_max)
-            {
+size_t ptls_asn1_read_length(uint8_t * bytes, size_t bytes_max, size_t byte_index,
+	size_t * length, int * indefinite_length, size_t * last_byte,
+	int * decode_error, int level, FILE * F)
+{
+	int ret = 0;
+	int length_of_length = 0;
+
+	*indefinite_length = 0;
+	*length = 0;
+	*last_byte = bytes_max;
+
+	if (byte_index < bytes_max)
+	{
+		*length = bytes[byte_index++];
+		if ((*length & 128) != 0)
+		{
+			length_of_length = *length & 127;
+			*length = 0;
+
+			if (byte_index + length_of_length >= bytes_max)
+			{
 				/* This is an error */
 				byte_index = ptls_asn1_error_message("Incorrect length coding", bytes_max, byte_index,
 					decode_error, level, F);
-            }
+			}
 			else
 			{
 				for (int i = 0; i < length_of_length && byte_index < bytes_max; i++)
 				{
-					length <<= 8;
-					length |= bytes[byte_index++];
+					*length <<= 8;
+					*length |= bytes[byte_index++];
 				}
 
 				if (length_of_length == 0)
 				{
-					last_byte = bytes_max;
-					indefinite_length = 1;
+					*last_byte = bytes_max;
+					*indefinite_length = 1;
 				}
 				else
 				{
-					last_byte = byte_index + length;
+					*last_byte = byte_index + *length;
 				}
 			}
-        }
-        else
-        {
-            last_byte = byte_index + length;
-        }
+		}
+		else
+		{
+			*last_byte = byte_index + *length;
+		}
 
 		if (*decode_error == 0)
 		{
 			/* TODO: verify that the length makes sense */
-			if (last_byte > bytes_max)
+			if (*last_byte > bytes_max)
 			{
 				byte_index = ptls_asn1_error_message("Length larger than message", bytes_max, byte_index,
 					decode_error, level, F);
 			}
 		}
-    }
+	}
+
+	return byte_index;
+}
+
+size_t ptls_asn1_get_expected_type_and_length(uint8_t * bytes, size_t bytes_max, size_t byte_index,
+	uint8_t expected_type, size_t * length, int * indefinite_length, size_t * last_byte,
+	int * decode_error, int level, FILE * log_file)
+{
+	int is_indefinite = 0;
+
+	/* Check that the expected type is present */
+	if (bytes[byte_index] != expected_type)
+	{
+		byte_index = ptls_asn1_error_message("Unexpected type", bytes_max, byte_index,
+			decode_error, 0, log_file);
+		*decode_error = PTLS_ERROR_INCORRECT_PEM_SYNTAX;
+	}
+	else
+	{
+		/* get length of element */
+		byte_index++;
+		byte_index = ptls_asn1_read_length(bytes, bytes_max, byte_index,
+			length, &is_indefinite, last_byte, decode_error, 0, log_file);
+
+		if (indefinite_length != NULL)
+		{
+			*indefinite_length = is_indefinite;
+		}
+		else if (is_indefinite)
+		{
+			byte_index = ptls_asn1_error_message("Incorrect length for DER", bytes_max, byte_index,
+				decode_error, 0, log_file);
+			*decode_error = PTLS_ERROR_INCORRECT_PEM_SYNTAX;
+		}
+	}
+
+	return byte_index;
+}
+
+size_t ptls_asn1_validation_recursive(uint8_t * bytes, size_t bytes_max, 
+    int * decode_error, int level, FILE * F)
+{
+    /* Get the type byte */
+    int ret = 0;
+	int structure_bit = 0;
+	int type_class = 0;
+    uint32_t type_number = 0;
+    size_t length = 0;
+    int indefinite_length = 0;
+    int type_extensions = 0;
+    size_t last_byte = 0;
+	/* Decode the type */
+	size_t byte_index = ptls_asn1_read_type(bytes, bytes_max, &structure_bit, &type_class, &type_number,
+		decode_error, level, F);
+
+	if (*decode_error == 0 && F != NULL)
+	{
+		ptls_asn1_print_type(type_class, type_number, level, F);
+	}
+
+
+    /* Get the length */
+	byte_index = ptls_asn1_read_length(bytes, bytes_max, byte_index,
+		&length, &indefinite_length, &last_byte,
+		decode_error, level, F);
 
 	if (last_byte <= bytes_max)
 	{
@@ -522,11 +595,14 @@ size_t ptls_asn1_validation_recursive(uint8_t * bytes, size_t bytes_max,
 					}
 				}
 
-				if (byte_index < last_byte)
+				if (F != NULL)
 				{
-					fprintf(F, ",");
+					if (byte_index < last_byte)
+					{
+						fprintf(F, ",");
+					}
+					fprintf(F, "\n");
 				}
-				fprintf(F, "\n");
 			}
 
 
@@ -663,12 +739,13 @@ static int ptls_get_pem_object(FILE * F, char * label, ptls_buffer_t *buf, FILE*
             ret = ptls_base64_decode(line, &state, buf);
         }
     }
+
 	if (ret == 0)
 	{
 		ret = ptls_asn1_validation(buf->base, buf->off, log_file);
-		if (F != NULL)
+		if (log_file != NULL)
 		{
-			fprintf(F, "\n");
+			fprintf(log_file, "\n");
 		}
 
 		if (ret != 0)
@@ -679,7 +756,7 @@ static int ptls_get_pem_object(FILE * F, char * label, ptls_buffer_t *buf, FILE*
     return ret;
 }
 
-int ptls_pem_get_objects(char * pem_fname, char * label, 
+int ptls_pem_get_objects(char const * pem_fname, char * label, 
 	ptls_iovec_t ** list, size_t list_max, size_t * nb_objects, FILE* log_file)
 {
     FILE * F;
@@ -704,12 +781,12 @@ int ptls_pem_get_objects(char * pem_fname, char * label,
 
     if (ret == 0)
     {
-        ptls_buffer_t buf;
-
-        ptls_buffer_init(&buf, "", 0);
-
         while (count < list_max)
         {
+			ptls_buffer_t buf;
+
+			ptls_buffer_init(&buf, "", 0);
+
             ret = ptls_get_pem_object(F, label, &buf, log_file);
 
             if (ret == 0)
@@ -720,6 +797,10 @@ int ptls_pem_get_objects(char * pem_fname, char * label,
                     list[count]->len = buf.off;
                     count++;
                 }
+				else
+				{
+					ptls_buffer_dispose(&buf);
+				}
             }
             else
             {
@@ -744,16 +825,180 @@ int ptls_pem_get_objects(char * pem_fname, char * label,
     return ret;
 }
 
-int ptls_pem_get_certificates(char * pem_fname, ptls_iovec_t ** list, size_t list_max, 
+int ptls_pem_get_certificates(char const * pem_fname, ptls_iovec_t ** list, size_t list_max, 
 	size_t * nb_certs, FILE * log_file)
 {
     return ptls_pem_get_objects(pem_fname, "CERTIFICATE", list, list_max, nb_certs, log_file);
 }
 
-int ptls_pem_get_private_key(char * pem_fname, ptls_iovec_t ** list, size_t list_max, size_t * nb_certs,
+int ptls_pem_get_private_key(char const * pem_fname, ptls_iovec_t * vec, 
 	FILE * log_file)
 {
-    return ptls_pem_get_objects(pem_fname, "PRIVATE KEY", list, list_max, nb_certs, log_file);
+	size_t nb_keys = 0;
+	int ret = ptls_pem_get_objects(pem_fname, "PRIVATE KEY", &vec, 1, &nb_keys, NULL);
+
+	if (ret == 0)
+	{
+		if (nb_keys != 1)
+		{
+			ret = PTLS_ERROR_PEM_LABEL_NOT_FOUND;
+		}
+	}
+
+	if (ret == 0 && nb_keys == 1)
+	{
+		/* read the ASN1 messages */
+		size_t byte_index = 0;
+		uint8_t * bytes = vec->base;
+		size_t bytes_max = vec->len;
+		int decode_error = 0;
+		int indefinite_length = 0;
+		uint32_t seq0_length = 0;
+		size_t last_byte0;
+		uint32_t seq1_length = 0;
+		size_t last_byte1;
+		uint32_t oid_length;
+		size_t last_oid_byte;
+		uint32_t key_data_length;
+		size_t key_data_last;
+
+
+		if (log_file != NULL)
+		{
+			fprintf(log_file, "\nFound PRIVATE KEY, length = %d bytes\n", bytes_max);
+		}
+
+		/* start with sequence */
+		byte_index = ptls_asn1_get_expected_type_and_length(
+			bytes, bytes_max, byte_index, 0x30,
+			&seq0_length, NULL, &last_byte0, &decode_error, 0, log_file);
+
+		if (decode_error == 0 && bytes_max != last_byte0)
+		{
+			byte_index = ptls_asn1_error_message("Length larger than message", bytes_max, byte_index,
+					&decode_error, 0, log_file);
+			decode_error = PTLS_ERROR_INCORRECT_BER_ENCODING;
+		}
+
+		if (decode_error == 0)
+		{
+			/* get first component: version, INTEGER, expect value 0 */
+			if (byte_index + 3 > bytes_max)
+			{
+				byte_index = ptls_asn1_error_message("Incorrect length for DER", bytes_max, byte_index,
+					&decode_error, 0, log_file);
+				decode_error = PTLS_ERROR_INCORRECT_PEM_SYNTAX;
+			}
+			else if (bytes[byte_index] != 0x02 ||
+				bytes[byte_index + 1] != 0x01 ||
+				bytes[byte_index + 2] != 0x00)
+			{
+				decode_error = PTLS_ERROR_INCORRECT_PEM_KEY_VERSION;
+				byte_index = ptls_asn1_error_message("Incorrect PEM Version", bytes_max, byte_index,
+					&decode_error, 0, log_file);
+			}
+			else
+			{
+				byte_index += 3; 
+				if (log_file != NULL)
+				{
+					fprintf(log_file, "   Version = 1,\n");
+				}
+			}
+		}
+
+		if (decode_error == 0)
+		{
+			/* open embedded sequence */
+			byte_index = ptls_asn1_get_expected_type_and_length(
+				bytes, bytes_max, byte_index, 0x30,
+				&seq1_length, NULL, &last_byte1, &decode_error, 1, log_file);
+		}
+
+		if (decode_error == 0)
+		{
+			if (log_file != NULL)
+			{
+				fprintf(log_file, "   Algorithm Identifier:\n");
+			}
+			/* get length of OID */
+			byte_index = ptls_asn1_get_expected_type_and_length(
+				bytes, last_byte1, byte_index, 0x06,
+				&oid_length, NULL, &last_oid_byte, &decode_error, 0, log_file);
+			
+			if (decode_error == 0)
+			{
+				if (log_file != NULL)
+				{
+					/* print the OID value */
+					fprintf(log_file, "      Algorithm:");
+					ptls_asn1_dump_content(bytes + byte_index, oid_length, 0, log_file);
+					fprintf(log_file, ",\n");
+				}
+				byte_index += oid_length;
+			}
+		}
+
+		if (decode_error == 0)
+		{
+			/* get parameters, ANY */
+			if (log_file != NULL)
+			{
+				fprintf(log_file, "      Parameters:\n");
+			}
+			byte_index += ptls_asn1_validation_recursive(bytes + byte_index, 
+				last_byte1 - byte_index, &decode_error, 2, log_file);
+			if (log_file != NULL)
+			{
+				fprintf(log_file, "\n");
+			}
+			/* close sequence */
+			if (byte_index != last_byte1)
+			{
+				byte_index = ptls_asn1_error_message("Length larger than element", bytes_max, byte_index,
+					&decode_error, 2, log_file);
+				decode_error = PTLS_ERROR_INCORRECT_BER_ENCODING;
+			}
+		}
+
+		/* get octet string, key */
+		if (decode_error == 0)
+		{
+			byte_index = ptls_asn1_get_expected_type_and_length(
+				bytes, bytes_max, byte_index, 0x04,
+				&key_data_length, NULL, &key_data_last, &decode_error, 1, log_file);
+
+			if (decode_error == 0)
+			{
+				if (log_file != NULL)
+				{
+					fprintf(log_file, "   Key data (%d bytes):\n", key_data_length);
+				}
+				/* print octet string as ASN.1 component */
+				if (byte_index != last_byte1)
+				{
+					byte_index += ptls_asn1_validation_recursive(bytes + byte_index,
+						key_data_length, &decode_error, 1, log_file);
+					if (log_file != NULL)
+					{
+						fprintf(log_file, "\n");
+					}
+				}
+			}
+		}
+		if (decode_error == 0 && byte_index != last_byte0)
+		{
+			byte_index = ptls_asn1_error_message("Length larger than element", bytes_max, byte_index,
+				&decode_error, 0, log_file);
+			decode_error = PTLS_ERROR_INCORRECT_BER_ENCODING;
+		}
+
+		if (decode_error != 0)
+		{
+			ret = decode_error;
+		}
+	}
+	return ret;
 }
 
 /*

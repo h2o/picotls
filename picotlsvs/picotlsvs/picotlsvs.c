@@ -4,20 +4,28 @@
 #include "../picotls/wincompat.h"
 #include "../../include/picotls.h"
 #include "../../include/picotls/openssl.h"
+#include "../../include/picotls/minicrypto.h"
 
 int ptls_export_secret(ptls_t *tls, void *output, size_t outlen, const char *label, ptls_iovec_t context_value);
 
 /*
  * Testing the Base64 and ASN1 verifiers
  */
-int openPemTest(char* filename)
+int openPemTest(char const * filename)
 {
-	ptls_iovec_t buf;
+	ptls_iovec_t buf = { 0 };
 	ptls_iovec_t * list = &buf;
 	size_t count = 1;
-
-	int ret = ptls_pem_get_objects(filename, "TEST",
+#if 1
+	int ret = ptls_pem_get_private_key(filename, &buf, stderr);
+#else
+	int ret = ptls_pem_get_objects(filename, "PRIVATE KEY",
 		&list, 1, &count, stderr);
+#endif
+	if (buf.base != NULL)
+	{
+		free(buf.base);
+	}
 
 	return ret;
 }
@@ -114,8 +122,8 @@ int handshake_progress(ptls_t * tls, ptls_buffer_t * sendbuf, ptls_buffer_t * re
 }
 
 /*
-Verify the secret extraction functionality
-at the end of the handshake.
+ Verify the secret extraction functionality
+ at the end of the handshake.
  */
 
 int extract_1rtt_secret( 
@@ -193,102 +201,191 @@ int verify_1rtt_secret_extraction(ptls_t *tls_client, ptls_t *tls_server)
     return ret;
 }
 
+int openssl_init_test_client(ptls_context_t *ctx_client)
+{
+	int ret = 0;
+	static ptls_openssl_verify_certificate_t verifier;
 
+	/* Initialize the client context */
+	memset(ctx_client, 0, sizeof(ptls_context_t));
+	ctx_client->random_bytes = ptls_openssl_random_bytes;
+	ctx_client->key_exchanges = ptls_openssl_key_exchanges;
+	ctx_client->cipher_suites = ptls_openssl_cipher_suites;
+	ptls_openssl_init_verify_certificate(&verifier, NULL);
+	ctx_client->verify_certificate = &verifier.super;
 
+	return ret;
+}
+
+int openssl_init_test_server(ptls_context_t *ctx_server, char * key_file, char * cert_file)
+{
+	int ret = 0;
+	/* Initialize the server context */
+	memset(ctx_server, 0, sizeof(ptls_context_t));
+	ctx_server->random_bytes = ptls_openssl_random_bytes;
+	ctx_server->key_exchanges = ptls_openssl_key_exchanges;
+	ctx_server->cipher_suites = ptls_openssl_cipher_suites;
+
+	ret = ptls_set_context_certificates(ctx_server, cert_file, stdout);
+	if (ret != 0)
+	{
+		fprintf(stderr, "Could not read the server certificates\n");
+	}
+	else
+	{
+		SetSignCertificate(key_file, ctx_server);
+	}
+
+	return ret;
+}
+
+int minicrypto_init_test_client(ptls_context_t *ctx_client)
+{
+	int ret = 0;
+	// static ptls_openssl_verify_certificate_t verifier;
+
+	/* Initialize the client context */
+	memset(ctx_client, 0, sizeof(ptls_context_t));
+	ctx_client->random_bytes = ptls_minicrypto_random_bytes; 
+	ctx_client->key_exchanges = ptls_minicrypto_key_exchanges;
+	ctx_client->cipher_suites = ptls_minicrypto_cipher_suites;
+	// ptls_openssl_init_verify_certificate(&verifier, NULL);
+	ctx_client->verify_certificate = NULL; // &verifier.super;
+
+	return ret;
+}
+
+int minicrypto_init_test_server(ptls_context_t *ctx_server, char * key_file, char * cert_file)
+{
+	int ret = 0;
+
+	/* Initialize the server context */
+	memset(ctx_server, 0, sizeof(ptls_context_t));
+	ctx_server->random_bytes = ptls_minicrypto_random_bytes;
+	ctx_server->key_exchanges = ptls_minicrypto_key_exchanges;
+	ctx_server->cipher_suites = ptls_minicrypto_cipher_suites;
+
+	ret = ptls_set_context_certificates(ctx_server, cert_file, stdout);
+	if (ret != 0)
+	{
+		fprintf(stderr, "Could not read the server certificates\n");
+	}
+	else
+	{
+		SetSignCertificate(key_file, ctx_server);
+	}
+
+	return ret;
+}
+
+int ptls_memory_loopback_test(int openssl_client, int openssl_server, char * key_file, char * cert_file)
+{
+	ptls_context_t ctx_client, ctx_server;
+	ptls_t *tls_client = NULL, *tls_server = NULL;
+	int ret = 0;
+	ptls_buffer_t client_buf, server_buf;
+
+	/* init the contexts */
+	if (ret == 0 && openssl_client)
+	{
+		ret = openssl_init_test_client(&ctx_client);
+	}
+	else
+	{
+		ret = minicrypto_init_test_client(&ctx_client);
+	}
+
+	if (ret == 0 && openssl_server)
+	{
+		ret = openssl_init_test_server(&ctx_server, key_file, cert_file);
+	}
+	else
+	{
+		ret = minicrypto_init_test_server(&ctx_server, key_file, cert_file);
+	}
+
+	/* Create the connections */
+	if (ret == 0)
+	{
+		tls_client = ptls_new(&ctx_client, 0);
+		tls_server = ptls_new(&ctx_server, 1);
+
+		if (tls_server == NULL || tls_client == NULL)
+		{
+			fprintf(stderr, "Could not create the TLS connection objects\n");
+			ret = -1;
+		}
+	}
+
+	/* Perform the handshake */
+	if (ret == 0)
+	{
+		int nb_rounds = 0;
+		ret = handshake_init(tls_client, &client_buf);
+		printf("First message from client, ret = %d, %d bytes.\n", ret, client_buf.off);
+
+		while ((ret == 0 || ret == PTLS_ERROR_IN_PROGRESS) && client_buf.off > 0 && nb_rounds < 12)
+		{
+			nb_rounds++;
+
+			ret = handshake_progress(tls_server, &server_buf, &client_buf);
+			printf("Message from server, ret = %d, %d bytes.\n", ret, server_buf.off);
+
+			if ((ret == 0 || ret == PTLS_ERROR_IN_PROGRESS) && server_buf.off > 0)
+			{
+				ret = handshake_progress(tls_client, &client_buf, &server_buf);
+				printf("Message from client, ret = %d, %d bytes.\n", ret, client_buf.off);
+			}
+		}
+
+		printf("Exit handshake after %d rounds, ret = %d.\n", nb_rounds, ret);
+
+		if (ret == 0)
+		{
+			ret = verify_1rtt_secret_extraction(tls_client, tls_server);
+
+			if (ret == 0)
+			{
+				printf("Key extracted and matches!\n");
+			}
+		}
+	}
+
+	return ret;
+}
+
+static char const * test_keys[] = {
+	"key.pem",
+	"key-test-1.pem",
+	"key-test-2.pem",
+	"key-test-4.pem"
+};
+
+static const size_t nb_test_keys = sizeof(test_keys) / sizeof(char const *);
 
 int main()
 {
-    /* Create a client context  and a server context */
-    ptls_context_t ctx_client, ctx_server;
-    ptls_openssl_verify_certificate_t verifier;
-    ptls_t *tls_client = NULL, *tls_server = NULL;
-    int ret = 0;
-    ptls_buffer_t client_buf, server_buf;
+	int ret = 0;
 
-#if 0
+#if 1
 	/* TODO: move to ASN.1 unit test*/
-	ret = openPemTest("test.pem");
+
+	for (size_t i = 0; ret == 0 && i < nb_test_keys; i++)
+	{
+		ret = openPemTest(test_keys[i]);
+	}
 #endif
 
+	if (ret == 0)
+	{
+		ret = ptls_memory_loopback_test(1, 1, "key.pem", "cert.pem");
+	}
 
-    /* Initialize the client context */
-    memset(&ctx_client, 0, sizeof(ctx_client));
-    ctx_client.random_bytes = ptls_openssl_random_bytes;
-    ctx_client.key_exchanges = ptls_openssl_key_exchanges;
-    ctx_client.cipher_suites = ptls_openssl_cipher_suites;
-    ptls_openssl_init_verify_certificate(&verifier, NULL);
-    ctx_client.verify_certificate = &verifier.super;
+	if (ret == 0)
+	{
+		ret = ptls_memory_loopback_test(1, 1, "ec_key.pem", "ec_cert.pem");
+	}
 
-    /* Initialize the server context */
-    memset(&ctx_server, 0, sizeof(ctx_server));
-    ctx_server.random_bytes = ptls_openssl_random_bytes;
-    ctx_server.key_exchanges = ptls_openssl_key_exchanges;
-    ctx_server.cipher_suites = ptls_openssl_cipher_suites;
-
-#if 0
-    if (get_certificates("cert.pem", &ctx_server.certificates.list, &ctx_server.certificates.count) != 0)
-    {
-        fprintf(stderr, "Could not read the server certificates\n");
-        ret = -1;
-    }
-#else
-    ret = ptls_set_context_certificates(&ctx_server, "cert.pem", stdout);
-    if (ret != 0)
-    {
-        fprintf(stderr, "Could not read the server certificates\n");
-    }
-#endif
-    else
-    {
-        SetSignCertificate("key.pem", &ctx_server);
-    }
-
-    /* Create the connections */
-    if (ret == 0)
-    {
-        tls_client = ptls_new(&ctx_client, 0);
-        tls_server = ptls_new(&ctx_server, 1);
-
-        if (tls_server == NULL || tls_client == NULL)
-        {
-            fprintf(stderr, "Could not create the TLS connection objects\n");
-            ret = -1;
-        }
-    }
-
-    /* Perform the handshake */
-    if (ret == 0)
-    {
-        int nb_rounds = 0;
-        ret = handshake_init(tls_client, &client_buf);
-        printf("First message from client, ret = %d, %d bytes.\n", ret, client_buf.off);
-
-        while ((ret == 0 || ret == PTLS_ERROR_IN_PROGRESS) && client_buf.off > 0 && nb_rounds < 12)
-        {
-            nb_rounds++;
-
-            ret = handshake_progress(tls_server, &server_buf, &client_buf);
-            printf("Message from server, ret = %d, %d bytes.\n", ret, server_buf.off);
-
-            if ((ret == 0 || ret == PTLS_ERROR_IN_PROGRESS) && server_buf.off > 0)
-            {
-                ret = handshake_progress(tls_client, &client_buf, &server_buf);
-                printf("Message from client, ret = %d, %d bytes.\n", ret, client_buf.off);
-            }
-        }
-
-        printf("Exit handshake after %d rounds, ret = %d.\n", nb_rounds, ret);
-
-        if (ret == 0)
-        {
-            ret = verify_1rtt_secret_extraction(tls_client, tls_server);
-
-            if (ret == 0)
-            {
-                printf("Key extracted and matches!\n");
-            }
-        }
-    }
 
     return ret;
 }
