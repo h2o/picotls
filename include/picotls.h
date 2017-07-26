@@ -92,6 +92,9 @@
 #define PTLS_ERROR_INCORRECT_BER_ENCODING (PTLS_ERROR_CLASS_INTERNAL + 8)
 #define PTLS_ERROR_INCORRECT_PEM_SYNTAX (PTLS_ERROR_CLASS_INTERNAL + 9)
 #define PTLS_ERROR_INCORRECT_PEM_KEY_VERSION (PTLS_ERROR_CLASS_INTERNAL + 10)
+#define PTLS_ERROR_INCORRECT_PEM_ECDSA_KEY_VERSION (PTLS_ERROR_CLASS_INTERNAL + 11)
+#define PTLS_ERROR_INCORRECT_PEM_ECDSA_CURVE (PTLS_ERROR_CLASS_INTERNAL + 12)
+#define PTLS_ERROR_INCORRECT_PEM_ECDSA_KEYSIZE (PTLS_ERROR_CLASS_INTERNAL + 13)
 
 
 #define PTLS_ZERO_DIGEST_SHA256                                                                                                    \
@@ -799,6 +802,8 @@ void ptls_base64_decode_init(struct ptls_base64_decode_state_st * state);
 int ptls_base64_decode(char * base64_text, struct ptls_base64_decode_state_st * state, ptls_buffer_t *buf);
 
 int ptls_set_context_certificates(ptls_context_t * ctx, char * cert_pem_file, FILE* log_file);
+
+int ptls_set_private_key(ptls_context_t * ctx, char const * pem_fname, FILE * log_file);
 
 int ptls_pem_get_private_key(char const * pem_fname, ptls_iovec_t * vec,
 	FILE * log_file);

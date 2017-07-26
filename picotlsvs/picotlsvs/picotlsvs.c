@@ -272,7 +272,7 @@ int minicrypto_init_test_server(ptls_context_t *ctx_server, char * key_file, cha
 	}
 	else
 	{
-		SetSignCertificate(key_file, ctx_server);
+		ret = ptls_set_private_key(ctx_server, key_file, stdout);
 	}
 
 	return ret;
@@ -351,11 +351,17 @@ int ptls_memory_loopback_test(int openssl_client, int openssl_server, char * key
 		}
 	}
 
+	if (openssl_server == 0 && ctx_server.sign_certificate != NULL)
+	{
+		free(ctx_server.sign_certificate);
+	}
+
 	return ret;
 }
 
 static char const * test_keys[] = {
 	"key.pem",
+	"ec_key.pem",
 	"key-test-1.pem",
 	"key-test-2.pem",
 	"key-test-4.pem"
@@ -378,14 +384,33 @@ int main()
 
 	if (ret == 0)
 	{
+		printf("\nStarting the RSA test with OpenSSL\n");
 		ret = ptls_memory_loopback_test(1, 1, "key.pem", "cert.pem");
 	}
 
 	if (ret == 0)
 	{
+		printf("\nStarting the P256R1 test with OpenSSL\n");
 		ret = ptls_memory_loopback_test(1, 1, "ec_key.pem", "ec_cert.pem");
 	}
 
+	if (ret == 0)
+	{
+		printf("\nStarting the P256R1 test with OpenSSL server and Minicrypto client\n");
+		ret = ptls_memory_loopback_test(0, 1, "ec_key.pem", "ec_cert.pem");
+	}
+
+	if (ret == 0)
+	{
+		printf("\nStarting the P256R1 test with Minicrypto\n");
+		ret = ptls_memory_loopback_test(0, 0, "ec_key.pem", "ec_cert.pem");
+	}
+
+	if (ret == 0)
+	{
+		printf("\nStarting the P256R1 test with Minicrypto server and OpenSSL client\n");
+		ret = ptls_memory_loopback_test(1, 0, "ec_key.pem", "ec_cert.pem");
+	}
 
     return ret;
 }

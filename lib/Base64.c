@@ -25,6 +25,7 @@
 #include <string.h>
 #include <stdio.h>
 #include "picotls.h"
+#include "picotls/minicrypto.h"
 
 static char ptls_base64_alphabet[] = {
     'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
@@ -831,6 +832,393 @@ int ptls_pem_get_certificates(char const * pem_fname, ptls_iovec_t ** list, size
     return ptls_pem_get_objects(pem_fname, "CERTIFICATE", list, list_max, nb_certs, log_file);
 }
 
+
+struct ptls_asn1_pkcs8_private_key {
+	ptls_iovec_t vec;
+	size_t algorithm_index;
+	uint32_t algorithm_length;
+	size_t parameters_index;
+	uint32_t parameters_length;
+	size_t key_data_index;
+	uint32_t key_data_length;
+};
+
+int ptls_pem_parse_private_key(char const * pem_fname, 
+	struct ptls_asn1_pkcs8_private_key * pkey, FILE * log_file)
+{
+	size_t nb_keys = 0;
+	ptls_iovec_t * list = &pkey->vec;
+	int ret = ptls_pem_get_objects(pem_fname, "PRIVATE KEY", &list, 1, &nb_keys, NULL);
+
+	if (ret == 0)
+	{
+		if (nb_keys != 1)
+		{
+			ret = PTLS_ERROR_PEM_LABEL_NOT_FOUND;
+		}
+	}
+
+	if (ret == 0 && nb_keys == 1)
+	{
+		/* read the ASN1 messages */
+		size_t byte_index = 0;
+		uint8_t * bytes = pkey->vec.base;
+		size_t bytes_max = pkey->vec.len;
+		int decode_error = 0;
+		int indefinite_length = 0;
+		uint32_t seq0_length = 0;
+		size_t last_byte0;
+		uint32_t seq1_length = 0;
+		size_t last_byte1;
+		uint32_t oid_length;
+		size_t last_oid_byte;
+		uint32_t key_data_length;
+		size_t key_data_last;
+
+
+		if (log_file != NULL)
+		{
+			fprintf(log_file, "\nFound PRIVATE KEY, length = %d bytes\n", bytes_max);
+		}
+
+		/* start with sequence */
+		byte_index = ptls_asn1_get_expected_type_and_length(
+			bytes, bytes_max, byte_index, 0x30,
+			&seq0_length, NULL, &last_byte0, &decode_error, 0, log_file);
+
+		if (decode_error == 0 && bytes_max != last_byte0)
+		{
+			byte_index = ptls_asn1_error_message("Length larger than message", bytes_max, byte_index,
+				&decode_error, 0, log_file);
+			decode_error = PTLS_ERROR_INCORRECT_BER_ENCODING;
+		}
+
+		if (decode_error == 0)
+		{
+			/* get first component: version, INTEGER, expect value 0 */
+			if (byte_index + 3 > bytes_max)
+			{
+				byte_index = ptls_asn1_error_message("Incorrect length for DER", bytes_max, byte_index,
+					&decode_error, 0, log_file);
+				decode_error = PTLS_ERROR_INCORRECT_PEM_SYNTAX;
+			}
+			else if (bytes[byte_index] != 0x02 ||
+				bytes[byte_index + 1] != 0x01 ||
+				bytes[byte_index + 2] != 0x00)
+			{
+				decode_error = PTLS_ERROR_INCORRECT_PEM_KEY_VERSION;
+				byte_index = ptls_asn1_error_message("Incorrect PEM Version", bytes_max, byte_index,
+					&decode_error, 0, log_file);
+			}
+			else
+			{
+				byte_index += 3;
+				if (log_file != NULL)
+				{
+					fprintf(log_file, "   Version = 1,\n");
+				}
+			}
+		}
+
+		if (decode_error == 0)
+		{
+			/* open embedded sequence */
+			byte_index = ptls_asn1_get_expected_type_and_length(
+				bytes, bytes_max, byte_index, 0x30,
+				&seq1_length, NULL, &last_byte1, &decode_error, 1, log_file);
+		}
+
+		if (decode_error == 0)
+		{
+			if (log_file != NULL)
+			{
+				fprintf(log_file, "   Algorithm Identifier:\n");
+			}
+			/* get length of OID */
+			byte_index = ptls_asn1_get_expected_type_and_length(
+				bytes, last_byte1, byte_index, 0x06,
+				&oid_length, NULL, &last_oid_byte, &decode_error, 0, log_file);
+
+			if (decode_error == 0)
+			{
+				if (log_file != NULL)
+				{
+					/* print the OID value */
+					fprintf(log_file, "      Algorithm:");
+					ptls_asn1_dump_content(bytes + byte_index, oid_length, 0, log_file);
+					fprintf(log_file, ",\n");
+				}
+				pkey->algorithm_index = byte_index;
+				pkey->algorithm_length = oid_length;
+				byte_index += oid_length;
+			}
+		}
+
+		if (decode_error == 0)
+		{
+			/* get parameters, ANY */
+			if (log_file != NULL)
+			{
+				fprintf(log_file, "      Parameters:\n");
+			}
+
+			pkey->parameters_index = byte_index;
+
+			pkey->parameters_length = ptls_asn1_validation_recursive(bytes + byte_index,
+				last_byte1 - byte_index, &decode_error, 2, log_file);
+
+			byte_index += pkey->parameters_length;
+			
+			if (log_file != NULL)
+			{
+				fprintf(log_file, "\n");
+			}
+			/* close sequence */
+			if (byte_index != last_byte1)
+			{
+				byte_index = ptls_asn1_error_message("Length larger than element", bytes_max, byte_index,
+					&decode_error, 2, log_file);
+				decode_error = PTLS_ERROR_INCORRECT_BER_ENCODING;
+			}
+		}
+
+		/* get octet string, key */
+		if (decode_error == 0)
+		{
+			byte_index = ptls_asn1_get_expected_type_and_length(
+				bytes, last_byte0, byte_index, 0x04,
+				&key_data_length, NULL, &key_data_last, &decode_error, 1, log_file);
+
+			if (decode_error == 0)
+			{
+				pkey->key_data_index = byte_index;
+				pkey->key_data_length = key_data_length;
+				byte_index += key_data_length;
+
+				if (log_file != NULL)
+				{
+					fprintf(log_file, "   Key data (%d bytes):\n", key_data_length);
+
+					(void) ptls_asn1_validation_recursive(bytes + pkey->key_data_index,
+						key_data_length, &decode_error, 1, log_file);
+					fprintf(log_file, "\n");
+				}
+			}
+		}
+		if (decode_error == 0 && byte_index != last_byte0)
+		{
+			byte_index = ptls_asn1_error_message("Length larger than element", bytes_max, byte_index,
+				&decode_error, 0, log_file);
+			decode_error = PTLS_ERROR_INCORRECT_BER_ENCODING;
+		}
+
+		if (decode_error != 0)
+		{
+			ret = decode_error;
+		}
+	}
+	return ret;
+}
+
+const uint8_t ptls_asn1_algorithm_ecdsa[] = { 
+	0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01 };
+
+const uint8_t ptls_asn1_curve_secp512r1[] = {
+	0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07};
+
+
+int ptls_set_ecdsa_private_key(ptls_context_t * ctx,
+	struct ptls_asn1_pkcs8_private_key * pkey, FILE * log_file)
+{
+	uint8_t * bytes = pkey->vec.base + pkey->parameters_index;
+	size_t bytes_max = pkey->parameters_length;
+	size_t byte_index = 0;
+	size_t curve_id_index = 0;
+	uint8_t * curve_id = NULL;
+	uint32_t curve_id_length = 0;
+	int decode_error = 0;
+	uint32_t seq_length;
+	size_t last_byte = 0;
+	uint8_t * ecdsa_key_data = NULL;
+	uint32_t ecdsa_key_data_length = 0;
+	size_t  ecdsa_key_data_last = 0;
+
+	/* We expect the parameters to include just the curve ID */
+
+	byte_index = ptls_asn1_get_expected_type_and_length(
+		bytes, bytes_max, byte_index, 0x06,
+		&curve_id_length, NULL, &last_byte, &decode_error, 1, log_file);
+
+	if (decode_error == 0 && bytes_max != last_byte)
+	{
+		byte_index = ptls_asn1_error_message("Length larger than parameters", bytes_max, byte_index,
+			&decode_error, 0, log_file);
+		decode_error = PTLS_ERROR_INCORRECT_BER_ENCODING;
+	}
+
+	if (decode_error == 0)
+	{
+		curve_id = bytes + byte_index;
+
+		if (log_file != NULL)
+		{
+			/* print the OID value */
+			fprintf(log_file, "Curve: ");
+			ptls_asn1_dump_content(curve_id, curve_id_length, 0, log_file);
+			fprintf(log_file, "\n");
+		}
+	}
+
+	/* We expect the key data to follow the ECDSA structure per RFC 5915 */
+	bytes = pkey->vec.base + pkey->key_data_index;
+	bytes_max = pkey->key_data_length;
+	byte_index = 0;
+
+	/* decode the wrapping sequence */
+	if (decode_error == 0)
+	{
+		byte_index = ptls_asn1_get_expected_type_and_length(
+			bytes, bytes_max, byte_index, 0x30,
+			&seq_length, NULL, &last_byte, &decode_error, 0, log_file);
+	}
+
+	if (decode_error == 0 && bytes_max != last_byte)
+	{
+		byte_index = ptls_asn1_error_message("Length larger than key data", bytes_max, byte_index,
+			&decode_error, 0, log_file);
+		decode_error = PTLS_ERROR_INCORRECT_BER_ENCODING;
+	}
+
+	/* verify and skip the version number 1 */
+	if (decode_error == 0)
+	{
+		/* get first component: version, INTEGER, expect value 0 */
+		if (byte_index + 3 > bytes_max)
+		{
+			byte_index = ptls_asn1_error_message("Incorrect length for DER", bytes_max, byte_index,
+				&decode_error, 0, log_file);
+			decode_error = PTLS_ERROR_INCORRECT_PEM_SYNTAX;
+		}
+		else if (bytes[byte_index] != 0x02 ||
+			bytes[byte_index + 1] != 0x01 ||
+			bytes[byte_index + 2] != 0x01)
+		{
+			decode_error = PTLS_ERROR_INCORRECT_PEM_ECDSA_KEY_VERSION;
+			byte_index = ptls_asn1_error_message("Incorrect ECDSA Key Data Version", bytes_max, byte_index,
+				&decode_error, 0, log_file);
+		}
+		else
+		{
+			byte_index += 3;
+			if (log_file != NULL)
+			{
+				fprintf(log_file, "ECDSA Version = 1,\n");
+			}
+		}
+	}
+
+	/* obtain the octet string that contains the ECDSA private key */
+	if (decode_error == 0)
+	{
+		byte_index = ptls_asn1_get_expected_type_and_length(
+			bytes, last_byte, byte_index, 0x04,
+			&ecdsa_key_data_length, NULL, &ecdsa_key_data_last, &decode_error, 1, log_file);
+
+		if (decode_error == 0)
+		{
+			ecdsa_key_data = bytes + byte_index;
+		}
+	}
+
+	/* If everything is fine, associate the ECDSA key with the context */
+	if (curve_id_length == sizeof(ptls_asn1_curve_secp512r1) &&
+		memcmp(curve_id, ptls_asn1_curve_secp512r1, sizeof(ptls_asn1_curve_secp512r1)) == 0)
+	{
+		if (SECP256R1_PRIVATE_KEY_SIZE != ecdsa_key_data_length)
+		{
+			decode_error = PTLS_ERROR_INCORRECT_PEM_ECDSA_KEYSIZE;
+			if (log_file != NULL)
+			{
+				/* print the OID value */
+				fprintf(log_file, "Wrong SECP256R1 key length, %d instead of %d.\n",
+					ecdsa_key_data_length, SECP256R1_PRIVATE_KEY_SIZE);
+			}
+		}
+		else
+		{
+			ptls_minicrypto_secp256r1sha256_sign_certificate_t * minicrypto_sign_certificate;
+
+			minicrypto_sign_certificate =
+				(ptls_minicrypto_secp256r1sha256_sign_certificate_t *)malloc(
+					sizeof(ptls_minicrypto_secp256r1sha256_sign_certificate_t));
+
+			if (minicrypto_sign_certificate == NULL)
+			{
+				decode_error = PTLS_ERROR_NO_MEMORY;
+			}
+			else
+			{
+				memset(minicrypto_sign_certificate, 0, 
+					sizeof(ptls_minicrypto_secp256r1sha256_sign_certificate_t));
+				decode_error = ptls_minicrypto_init_secp256r1sha256_sign_certificate(
+					minicrypto_sign_certificate, ptls_iovec_init(ecdsa_key_data, ecdsa_key_data_length));
+			}
+			if (decode_error == 0)
+			{
+				ctx->sign_certificate = &minicrypto_sign_certificate->super;
+
+				if (log_file != NULL)
+				{
+					/* print the OID value */
+					fprintf(log_file, "Initialized SECP512R1 signing key with %d bytes.\n",
+						ecdsa_key_data_length);
+				}
+			}
+			else if (log_file != NULL)
+			{
+				fprintf(log_file, "SECP512R1 init with %d bytes returns %d.\n", ecdsa_key_data_length, decode_error);
+			}
+		}
+	}
+	else
+	{
+		decode_error = PTLS_ERROR_INCORRECT_PEM_ECDSA_CURVE;
+		if (log_file != NULL)
+		{
+			/* print the OID value */
+			fprintf(log_file, "Curve is not supported for signatures.\n");
+		}
+	}
+
+	return decode_error;
+}
+
+int ptls_set_private_key(ptls_context_t * ctx, char const * pem_fname, FILE * log_file)
+{
+	struct ptls_asn1_pkcs8_private_key pkey = { 0 };
+	int ret = ptls_pem_parse_private_key(pem_fname, &pkey, log_file);
+
+	/* Check that this is the expected key type.
+	 * At this point, the minicrypto library only supports ECDSA keys.
+	 * In theory, we could add support for RSA keys at some point.
+	 */
+	if (ret == 0)
+	{
+		if (pkey.algorithm_length == sizeof(ptls_asn1_algorithm_ecdsa) &&
+			memcmp(pkey.vec.base + pkey.algorithm_index,
+				ptls_asn1_algorithm_ecdsa, sizeof(ptls_asn1_algorithm_ecdsa)) == 0)
+		{
+			ret = ptls_set_ecdsa_private_key(ctx, &pkey, log_file);
+		}
+		else
+		{
+			ret = -1;
+		}
+	}
+
+	return ret;
+}
+
 int ptls_pem_get_private_key(char const * pem_fname, ptls_iovec_t * vec, 
 	FILE * log_file)
 {
@@ -844,7 +1232,6 @@ int ptls_pem_get_private_key(char const * pem_fname, ptls_iovec_t * vec,
 			ret = PTLS_ERROR_PEM_LABEL_NOT_FOUND;
 		}
 	}
-
 	if (ret == 0 && nb_keys == 1)
 	{
 		/* read the ASN1 messages */
