@@ -22,6 +22,8 @@
 #else
 #include <sys/time.h>
 #endif
+#include <errno.h>
+#include <fcntl.h>
 #include <string.h>
 #include <stdio.h>
 #include "picotls.h"
@@ -306,7 +308,7 @@ static void data_dump(uint8_t * bytes, size_t length, FILE* F)
 
 	while (byte_index < length)
 	{
-		fprintf(F, "%06x ", byte_index);
+		fprintf(F, "%06x ", (uint32_t) byte_index);
 		for (size_t i = 0; i < 32 && byte_index < length; i++, byte_index++)
 		{
 			fprintf(F, "%02x", bytes[byte_index]);
@@ -337,7 +339,7 @@ static size_t ptls_asn1_error_message(char const * error_label, size_t bytes_max
 	{
 		ptls_asn1_print_indent(level, F);
 		fprintf(F, "Error: %s (near position: %d (0x%x) out of %d)", 
-			error_label, byte_index, byte_index, bytes_max);
+			error_label, (int) byte_index, (uint32_t) byte_index, (int)bytes_max);
 	}
 	*decode_error = 1;
 	return bytes_max;
@@ -430,7 +432,6 @@ size_t ptls_asn1_read_length(uint8_t * bytes, size_t bytes_max, size_t byte_inde
 	size_t * length, int * indefinite_length, size_t * last_byte,
 	int * decode_error, int level, FILE * F)
 {
-	int ret = 0;
 	int length_of_length = 0;
 
 	*indefinite_length = 0;
@@ -490,7 +491,7 @@ size_t ptls_asn1_read_length(uint8_t * bytes, size_t bytes_max, size_t byte_inde
 }
 
 size_t ptls_asn1_get_expected_type_and_length(uint8_t * bytes, size_t bytes_max, size_t byte_index,
-	uint8_t expected_type, size_t * length, int * indefinite_length, size_t * last_byte,
+	uint8_t expected_type, uint32_t * length, int * indefinite_length, size_t * last_byte,
 	int * decode_error, int level, FILE * log_file)
 {
 	int is_indefinite = 0;
@@ -534,7 +535,6 @@ size_t ptls_asn1_validation_recursive(uint8_t * bytes, size_t bytes_max,
     uint32_t type_number = 0;
     size_t length = 0;
     int indefinite_length = 0;
-    int type_extensions = 0;
     size_t last_byte = 0;
 	/* Decode the type */
 	size_t byte_index = ptls_asn1_read_type(bytes, bytes_max, &structure_bit, &type_class, &type_number,
@@ -1033,7 +1033,6 @@ int ptls_set_ecdsa_private_key(ptls_context_t * ctx,
 	uint8_t * bytes = pkey->vec.base + pkey->parameters_index;
 	size_t bytes_max = pkey->parameters_length;
 	size_t byte_index = 0;
-	size_t curve_id_index = 0;
 	uint8_t * curve_id = NULL;
 	uint32_t curve_id_length = 0;
 	int decode_error = 0;
@@ -1131,7 +1130,7 @@ int ptls_set_ecdsa_private_key(ptls_context_t * ctx,
 	}
 
 	/* If everything is fine, associate the ECDSA key with the context */
-	if (curve_id_length == sizeof(ptls_asn1_curve_secp512r1) &&
+	if (curve_id_length == sizeof(ptls_asn1_curve_secp512r1) && curve_id != NULL &&
 		memcmp(curve_id, ptls_asn1_curve_secp512r1, sizeof(ptls_asn1_curve_secp512r1)) == 0)
 	{
 		if (SECP256R1_PRIVATE_KEY_SIZE != ecdsa_key_data_length)
@@ -1239,7 +1238,6 @@ int ptls_pem_get_private_key(char const * pem_fname, ptls_iovec_t * vec,
 		uint8_t * bytes = vec->base;
 		size_t bytes_max = vec->len;
 		int decode_error = 0;
-		int indefinite_length = 0;
 		uint32_t seq0_length = 0;
 		size_t last_byte0;
 		uint32_t seq1_length = 0;
@@ -1252,7 +1250,7 @@ int ptls_pem_get_private_key(char const * pem_fname, ptls_iovec_t * vec,
 
 		if (log_file != NULL)
 		{
-			fprintf(log_file, "\nFound PRIVATE KEY, length = %d bytes\n", bytes_max);
+			fprintf(log_file, "\nFound PRIVATE KEY, length = %d bytes\n", (int)bytes_max);
 		}
 
 		/* start with sequence */
