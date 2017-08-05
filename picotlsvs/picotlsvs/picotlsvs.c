@@ -84,19 +84,18 @@ void SetSignCertificate(char * keypem, ptls_context_t * ctx)
     ctx->sign_certificate = &signer.super;
 }
 
-
-int handshake_init(ptls_t * tls, ptls_buffer_t * sendbuf)
+int handshake_init(ptls_t * tls, ptls_buffer_t * sendbuf, ptls_handshake_properties_t * ph_prop)
 {
     size_t inlen = 0, roff = 0;
 
     ptls_buffer_init(sendbuf, "", 0);
-    int ret = ptls_handshake(tls, sendbuf, NULL, NULL, NULL);
+    int ret = ptls_handshake(tls, sendbuf, NULL, NULL, ph_prop);
 
     return ret;
 }
 
 
-int handshake_progress(ptls_t * tls, ptls_buffer_t * sendbuf, ptls_buffer_t * recvbuf)
+int handshake_progress(ptls_t * tls, ptls_buffer_t * sendbuf, ptls_buffer_t * recvbuf, ptls_handshake_properties_t * ph_prop)
 {
     size_t inlen = 0, roff = 0;
     int ret = 0;
@@ -107,7 +106,7 @@ int handshake_progress(ptls_t * tls, ptls_buffer_t * sendbuf, ptls_buffer_t * re
     while (roff < recvbuf->off && (ret == 0 || ret == PTLS_ERROR_IN_PROGRESS))
     {
         inlen = recvbuf->off - roff;
-        ret = ptls_handshake(tls, sendbuf, recvbuf->base + roff, &inlen, NULL);
+        ret = ptls_handshake(tls, sendbuf, recvbuf->base + roff, &inlen, ph_prop);
         roff += inlen;
     }
 
@@ -278,12 +277,114 @@ int minicrypto_init_test_server(ptls_context_t *ctx_server, char * key_file, cha
 	return ret;
 }
 
+#define PICOTLS_VS_TEST_EXTENSION 1234
+static uint8_t testExtensionClient[] = { 1, 2, 3 };
+static uint8_t testExtensionServer[] = { 1, 2, 3, 4, 5, 6, 7, 8 };
+
+struct st_picotls_vs_test_context_t
+{
+	int client_mode;
+	size_t received_extension_length;
+	uint8_t received_extension[16];
+	ptls_raw_extension_t ext[2];
+
+	ptls_handshake_properties_t handshake_properties;
+
+};
+
+int collect_test_extension(ptls_t *tls, struct st_ptls_handshake_properties_t *properties, uint16_t type)
+{
+	return type == PICOTLS_VS_TEST_EXTENSION;
+}
+
+void set_test_extensions(ptls_raw_extension_t ext[2], uint8_t * data, size_t len)
+{
+	ext[0].type = PICOTLS_VS_TEST_EXTENSION;
+	ext[0].data.base = data;
+	ext[0].data.len = len;
+	ext[1].type = 0xFFFF;
+	ext[1].data.base = NULL;
+	ext[1].data.len = 0;
+}
+
+int collected_test_extensions(ptls_t *tls, ptls_handshake_properties_t *properties, 
+	ptls_raw_extension_t *slots)
+{
+	struct st_picotls_vs_test_context_t * ctx = (struct st_picotls_vs_test_context_t *)
+		((char *)properties - offsetof(struct st_picotls_vs_test_context_t, handshake_properties));
+
+	if (slots[0].type == PICOTLS_VS_TEST_EXTENSION && slots[1].type == 0xFFFF)
+	{
+		ctx->received_extension_length = slots[0].data.len;
+		memcpy(ctx->received_extension, slots[0].data.base,
+			(slots[0].data.len < sizeof(ctx->received_extension)) ?
+			slots[0].data.len : sizeof(ctx->received_extension));
+
+		if (ctx->client_mode == 0)
+		{
+			properties->additional_extensions = ctx->ext;
+			set_test_extensions(ctx->ext, testExtensionServer, sizeof(testExtensionServer));
+		}
+	}
+
+	return 0;
+}
+
+void set_handshake_context(struct st_picotls_vs_test_context_t * ctx, int client_mode)
+{
+	memset(ctx, 0, sizeof(struct st_picotls_vs_test_context_t));
+	
+	if ((ctx->client_mode = client_mode) != 0)
+	{
+		ctx->handshake_properties.additional_extensions = ctx->ext;
+		set_test_extensions(ctx->ext, testExtensionClient, sizeof(testExtensionClient));
+	}
+
+	ctx->handshake_properties.collect_extension = collect_test_extension;
+	ctx->handshake_properties.collected_extensions = collected_test_extensions;
+}
+
+int verify_handshake_extension(struct st_picotls_vs_test_context_t * app_ctx_client,
+	struct st_picotls_vs_test_context_t *app_ctx_server)
+{
+	int ret = 0;
+
+	if (app_ctx_server->received_extension_length == 0)
+	{
+		fprintf(stderr, "Server did not receive the client extension.\n");
+		ret = -1;
+	}
+	else if (app_ctx_server->received_extension_length != sizeof(testExtensionClient) ||
+		memcmp(app_ctx_server->received_extension, testExtensionClient, sizeof(testExtensionClient)))
+	{
+		fprintf(stderr, "Server did not correctly receive the client extension.\n");
+		ret = -1;
+	}
+	else if (app_ctx_client->received_extension_length == 0)
+	{
+		fprintf(stderr, "Client did not receive the server extension.\n");
+		ret = -1;
+	}
+	else if (app_ctx_client->received_extension_length != sizeof(testExtensionServer) ||
+		memcmp(app_ctx_client->received_extension, testExtensionServer, sizeof(testExtensionServer)))
+	{
+		fprintf(stderr, "Client did not correctly receive the server extension.\n");
+		ret = -1;
+	}
+
+	return ret;
+}
+
 int ptls_memory_loopback_test(int openssl_client, int openssl_server, char * key_file, char * cert_file)
 {
 	ptls_context_t ctx_client, ctx_server;
 	ptls_t *tls_client = NULL, *tls_server = NULL;
 	int ret = 0;
 	ptls_buffer_t client_buf, server_buf;
+	struct st_picotls_vs_test_context_t app_ctx_client, app_ctx_server;
+
+	set_handshake_context(&app_ctx_client, 1);
+	set_handshake_context(&app_ctx_server, 0);
 
 	/* init the contexts */
 	if (ret == 0 && openssl_client)
@@ -321,19 +422,27 @@ int ptls_memory_loopback_test(int openssl_client, int openssl_server, char * key
 	if (ret == 0)
 	{
 		int nb_rounds = 0;
-		ret = handshake_init(tls_client, &client_buf);
+		ret = handshake_init(tls_client, &client_buf,
+			&app_ctx_client.handshake_properties);
 		printf("First message from client, ret = %d, %d bytes.\n", ret, client_buf.off);
 
 		while ((ret == 0 || ret == PTLS_ERROR_IN_PROGRESS) && client_buf.off > 0 && nb_rounds < 12)
 		{
 			nb_rounds++;
 
-			ret = handshake_progress(tls_server, &server_buf, &client_buf);
+			ret = handshake_progress(tls_server, &server_buf, &client_buf,
+				&app_ctx_server.handshake_properties);
+			app_ctx_server.handshake_properties.additional_extensions = NULL;
+
 			printf("Message from server, ret = %d, %d bytes.\n", ret, server_buf.off);
 
 			if ((ret == 0 || ret == PTLS_ERROR_IN_PROGRESS) && server_buf.off > 0)
 			{
-				ret = handshake_progress(tls_client, &client_buf, &server_buf);
+				app_ctx_client.handshake_properties.additional_extensions = NULL;
+
+				ret = handshake_progress(tls_client, &client_buf, &server_buf, 
+					&app_ctx_client.handshake_properties);
+
 				printf("Message from client, ret = %d, %d bytes.\n", ret, client_buf.off);
 			}
 		}
@@ -347,6 +456,16 @@ int ptls_memory_loopback_test(int openssl_client, int openssl_server, char * key
 			if (ret == 0)
 			{
 				printf("Key extracted and matches!\n");
+			}
+		}
+
+		if (ret == 0)
+		{
+			ret = verify_handshake_extension(&app_ctx_client, &app_ctx_server);
+
+			if (ret == 0)
+			{
+				printf("Extensions received and match!\n");
 			}
 		}
 	}
