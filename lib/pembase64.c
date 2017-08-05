@@ -132,7 +132,7 @@ int ptls_base64_decode(char * text, struct ptls_base64_decode_state_st * state, 
     int ret = 0;
     uint8_t decoded[3];
     int text_index = 0;
-    char c;
+    int c;
     char vc;
 
     /* skip initial blanks */
@@ -178,7 +178,7 @@ int ptls_base64_decode(char * text, struct ptls_base64_decode_state_st * state, 
                 {
                     c = text[text_index++];
 
-                    if (c == ' ' || c == '/t' || c == '/r' || c == '/n' || c == 0x0B || c == 0x0C)
+                    if (c == ' ' || c == '\t' || c == '\r' || c == '\n' || c == 0x0B || c == 0x0C)
                     {
                         continue;
                     }
@@ -491,7 +491,7 @@ size_t ptls_asn1_read_length(uint8_t * bytes, size_t bytes_max, size_t byte_inde
 
 size_t ptls_asn1_get_expected_type_and_length(uint8_t * bytes, size_t bytes_max, size_t byte_index,
 	uint8_t expected_type, uint32_t * length, int * indefinite_length, size_t * last_byte,
-	int * decode_error, int level, FILE * log_file)
+	int * decode_error, FILE * log_file)
 {
 	int is_indefinite = 0;
 
@@ -531,7 +531,7 @@ size_t ptls_asn1_validation_recursive(uint8_t * bytes, size_t bytes_max,
 	int structure_bit = 0;
 	int type_class = 0;
     uint32_t type_number = 0;
-    size_t length = 0;
+    uint32_t length = 0;
     int indefinite_length = 0;
     size_t last_byte = 0;
 	/* Decode the type */
@@ -866,7 +866,7 @@ int ptls_pem_parse_private_key(char const * pem_fname,
 		uint32_t seq0_length = 0;
 		size_t last_byte0;
 		uint32_t seq1_length = 0;
-		size_t last_byte1;
+		size_t last_byte1 = 0;
 		uint32_t oid_length;
 		size_t last_oid_byte;
 		uint32_t key_data_length;
@@ -881,7 +881,7 @@ int ptls_pem_parse_private_key(char const * pem_fname,
 		/* start with sequence */
 		byte_index = ptls_asn1_get_expected_type_and_length(
 			bytes, bytes_max, byte_index, 0x30,
-			&seq0_length, NULL, &last_byte0, &decode_error, 0, log_file);
+			&seq0_length, NULL, &last_byte0, &decode_error, log_file);
 
 		if (decode_error == 0 && bytes_max != last_byte0)
 		{
@@ -922,7 +922,7 @@ int ptls_pem_parse_private_key(char const * pem_fname,
 			/* open embedded sequence */
 			byte_index = ptls_asn1_get_expected_type_and_length(
 				bytes, bytes_max, byte_index, 0x30,
-				&seq1_length, NULL, &last_byte1, &decode_error, 1, log_file);
+				&seq1_length, NULL, &last_byte1, &decode_error, log_file);
 		}
 
 		if (decode_error == 0)
@@ -934,7 +934,7 @@ int ptls_pem_parse_private_key(char const * pem_fname,
 			/* get length of OID */
 			byte_index = ptls_asn1_get_expected_type_and_length(
 				bytes, last_byte1, byte_index, 0x06,
-				&oid_length, NULL, &last_oid_byte, &decode_error, 0, log_file);
+				&oid_length, NULL, &last_oid_byte, &decode_error, log_file);
 
 			if (decode_error == 0)
 			{
@@ -984,7 +984,7 @@ int ptls_pem_parse_private_key(char const * pem_fname,
 		{
 			byte_index = ptls_asn1_get_expected_type_and_length(
 				bytes, last_byte0, byte_index, 0x04,
-				&key_data_length, NULL, &key_data_last, &decode_error, 1, log_file);
+				&key_data_length, NULL, &key_data_last, &decode_error, log_file);
 
 			if (decode_error == 0)
 			{
@@ -1043,7 +1043,7 @@ int ptls_set_ecdsa_private_key(ptls_context_t * ctx,
 
 	byte_index = ptls_asn1_get_expected_type_and_length(
 		bytes, bytes_max, byte_index, 0x06,
-		&curve_id_length, NULL, &last_byte, &decode_error, 1, log_file);
+		&curve_id_length, NULL, &last_byte, &decode_error, log_file);
 
 	if (decode_error == 0 && bytes_max != last_byte)
 	{
@@ -1075,7 +1075,7 @@ int ptls_set_ecdsa_private_key(ptls_context_t * ctx,
 	{
 		byte_index = ptls_asn1_get_expected_type_and_length(
 			bytes, bytes_max, byte_index, 0x30,
-			&seq_length, NULL, &last_byte, &decode_error, 0, log_file);
+			&seq_length, NULL, &last_byte, &decode_error, log_file);
 	}
 
 	if (decode_error == 0 && bytes_max != last_byte)
@@ -1118,7 +1118,7 @@ int ptls_set_ecdsa_private_key(ptls_context_t * ctx,
 	{
 		byte_index = ptls_asn1_get_expected_type_and_length(
 			bytes, last_byte, byte_index, 0x04,
-			&ecdsa_key_data_length, NULL, &ecdsa_key_data_last, &decode_error, 1, log_file);
+			&ecdsa_key_data_length, NULL, &ecdsa_key_data_last, &decode_error, log_file);
 
 		if (decode_error == 0)
 		{
@@ -1238,7 +1238,7 @@ int ptls_pem_get_private_key(char const * pem_fname, ptls_iovec_t * vec,
 		uint32_t seq0_length = 0;
 		size_t last_byte0;
 		uint32_t seq1_length = 0;
-		size_t last_byte1;
+		size_t last_byte1 = 0;
 		uint32_t oid_length;
 		size_t last_oid_byte;
 		uint32_t key_data_length;
@@ -1253,7 +1253,7 @@ int ptls_pem_get_private_key(char const * pem_fname, ptls_iovec_t * vec,
 		/* start with sequence */
 		byte_index = ptls_asn1_get_expected_type_and_length(
 			bytes, bytes_max, byte_index, 0x30,
-			&seq0_length, NULL, &last_byte0, &decode_error, 0, log_file);
+			&seq0_length, NULL, &last_byte0, &decode_error, log_file);
 
 		if (decode_error == 0 && bytes_max != last_byte0)
 		{
@@ -1294,7 +1294,7 @@ int ptls_pem_get_private_key(char const * pem_fname, ptls_iovec_t * vec,
 			/* open embedded sequence */
 			byte_index = ptls_asn1_get_expected_type_and_length(
 				bytes, bytes_max, byte_index, 0x30,
-				&seq1_length, NULL, &last_byte1, &decode_error, 1, log_file);
+				&seq1_length, NULL, &last_byte1, &decode_error, log_file);
 		}
 
 		if (decode_error == 0)
@@ -1306,7 +1306,7 @@ int ptls_pem_get_private_key(char const * pem_fname, ptls_iovec_t * vec,
 			/* get length of OID */
 			byte_index = ptls_asn1_get_expected_type_and_length(
 				bytes, last_byte1, byte_index, 0x06,
-				&oid_length, NULL, &last_oid_byte, &decode_error, 0, log_file);
+				&oid_length, NULL, &last_oid_byte, &decode_error, log_file);
 			
 			if (decode_error == 0)
 			{
@@ -1348,7 +1348,7 @@ int ptls_pem_get_private_key(char const * pem_fname, ptls_iovec_t * vec,
 		{
 			byte_index = ptls_asn1_get_expected_type_and_length(
 				bytes, bytes_max, byte_index, 0x04,
-				&key_data_length, NULL, &key_data_last, &decode_error, 1, log_file);
+				&key_data_length, NULL, &key_data_last, &decode_error, log_file);
 
 			if (decode_error == 0)
 			{
