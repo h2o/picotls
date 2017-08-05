@@ -101,7 +101,7 @@
     <ClCompile Include="..\..\lib\cifra.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\lib\base64.c">
+    <ClCompile Include="..\..\lib\xbase64.c">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
