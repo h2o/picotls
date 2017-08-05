@@ -23,7 +23,7 @@ SET(MINICRYPTO_LIBRARY_FILES
     deps/cifra/src/sha256.c)
 
 ADD_LIBRARY(picotls-core lib/picotls.c)
-ADD_LIBRARY(picotls-minicrypto ${MINICRYPTO_LIBRARY_FILES} lib/cifra.c lib/uecc.c)
+ADD_LIBRARY(picotls-minicrypto ${MINICRYPTO_LIBRARY_FILES} lib/cifra.c lib/uecc.c lib/pembase64.c)
 ADD_EXECUTABLE(test-minicrypto.t ${MINICRYPTO_LIBRARY_FILES} deps/picotest/picotest.c t/picotls.c t/minicrypto.c)
 
 SET(TEST_EXES test-minicrypto.t)
