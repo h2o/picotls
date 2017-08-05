@@ -23,7 +23,7 @@
 #include <sys/time.h>
 #endif
 #include <errno.h>
-#include <fcntl.h>
+#include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 #include "picotls.h"
@@ -140,7 +140,7 @@ int ptls_base64_decode(char * text, struct ptls_base64_decode_state_st * state, 
     {
         c = text[text_index];
 
-        if (c == ' ' || c == '/t' || c == '/r' || c == '/n')
+        if (c == ' ' || c == '\t' || c == '\r' || c == '\n')
         {
             text_index++;
         }
@@ -225,7 +225,7 @@ int ptls_base64_decode(char * text, struct ptls_base64_decode_state_st * state, 
                     {
                         c = text[text_index++];
 
-                        if (c == ' ' || c == '/t' || c == '/r' || c == '/n' || c == 0x0B || c == 0x0C)
+                        if (c == ' ' || c == '\t' || c == '\r' || c == '\n' || c == 0x0B || c == 0x0C)
                         {
                             continue;
                         }
@@ -370,7 +370,6 @@ size_t ptls_asn1_read_type(uint8_t * bytes, size_t bytes_max,
 	int * decode_error, int level, FILE * F)
 {
 	/* Get the type byte */
-	int ret = 0;
 	size_t byte_index = 1;
 	uint8_t first_byte = bytes[0];
 	*structure_bit = (first_byte >> 5) & 1;
@@ -429,7 +428,7 @@ void ptls_asn1_print_type(int type_class, uint32_t type_number, int level, FILE 
 }
 
 size_t ptls_asn1_read_length(uint8_t * bytes, size_t bytes_max, size_t byte_index,
-	size_t * length, int * indefinite_length, size_t * last_byte,
+	uint32_t * length, int * indefinite_length, size_t * last_byte,
 	int * decode_error, int level, FILE * F)
 {
 	int length_of_length = 0;
@@ -529,7 +528,6 @@ size_t ptls_asn1_validation_recursive(uint8_t * bytes, size_t bytes_max,
     int * decode_error, int level, FILE * F)
 {
     /* Get the type byte */
-    int ret = 0;
 	int structure_bit = 0;
 	int type_class = 0;
     uint32_t type_number = 0;
@@ -641,7 +639,7 @@ int ptls_asn1_validation(uint8_t * bytes, size_t length, FILE * F)
 		if (F != NULL)
 		{
 			fprintf(F, "Type too short, %d bytes only out of %d\n",
-				decoded, length);
+				(int)decoded, (int)length);
 		}
 	}
 
@@ -770,7 +768,7 @@ int ptls_pem_get_objects(char const * pem_fname, char * label,
         ret = -1;
     }
 #else
-    F = fopen(F, pem_fname, "r");
+    F = fopen(pem_fname, "r");
     if (F == NULL)
     {
         ret = -1;
@@ -865,7 +863,6 @@ int ptls_pem_parse_private_key(char const * pem_fname,
 		uint8_t * bytes = pkey->vec.base;
 		size_t bytes_max = pkey->vec.len;
 		int decode_error = 0;
-		int indefinite_length = 0;
 		uint32_t seq0_length = 0;
 		size_t last_byte0;
 		uint32_t seq1_length = 0;
@@ -878,7 +875,7 @@ int ptls_pem_parse_private_key(char const * pem_fname,
 
 		if (log_file != NULL)
 		{
-			fprintf(log_file, "\nFound PRIVATE KEY, length = %d bytes\n", bytes_max);
+			fprintf(log_file, "\nFound PRIVATE KEY, length = %d bytes\n", (int)bytes_max);
 		}
 
 		/* start with sequence */
@@ -1194,7 +1191,7 @@ int ptls_set_ecdsa_private_key(ptls_context_t * ctx,
 
 int ptls_set_private_key(ptls_context_t * ctx, char const * pem_fname, FILE * log_file)
 {
-	struct ptls_asn1_pkcs8_private_key pkey = { 0 };
+	struct ptls_asn1_pkcs8_private_key pkey = { {0} };
 	int ret = ptls_pem_parse_private_key(pem_fname, &pkey, log_file);
 
 	/* Check that this is the expected key type.
