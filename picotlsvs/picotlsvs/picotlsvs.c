@@ -280,6 +280,13 @@ int minicrypto_init_test_server(ptls_context_t *ctx_server, char * key_file, cha
 #define PICOTLS_VS_TEST_EXTENSION 1234
 static uint8_t testExtensionClient[] = { 1, 2, 3 };
 static uint8_t testExtensionServer[] = { 1, 2, 3, 4, 5, 6, 7, 8 };
+char const test_sni[] = "picotls.example.com";
+char const test_alpn[] = "picotls";
+static const ptls_iovec_t proposed_alpn[] = {
+	{ (uint8_t *) "grease", 6},
+	{ (uint8_t *)test_alpn, sizeof(test_alpn) -1 }
+};
+
 
 struct st_picotls_vs_test_context_t
 {
@@ -330,12 +337,32 @@ int collected_test_extensions(ptls_t *tls, ptls_handshake_properties_t *properti
 	return 0;
 }
 
+int client_hello_call_back(ptls_on_client_hello_t * on_hello_cb_ctx,
+	ptls_t *tls, ptls_iovec_t server_name, const ptls_iovec_t *negotiated_protocols,
+	size_t num_negotiated_protocols, const uint16_t *signature_algorithms, size_t num_signature_algorithms)
+{
+	for (size_t i = 0; i < num_negotiated_protocols; i++)
+	{
+		if (negotiated_protocols[i].len == sizeof(test_alpn) - 1 &&
+			memcmp(negotiated_protocols[i].base, test_alpn, sizeof(test_alpn) - 1) == 0)
+		{
+			ptls_set_negotiated_protocol(tls, test_alpn, sizeof(test_alpn) - 1);
+			break;
+		}
+	}
+	return 0;
+}
+
 void set_handshake_context(struct st_picotls_vs_test_context_t * ctx, int client_mode)
 {
 	memset(ctx, 0, sizeof(struct st_picotls_vs_test_context_t));
 	
 	if ((ctx->client_mode = client_mode) != 0)
 	{
+		ctx->handshake_properties.client.negotiated_protocols.list = proposed_alpn;
+		ctx->handshake_properties.client.negotiated_protocols.count =
+			sizeof(proposed_alpn) / sizeof(ptls_iovec_t);
+
 		ctx->handshake_properties.additional_extensions = ctx->ext;
 		set_test_extensions(ctx->ext, testExtensionClient, sizeof(testExtensionClient));
 	}
@@ -382,9 +409,8 @@ int ptls_memory_loopback_test(int openssl_client, int openssl_server, char * key
 	int ret = 0;
 	ptls_buffer_t client_buf, server_buf;
 	struct st_picotls_vs_test_context_t app_ctx_client, app_ctx_server;
+	ptls_on_client_hello_t client_hello_cb;
 
-	set_handshake_context(&app_ctx_client, 1);
-	set_handshake_context(&app_ctx_server, 0);
 
 	/* init the contexts */
 	if (ret == 0 && openssl_client)
@@ -422,6 +448,15 @@ int ptls_memory_loopback_test(int openssl_client, int openssl_server, char * key
 	if (ret == 0)
 	{
 		int nb_rounds = 0;
+
+		set_handshake_context(&app_ctx_client, 1);
+		set_handshake_context(&app_ctx_server, 0);
+
+		client_hello_cb.cb = client_hello_call_back;
+		ctx_server.on_client_hello = &client_hello_cb.cb;
+
+		ptls_set_server_name(tls_client, test_sni, sizeof(test_sni) - 1);
+
 		ret = handshake_init(tls_client, &client_buf,
 			&app_ctx_client.handshake_properties);
 		printf("First message from client, ret = %d, %d bytes.\n", ret, client_buf.off);
@@ -468,6 +503,55 @@ int ptls_memory_loopback_test(int openssl_client, int openssl_server, char * key
 				printf("Extensions received and match!\n");
 			}
 		}
+
+		if (ret == 0)
+		{
+			const char * sni_received = ptls_get_server_name(tls_server);
+
+			if (sni_received == NULL)
+			{
+				fprintf(stderr, "Server did not receive the SNI set by the client\n");
+				ret = -1;
+			}
+			else if (strcmp(sni_received, test_sni) != 0)
+			{
+				fprintf(stderr, "Server receives SNI: <%s>, does not match <%s>\n",
+					sni_received, test_sni);
+				ret = -1;
+			}
+		}
+
+		if (ret == 0)
+		{
+			const char * alpn_received = ptls_get_negotiated_protocol(tls_server);
+
+			if (alpn_received == NULL)
+			{
+				fprintf(stderr, "Server did not negotiate ALPN\n");
+				ret = -1;
+			}
+			else if (strcmp(alpn_received, test_alpn) != 0)
+			{
+				fprintf(stderr, "Server receives ALPN: <%s>, does not match <%s>\n",
+					alpn_received, test_alpn);
+				ret = -1;
+			}
+		}
+
+		if (ret == 0)
+		{
+			printf("SNI and ALPN match.\n");
+		}
+	}
+
+	if (tls_client != NULL)
+	{
+		ptls_free(tls_client);
+	}
+
+	if (tls_server != NULL)
+	{
+		ptls_free(tls_server);
 	}
 
 	if (openssl_server == 0 && ctx_server.sign_certificate != NULL)
