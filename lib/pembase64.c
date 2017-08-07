@@ -56,7 +56,7 @@ static char ptls_base64_values[] = {
     41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, -1, -1, -1, -1, -1
 };
 
-static void ptls_base64_cell(unsigned char * data, char * text)
+static void ptls_base64_cell(const uint8_t * data, char * text)
 {
     int n[4];
 
@@ -71,12 +71,12 @@ static void ptls_base64_cell(unsigned char * data, char * text)
     }
 }
 
-int ptls_base64_howlong(int data_length)
+size_t ptls_base64_howlong(size_t data_length)
 {
     return (((data_length + 2) / 3) * 4);
 }
 
-int ptls_base64_encode(unsigned char * data, int data_len, char * ptls_base64_text)
+int ptls_base64_encode(const uint8_t * data, size_t data_len, char * ptls_base64_text)
 {
     int l = 0;
     int lt = 0;
@@ -119,7 +119,7 @@ int ptls_base64_encode(unsigned char * data, int data_len, char * ptls_base64_te
  * The parsing is consistent with the lax definition in RFC 7468
  */
 
-void ptls_base64_decode_init(struct ptls_base64_decode_state_st * state)
+void ptls_base64_decode_init(ptls_base64_decode_state_t * state)
 {
     state->nbc = 0;
     state->nbo = 3;
@@ -127,7 +127,7 @@ void ptls_base64_decode_init(struct ptls_base64_decode_state_st * state)
     state->status = PTLS_BASE64_DECODE_IN_PROGRESS;
 }
 
-int ptls_base64_decode(char * text, struct ptls_base64_decode_state_st * state, ptls_buffer_t *buf)
+int ptls_base64_decode(const char * text, ptls_base64_decode_state_t * state, ptls_buffer_t *buf)
 {
     int ret = 0;
     uint8_t decoded[3];
@@ -302,7 +302,7 @@ static char const * asn1_universal_types[] = {
 /* For debugging
 */
 
-static void data_dump(uint8_t * bytes, size_t length, FILE* F)
+static void data_dump(const uint8_t * bytes, size_t length, FILE* F)
 {
 	size_t byte_index = 0;
 
@@ -345,7 +345,7 @@ static size_t ptls_asn1_error_message(char const * error_label, size_t bytes_max
 	return bytes_max;
 }
 
-static void ptls_asn1_dump_content(uint8_t * bytes, size_t bytes_max, size_t byte_index, FILE * F)
+static void ptls_asn1_dump_content(const uint8_t * bytes, size_t bytes_max, size_t byte_index, FILE * F)
 {
 	if (F != NULL && bytes_max > byte_index)
 	{
@@ -365,7 +365,7 @@ static void ptls_asn1_dump_content(uint8_t * bytes, size_t bytes_max, size_t byt
 	}
 }
 
-size_t ptls_asn1_read_type(uint8_t * bytes, size_t bytes_max,
+size_t ptls_asn1_read_type(const uint8_t * bytes, size_t bytes_max,
 	int * structure_bit, int * type_class, uint32_t * type_number,
 	int * decode_error, int level, FILE * F)
 {
@@ -427,7 +427,7 @@ void ptls_asn1_print_type(int type_class, uint32_t type_number, int level, FILE 
 	}
 }
 
-size_t ptls_asn1_read_length(uint8_t * bytes, size_t bytes_max, size_t byte_index,
+size_t ptls_asn1_read_length(const uint8_t * bytes, size_t bytes_max, size_t byte_index,
 	uint32_t * length, int * indefinite_length, size_t * last_byte,
 	int * decode_error, int level, FILE * F)
 {
@@ -489,7 +489,7 @@ size_t ptls_asn1_read_length(uint8_t * bytes, size_t bytes_max, size_t byte_inde
 	return byte_index;
 }
 
-size_t ptls_asn1_get_expected_type_and_length(uint8_t * bytes, size_t bytes_max, size_t byte_index,
+size_t ptls_asn1_get_expected_type_and_length(const uint8_t * bytes, size_t bytes_max, size_t byte_index,
 	uint8_t expected_type, uint32_t * length, int * indefinite_length, size_t * last_byte,
 	int * decode_error, FILE * log_file)
 {
@@ -524,7 +524,7 @@ size_t ptls_asn1_get_expected_type_and_length(uint8_t * bytes, size_t bytes_max,
 	return byte_index;
 }
 
-size_t ptls_asn1_validation_recursive(uint8_t * bytes, size_t bytes_max, 
+size_t ptls_asn1_validation_recursive(const uint8_t * bytes, size_t bytes_max, 
     int * decode_error, int level, FILE * F)
 {
     /* Get the type byte */
@@ -621,7 +621,7 @@ size_t ptls_asn1_validation_recursive(uint8_t * bytes, size_t bytes_max,
     return byte_index;
 }
 
-int ptls_asn1_validation(uint8_t * bytes, size_t length, FILE * F)
+int ptls_asn1_validation(const uint8_t * bytes, size_t length, FILE * F)
 {
 	int ret = 0;
 	int decode_error = 0;
@@ -668,7 +668,7 @@ int ptls_asn1_validation(uint8_t * bytes, size_t length, FILE * F)
  * 13 PUBLIC KEY             SubjectPublicKeyInfo    [RFC5280] id-pkix1-e
  */
 
-static int ptls_compare_separator_line(char * line, char* begin_or_end, char * label)
+static int ptls_compare_separator_line(const char * line, const char* begin_or_end, const char * label)
 {
     int ret = strncmp(line, "-----", 5);
     int text_index = 5;
@@ -701,11 +701,11 @@ static int ptls_compare_separator_line(char * line, char* begin_or_end, char * l
     return ret;
 }
 
-static int ptls_get_pem_object(FILE * F, char * label, ptls_buffer_t *buf, FILE* log_file)
+static int ptls_get_pem_object(FILE * F, const char * label, ptls_buffer_t *buf, FILE* log_file)
 {
     int ret = PTLS_ERROR_PEM_LABEL_NOT_FOUND;
     char line[256];
-    struct ptls_base64_decode_state_st state;
+    ptls_base64_decode_state_t state;
 
     /* Get the label on a line by itself */
     while (fgets(line, 256, F))
@@ -755,7 +755,7 @@ static int ptls_get_pem_object(FILE * F, char * label, ptls_buffer_t *buf, FILE*
     return ret;
 }
 
-int ptls_pem_get_objects(char const * pem_fname, char * label, 
+int ptls_pem_get_objects(char const * pem_fname, const char * label, 
 	ptls_iovec_t ** list, size_t list_max, size_t * nb_objects, FILE* log_file)
 {
     FILE * F;

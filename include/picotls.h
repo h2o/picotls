@@ -787,19 +787,19 @@ inline size_t ptls_aead_decrypt(ptls_aead_context_t *ctx, void *output, const vo
 #define PTLS_BASE64_DECODE_IN_PROGRESS 1
 #define PTLS_BASE64_DECODE_FAILED -1
 
-struct ptls_base64_decode_state_st {
+typedef struct st_ptls_base64_decode_state_t {
     int nbc;
     int nbo;
     int status;
     uint32_t v;
-};
+} ptls_base64_decode_state_t;
 
-int ptls_base64_encode(unsigned char * data, int data_len, char * base64_text);
+int ptls_base64_encode(const uint8_t * data, size_t data_len, char * base64_text);
 
-int ptls_base64_howlong(int data_length);
+size_t ptls_base64_howlong(size_t data_length);
 
-void ptls_base64_decode_init(struct ptls_base64_decode_state_st * state);
-int ptls_base64_decode(char * base64_text, struct ptls_base64_decode_state_st * state, ptls_buffer_t *buf);
+void ptls_base64_decode_init(ptls_base64_decode_state_t * state);
+int ptls_base64_decode(const char * base64_text, ptls_base64_decode_state_t * state, ptls_buffer_t *buf);
 
 int ptls_set_context_certificates(ptls_context_t * ctx, char * cert_pem_file, FILE* log_file);
 
