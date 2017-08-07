@@ -1020,7 +1020,7 @@ int ptls_pem_parse_private_key(char const * pem_fname,
 const uint8_t ptls_asn1_algorithm_ecdsa[] = { 
 	0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01 };
 
-const uint8_t ptls_asn1_curve_secp512r1[] = {
+const uint8_t ptls_asn1_curve_secp256r1[] = {
 	0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07};
 
 
@@ -1127,8 +1127,8 @@ int ptls_set_ecdsa_private_key(ptls_context_t * ctx,
 	}
 
 	/* If everything is fine, associate the ECDSA key with the context */
-	if (curve_id_length == sizeof(ptls_asn1_curve_secp512r1) && curve_id != NULL &&
-		memcmp(curve_id, ptls_asn1_curve_secp512r1, sizeof(ptls_asn1_curve_secp512r1)) == 0)
+	if (curve_id_length == sizeof(ptls_asn1_curve_secp256r1) && curve_id != NULL &&
+		memcmp(curve_id, ptls_asn1_curve_secp256r1, sizeof(ptls_asn1_curve_secp256r1)) == 0)
 	{
 		if (SECP256R1_PRIVATE_KEY_SIZE != ecdsa_key_data_length)
 		{
