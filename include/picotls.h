@@ -801,13 +801,33 @@ size_t ptls_base64_howlong(size_t data_length);
 void ptls_base64_decode_init(ptls_base64_decode_state_t * state);
 int ptls_base64_decode(const char * base64_text, ptls_base64_decode_state_t * state, ptls_buffer_t *buf);
 
-int ptls_set_context_certificates(ptls_context_t * ctx, char * cert_pem_file, FILE* log_file);
+/*
+ * The base64 and ASN.1 functions take a "log context" parameter of type ptls_minicrypto_log_ctx_t.
+ *
+ * The log function in that code can be instantiated for example as: 
+ *
+ * void log_printf(void * ctx, const char * format, ...)
+ * {
+ *     va_list argptr;
+ *     va_start(argptr, format);
+ *     vfprintf(stderr, format, argptr);
+ * }
+ *
+ * Using definitions from <stdio.h> and <stdarg.h>
+ */
 
-int ptls_set_private_key(ptls_context_t * ctx, char const * pem_fname, FILE * log_file);
+typedef struct st_ptls_minicrypto_log_ctx_t {
+	void * ctx;
+	void(*fn)(void * ctx, const char * format, ...);
+} ptls_minicrypto_log_ctx_t;
+
+int ptls_set_context_certificates(ptls_context_t * ctx, char * cert_pem_file, ptls_minicrypto_log_ctx_t * log_ctx);
+
+int ptls_set_private_key(ptls_context_t * ctx, char const * pem_fname, ptls_minicrypto_log_ctx_t * log_ctx);
 
 int ptls_pem_get_private_key(char const * pem_fname, ptls_iovec_t * vec,
-	FILE * log_file);
+	ptls_minicrypto_log_ctx_t * log_ctx);
 
-int picotls_asn1_validation(uint8_t * bytes, size_t length, FILE * F);
+int picotls_asn1_validation(uint8_t * bytes, size_t length, ptls_minicrypto_log_ctx_t * log_ctx);
 
 #endif

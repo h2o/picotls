@@ -1,10 +1,20 @@
 /* picotlsvs: test program for the TLS 1.3 library. */
 #include <stdio.h>
+#include <stdarg.h>
 #include <openssl/pem.h>
 #include "../picotls/wincompat.h"
 #include "../../include/picotls.h"
 #include "../../include/picotls/openssl.h"
 #include "../../include/picotls/minicrypto.h"
+
+void log_printf(void * ctx, const char * format, ...)
+{
+	va_list argptr;
+	va_start(argptr, format);
+	vfprintf(stderr, format, argptr);
+}
+
+ptls_minicrypto_log_ctx_t log_ctx = { NULL, log_printf };
 
 int ptls_export_secret(ptls_t *tls, void *output, size_t outlen, const char *label, ptls_iovec_t context_value);
 
@@ -17,7 +27,7 @@ int openPemTest(char const * filename)
 	ptls_iovec_t * list = &buf;
 	size_t count = 1;
 #if 1
-	int ret = ptls_pem_get_private_key(filename, &buf, stderr);
+	int ret = ptls_pem_get_private_key(filename, &buf, &log_ctx);
 #else
 	int ret = ptls_pem_get_objects(filename, "PRIVATE KEY",
 		&list, 1, &count, stderr);
@@ -225,7 +235,7 @@ int openssl_init_test_server(ptls_context_t *ctx_server, char * key_file, char *
 	ctx_server->key_exchanges = ptls_openssl_key_exchanges;
 	ctx_server->cipher_suites = ptls_openssl_cipher_suites;
 
-	ret = ptls_set_context_certificates(ctx_server, cert_file, stdout);
+	ret = ptls_set_context_certificates(ctx_server, cert_file, &log_ctx);
 	if (ret != 0)
 	{
 		fprintf(stderr, "Could not read the server certificates\n");
@@ -264,14 +274,14 @@ int minicrypto_init_test_server(ptls_context_t *ctx_server, char * key_file, cha
 	ctx_server->key_exchanges = ptls_minicrypto_key_exchanges;
 	ctx_server->cipher_suites = ptls_minicrypto_cipher_suites;
 
-	ret = ptls_set_context_certificates(ctx_server, cert_file, stdout);
+	ret = ptls_set_context_certificates(ctx_server, cert_file, &log_ctx);
 	if (ret != 0)
 	{
 		fprintf(stderr, "Could not read the server certificates\n");
 	}
 	else
 	{
-		ret = ptls_set_private_key(ctx_server, key_file, stdout);
+		ret = ptls_set_private_key(ctx_server, key_file, &log_ctx);
 	}
 
 	return ret;

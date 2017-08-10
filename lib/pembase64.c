@@ -302,72 +302,72 @@ static char const * asn1_universal_types[] = {
 /* For debugging
 */
 
-static void data_dump(const uint8_t * bytes, size_t length, FILE* F)
+static void data_dump(const uint8_t * bytes, size_t length, ptls_minicrypto_log_ctx_t * log_ctx)
 {
 	size_t byte_index = 0;
 
 	while (byte_index < length)
 	{
-		fprintf(F, "%06x ", (uint32_t) byte_index);
+		log_ctx->fn(log_ctx->ctx, "%06x ", (uint32_t) byte_index);
 		for (size_t i = 0; i < 32 && byte_index < length; i++, byte_index++)
 		{
-			fprintf(F, "%02x", bytes[byte_index]);
+			log_ctx->fn(log_ctx->ctx, "%02x", bytes[byte_index]);
 			if ((i & 3) == 3)
 			{
-				fprintf(F, " ");
+				log_ctx->fn(log_ctx->ctx, " ");
 			}
 		}
-		fprintf(F, "\n");
+		log_ctx->fn(log_ctx->ctx, "\n");
 	}
 }
 
 static size_t nb_asn1_universal_types = sizeof(asn1_universal_types) / sizeof(char const *);
 
-static void ptls_asn1_print_indent(int level, FILE * F)
+static void ptls_asn1_print_indent(int level, ptls_minicrypto_log_ctx_t * log_ctx)
 {
 	for (int indent = 0; indent <= level; indent++)
 	{
-		fprintf(F, "   ");
+		log_ctx->fn(log_ctx->ctx, "   ");
 	}
 }
 
 
 static size_t ptls_asn1_error_message(char const * error_label, size_t bytes_max, size_t byte_index, 
-	int * decode_error, int level, FILE * F)
+	int * decode_error, int level, ptls_minicrypto_log_ctx_t * log_ctx)
 {
-	if (F != NULL)
+	if (log_ctx != NULL)
 	{
-		ptls_asn1_print_indent(level, F);
-		fprintf(F, "Error: %s (near position: %d (0x%x) out of %d)", 
+		ptls_asn1_print_indent(level, log_ctx);
+		log_ctx->fn(log_ctx->ctx, "Error: %s (near position: %d (0x%x) out of %d)", 
 			error_label, (int) byte_index, (uint32_t) byte_index, (int)bytes_max);
 	}
 	*decode_error = 1;
 	return bytes_max;
 }
 
-static void ptls_asn1_dump_content(const uint8_t * bytes, size_t bytes_max, size_t byte_index, FILE * F)
+static void ptls_asn1_dump_content(const uint8_t * bytes, size_t bytes_max, size_t byte_index, ptls_minicrypto_log_ctx_t * log_ctx)
 {
-	if (F != NULL && bytes_max > byte_index)
+	if (log_ctx != NULL && bytes_max > byte_index)
 	{
 		size_t nb_bytes = bytes_max - byte_index;
 
-		fprintf(F, " ");
+		log_ctx->fn(log_ctx->ctx, " ");
 
 		for (size_t i = 0; i < 16 && i < nb_bytes; i++)
 		{
-			fprintf(F, "%02x", bytes[byte_index + i]);
+			log_ctx->fn(log_ctx->ctx, "%02x", bytes[byte_index + i]);
 		}
 
 		if (nb_bytes > 16)
 		{
-			fprintf(F, "...");
+			log_ctx->fn(log_ctx->ctx, "...");
 		}
 	}
 }
 
 size_t ptls_asn1_read_type(const uint8_t * bytes, size_t bytes_max,
 	int * structure_bit, int * type_class, uint32_t * type_number,
-	int * decode_error, int level, FILE * F)
+	int * decode_error, int level, ptls_minicrypto_log_ctx_t * log_ctx)
 {
 	/* Get the type byte */
 	size_t byte_index = 1;
@@ -402,34 +402,34 @@ size_t ptls_asn1_read_type(const uint8_t * bytes, size_t bytes_max,
 		{
 			/* This is an error */
 			byte_index = ptls_asn1_error_message("Incorrect type coding", bytes_max, byte_index,
-				decode_error, level, F);
+				decode_error, level, log_ctx);
 		}
 	}
 
 	return byte_index;
 }
 
-void ptls_asn1_print_type(int type_class, uint32_t type_number, int level, FILE * F)
+void ptls_asn1_print_type(int type_class, uint32_t type_number, int level, ptls_minicrypto_log_ctx_t * log_ctx)
 {
 	/* Print the type */
-	ptls_asn1_print_indent(level, F);
+	ptls_asn1_print_indent(level, log_ctx);
 	if (type_class == 0 && type_number < nb_asn1_universal_types)
 	{
-		fprintf(F, "%s", asn1_universal_types[type_number]);
+		log_ctx->fn(log_ctx->ctx, "%s", asn1_universal_types[type_number]);
 	}
 	else if (type_class == 2)
 	{
-		fprintf(F, "[%d]", type_number);
+		log_ctx->fn(log_ctx->ctx, "[%d]", type_number);
 	}
 	else
 	{
-		fprintf(F, "%s[%d]", asn1_type_classes[type_class], type_number);
+		log_ctx->fn(log_ctx->ctx, "%s[%d]", asn1_type_classes[type_class], type_number);
 	}
 }
 
 size_t ptls_asn1_read_length(const uint8_t * bytes, size_t bytes_max, size_t byte_index,
 	uint32_t * length, int * indefinite_length, size_t * last_byte,
-	int * decode_error, int level, FILE * F)
+	int * decode_error, int level, ptls_minicrypto_log_ctx_t * log_ctx)
 {
 	int length_of_length = 0;
 
@@ -449,7 +449,7 @@ size_t ptls_asn1_read_length(const uint8_t * bytes, size_t bytes_max, size_t byt
 			{
 				/* This is an error */
 				byte_index = ptls_asn1_error_message("Incorrect length coding", bytes_max, byte_index,
-					decode_error, level, F);
+					decode_error, level, log_ctx);
 			}
 			else
 			{
@@ -481,7 +481,7 @@ size_t ptls_asn1_read_length(const uint8_t * bytes, size_t bytes_max, size_t byt
 			if (*last_byte > bytes_max)
 			{
 				byte_index = ptls_asn1_error_message("Length larger than message", bytes_max, byte_index,
-					decode_error, level, F);
+					decode_error, level, log_ctx);
 			}
 		}
 	}
@@ -491,7 +491,7 @@ size_t ptls_asn1_read_length(const uint8_t * bytes, size_t bytes_max, size_t byt
 
 size_t ptls_asn1_get_expected_type_and_length(const uint8_t * bytes, size_t bytes_max, size_t byte_index,
 	uint8_t expected_type, uint32_t * length, int * indefinite_length, size_t * last_byte,
-	int * decode_error, FILE * log_file)
+	int * decode_error, ptls_minicrypto_log_ctx_t * log_ctx)
 {
 	int is_indefinite = 0;
 
@@ -499,7 +499,7 @@ size_t ptls_asn1_get_expected_type_and_length(const uint8_t * bytes, size_t byte
 	if (bytes[byte_index] != expected_type)
 	{
 		byte_index = ptls_asn1_error_message("Unexpected type", bytes_max, byte_index,
-			decode_error, 0, log_file);
+			decode_error, 0, log_ctx);
 		*decode_error = PTLS_ERROR_INCORRECT_PEM_SYNTAX;
 	}
 	else
@@ -507,7 +507,7 @@ size_t ptls_asn1_get_expected_type_and_length(const uint8_t * bytes, size_t byte
 		/* get length of element */
 		byte_index++;
 		byte_index = ptls_asn1_read_length(bytes, bytes_max, byte_index,
-			length, &is_indefinite, last_byte, decode_error, 0, log_file);
+			length, &is_indefinite, last_byte, decode_error, 0, log_ctx);
 
 		if (indefinite_length != NULL)
 		{
@@ -516,7 +516,7 @@ size_t ptls_asn1_get_expected_type_and_length(const uint8_t * bytes, size_t byte
 		else if (is_indefinite)
 		{
 			byte_index = ptls_asn1_error_message("Incorrect length for DER", bytes_max, byte_index,
-				decode_error, 0, log_file);
+				decode_error, 0, log_ctx);
 			*decode_error = PTLS_ERROR_INCORRECT_PEM_SYNTAX;
 		}
 	}
@@ -525,7 +525,7 @@ size_t ptls_asn1_get_expected_type_and_length(const uint8_t * bytes, size_t byte
 }
 
 size_t ptls_asn1_validation_recursive(const uint8_t * bytes, size_t bytes_max, 
-    int * decode_error, int level, FILE * F)
+    int * decode_error, int level, ptls_minicrypto_log_ctx_t * log_ctx)
 {
     /* Get the type byte */
 	int structure_bit = 0;
@@ -536,27 +536,27 @@ size_t ptls_asn1_validation_recursive(const uint8_t * bytes, size_t bytes_max,
     size_t last_byte = 0;
 	/* Decode the type */
 	size_t byte_index = ptls_asn1_read_type(bytes, bytes_max, &structure_bit, &type_class, &type_number,
-		decode_error, level, F);
+		decode_error, level, log_ctx);
 
-	if (*decode_error == 0 && F != NULL)
+	if (*decode_error == 0 && log_ctx != NULL)
 	{
-		ptls_asn1_print_type(type_class, type_number, level, F);
+		ptls_asn1_print_type(type_class, type_number, level, log_ctx);
 	}
 
 
     /* Get the length */
 	byte_index = ptls_asn1_read_length(bytes, bytes_max, byte_index,
 		&length, &indefinite_length, &last_byte,
-		decode_error, level, F);
+		decode_error, level, log_ctx);
 
 	if (last_byte <= bytes_max)
 	{
 		if (structure_bit)
 		{
 			/* If structured, recurse on a loop */
-			if (F != NULL)
+			if (log_ctx != NULL)
 			{
-				fprintf(F, " {\n");
+				log_ctx->fn(log_ctx->ctx, " {\n");
 			}
 
 			while (byte_index < last_byte)
@@ -568,14 +568,14 @@ size_t ptls_asn1_validation_recursive(const uint8_t * bytes, size_t bytes_max,
 						bytes[byte_index + 1] != 0)
 					{
 						byte_index = ptls_asn1_error_message("EOC: Incorrect indefinite length",
-							bytes_max, byte_index, decode_error, level + 1, F);
+							bytes_max, byte_index, decode_error, level + 1, log_ctx);
 					}
 					else
 					{
-						if (F != NULL)
+						if (log_ctx != NULL)
 						{
-							ptls_asn1_print_indent(level, F);
-							fprintf(F, "EOC\n");
+							ptls_asn1_print_indent(level, log_ctx);
+							log_ctx->fn(log_ctx->ctx, "EOC\n");
 						}
 						byte_index += 2;
 						break;
@@ -585,7 +585,7 @@ size_t ptls_asn1_validation_recursive(const uint8_t * bytes, size_t bytes_max,
 				{
 					byte_index += ptls_asn1_validation_recursive(
 						bytes + byte_index, last_byte - byte_index,
-						decode_error, level + 1, F);
+						decode_error, level + 1, log_ctx);
 
 					if (*decode_error)
 					{
@@ -594,26 +594,26 @@ size_t ptls_asn1_validation_recursive(const uint8_t * bytes, size_t bytes_max,
 					}
 				}
 
-				if (F != NULL)
+				if (log_ctx != NULL)
 				{
 					if (byte_index < last_byte)
 					{
-						fprintf(F, ",");
+						log_ctx->fn(log_ctx->ctx, ",");
 					}
-					fprintf(F, "\n");
+					log_ctx->fn(log_ctx->ctx, "\n");
 				}
 			}
 
 
-			if (F != NULL)
+			if (log_ctx != NULL)
 			{
-				ptls_asn1_print_indent(level, F);
-				fprintf(F, "}");
+				ptls_asn1_print_indent(level, log_ctx);
+				log_ctx->fn(log_ctx->ctx, "}");
 			}
 		}
 		else
 		{
-			ptls_asn1_dump_content(bytes, last_byte, byte_index, F);
+			ptls_asn1_dump_content(bytes, last_byte, byte_index, log_ctx);
 			byte_index = last_byte;
 		}
 	}
@@ -621,12 +621,12 @@ size_t ptls_asn1_validation_recursive(const uint8_t * bytes, size_t bytes_max,
     return byte_index;
 }
 
-int ptls_asn1_validation(const uint8_t * bytes, size_t length, FILE * F)
+int ptls_asn1_validation(const uint8_t * bytes, size_t length, ptls_minicrypto_log_ctx_t * log_ctx)
 {
 	int ret = 0;
 	int decode_error = 0;
 	size_t decoded = ptls_asn1_validation_recursive(bytes, length,
-		&decode_error, 0, F);
+		&decode_error, 0, log_ctx);
 
 	if (decode_error)
 	{
@@ -636,9 +636,9 @@ int ptls_asn1_validation(const uint8_t * bytes, size_t length, FILE * F)
 	if (decoded < length)
 	{
 		ret = PTLS_ERROR_INCORRECT_BER_ENCODING;
-		if (F != NULL)
+		if (log_ctx != NULL)
 		{
-			fprintf(F, "Type too short, %d bytes only out of %d\n",
+			log_ctx->fn(log_ctx->ctx, "Type too short, %d bytes only out of %d\n",
 				(int)decoded, (int)length);
 		}
 	}
@@ -701,7 +701,7 @@ static int ptls_compare_separator_line(const char * line, const char* begin_or_e
     return ret;
 }
 
-static int ptls_get_pem_object(FILE * F, const char * label, ptls_buffer_t *buf, FILE* log_file)
+static int ptls_get_pem_object(FILE * F, const char * label, ptls_buffer_t *buf, ptls_minicrypto_log_ctx_t * log_ctx)
 {
     int ret = PTLS_ERROR_PEM_LABEL_NOT_FOUND;
     char line[256];
@@ -741,22 +741,22 @@ static int ptls_get_pem_object(FILE * F, const char * label, ptls_buffer_t *buf,
 
 	if (ret == 0)
 	{
-		ret = ptls_asn1_validation(buf->base, buf->off, log_file);
-		if (log_file != NULL)
+		ret = ptls_asn1_validation(buf->base, buf->off, log_ctx);
+		if (log_ctx != NULL)
 		{
-			fprintf(log_file, "\n");
+			log_ctx->fn(log_ctx->ctx, "\n");
 		}
 
 		if (ret != 0)
 		{
-			data_dump(buf->base, buf->off, log_file);
+			data_dump(buf->base, buf->off, log_ctx);
 		}
 	}
     return ret;
 }
 
 int ptls_pem_get_objects(char const * pem_fname, const char * label, 
-	ptls_iovec_t ** list, size_t list_max, size_t * nb_objects, FILE* log_file)
+	ptls_iovec_t ** list, size_t list_max, size_t * nb_objects, ptls_minicrypto_log_ctx_t * log_ctx)
 {
     FILE * F;
     int ret = 0;
@@ -786,7 +786,7 @@ int ptls_pem_get_objects(char const * pem_fname, const char * label,
 
 			ptls_buffer_init(&buf, "", 0);
 
-            ret = ptls_get_pem_object(F, label, &buf, log_file);
+            ret = ptls_get_pem_object(F, label, &buf, log_ctx);
 
             if (ret == 0)
             {
@@ -825,9 +825,9 @@ int ptls_pem_get_objects(char const * pem_fname, const char * label,
 }
 
 int ptls_pem_get_certificates(char const * pem_fname, ptls_iovec_t ** list, size_t list_max, 
-	size_t * nb_certs, FILE * log_file)
+	size_t * nb_certs, ptls_minicrypto_log_ctx_t * log_ctx)
 {
-    return ptls_pem_get_objects(pem_fname, "CERTIFICATE", list, list_max, nb_certs, log_file);
+    return ptls_pem_get_objects(pem_fname, "CERTIFICATE", list, list_max, nb_certs, log_ctx);
 }
 
 
@@ -842,7 +842,7 @@ struct ptls_asn1_pkcs8_private_key {
 };
 
 int ptls_pem_parse_private_key(char const * pem_fname, 
-	struct ptls_asn1_pkcs8_private_key * pkey, FILE * log_file)
+	struct ptls_asn1_pkcs8_private_key * pkey, ptls_minicrypto_log_ctx_t * log_ctx)
 {
 	size_t nb_keys = 0;
 	ptls_iovec_t * list = &pkey->vec;
@@ -873,20 +873,20 @@ int ptls_pem_parse_private_key(char const * pem_fname,
 		size_t key_data_last;
 
 
-		if (log_file != NULL)
+		if (log_ctx != NULL)
 		{
-			fprintf(log_file, "\nFound PRIVATE KEY, length = %d bytes\n", (int)bytes_max);
+			log_ctx->fn(log_ctx->ctx, "\nFound PRIVATE KEY, length = %d bytes\n", (int)bytes_max);
 		}
 
 		/* start with sequence */
 		byte_index = ptls_asn1_get_expected_type_and_length(
 			bytes, bytes_max, byte_index, 0x30,
-			&seq0_length, NULL, &last_byte0, &decode_error, log_file);
+			&seq0_length, NULL, &last_byte0, &decode_error, log_ctx);
 
 		if (decode_error == 0 && bytes_max != last_byte0)
 		{
 			byte_index = ptls_asn1_error_message("Length larger than message", bytes_max, byte_index,
-				&decode_error, 0, log_file);
+				&decode_error, 0, log_ctx);
 			decode_error = PTLS_ERROR_INCORRECT_BER_ENCODING;
 		}
 
@@ -896,7 +896,7 @@ int ptls_pem_parse_private_key(char const * pem_fname,
 			if (byte_index + 3 > bytes_max)
 			{
 				byte_index = ptls_asn1_error_message("Incorrect length for DER", bytes_max, byte_index,
-					&decode_error, 0, log_file);
+					&decode_error, 0, log_ctx);
 				decode_error = PTLS_ERROR_INCORRECT_PEM_SYNTAX;
 			}
 			else if (bytes[byte_index] != 0x02 ||
@@ -905,14 +905,14 @@ int ptls_pem_parse_private_key(char const * pem_fname,
 			{
 				decode_error = PTLS_ERROR_INCORRECT_PEM_KEY_VERSION;
 				byte_index = ptls_asn1_error_message("Incorrect PEM Version", bytes_max, byte_index,
-					&decode_error, 0, log_file);
+					&decode_error, 0, log_ctx);
 			}
 			else
 			{
 				byte_index += 3;
-				if (log_file != NULL)
+				if (log_ctx != NULL)
 				{
-					fprintf(log_file, "   Version = 1,\n");
+					log_ctx->fn(log_ctx->ctx, "   Version = 1,\n");
 				}
 			}
 		}
@@ -922,28 +922,28 @@ int ptls_pem_parse_private_key(char const * pem_fname,
 			/* open embedded sequence */
 			byte_index = ptls_asn1_get_expected_type_and_length(
 				bytes, bytes_max, byte_index, 0x30,
-				&seq1_length, NULL, &last_byte1, &decode_error, log_file);
+				&seq1_length, NULL, &last_byte1, &decode_error, log_ctx);
 		}
 
 		if (decode_error == 0)
 		{
-			if (log_file != NULL)
+			if (log_ctx != NULL)
 			{
-				fprintf(log_file, "   Algorithm Identifier:\n");
+				log_ctx->fn(log_ctx->ctx, "   Algorithm Identifier:\n");
 			}
 			/* get length of OID */
 			byte_index = ptls_asn1_get_expected_type_and_length(
 				bytes, last_byte1, byte_index, 0x06,
-				&oid_length, NULL, &last_oid_byte, &decode_error, log_file);
+				&oid_length, NULL, &last_oid_byte, &decode_error, log_ctx);
 
 			if (decode_error == 0)
 			{
-				if (log_file != NULL)
+				if (log_ctx != NULL)
 				{
 					/* print the OID value */
-					fprintf(log_file, "      Algorithm:");
-					ptls_asn1_dump_content(bytes + byte_index, oid_length, 0, log_file);
-					fprintf(log_file, ",\n");
+					log_ctx->fn(log_ctx->ctx, "      Algorithm:");
+					ptls_asn1_dump_content(bytes + byte_index, oid_length, 0, log_ctx);
+					log_ctx->fn(log_ctx->ctx, ",\n");
 				}
 				pkey->algorithm_index = byte_index;
 				pkey->algorithm_length = oid_length;
@@ -954,27 +954,27 @@ int ptls_pem_parse_private_key(char const * pem_fname,
 		if (decode_error == 0)
 		{
 			/* get parameters, ANY */
-			if (log_file != NULL)
+			if (log_ctx != NULL)
 			{
-				fprintf(log_file, "      Parameters:\n");
+				log_ctx->fn(log_ctx->ctx, "      Parameters:\n");
 			}
 
 			pkey->parameters_index = byte_index;
 
 			pkey->parameters_length = ptls_asn1_validation_recursive(bytes + byte_index,
-				last_byte1 - byte_index, &decode_error, 2, log_file);
+				last_byte1 - byte_index, &decode_error, 2, log_ctx);
 
 			byte_index += pkey->parameters_length;
 			
-			if (log_file != NULL)
+			if (log_ctx != NULL)
 			{
-				fprintf(log_file, "\n");
+				log_ctx->fn(log_ctx->ctx, "\n");
 			}
 			/* close sequence */
 			if (byte_index != last_byte1)
 			{
 				byte_index = ptls_asn1_error_message("Length larger than element", bytes_max, byte_index,
-					&decode_error, 2, log_file);
+					&decode_error, 2, log_ctx);
 				decode_error = PTLS_ERROR_INCORRECT_BER_ENCODING;
 			}
 		}
@@ -984,7 +984,7 @@ int ptls_pem_parse_private_key(char const * pem_fname,
 		{
 			byte_index = ptls_asn1_get_expected_type_and_length(
 				bytes, last_byte0, byte_index, 0x04,
-				&key_data_length, NULL, &key_data_last, &decode_error, log_file);
+				&key_data_length, NULL, &key_data_last, &decode_error, log_ctx);
 
 			if (decode_error == 0)
 			{
@@ -992,20 +992,20 @@ int ptls_pem_parse_private_key(char const * pem_fname,
 				pkey->key_data_length = key_data_length;
 				byte_index += key_data_length;
 
-				if (log_file != NULL)
+				if (log_ctx != NULL)
 				{
-					fprintf(log_file, "   Key data (%d bytes):\n", key_data_length);
+					log_ctx->fn(log_ctx->ctx, "   Key data (%d bytes):\n", key_data_length);
 
 					(void) ptls_asn1_validation_recursive(bytes + pkey->key_data_index,
-						key_data_length, &decode_error, 1, log_file);
-					fprintf(log_file, "\n");
+						key_data_length, &decode_error, 1, log_ctx);
+					log_ctx->fn(log_ctx->ctx, "\n");
 				}
 			}
 		}
 		if (decode_error == 0 && byte_index != last_byte0)
 		{
 			byte_index = ptls_asn1_error_message("Length larger than element", bytes_max, byte_index,
-				&decode_error, 0, log_file);
+				&decode_error, 0, log_ctx);
 			decode_error = PTLS_ERROR_INCORRECT_BER_ENCODING;
 		}
 
@@ -1025,7 +1025,7 @@ const uint8_t ptls_asn1_curve_secp256r1[] = {
 
 
 int ptls_set_ecdsa_private_key(ptls_context_t * ctx,
-	struct ptls_asn1_pkcs8_private_key * pkey, FILE * log_file)
+	struct ptls_asn1_pkcs8_private_key * pkey, ptls_minicrypto_log_ctx_t * log_ctx)
 {
 	uint8_t * bytes = pkey->vec.base + pkey->parameters_index;
 	size_t bytes_max = pkey->parameters_length;
@@ -1043,12 +1043,12 @@ int ptls_set_ecdsa_private_key(ptls_context_t * ctx,
 
 	byte_index = ptls_asn1_get_expected_type_and_length(
 		bytes, bytes_max, byte_index, 0x06,
-		&curve_id_length, NULL, &last_byte, &decode_error, log_file);
+		&curve_id_length, NULL, &last_byte, &decode_error, log_ctx);
 
 	if (decode_error == 0 && bytes_max != last_byte)
 	{
 		byte_index = ptls_asn1_error_message("Length larger than parameters", bytes_max, byte_index,
-			&decode_error, 0, log_file);
+			&decode_error, 0, log_ctx);
 		decode_error = PTLS_ERROR_INCORRECT_BER_ENCODING;
 	}
 
@@ -1056,12 +1056,12 @@ int ptls_set_ecdsa_private_key(ptls_context_t * ctx,
 	{
 		curve_id = bytes + byte_index;
 
-		if (log_file != NULL)
+		if (log_ctx != NULL)
 		{
 			/* print the OID value */
-			fprintf(log_file, "Curve: ");
-			ptls_asn1_dump_content(curve_id, curve_id_length, 0, log_file);
-			fprintf(log_file, "\n");
+			log_ctx->fn(log_ctx->ctx, "Curve: ");
+			ptls_asn1_dump_content(curve_id, curve_id_length, 0, log_ctx);
+			log_ctx->fn(log_ctx->ctx, "\n");
 		}
 	}
 
@@ -1075,13 +1075,13 @@ int ptls_set_ecdsa_private_key(ptls_context_t * ctx,
 	{
 		byte_index = ptls_asn1_get_expected_type_and_length(
 			bytes, bytes_max, byte_index, 0x30,
-			&seq_length, NULL, &last_byte, &decode_error, log_file);
+			&seq_length, NULL, &last_byte, &decode_error, log_ctx);
 	}
 
 	if (decode_error == 0 && bytes_max != last_byte)
 	{
 		byte_index = ptls_asn1_error_message("Length larger than key data", bytes_max, byte_index,
-			&decode_error, 0, log_file);
+			&decode_error, 0, log_ctx);
 		decode_error = PTLS_ERROR_INCORRECT_BER_ENCODING;
 	}
 
@@ -1092,7 +1092,7 @@ int ptls_set_ecdsa_private_key(ptls_context_t * ctx,
 		if (byte_index + 3 > bytes_max)
 		{
 			byte_index = ptls_asn1_error_message("Incorrect length for DER", bytes_max, byte_index,
-				&decode_error, 0, log_file);
+				&decode_error, 0, log_ctx);
 			decode_error = PTLS_ERROR_INCORRECT_PEM_SYNTAX;
 		}
 		else if (bytes[byte_index] != 0x02 ||
@@ -1101,14 +1101,14 @@ int ptls_set_ecdsa_private_key(ptls_context_t * ctx,
 		{
 			decode_error = PTLS_ERROR_INCORRECT_PEM_ECDSA_KEY_VERSION;
 			byte_index = ptls_asn1_error_message("Incorrect ECDSA Key Data Version", bytes_max, byte_index,
-				&decode_error, 0, log_file);
+				&decode_error, 0, log_ctx);
 		}
 		else
 		{
 			byte_index += 3;
-			if (log_file != NULL)
+			if (log_ctx != NULL)
 			{
-				fprintf(log_file, "ECDSA Version = 1,\n");
+				log_ctx->fn(log_ctx->ctx, "ECDSA Version = 1,\n");
 			}
 		}
 	}
@@ -1118,7 +1118,7 @@ int ptls_set_ecdsa_private_key(ptls_context_t * ctx,
 	{
 		byte_index = ptls_asn1_get_expected_type_and_length(
 			bytes, last_byte, byte_index, 0x04,
-			&ecdsa_key_data_length, NULL, &ecdsa_key_data_last, &decode_error, log_file);
+			&ecdsa_key_data_length, NULL, &ecdsa_key_data_last, &decode_error, log_ctx);
 
 		if (decode_error == 0)
 		{
@@ -1133,10 +1133,10 @@ int ptls_set_ecdsa_private_key(ptls_context_t * ctx,
 		if (SECP256R1_PRIVATE_KEY_SIZE != ecdsa_key_data_length)
 		{
 			decode_error = PTLS_ERROR_INCORRECT_PEM_ECDSA_KEYSIZE;
-			if (log_file != NULL)
+			if (log_ctx != NULL)
 			{
 				/* print the OID value */
-				fprintf(log_file, "Wrong SECP256R1 key length, %d instead of %d.\n",
+				log_ctx->fn(log_ctx->ctx, "Wrong SECP256R1 key length, %d instead of %d.\n",
 					ecdsa_key_data_length, SECP256R1_PRIVATE_KEY_SIZE);
 			}
 		}
@@ -1163,36 +1163,36 @@ int ptls_set_ecdsa_private_key(ptls_context_t * ctx,
 			{
 				ctx->sign_certificate = &minicrypto_sign_certificate->super;
 
-				if (log_file != NULL)
+				if (log_ctx != NULL)
 				{
 					/* print the OID value */
-					fprintf(log_file, "Initialized SECP512R1 signing key with %d bytes.\n",
+					log_ctx->fn(log_ctx->ctx, "Initialized SECP512R1 signing key with %d bytes.\n",
 						ecdsa_key_data_length);
 				}
 			}
-			else if (log_file != NULL)
+			else if (log_ctx != NULL)
 			{
-				fprintf(log_file, "SECP512R1 init with %d bytes returns %d.\n", ecdsa_key_data_length, decode_error);
+				log_ctx->fn(log_ctx->ctx, "SECP512R1 init with %d bytes returns %d.\n", ecdsa_key_data_length, decode_error);
 			}
 		}
 	}
 	else
 	{
 		decode_error = PTLS_ERROR_INCORRECT_PEM_ECDSA_CURVE;
-		if (log_file != NULL)
+		if (log_ctx != NULL)
 		{
 			/* print the OID value */
-			fprintf(log_file, "Curve is not supported for signatures.\n");
+			log_ctx->fn(log_ctx->ctx, "Curve is not supported for signatures.\n");
 		}
 	}
 
 	return decode_error;
 }
 
-int ptls_set_private_key(ptls_context_t * ctx, char const * pem_fname, FILE * log_file)
+int ptls_set_private_key(ptls_context_t * ctx, char const * pem_fname, ptls_minicrypto_log_ctx_t * log_ctx)
 {
 	struct ptls_asn1_pkcs8_private_key pkey = { {0} };
-	int ret = ptls_pem_parse_private_key(pem_fname, &pkey, log_file);
+	int ret = ptls_pem_parse_private_key(pem_fname, &pkey, log_ctx);
 
 	/* Check that this is the expected key type.
 	 * At this point, the minicrypto library only supports ECDSA keys.
@@ -1204,7 +1204,7 @@ int ptls_set_private_key(ptls_context_t * ctx, char const * pem_fname, FILE * lo
 			memcmp(pkey.vec.base + pkey.algorithm_index,
 				ptls_asn1_algorithm_ecdsa, sizeof(ptls_asn1_algorithm_ecdsa)) == 0)
 		{
-			ret = ptls_set_ecdsa_private_key(ctx, &pkey, log_file);
+			ret = ptls_set_ecdsa_private_key(ctx, &pkey, log_ctx);
 		}
 		else
 		{
@@ -1216,7 +1216,7 @@ int ptls_set_private_key(ptls_context_t * ctx, char const * pem_fname, FILE * lo
 }
 
 int ptls_pem_get_private_key(char const * pem_fname, ptls_iovec_t * vec, 
-	FILE * log_file)
+	ptls_minicrypto_log_ctx_t * log_ctx)
 {
 	size_t nb_keys = 0;
 	int ret = ptls_pem_get_objects(pem_fname, "PRIVATE KEY", &vec, 1, &nb_keys, NULL);
@@ -1245,20 +1245,20 @@ int ptls_pem_get_private_key(char const * pem_fname, ptls_iovec_t * vec,
 		size_t key_data_last;
 
 
-		if (log_file != NULL)
+		if (log_ctx != NULL)
 		{
-			fprintf(log_file, "\nFound PRIVATE KEY, length = %d bytes\n", (int)bytes_max);
+			log_ctx->fn(log_ctx->ctx, "\nFound PRIVATE KEY, length = %d bytes\n", (int)bytes_max);
 		}
 
 		/* start with sequence */
 		byte_index = ptls_asn1_get_expected_type_and_length(
 			bytes, bytes_max, byte_index, 0x30,
-			&seq0_length, NULL, &last_byte0, &decode_error, log_file);
+			&seq0_length, NULL, &last_byte0, &decode_error, log_ctx);
 
 		if (decode_error == 0 && bytes_max != last_byte0)
 		{
 			byte_index = ptls_asn1_error_message("Length larger than message", bytes_max, byte_index,
-					&decode_error, 0, log_file);
+					&decode_error, 0, log_ctx);
 			decode_error = PTLS_ERROR_INCORRECT_BER_ENCODING;
 		}
 
@@ -1268,7 +1268,7 @@ int ptls_pem_get_private_key(char const * pem_fname, ptls_iovec_t * vec,
 			if (byte_index + 3 > bytes_max)
 			{
 				byte_index = ptls_asn1_error_message("Incorrect length for DER", bytes_max, byte_index,
-					&decode_error, 0, log_file);
+					&decode_error, 0, log_ctx);
 				decode_error = PTLS_ERROR_INCORRECT_PEM_SYNTAX;
 			}
 			else if (bytes[byte_index] != 0x02 ||
@@ -1277,14 +1277,14 @@ int ptls_pem_get_private_key(char const * pem_fname, ptls_iovec_t * vec,
 			{
 				decode_error = PTLS_ERROR_INCORRECT_PEM_KEY_VERSION;
 				byte_index = ptls_asn1_error_message("Incorrect PEM Version", bytes_max, byte_index,
-					&decode_error, 0, log_file);
+					&decode_error, 0, log_ctx);
 			}
 			else
 			{
 				byte_index += 3; 
-				if (log_file != NULL)
+				if (log_ctx != NULL)
 				{
-					fprintf(log_file, "   Version = 1,\n");
+					log_ctx->fn(log_ctx->ctx, "   Version = 1,\n");
 				}
 			}
 		}
@@ -1294,28 +1294,28 @@ int ptls_pem_get_private_key(char const * pem_fname, ptls_iovec_t * vec,
 			/* open embedded sequence */
 			byte_index = ptls_asn1_get_expected_type_and_length(
 				bytes, bytes_max, byte_index, 0x30,
-				&seq1_length, NULL, &last_byte1, &decode_error, log_file);
+				&seq1_length, NULL, &last_byte1, &decode_error, log_ctx);
 		}
 
 		if (decode_error == 0)
 		{
-			if (log_file != NULL)
+			if (log_ctx != NULL)
 			{
-				fprintf(log_file, "   Algorithm Identifier:\n");
+				log_ctx->fn(log_ctx->ctx, "   Algorithm Identifier:\n");
 			}
 			/* get length of OID */
 			byte_index = ptls_asn1_get_expected_type_and_length(
 				bytes, last_byte1, byte_index, 0x06,
-				&oid_length, NULL, &last_oid_byte, &decode_error, log_file);
+				&oid_length, NULL, &last_oid_byte, &decode_error, log_ctx);
 			
 			if (decode_error == 0)
 			{
-				if (log_file != NULL)
+				if (log_ctx != NULL)
 				{
 					/* print the OID value */
-					fprintf(log_file, "      Algorithm:");
-					ptls_asn1_dump_content(bytes + byte_index, oid_length, 0, log_file);
-					fprintf(log_file, ",\n");
+					log_ctx->fn(log_ctx->ctx, "      Algorithm:");
+					ptls_asn1_dump_content(bytes + byte_index, oid_length, 0, log_ctx);
+					log_ctx->fn(log_ctx->ctx, ",\n");
 				}
 				byte_index += oid_length;
 			}
@@ -1324,21 +1324,21 @@ int ptls_pem_get_private_key(char const * pem_fname, ptls_iovec_t * vec,
 		if (decode_error == 0)
 		{
 			/* get parameters, ANY */
-			if (log_file != NULL)
+			if (log_ctx != NULL)
 			{
-				fprintf(log_file, "      Parameters:\n");
+				log_ctx->fn(log_ctx->ctx, "      Parameters:\n");
 			}
 			byte_index += ptls_asn1_validation_recursive(bytes + byte_index, 
-				last_byte1 - byte_index, &decode_error, 2, log_file);
-			if (log_file != NULL)
+				last_byte1 - byte_index, &decode_error, 2, log_ctx);
+			if (log_ctx != NULL)
 			{
-				fprintf(log_file, "\n");
+				log_ctx->fn(log_ctx->ctx, "\n");
 			}
 			/* close sequence */
 			if (byte_index != last_byte1)
 			{
 				byte_index = ptls_asn1_error_message("Length larger than element", bytes_max, byte_index,
-					&decode_error, 2, log_file);
+					&decode_error, 2, log_ctx);
 				decode_error = PTLS_ERROR_INCORRECT_BER_ENCODING;
 			}
 		}
@@ -1348,22 +1348,22 @@ int ptls_pem_get_private_key(char const * pem_fname, ptls_iovec_t * vec,
 		{
 			byte_index = ptls_asn1_get_expected_type_and_length(
 				bytes, bytes_max, byte_index, 0x04,
-				&key_data_length, NULL, &key_data_last, &decode_error, log_file);
+				&key_data_length, NULL, &key_data_last, &decode_error, log_ctx);
 
 			if (decode_error == 0)
 			{
-				if (log_file != NULL)
+				if (log_ctx != NULL)
 				{
-					fprintf(log_file, "   Key data (%d bytes):\n", key_data_length);
+					log_ctx->fn(log_ctx->ctx, "   Key data (%d bytes):\n", key_data_length);
 				}
 				/* print octet string as ASN.1 component */
 				if (byte_index != last_byte1)
 				{
 					byte_index += ptls_asn1_validation_recursive(bytes + byte_index,
-						key_data_length, &decode_error, 1, log_file);
-					if (log_file != NULL)
+						key_data_length, &decode_error, 1, log_ctx);
+					if (log_ctx != NULL)
 					{
-						fprintf(log_file, "\n");
+						log_ctx->fn(log_ctx->ctx, "\n");
 					}
 				}
 			}
@@ -1371,7 +1371,7 @@ int ptls_pem_get_private_key(char const * pem_fname, ptls_iovec_t * vec,
 		if (decode_error == 0 && byte_index != last_byte0)
 		{
 			byte_index = ptls_asn1_error_message("Length larger than element", bytes_max, byte_index,
-				&decode_error, 0, log_file);
+				&decode_error, 0, log_ctx);
 			decode_error = PTLS_ERROR_INCORRECT_BER_ENCODING;
 		}
 
@@ -1408,7 +1408,7 @@ certificate(in type ptls_iovec_t, with `ptls_iovec_t::base` being
 #define PTLS_MAX_CERTS_IN_CONTEXT 16
 
 int ptls_set_context_certificates(ptls_context_t * ctx, 
-    char * cert_pem_file, FILE* log_file)
+    char * cert_pem_file, ptls_minicrypto_log_ctx_t * log_ctx)
 {
     int ret = 0;
 
@@ -1422,7 +1422,7 @@ int ptls_set_context_certificates(ptls_context_t * ctx,
     else
     {
         ret = ptls_pem_get_objects(cert_pem_file, "CERTIFICATE",
-            &ctx->certificates.list, PTLS_MAX_CERTS_IN_CONTEXT, &ctx->certificates.count, log_file);
+            &ctx->certificates.list, PTLS_MAX_CERTS_IN_CONTEXT, &ctx->certificates.count, log_ctx);
     }
 
     return ret;
