@@ -333,7 +333,7 @@ static void ptls_asn1_print_indent(int level, ptls_minicrypto_log_ctx_t * log_ct
 
 
 static size_t ptls_asn1_error_message(char const * error_label, size_t bytes_max, size_t byte_index, 
-	int * decode_error, int level, ptls_minicrypto_log_ctx_t * log_ctx)
+	int level, ptls_minicrypto_log_ctx_t * log_ctx)
 {
 	if (log_ctx != NULL)
 	{
@@ -341,8 +341,7 @@ static size_t ptls_asn1_error_message(char const * error_label, size_t bytes_max
 		log_ctx->fn(log_ctx->ctx, "Error: %s (near position: %d (0x%x) out of %d)", 
 			error_label, (int) byte_index, (uint32_t) byte_index, (int)bytes_max);
 	}
-	*decode_error = 1;
-	return bytes_max;
+	return byte_index;
 }
 
 static void ptls_asn1_dump_content(const uint8_t * bytes, size_t bytes_max, size_t byte_index, ptls_minicrypto_log_ctx_t * log_ctx)
@@ -402,7 +401,8 @@ size_t ptls_asn1_read_type(const uint8_t * bytes, size_t bytes_max,
 		{
 			/* This is an error */
 			byte_index = ptls_asn1_error_message("Incorrect type coding", bytes_max, byte_index,
-				decode_error, level, log_ctx);
+				level, log_ctx);
+			*decode_error = PTLS_ERROR_BER_MALFORMED_TYPE;
 		}
 	}
 
@@ -449,7 +449,8 @@ size_t ptls_asn1_read_length(const uint8_t * bytes, size_t bytes_max, size_t byt
 			{
 				/* This is an error */
 				byte_index = ptls_asn1_error_message("Incorrect length coding", bytes_max, byte_index,
-					decode_error, level, log_ctx);
+					level, log_ctx);
+				*decode_error = PTLS_ERROR_BER_MALFORMED_LENGTH;
 			}
 			else
 			{
@@ -481,7 +482,8 @@ size_t ptls_asn1_read_length(const uint8_t * bytes, size_t bytes_max, size_t byt
 			if (*last_byte > bytes_max)
 			{
 				byte_index = ptls_asn1_error_message("Length larger than message", bytes_max, byte_index,
-					decode_error, level, log_ctx);
+					level, log_ctx);
+				*decode_error = PTLS_ERROR_BER_EXCESSIVE_LENGTH;
 			}
 		}
 	}
@@ -499,7 +501,7 @@ size_t ptls_asn1_get_expected_type_and_length(const uint8_t * bytes, size_t byte
 	if (bytes[byte_index] != expected_type)
 	{
 		byte_index = ptls_asn1_error_message("Unexpected type", bytes_max, byte_index,
-			decode_error, 0, log_ctx);
+			0, log_ctx);
 		*decode_error = PTLS_ERROR_INCORRECT_PEM_SYNTAX;
 	}
 	else
@@ -516,8 +518,8 @@ size_t ptls_asn1_get_expected_type_and_length(const uint8_t * bytes, size_t byte
 		else if (is_indefinite)
 		{
 			byte_index = ptls_asn1_error_message("Incorrect length for DER", bytes_max, byte_index,
-				decode_error, 0, log_ctx);
-			*decode_error = PTLS_ERROR_INCORRECT_PEM_SYNTAX;
+				0, log_ctx);
+			*decode_error = PTLS_ERROR_DER_INDEFINITE_LENGTH;
 		}
 	}
 
@@ -567,8 +569,10 @@ size_t ptls_asn1_validation_recursive(const uint8_t * bytes, size_t bytes_max,
 					if (byte_index + 2 > bytes_max ||
 						bytes[byte_index + 1] != 0)
 					{
-						byte_index = ptls_asn1_error_message("EOC: Incorrect indefinite length",
-							bytes_max, byte_index, decode_error, level + 1, log_ctx);
+						byte_index = ptls_asn1_error_message("EOC: unexpected end of content",
+							bytes_max, byte_index, level + 1, log_ctx);
+
+						*decode_error = PTLS_ERROR_BER_UNEXPECTED_EOC;
 					}
 					else
 					{
@@ -623,19 +627,13 @@ size_t ptls_asn1_validation_recursive(const uint8_t * bytes, size_t bytes_max,
 
 int ptls_asn1_validation(const uint8_t * bytes, size_t length, ptls_minicrypto_log_ctx_t * log_ctx)
 {
-	int ret = 0;
 	int decode_error = 0;
 	size_t decoded = ptls_asn1_validation_recursive(bytes, length,
 		&decode_error, 0, log_ctx);
 
-	if (decode_error)
+	if (decode_error == 0 && decoded < length)
 	{
-		ret = PTLS_ERROR_INCORRECT_BER_ENCODING;
-	}
-	else
-	if (decoded < length)
-	{
-		ret = PTLS_ERROR_INCORRECT_BER_ENCODING;
+		decode_error = PTLS_ERROR_BER_ELEMENT_TOO_SHORT;
 		if (log_ctx != NULL)
 		{
 			log_ctx->fn(log_ctx->ctx, "Type too short, %d bytes only out of %d\n",
@@ -643,7 +641,7 @@ int ptls_asn1_validation(const uint8_t * bytes, size_t length, ptls_minicrypto_l
 		}
 	}
 
-	return ret;
+	return decode_error;
 }
 
 /*
@@ -831,18 +829,167 @@ int ptls_pem_get_certificates(char const * pem_fname, ptls_iovec_t ** list, size
 }
 
 
-struct ptls_asn1_pkcs8_private_key {
-	ptls_iovec_t vec;
-	size_t algorithm_index;
-	uint32_t algorithm_length;
-	size_t parameters_index;
-	uint32_t parameters_length;
-	size_t key_data_index;
-	uint32_t key_data_length;
-};
+size_t ptls_pem_decode_private_key(
+	ptls_asn1_pkcs8_private_key_t * pkey,
+	int * decode_error, ptls_minicrypto_log_ctx_t * log_ctx)
+{
+	uint8_t * bytes = pkey->vec.base;
+	size_t bytes_max = pkey->vec.len;
 
-int ptls_pem_parse_private_key(char const * pem_fname, 
-	struct ptls_asn1_pkcs8_private_key * pkey, ptls_minicrypto_log_ctx_t * log_ctx)
+	/* read the ASN1 messages */
+	size_t byte_index = 0;
+	uint32_t seq0_length = 0;
+	size_t last_byte0;
+	uint32_t seq1_length = 0;
+	size_t last_byte1 = 0;
+	uint32_t oid_length;
+	size_t last_oid_byte;
+	uint32_t key_data_length;
+	size_t key_data_last;
+
+
+	/* start with sequence */
+	byte_index = ptls_asn1_get_expected_type_and_length(
+		bytes, bytes_max, byte_index, 0x30,
+		&seq0_length, NULL, &last_byte0, decode_error, log_ctx);
+
+	if (decode_error == 0 && bytes_max != last_byte0)
+	{
+		byte_index = ptls_asn1_error_message("Length larger than message", bytes_max, byte_index,
+			0, log_ctx);
+		*decode_error = PTLS_ERROR_BER_EXCESSIVE_LENGTH;
+	}
+
+	if (*decode_error == 0)
+	{
+		/* get first component: version, INTEGER, expect value 0 */
+		if (byte_index + 3 > bytes_max)
+		{
+			byte_index = ptls_asn1_error_message("Cannot find key version", bytes_max, byte_index,
+				0, log_ctx);
+			*decode_error = PTLS_ERROR_INCORRECT_PEM_KEY_VERSION;
+		}
+		else if (bytes[byte_index] != 0x02 ||
+			bytes[byte_index + 1] != 0x01 ||
+			bytes[byte_index + 2] != 0x00)
+		{
+			*decode_error = PTLS_ERROR_INCORRECT_PEM_KEY_VERSION;
+			byte_index = ptls_asn1_error_message("Incorrect PEM Version", bytes_max, byte_index,
+				0, log_ctx);
+		}
+		else
+		{
+			byte_index += 3;
+			if (log_ctx != NULL)
+			{
+				log_ctx->fn(log_ctx->ctx, "   Version = 1,\n");
+			}
+		}
+	}
+
+	if (*decode_error == 0)
+	{
+		/* open embedded sequence */
+		byte_index = ptls_asn1_get_expected_type_and_length(
+			bytes, bytes_max, byte_index, 0x30,
+			&seq1_length, NULL, &last_byte1, decode_error, log_ctx);
+	}
+
+	if (*decode_error == 0)
+	{
+		if (log_ctx != NULL)
+		{
+			log_ctx->fn(log_ctx->ctx, "   Algorithm Identifier:\n");
+		}
+		/* get length of OID */
+		byte_index = ptls_asn1_get_expected_type_and_length(
+			bytes, last_byte1, byte_index, 0x06,
+			&oid_length, NULL, &last_oid_byte, decode_error, log_ctx);
+
+		if (*decode_error == 0)
+		{
+			if (log_ctx != NULL)
+			{
+				/* print the OID value */
+				log_ctx->fn(log_ctx->ctx, "      Algorithm:");
+				ptls_asn1_dump_content(bytes + byte_index, oid_length, 0, log_ctx);
+				log_ctx->fn(log_ctx->ctx, ",\n");
+			}
+			pkey->algorithm_index = byte_index;
+			pkey->algorithm_length = oid_length;
+			byte_index += oid_length;
+		}
+	}
+
+	if (*decode_error == 0)
+	{
+		/* get parameters, ANY */
+		if (log_ctx != NULL)
+		{
+			log_ctx->fn(log_ctx->ctx, "      Parameters:\n");
+		}
+
+		pkey->parameters_index = byte_index;
+
+		pkey->parameters_length = ptls_asn1_validation_recursive(bytes + byte_index,
+			last_byte1 - byte_index, decode_error, 2, log_ctx);
+
+		byte_index += pkey->parameters_length;
+
+		if (log_ctx != NULL)
+		{
+			log_ctx->fn(log_ctx->ctx, "\n");
+		}
+		/* close sequence */
+		if (byte_index != last_byte1)
+		{
+			byte_index = ptls_asn1_error_message("Length larger than element", bytes_max, byte_index,
+				2, log_ctx);
+			*decode_error = PTLS_ERROR_BER_ELEMENT_TOO_SHORT;
+		}
+	}
+
+	/* get octet string, key */
+	if (*decode_error == 0)
+	{
+		byte_index = ptls_asn1_get_expected_type_and_length(
+			bytes, last_byte0, byte_index, 0x04,
+			&key_data_length, NULL, &key_data_last, decode_error, log_ctx);
+
+		if (*decode_error == 0)
+		{
+			pkey->key_data_index = byte_index;
+			pkey->key_data_length = key_data_length;
+			byte_index += key_data_length;
+
+			if (log_ctx != NULL)
+			{
+				log_ctx->fn(log_ctx->ctx, "   Key data (%d bytes):\n", key_data_length);
+
+				(void)ptls_asn1_validation_recursive(bytes + pkey->key_data_index,
+					key_data_length, decode_error, 1, log_ctx);
+				log_ctx->fn(log_ctx->ctx, "\n");
+			}
+		}
+	}
+
+	if (*decode_error == 0 && byte_index != last_byte0)
+	{
+		byte_index = ptls_asn1_error_message("Length larger than element", bytes_max, byte_index,
+			0, log_ctx);
+		*decode_error = PTLS_ERROR_BER_ELEMENT_TOO_SHORT;
+	}
+
+	if (log_ctx != NULL)
+	{
+		log_ctx->fn(log_ctx->ctx, "\n");
+	}
+
+	return byte_index;
+}
+
+int ptls_pem_parse_private_key(char const * pem_fname,
+	ptls_asn1_pkcs8_private_key_t * pkey, ptls_minicrypto_log_ctx_t * log_ctx)
 {
 	size_t nb_keys = 0;
 	ptls_iovec_t * list = &pkey->vec;
@@ -858,162 +1005,24 @@ int ptls_pem_parse_private_key(char const * pem_fname,
 
 	if (ret == 0 && nb_keys == 1)
 	{
-		/* read the ASN1 messages */
-		size_t byte_index = 0;
-		uint8_t * bytes = pkey->vec.base;
-		size_t bytes_max = pkey->vec.len;
 		int decode_error = 0;
-		uint32_t seq0_length = 0;
-		size_t last_byte0;
-		uint32_t seq1_length = 0;
-		size_t last_byte1 = 0;
-		uint32_t oid_length;
-		size_t last_oid_byte;
-		uint32_t key_data_length;
-		size_t key_data_last;
+		size_t byte_index = 0;
+
 
 
 		if (log_ctx != NULL)
 		{
-			log_ctx->fn(log_ctx->ctx, "\nFound PRIVATE KEY, length = %d bytes\n", (int)bytes_max);
+			log_ctx->fn(log_ctx->ctx, "\nFound PRIVATE KEY, length = %d bytes\n", (int)pkey->vec.len);
 		}
 
-		/* start with sequence */
-		byte_index = ptls_asn1_get_expected_type_and_length(
-			bytes, bytes_max, byte_index, 0x30,
-			&seq0_length, NULL, &last_byte0, &decode_error, log_ctx);
-
-		if (decode_error == 0 && bytes_max != last_byte0)
-		{
-			byte_index = ptls_asn1_error_message("Length larger than message", bytes_max, byte_index,
-				&decode_error, 0, log_ctx);
-			decode_error = PTLS_ERROR_INCORRECT_BER_ENCODING;
-		}
-
-		if (decode_error == 0)
-		{
-			/* get first component: version, INTEGER, expect value 0 */
-			if (byte_index + 3 > bytes_max)
-			{
-				byte_index = ptls_asn1_error_message("Incorrect length for DER", bytes_max, byte_index,
-					&decode_error, 0, log_ctx);
-				decode_error = PTLS_ERROR_INCORRECT_PEM_SYNTAX;
-			}
-			else if (bytes[byte_index] != 0x02 ||
-				bytes[byte_index + 1] != 0x01 ||
-				bytes[byte_index + 2] != 0x00)
-			{
-				decode_error = PTLS_ERROR_INCORRECT_PEM_KEY_VERSION;
-				byte_index = ptls_asn1_error_message("Incorrect PEM Version", bytes_max, byte_index,
-					&decode_error, 0, log_ctx);
-			}
-			else
-			{
-				byte_index += 3;
-				if (log_ctx != NULL)
-				{
-					log_ctx->fn(log_ctx->ctx, "   Version = 1,\n");
-				}
-			}
-		}
-
-		if (decode_error == 0)
-		{
-			/* open embedded sequence */
-			byte_index = ptls_asn1_get_expected_type_and_length(
-				bytes, bytes_max, byte_index, 0x30,
-				&seq1_length, NULL, &last_byte1, &decode_error, log_ctx);
-		}
-
-		if (decode_error == 0)
-		{
-			if (log_ctx != NULL)
-			{
-				log_ctx->fn(log_ctx->ctx, "   Algorithm Identifier:\n");
-			}
-			/* get length of OID */
-			byte_index = ptls_asn1_get_expected_type_and_length(
-				bytes, last_byte1, byte_index, 0x06,
-				&oid_length, NULL, &last_oid_byte, &decode_error, log_ctx);
-
-			if (decode_error == 0)
-			{
-				if (log_ctx != NULL)
-				{
-					/* print the OID value */
-					log_ctx->fn(log_ctx->ctx, "      Algorithm:");
-					ptls_asn1_dump_content(bytes + byte_index, oid_length, 0, log_ctx);
-					log_ctx->fn(log_ctx->ctx, ",\n");
-				}
-				pkey->algorithm_index = byte_index;
-				pkey->algorithm_length = oid_length;
-				byte_index += oid_length;
-			}
-		}
-
-		if (decode_error == 0)
-		{
-			/* get parameters, ANY */
-			if (log_ctx != NULL)
-			{
-				log_ctx->fn(log_ctx->ctx, "      Parameters:\n");
-			}
-
-			pkey->parameters_index = byte_index;
-
-			pkey->parameters_length = ptls_asn1_validation_recursive(bytes + byte_index,
-				last_byte1 - byte_index, &decode_error, 2, log_ctx);
-
-			byte_index += pkey->parameters_length;
-			
-			if (log_ctx != NULL)
-			{
-				log_ctx->fn(log_ctx->ctx, "\n");
-			}
-			/* close sequence */
-			if (byte_index != last_byte1)
-			{
-				byte_index = ptls_asn1_error_message("Length larger than element", bytes_max, byte_index,
-					&decode_error, 2, log_ctx);
-				decode_error = PTLS_ERROR_INCORRECT_BER_ENCODING;
-			}
-		}
-
-		/* get octet string, key */
-		if (decode_error == 0)
-		{
-			byte_index = ptls_asn1_get_expected_type_and_length(
-				bytes, last_byte0, byte_index, 0x04,
-				&key_data_length, NULL, &key_data_last, &decode_error, log_ctx);
-
-			if (decode_error == 0)
-			{
-				pkey->key_data_index = byte_index;
-				pkey->key_data_length = key_data_length;
-				byte_index += key_data_length;
-
-				if (log_ctx != NULL)
-				{
-					log_ctx->fn(log_ctx->ctx, "   Key data (%d bytes):\n", key_data_length);
-
-					(void) ptls_asn1_validation_recursive(bytes + pkey->key_data_index,
-						key_data_length, &decode_error, 1, log_ctx);
-					log_ctx->fn(log_ctx->ctx, "\n");
-				}
-			}
-		}
-		if (decode_error == 0 && byte_index != last_byte0)
-		{
-			byte_index = ptls_asn1_error_message("Length larger than element", bytes_max, byte_index,
-				&decode_error, 0, log_ctx);
-			decode_error = PTLS_ERROR_INCORRECT_BER_ENCODING;
-		}
+		byte_index = ptls_pem_decode_private_key(pkey, &decode_error, log_ctx);
 
 		if (decode_error != 0)
 		{
 			ret = decode_error;
 		}
 	}
+
 	return ret;
 }
 
@@ -1025,7 +1034,7 @@ const uint8_t ptls_asn1_curve_secp256r1[] = {
 
 
 int ptls_set_ecdsa_private_key(ptls_context_t * ctx,
-	struct ptls_asn1_pkcs8_private_key * pkey, ptls_minicrypto_log_ctx_t * log_ctx)
+	ptls_asn1_pkcs8_private_key_t * pkey, ptls_minicrypto_log_ctx_t * log_ctx)
 {
 	uint8_t * bytes = pkey->vec.base + pkey->parameters_index;
 	size_t bytes_max = pkey->parameters_length;
@@ -1048,8 +1057,8 @@ int ptls_set_ecdsa_private_key(ptls_context_t * ctx,
 	if (decode_error == 0 && bytes_max != last_byte)
 	{
 		byte_index = ptls_asn1_error_message("Length larger than parameters", bytes_max, byte_index,
-			&decode_error, 0, log_ctx);
-		decode_error = PTLS_ERROR_INCORRECT_BER_ENCODING;
+			0, log_ctx);
+		decode_error = PTLS_ERROR_BER_EXCESSIVE_LENGTH;
 	}
 
 	if (decode_error == 0)
@@ -1081,8 +1090,8 @@ int ptls_set_ecdsa_private_key(ptls_context_t * ctx,
 	if (decode_error == 0 && bytes_max != last_byte)
 	{
 		byte_index = ptls_asn1_error_message("Length larger than key data", bytes_max, byte_index,
-			&decode_error, 0, log_ctx);
-		decode_error = PTLS_ERROR_INCORRECT_BER_ENCODING;
+			0, log_ctx);
+		decode_error = PTLS_ERROR_BER_ELEMENT_TOO_SHORT;
 	}
 
 	/* verify and skip the version number 1 */
@@ -1091,8 +1100,8 @@ int ptls_set_ecdsa_private_key(ptls_context_t * ctx,
 		/* get first component: version, INTEGER, expect value 0 */
 		if (byte_index + 3 > bytes_max)
 		{
-			byte_index = ptls_asn1_error_message("Incorrect length for DER", bytes_max, byte_index,
-				&decode_error, 0, log_ctx);
+			byte_index = ptls_asn1_error_message("Cannot find ECDSA Key Data Version", bytes_max, byte_index,
+				0, log_ctx);
 			decode_error = PTLS_ERROR_INCORRECT_PEM_SYNTAX;
 		}
 		else if (bytes[byte_index] != 0x02 ||
@@ -1101,7 +1110,7 @@ int ptls_set_ecdsa_private_key(ptls_context_t * ctx,
 		{
 			decode_error = PTLS_ERROR_INCORRECT_PEM_ECDSA_KEY_VERSION;
 			byte_index = ptls_asn1_error_message("Incorrect ECDSA Key Data Version", bytes_max, byte_index,
-				&decode_error, 0, log_ctx);
+				0, log_ctx);
 		}
 		else
 		{
@@ -1191,7 +1200,7 @@ int ptls_set_ecdsa_private_key(ptls_context_t * ctx,
 
 int ptls_set_private_key(ptls_context_t * ctx, char const * pem_fname, ptls_minicrypto_log_ctx_t * log_ctx)
 {
-	struct ptls_asn1_pkcs8_private_key pkey = { {0} };
+	ptls_asn1_pkcs8_private_key_t pkey = { {0} };
 	int ret = ptls_pem_parse_private_key(pem_fname, &pkey, log_ctx);
 
 	/* Check that this is the expected key type.
@@ -1215,6 +1224,7 @@ int ptls_set_private_key(ptls_context_t * ctx, char const * pem_fname, ptls_mini
 	return ret;
 }
 
+#if 0
 int ptls_pem_get_private_key(char const * pem_fname, ptls_iovec_t * vec, 
 	ptls_minicrypto_log_ctx_t * log_ctx)
 {
@@ -1258,8 +1268,8 @@ int ptls_pem_get_private_key(char const * pem_fname, ptls_iovec_t * vec,
 		if (decode_error == 0 && bytes_max != last_byte0)
 		{
 			byte_index = ptls_asn1_error_message("Length larger than message", bytes_max, byte_index,
-					&decode_error, 0, log_ctx);
-			decode_error = PTLS_ERROR_INCORRECT_BER_ENCODING;
+					0, log_ctx);
+			decode_error = PTLS_ERROR_BER_ELEMENT_TOO_SHORT;
 		}
 
 		if (decode_error == 0)
@@ -1268,8 +1278,8 @@ int ptls_pem_get_private_key(char const * pem_fname, ptls_iovec_t * vec,
 			if (byte_index + 3 > bytes_max)
 			{
 				byte_index = ptls_asn1_error_message("Incorrect length for DER", bytes_max, byte_index,
-					&decode_error, 0, log_ctx);
-				decode_error = PTLS_ERROR_INCORRECT_PEM_SYNTAX;
+					0, log_ctx);
+				decode_error = PTLS_ERROR_INCORRECT_PEM_KEY_VERSION;
 			}
 			else if (bytes[byte_index] != 0x02 ||
 				bytes[byte_index + 1] != 0x01 ||
@@ -1277,7 +1287,7 @@ int ptls_pem_get_private_key(char const * pem_fname, ptls_iovec_t * vec,
 			{
 				decode_error = PTLS_ERROR_INCORRECT_PEM_KEY_VERSION;
 				byte_index = ptls_asn1_error_message("Incorrect PEM Version", bytes_max, byte_index,
-					&decode_error, 0, log_ctx);
+					0, log_ctx);
 			}
 			else
 			{
@@ -1338,8 +1348,8 @@ int ptls_pem_get_private_key(char const * pem_fname, ptls_iovec_t * vec,
 			if (byte_index != last_byte1)
 			{
 				byte_index = ptls_asn1_error_message("Length larger than element", bytes_max, byte_index,
-					&decode_error, 2, log_ctx);
-				decode_error = PTLS_ERROR_INCORRECT_BER_ENCODING;
+					2, log_ctx);
+				decode_error = PTLS_ERROR_BER_ELEMENT_TOO_SHORT;
 			}
 		}
 
@@ -1371,8 +1381,8 @@ int ptls_pem_get_private_key(char const * pem_fname, ptls_iovec_t * vec,
 		if (decode_error == 0 && byte_index != last_byte0)
 		{
 			byte_index = ptls_asn1_error_message("Length larger than element", bytes_max, byte_index,
-				&decode_error, 0, log_ctx);
-			decode_error = PTLS_ERROR_INCORRECT_BER_ENCODING;
+				0, log_ctx);
+			decode_error = PTLS_ERROR_BER_ELEMENT_TOO_SHORT;
 		}
 
 		if (decode_error != 0)
@@ -1382,7 +1392,7 @@ int ptls_pem_get_private_key(char const * pem_fname, ptls_iovec_t * vec,
 	}
 	return ret;
 }
-
+#endif
 /*
 IMO it could be implemented in either of the three ways :
 

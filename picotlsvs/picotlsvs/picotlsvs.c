@@ -19,19 +19,53 @@ ptls_minicrypto_log_ctx_t log_ctx = { NULL, log_printf };
 int ptls_export_secret(ptls_t *tls, void *output, size_t outlen, const char *label, ptls_iovec_t context_value);
 
 /*
- * Testing the Base64 and ASN1 verifiers
+ * Testing the Base64 and ASN1 verifiers.
+ * Start by loading the private key object, then do a mini fuzz test.
+ * The goal is to verify that the decoding returns something correct,
+ * even in presence of errors.
  */
 int openPemTest(char const * filename)
 {
 	ptls_iovec_t buf = { 0 };
 	ptls_iovec_t * list = &buf;
 	size_t count = 1;
-#if 1
-	int ret = ptls_pem_get_private_key(filename, &buf, &log_ctx);
-#else
+	size_t fuzz_index = 0;
+	uint8_t original_byte = 0;
+	uint8_t fuzz_byte = 0xAA;
+	size_t byte_index = 0;
+	int decode_error;
+
 	int ret = ptls_pem_get_objects(filename, "PRIVATE KEY",
-		&list, 1, &count, stderr);
-#endif
+		&list, 1, &count, &log_ctx);
+
+
+	if (ret == 0)
+	{
+		for (fuzz_index = 0; ret == 0 && fuzz_index < buf.len; fuzz_index++)
+		{
+			ptls_asn1_pkcs8_private_key_t pkey = { {0} };
+			original_byte = buf.base[fuzz_index];
+			decode_error = 0;
+			buf.base[fuzz_index] ^= fuzz_byte;
+
+			pkey.vec.base = buf.base;
+			pkey.vec.len = buf.len;
+
+			byte_index = ptls_pem_decode_private_key(
+				&pkey, &decode_error, NULL);
+
+			if (decode_error != 0)
+			{
+				if (decode_error == 1)
+				{
+					ret = -1;
+				}
+			}
+
+			buf.base[fuzz_index] = original_byte;
+		}
+	}
+
 	if (buf.base != NULL)
 	{
 		free(buf.base);

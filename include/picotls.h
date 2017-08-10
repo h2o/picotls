@@ -87,14 +87,22 @@
 #define PTLS_ERROR_LIBRARY (PTLS_ERROR_CLASS_INTERNAL + 3)
 #define PTLS_ERROR_INCOMPATIBLE_KEY (PTLS_ERROR_CLASS_INTERNAL + 4)
 #define PTLS_ERROR_SESSION_NOT_FOUND (PTLS_ERROR_CLASS_INTERNAL + 5)
+
 #define PTLS_ERROR_INCORRECT_BASE64 (PTLS_ERROR_CLASS_INTERNAL + 6)
 #define PTLS_ERROR_PEM_LABEL_NOT_FOUND (PTLS_ERROR_CLASS_INTERNAL + 7)
-#define PTLS_ERROR_INCORRECT_BER_ENCODING (PTLS_ERROR_CLASS_INTERNAL + 8)
-#define PTLS_ERROR_INCORRECT_PEM_SYNTAX (PTLS_ERROR_CLASS_INTERNAL + 9)
-#define PTLS_ERROR_INCORRECT_PEM_KEY_VERSION (PTLS_ERROR_CLASS_INTERNAL + 10)
-#define PTLS_ERROR_INCORRECT_PEM_ECDSA_KEY_VERSION (PTLS_ERROR_CLASS_INTERNAL + 11)
-#define PTLS_ERROR_INCORRECT_PEM_ECDSA_CURVE (PTLS_ERROR_CLASS_INTERNAL + 12)
-#define PTLS_ERROR_INCORRECT_PEM_ECDSA_KEYSIZE (PTLS_ERROR_CLASS_INTERNAL + 13)
+#define PTLS_ERROR_BER_INCORRECT_ENCODING (PTLS_ERROR_CLASS_INTERNAL + 8)
+#define PTLS_ERROR_BER_MALFORMED_TYPE (PTLS_ERROR_CLASS_INTERNAL + 9)
+#define PTLS_ERROR_BER_MALFORMED_LENGTH (PTLS_ERROR_CLASS_INTERNAL + 10)
+#define PTLS_ERROR_BER_EXCESSIVE_LENGTH (PTLS_ERROR_CLASS_INTERNAL + 11)
+#define PTLS_ERROR_BER_ELEMENT_TOO_SHORT (PTLS_ERROR_CLASS_INTERNAL + 12)
+#define PTLS_ERROR_BER_UNEXPECTED_EOC (PTLS_ERROR_CLASS_INTERNAL + 13)
+#define PTLS_ERROR_DER_INDEFINITE_LENGTH (PTLS_ERROR_CLASS_INTERNAL + 14)
+
+#define PTLS_ERROR_INCORRECT_PEM_SYNTAX (PTLS_ERROR_CLASS_INTERNAL + 15)
+#define PTLS_ERROR_INCORRECT_PEM_KEY_VERSION (PTLS_ERROR_CLASS_INTERNAL + 16)
+#define PTLS_ERROR_INCORRECT_PEM_ECDSA_KEY_VERSION (PTLS_ERROR_CLASS_INTERNAL + 17)
+#define PTLS_ERROR_INCORRECT_PEM_ECDSA_CURVE (PTLS_ERROR_CLASS_INTERNAL + 18)
+#define PTLS_ERROR_INCORRECT_PEM_ECDSA_KEYSIZE (PTLS_ERROR_CLASS_INTERNAL + 19)
 
 
 #define PTLS_ZERO_DIGEST_SHA256                                                                                                    \
@@ -821,12 +829,31 @@ typedef struct st_ptls_minicrypto_log_ctx_t {
 	void(*fn)(void * ctx, const char * format, ...);
 } ptls_minicrypto_log_ctx_t;
 
+typedef struct st_ptls_asn1_pkcs8_private_key_t {
+	ptls_iovec_t vec;
+	size_t algorithm_index;
+	uint32_t algorithm_length;
+	size_t parameters_index;
+	uint32_t parameters_length;
+	size_t key_data_index;
+	uint32_t key_data_length;
+} ptls_asn1_pkcs8_private_key_t;
+
+int ptls_pem_get_objects(char const * pem_fname, const char * label,
+	ptls_iovec_t ** list, size_t list_max, size_t * nb_objects, ptls_minicrypto_log_ctx_t * log_ctx);
+
 int ptls_set_context_certificates(ptls_context_t * ctx, char * cert_pem_file, ptls_minicrypto_log_ctx_t * log_ctx);
+
+size_t ptls_pem_decode_private_key(
+	ptls_asn1_pkcs8_private_key_t * pkey,
+	int * decode_error, ptls_minicrypto_log_ctx_t * log_ctx);
 
 int ptls_set_private_key(ptls_context_t * ctx, char const * pem_fname, ptls_minicrypto_log_ctx_t * log_ctx);
 
+#if 0
 int ptls_pem_get_private_key(char const * pem_fname, ptls_iovec_t * vec,
 	ptls_minicrypto_log_ctx_t * log_ctx);
+#endif
 
 int picotls_asn1_validation(uint8_t * bytes, size_t length, ptls_minicrypto_log_ctx_t * log_ctx);
 
