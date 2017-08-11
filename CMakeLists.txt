@@ -23,7 +23,7 @@ SET(MINICRYPTO_LIBRARY_FILES
     deps/cifra/src/sha256.c)
 
 ADD_LIBRARY(picotls-core lib/picotls.c)
-ADD_LIBRARY(picotls-minicrypto ${MINICRYPTO_LIBRARY_FILES} lib/cifra.c lib/uecc.c lib/pembase64.c)
+ADD_LIBRARY(picotls-minicrypto ${MINICRYPTO_LIBRARY_FILES} lib/cifra.c lib/uecc.c lib/pembase64.c lib/asn1.c)
 ADD_EXECUTABLE(test-minicrypto.t ${MINICRYPTO_LIBRARY_FILES} deps/picotest/picotest.c t/picotls.c t/minicrypto.c)
 
 SET(TEST_EXES test-minicrypto.t)
@@ -35,7 +35,7 @@ IF (OPENSSL_FOUND AND NOT (OPENSSL_VERSION VERSION_LESS "1.0.1"))
     ADD_LIBRARY(picotls-openssl lib/openssl.c)
     ADD_EXECUTABLE(cli t/cli.c)
     TARGET_LINK_LIBRARIES(cli picotls-openssl picotls-core ${OPENSSL_LIBRARIES})
-    ADD_EXECUTABLE(test-openssl.t ${MINICRYPTO_LIBRARY_FILES} lib/cifra.c lib/uecc.c deps/picotest/picotest.c t/picotls.c t/openssl.c)
+    ADD_EXECUTABLE(test-openssl.t ${MINICRYPTO_LIBRARY_FILES} lib/cifra.c lib/uecc.c lib/asn1.c lib/pembase64.c deps/picotest/picotest.c t/picotls.c t/openssl.c)
     SET_TARGET_PROPERTIES(test-openssl.t PROPERTIES COMPILE_FLAGS "-DPTLS_MEMORY_DEBUG=1")
     TARGET_LINK_LIBRARIES(test-openssl.t ${OPENSSL_LIBRARIES})
     SET(TEST_EXES ${TEST_EXES} test-openssl.t)
