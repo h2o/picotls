@@ -72,28 +72,6 @@ static char const * asn1_universal_types[] = {
 	"BMPString"
 };
 
-/* For debugging
-*/
-
-static void data_dump(const uint8_t * bytes, size_t length, ptls_minicrypto_log_ctx_t * log_ctx)
-{
-	size_t byte_index = 0;
-
-	while (byte_index < length)
-	{
-		log_ctx->fn(log_ctx->ctx, "%06x ", (uint32_t)byte_index);
-		for (size_t i = 0; i < 32 && byte_index < length; i++, byte_index++)
-		{
-			log_ctx->fn(log_ctx->ctx, "%02x", bytes[byte_index]);
-			if ((i & 3) == 3)
-			{
-				log_ctx->fn(log_ctx->ctx, " ");
-			}
-		}
-		log_ctx->fn(log_ctx->ctx, "\n");
-	}
-}
-
 static size_t nb_asn1_universal_types = sizeof(asn1_universal_types) / sizeof(char const *);
 
 static void ptls_asn1_print_indent(int level, ptls_minicrypto_log_ctx_t * log_ctx)
