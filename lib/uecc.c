@@ -186,15 +186,9 @@ int ptls_minicrypto_init_secp256r1sha256_sign_certificate(ptls_minicrypto_secp25
     return 0;
 }
 
-static ptls_key_exchange_algorithm_t ptls_minicrypto_secp256r1 = {PTLS_GROUP_SECP256R1, secp256r1_create_key_exchange,
+ptls_key_exchange_algorithm_t ptls_minicrypto_secp256r1 = {PTLS_GROUP_SECP256R1, secp256r1_create_key_exchange,
                                                            secp256r1_key_exchange};
 ptls_key_exchange_algorithm_t *ptls_minicrypto_key_exchanges[] = {&ptls_minicrypto_secp256r1, NULL};
-
-static int ptls_pem_get_certificates(char const * pem_fname, ptls_iovec_t ** list, size_t list_max,
-	size_t * nb_certs)
-{
-	return ptls_minicrypto_get_pem_objects(pem_fname, "CERTIFICATE", list, list_max, nb_certs);
-}
 
 /*
  * This function could be declared as static, but we want to access it
@@ -377,16 +371,13 @@ static int ptls_pem_parse_private_key(char const * pem_fname,
 	if (ret == 0 && nb_keys == 1)
 	{
 		int decode_error = 0;
-		size_t byte_index = 0;
-
-
 
 		if (log_ctx != NULL)
 		{
 			log_ctx->fn(log_ctx->ctx, "\nFound PRIVATE KEY, length = %d bytes\n", (int)pkey->vec.len);
 		}
 
-		byte_index = ptls_minicrypto_asn1_decode_private_key(pkey, &decode_error, log_ctx);
+		(void) ptls_minicrypto_asn1_decode_private_key(pkey, &decode_error, log_ctx);
 
 		if (decode_error != 0)
 		{
