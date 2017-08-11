@@ -6,6 +6,7 @@
 #include "../../include/picotls.h"
 #include "../../include/picotls/openssl.h"
 #include "../../include/picotls/minicrypto.h"
+#include "../../include/picotls/asn1.h"
 
 void log_printf(void * ctx, const char * format, ...)
 {
@@ -24,6 +25,11 @@ int ptls_export_secret(ptls_t *tls, void *output, size_t outlen, const char *lab
  * The goal is to verify that the decoding returns something correct,
  * even in presence of errors.
  */
+
+size_t ptls_minicrypto_asn1_decode_private_key(
+	ptls_asn1_pkcs8_private_key_t * pkey,
+	int * decode_error, ptls_minicrypto_log_ctx_t * log_ctx);
+
 int openPemTest(char const * filename)
 {
 	ptls_iovec_t buf = { 0 };
@@ -35,8 +41,7 @@ int openPemTest(char const * filename)
 	size_t byte_index = 0;
 	int decode_error;
 
-	int ret = ptls_pem_get_objects(filename, "PRIVATE KEY",
-		&list, 1, &count, &log_ctx);
+	int ret = ptls_minicrypto_get_pem_objects(filename, "PRIVATE KEY", &list, 1, &count);
 
 
 	if (ret == 0)
@@ -51,7 +56,7 @@ int openPemTest(char const * filename)
 			pkey.vec.base = buf.base;
 			pkey.vec.len = buf.len;
 
-			byte_index = ptls_pem_decode_private_key(
+			byte_index = ptls_minicrypto_asn1_decode_private_key(
 				&pkey, &decode_error, NULL);
 
 			if (decode_error != 0)
@@ -269,7 +274,7 @@ int openssl_init_test_server(ptls_context_t *ctx_server, char * key_file, char *
 	ctx_server->key_exchanges = ptls_openssl_key_exchanges;
 	ctx_server->cipher_suites = ptls_openssl_cipher_suites;
 
-	ret = ptls_set_context_certificates(ctx_server, cert_file, &log_ctx);
+	ret = ptls_minicrypto_set_certificates(ctx_server, cert_file);
 	if (ret != 0)
 	{
 		fprintf(stderr, "Could not read the server certificates\n");
@@ -308,14 +313,15 @@ int minicrypto_init_test_server(ptls_context_t *ctx_server, char * key_file, cha
 	ctx_server->key_exchanges = ptls_minicrypto_key_exchanges;
 	ctx_server->cipher_suites = ptls_minicrypto_cipher_suites;
 
-	ret = ptls_set_context_certificates(ctx_server, cert_file, &log_ctx);
+	ret = ptls_minicrypto_set_certificates(ctx_server, cert_file);
+
 	if (ret != 0)
 	{
 		fprintf(stderr, "Could not read the server certificates\n");
 	}
 	else
 	{
-		ret = ptls_set_private_key(ctx_server, key_file, &log_ctx);
+		ret = ptls_minicrypto_set_private_key(ctx_server, key_file);
 	}
 
 	return ret;
@@ -497,7 +503,7 @@ int ptls_memory_loopback_test(int openssl_client, int openssl_server, char * key
 		set_handshake_context(&app_ctx_server, 0);
 
 		client_hello_cb.cb = client_hello_call_back;
-		ctx_server.on_client_hello = &client_hello_cb.cb;
+		ctx_server.on_client_hello = &client_hello_cb;
 
 		ptls_set_server_name(tls_client, test_sni, sizeof(test_sni) - 1);
 

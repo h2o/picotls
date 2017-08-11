@@ -34,6 +34,7 @@ typedef struct st_ptls_minicrypto_secp256r1sha256_sign_certificate_t {
 } ptls_minicrypto_secp256r1sha256_sign_certificate_t;
 
 void ptls_minicrypto_random_bytes(void *buf, size_t len);
+
 int ptls_minicrypto_init_secp256r1sha256_sign_certificate(ptls_minicrypto_secp256r1sha256_sign_certificate_t *self,
                                                           ptls_iovec_t key);
 
@@ -43,5 +44,45 @@ extern ptls_aead_algorithm_t ptls_minicrypto_aes128gcm;
 extern ptls_hash_algorithm_t ptls_minicrypto_sha256;
 extern ptls_cipher_suite_t ptls_minicrypto_aes128gcmsha256;
 extern ptls_cipher_suite_t *ptls_minicrypto_cipher_suites[];
+
+
+/*
+* Base64 functions used in encoding and decoding of PEM files
+*/
+
+#define PTLS_BASE64_DECODE_DONE 0
+#define PTLS_BASE64_DECODE_IN_PROGRESS 1
+#define PTLS_BASE64_DECODE_FAILED -1
+
+typedef struct st_ptls_base64_decode_state_t {
+	int nbc;
+	int nbo;
+	int status;
+	uint32_t v;
+} ptls_base64_decode_state_t;
+
+int ptls_base64_encode(const uint8_t * data, size_t data_len, char * base64_text);
+
+size_t ptls_base64_howlong(size_t data_length);
+
+void ptls_base64_decode_init(ptls_base64_decode_state_t * state);
+int ptls_base64_decode(const char * base64_text, ptls_base64_decode_state_t * state, ptls_buffer_t *buf);
+
+typedef struct st_ptls_asn1_pkcs8_private_key_t {
+	ptls_iovec_t vec;
+	size_t algorithm_index;
+	uint32_t algorithm_length;
+	size_t parameters_index;
+	uint32_t parameters_length;
+	size_t key_data_index;
+	uint32_t key_data_length;
+} ptls_asn1_pkcs8_private_key_t;
+
+int ptls_minicrypto_get_pem_objects(char const * pem_fname, const char * label,
+	ptls_iovec_t ** list, size_t list_max, size_t * nb_objects);
+
+int ptls_minicrypto_set_certificates(ptls_context_t * ctx, char * cert_pem_file);
+
+int ptls_minicrypto_set_private_key(ptls_context_t * ctx, char const * pem_fname);
 
 #endif

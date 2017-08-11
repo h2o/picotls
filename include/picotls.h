@@ -97,13 +97,12 @@
 #define PTLS_ERROR_BER_ELEMENT_TOO_SHORT (PTLS_ERROR_CLASS_INTERNAL + 12)
 #define PTLS_ERROR_BER_UNEXPECTED_EOC (PTLS_ERROR_CLASS_INTERNAL + 13)
 #define PTLS_ERROR_DER_INDEFINITE_LENGTH (PTLS_ERROR_CLASS_INTERNAL + 14)
-
-#define PTLS_ERROR_INCORRECT_PEM_SYNTAX (PTLS_ERROR_CLASS_INTERNAL + 15)
+#define PTLS_ERROR_INCORRECT_ASN1_SYNTAX (PTLS_ERROR_CLASS_INTERNAL + 15)
 #define PTLS_ERROR_INCORRECT_PEM_KEY_VERSION (PTLS_ERROR_CLASS_INTERNAL + 16)
 #define PTLS_ERROR_INCORRECT_PEM_ECDSA_KEY_VERSION (PTLS_ERROR_CLASS_INTERNAL + 17)
 #define PTLS_ERROR_INCORRECT_PEM_ECDSA_CURVE (PTLS_ERROR_CLASS_INTERNAL + 18)
 #define PTLS_ERROR_INCORRECT_PEM_ECDSA_KEYSIZE (PTLS_ERROR_CLASS_INTERNAL + 19)
-
+#define PTLS_ERROR_INCORRECT_ASN1_ECDSA_KEY_SYNTAX (PTLS_ERROR_CLASS_INTERNAL + 20)
 
 #define PTLS_ZERO_DIGEST_SHA256                                                                                                    \
     {                                                                                                                              \
@@ -787,74 +786,5 @@ inline size_t ptls_aead_decrypt(ptls_aead_context_t *ctx, void *output, const vo
     return ctx->do_decrypt(ctx, output, input, inlen, iv, aad, aadlen);
 }
 
-/*
- * Base64 functions used in encoding and decoding of PEM files
- */
-
-#define PTLS_BASE64_DECODE_DONE 0
-#define PTLS_BASE64_DECODE_IN_PROGRESS 1
-#define PTLS_BASE64_DECODE_FAILED -1
-
-typedef struct st_ptls_base64_decode_state_t {
-    int nbc;
-    int nbo;
-    int status;
-    uint32_t v;
-} ptls_base64_decode_state_t;
-
-int ptls_base64_encode(const uint8_t * data, size_t data_len, char * base64_text);
-
-size_t ptls_base64_howlong(size_t data_length);
-
-void ptls_base64_decode_init(ptls_base64_decode_state_t * state);
-int ptls_base64_decode(const char * base64_text, ptls_base64_decode_state_t * state, ptls_buffer_t *buf);
-
-/*
- * The base64 and ASN.1 functions take a "log context" parameter of type ptls_minicrypto_log_ctx_t.
- *
- * The log function in that code can be instantiated for example as: 
- *
- * void log_printf(void * ctx, const char * format, ...)
- * {
- *     va_list argptr;
- *     va_start(argptr, format);
- *     vfprintf(stderr, format, argptr);
- * }
- *
- * Using definitions from <stdio.h> and <stdarg.h>
- */
-
-typedef struct st_ptls_minicrypto_log_ctx_t {
-	void * ctx;
-	void(*fn)(void * ctx, const char * format, ...);
-} ptls_minicrypto_log_ctx_t;
-
-typedef struct st_ptls_asn1_pkcs8_private_key_t {
-	ptls_iovec_t vec;
-	size_t algorithm_index;
-	uint32_t algorithm_length;
-	size_t parameters_index;
-	uint32_t parameters_length;
-	size_t key_data_index;
-	uint32_t key_data_length;
-} ptls_asn1_pkcs8_private_key_t;
-
-int ptls_pem_get_objects(char const * pem_fname, const char * label,
-	ptls_iovec_t ** list, size_t list_max, size_t * nb_objects, ptls_minicrypto_log_ctx_t * log_ctx);
-
-int ptls_set_context_certificates(ptls_context_t * ctx, char * cert_pem_file, ptls_minicrypto_log_ctx_t * log_ctx);
-
-size_t ptls_pem_decode_private_key(
-	ptls_asn1_pkcs8_private_key_t * pkey,
-	int * decode_error, ptls_minicrypto_log_ctx_t * log_ctx);
-
-int ptls_set_private_key(ptls_context_t * ctx, char const * pem_fname, ptls_minicrypto_log_ctx_t * log_ctx);
-
-#if 0
-int ptls_pem_get_private_key(char const * pem_fname, ptls_iovec_t * vec,
-	ptls_minicrypto_log_ctx_t * log_ctx);
-#endif
-
-int picotls_asn1_validation(uint8_t * bytes, size_t length, ptls_minicrypto_log_ctx_t * log_ctx);
 
 #endif
