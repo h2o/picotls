@@ -31,6 +31,7 @@
 #include <netinet/in.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/param.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <openssl/pem.h>
@@ -88,7 +89,7 @@ static inline void load_private_key(ptls_context_t *ctx, const char *fn)
 
 struct st_util_save_ticket_t {
     ptls_save_ticket_t super;
-    char fn[PATH_MAX];
+    char fn[MAXPATHLEN];
 };
 
 static int save_ticket_cb(ptls_save_ticket_t *_self, ptls_t *tls, ptls_iovec_t src)
