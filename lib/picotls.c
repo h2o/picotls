@@ -696,13 +696,24 @@ static int derive_exporter_secret(ptls_t *tls, int is_early)
     return derive_secret(tls->key_schedule, tls->exporter_master_secret, is_early ? "e exp master" : "exp master");
 }
 
-static int derive_resumption_secret(struct st_ptls_key_schedule_t *sched, uint8_t *secret)
+static int derive_resumption_secret(struct st_ptls_key_schedule_t *sched, uint8_t *secret, ptls_iovec_t nonce)
 {
-    return derive_secret(sched, secret, "resumption");
+    int ret;
+
+    if ((ret = derive_secret(sched, secret, "res master")) != 0)
+        goto Exit;
+    if ((ret = hkdf_expand_label(sched->algo, secret, sched->algo->digest_size, ptls_iovec_init(secret, sched->algo->digest_size),
+                                 "resumption", nonce)) != 0)
+        goto Exit;
+
+Exit:
+    if (ret != 0)
+        ptls_clear_memory(secret, sched->algo->digest_size);
+    return ret;
 }
 
-static int decode_new_session_ticket(uint32_t *lifetime, uint32_t *age_add, ptls_iovec_t *ticket, uint32_t *max_early_data_size,
-                                     const uint8_t *src, const uint8_t *end)
+static int decode_new_session_ticket(uint32_t *lifetime, uint32_t *age_add, ptls_iovec_t *nonce, ptls_iovec_t *ticket,
+                                     uint32_t *max_early_data_size, const uint8_t *src, const uint8_t *end)
 {
     uint16_t exttype;
     int ret;
@@ -711,6 +722,10 @@ static int decode_new_session_ticket(uint32_t *lifetime, uint32_t *age_add, ptls
         goto Exit;
     if ((ret = ptls_decode32(age_add, &src, end)) != 0)
         goto Exit;
+    ptls_decode_open_block(src, end, 1, {
+        *nonce = ptls_iovec_init(src, end - src);
+        src = end;
+    });
     ptls_decode_open_block(src, end, 2, {
         if (src == end) {
             ret = PTLS_ALERT_DECODE_ERROR;
@@ -745,6 +760,7 @@ static int decode_stored_session_ticket(ptls_context_t *ctx, ptls_cipher_suite_t
     uint16_t csid;
     uint32_t lifetime, age_add;
     uint64_t obtained_at, now;
+    ptls_iovec_t nonce;
     int ret;
 
     /* decode */
@@ -753,7 +769,7 @@ static int decode_stored_session_ticket(ptls_context_t *ctx, ptls_cipher_suite_t
     if ((ret = ptls_decode16(&csid, &src, end)) != 0)
         goto Exit;
     ptls_decode_open_block(src, end, 3, {
-        if ((ret = decode_new_session_ticket(&lifetime, &age_add, ticket, max_early_data_size, src, end)) != 0)
+        if ((ret = decode_new_session_ticket(&lifetime, &age_add, &nonce, ticket, max_early_data_size, src, end)) != 0)
             goto Exit;
         src = end;
     });
@@ -834,8 +850,9 @@ static int retire_early_data_secret(ptls_t *tls, int is_enc)
 #define SESSION_IDENTIFIER_MAGIC "ptls0000" /* the number should be changed upon incompatible format change */
 #define SESSION_IDENTIFIER_MAGIC_SIZE (sizeof(SESSION_IDENTIFIER_MAGIC) - 1)
 
-int encode_session_identifier(ptls_buffer_t *buf, uint32_t ticket_age_add, struct st_ptls_key_schedule_t *sched,
-                              const char *server_name, uint16_t csid, const char *negotiated_protocol)
+int encode_session_identifier(ptls_buffer_t *buf, uint32_t ticket_age_add, ptls_iovec_t ticket_nonce,
+                              struct st_ptls_key_schedule_t *sched, const char *server_name, uint16_t csid,
+                              const char *negotiated_protocol)
 {
     int ret = 0;
 
@@ -848,7 +865,7 @@ int encode_session_identifier(ptls_buffer_t *buf, uint32_t ticket_age_add, struc
         ptls_buffer_push_block(buf, 2, {
             if ((ret = ptls_buffer_reserve(buf, sched->algo->digest_size)) != 0)
                 goto Exit;
-            if ((ret = derive_resumption_secret(sched, buf->base + buf->off)) != 0)
+            if ((ret = derive_resumption_secret(sched, buf->base + buf->off, ticket_nonce)) != 0)
                 goto Exit;
             buf->off += sched->algo->digest_size;
         });
@@ -1012,8 +1029,8 @@ static int send_session_ticket(ptls_t *tls, ptls_buffer_t *sendbuf)
 
     /* build the raw nsk */
     ptls_buffer_init(&session_id, session_id_smallbuf, sizeof(session_id_smallbuf));
-    ret = encode_session_identifier(&session_id, ticket_age_add, tls->key_schedule, tls->server_name, tls->cipher_suite->id,
-                                    tls->negotiated_protocol);
+    ret = encode_session_identifier(&session_id, ticket_age_add, ptls_iovec_init(NULL, 0), tls->key_schedule, tls->server_name,
+                                    tls->cipher_suite->id, tls->negotiated_protocol);
     if (ret != 0)
         goto Exit;
 
@@ -1022,6 +1039,7 @@ static int send_session_ticket(ptls_t *tls, ptls_buffer_t *sendbuf)
         buffer_push_handshake(sendbuf, tls->key_schedule, PTLS_HANDSHAKE_TYPE_NEW_SESSION_TICKET, {
             ptls_buffer_push32(sendbuf, tls->ctx->ticket_lifetime);
             ptls_buffer_push32(sendbuf, ticket_age_add);
+            ptls_buffer_push_block(sendbuf, 1, {});
             ptls_buffer_push_block(sendbuf, 2, {
                 if ((ret = tls->ctx->encrypt_ticket->cb(tls->ctx->encrypt_ticket, tls, 1, sendbuf,
                                                         ptls_iovec_init(session_id.base, session_id.off))) != 0)
@@ -1261,6 +1279,15 @@ static int check_server_hello_version(uint16_t ver)
     return 0;
 }
 
+static ptls_cipher_suite_t *find_cipher_suite(ptls_context_t *ctx, uint16_t id)
+{
+    ptls_cipher_suite_t **cs;
+
+    for (cs = ctx->cipher_suites; *cs != NULL && (*cs)->id != id; ++cs)
+        ;
+    return *cs;
+}
+
 static int client_handle_hello_retry_request(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t message,
                                              ptls_handshake_properties_t *properties)
 {
@@ -1274,6 +1301,16 @@ static int client_handle_hello_retry_request(ptls_t *tls, ptls_buffer_t *sendbuf
         uint16_t ver;
         if ((ret = ptls_decode16(&ver, &src, end)) != 0 || (ret = check_server_hello_version(ver)) != 0)
             goto Exit;
+    }
+
+    { /* check cipher suite */
+        uint16_t csid;
+        if ((ret = ptls_decode16(&csid, &src, end)) != 0)
+            goto Exit;
+        if (find_cipher_suite(tls->ctx, csid) == NULL) {
+            ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+            goto Exit;
+        }
     }
 
     decode_extensions(src, end, PTLS_HANDSHAKE_TYPE_HELLO_RETRY_REQUEST, &type, {
@@ -1341,17 +1378,12 @@ static int decode_server_hello(ptls_t *tls, struct st_ptls_server_hello_t *sh, c
 
     { /* select cipher_suite */
         uint16_t csid;
-        ptls_cipher_suite_t **cs;
         if ((ret = ptls_decode16(&csid, &src, end)) != 0)
             goto Exit;
-        for (cs = tls->ctx->cipher_suites; *cs != NULL; ++cs)
-            if ((*cs)->id == csid)
-                break;
-        if (*cs == NULL) {
-            ret = PTLS_ALERT_HANDSHAKE_FAILURE;
+        if ((tls->cipher_suite = find_cipher_suite(tls->ctx, csid)) == NULL) {
+            ret = PTLS_ALERT_ILLEGAL_PARAMETER;
             goto Exit;
         }
-        tls->cipher_suite = *cs;
     }
 
     uint16_t type;
@@ -1671,12 +1703,14 @@ Exit:
 static int client_handle_new_session_ticket(ptls_t *tls, ptls_iovec_t message)
 {
     const uint8_t *src = message.base + PTLS_HANDSHAKE_HEADER_SIZE, *end = message.base + message.len;
+    ptls_iovec_t ticket_nonce;
     int ret;
 
     { /* verify the format */
         uint32_t ticket_lifetime, ticket_age_add, max_early_data_size;
         ptls_iovec_t ticket;
-        if ((ret = decode_new_session_ticket(&ticket_lifetime, &ticket_age_add, &ticket, &max_early_data_size, src, end)) != 0)
+        if ((ret = decode_new_session_ticket(&ticket_lifetime, &ticket_age_add, &ticket_nonce, &ticket, &max_early_data_size, src,
+                                             end)) != 0)
             return ret;
     }
 
@@ -1694,7 +1728,7 @@ static int client_handle_new_session_ticket(ptls_t *tls, ptls_iovec_t message)
     ptls_buffer_push_block(&ticket_buf, 2, {
         if ((ret = ptls_buffer_reserve(&ticket_buf, tls->key_schedule->algo->digest_size)) != 0)
             goto Exit;
-        if ((ret = derive_resumption_secret(tls->key_schedule, ticket_buf.base + ticket_buf.off)) != 0)
+        if ((ret = derive_resumption_secret(tls->key_schedule, ticket_buf.base + ticket_buf.off, ticket_nonce)) != 0)
             goto Exit;
         ticket_buf.off += tls->key_schedule->algo->digest_size;
     });
@@ -2196,6 +2230,7 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
             key_schedule_extract(tls->key_schedule, ptls_iovec_init(NULL, 0));
             buffer_push_handshake(sendbuf, tls->key_schedule, PTLS_HANDSHAKE_TYPE_HELLO_RETRY_REQUEST, {
                 ptls_buffer_push16(sendbuf, PTLS_PROTOCOL_VERSION_DRAFT21);
+                ptls_buffer_push16(sendbuf, tls->cipher_suite->id);
                 ptls_buffer_push_block(sendbuf, 2, {
                     buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_KEY_SHARE,
                                           { ptls_buffer_push16(sendbuf, negotiated_group->id); });
@@ -2721,7 +2756,7 @@ static int handle_handshake_message(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_io
     case PTLS_STATE_CLIENT_POST_HANDSHAKE:
         switch (type) {
         case PTLS_HANDSHAKE_TYPE_NEW_SESSION_TICKET:
-            ret = 0; // FIXME ret = client_handle_new_session_ticket(tls, message);
+            ret = client_handle_new_session_ticket(tls, message);
             break;
         default:
             ret = PTLS_ALERT_UNEXPECTED_MESSAGE;
@@ -3025,22 +3060,29 @@ Exit:
 
 int ptls_export_secret(ptls_t *tls, void *output, size_t outlen, const char *label, ptls_iovec_t context_value)
 {
+    ptls_hash_algorithm_t *algo = tls->key_schedule->algo;
     ptls_hash_context_t *hctx;
-    uint8_t context_value_hash[PTLS_MAX_DIGEST_SIZE];
+    uint8_t derived_secret[PTLS_MAX_DIGEST_SIZE], context_value_hash[PTLS_MAX_DIGEST_SIZE];
     int ret;
 
     if (tls->exporter_master_secret == NULL)
         return PTLS_ERROR_IN_PROGRESS;
 
-    if ((hctx = tls->key_schedule->algo->create()) == NULL)
+    if ((hctx = algo->create()) == NULL)
         return PTLS_ERROR_NO_MEMORY;
     hctx->update(hctx, context_value.base, context_value.len);
     hctx->final(hctx, context_value_hash, PTLS_HASH_FINAL_MODE_FREE);
 
+    if ((ret = hkdf_expand_label(algo, derived_secret, algo->digest_size,
+                                 ptls_iovec_init(tls->exporter_master_secret, algo->digest_size), label,
+                                 ptls_iovec_init(algo->empty_digest, algo->digest_size))) != 0)
+        goto Exit;
     ret = hkdf_expand_label(tls->key_schedule->algo, output, outlen,
-                             ptls_iovec_init(tls->exporter_master_secret, tls->key_schedule->algo->digest_size), label,
-                             ptls_iovec_init(context_value_hash, tls->key_schedule->algo->digest_size));
+                            ptls_iovec_init(derived_secret, tls->key_schedule->algo->digest_size), "exporter",
+                            ptls_iovec_init(context_value_hash, tls->key_schedule->algo->digest_size));
 
+Exit:
+    ptls_clear_memory(derived_secret, sizeof(derived_secret));
     ptls_clear_memory(context_value_hash, sizeof(context_value_hash));
     return ret;
 }
