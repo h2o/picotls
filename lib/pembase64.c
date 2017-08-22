@@ -29,13 +29,10 @@
 #include "picotls.h"
 #include "picotls/pembase64.h"
 
-static char ptls_base64_alphabet[] = {
-    'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
-    'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
-    'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
-    'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
-    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '+', '/'
-};
+static char ptls_base64_alphabet[] = {'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P',
+                                      'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', 'a', 'b', 'c', 'd', 'e', 'f',
+                                      'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v',
+                                      'w', 'x', 'y', 'z', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '+', '/'};
 
 static char ptls_base64_values[] = {
     /* 0x00 to 0x0F */
@@ -53,10 +50,9 @@ static char ptls_base64_values[] = {
     /* 0x60 to 0x6F -- chars 'a' to 'o' at 0x61 to 0x6F */
     -1, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,
     /* 0x70 to 0x7F -- chars 'p' to 'z' at 0x70 to 0x7A */
-    41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, -1, -1, -1, -1, -1
-};
+    41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, -1, -1, -1, -1, -1};
 
-static void ptls_base64_cell(const uint8_t * data, char * text)
+static void ptls_base64_cell(const uint8_t *data, char *text)
 {
     int n[4];
 
@@ -65,8 +61,7 @@ static void ptls_base64_cell(const uint8_t * data, char * text)
     n[2] = ((data[1] & 15) << 2) | (data[2] >> 6);
     n[3] = data[2] & 63;
 
-    for (int i = 0; i < 4; i++)
-    {
+    for (int i = 0; i < 4; i++) {
         text[i] = ptls_base64_alphabet[n[i]];
     }
 }
@@ -76,20 +71,18 @@ size_t ptls_base64_howlong(size_t data_length)
     return (((data_length + 2) / 3) * 4);
 }
 
-int ptls_base64_encode(const uint8_t * data, size_t data_len, char * ptls_base64_text)
+int ptls_base64_encode(const uint8_t *data, size_t data_len, char *ptls_base64_text)
 {
     int l = 0;
     int lt = 0;
 
-    while ((data_len - l) >= 3)
-    {
+    while ((data_len - l) >= 3) {
         ptls_base64_cell(data + l, ptls_base64_text + lt);
         l += 3;
         lt += 4;
     }
 
-    switch (data_len - l)
-    {
+    switch (data_len - l) {
     case 0:
         break;
     case 1:
@@ -119,7 +112,7 @@ int ptls_base64_encode(const uint8_t * data, size_t data_len, char * ptls_base64
  * The parsing is consistent with the lax definition in RFC 7468
  */
 
-void ptls_base64_decode_init(ptls_base64_decode_state_t * state)
+void ptls_base64_decode_init(ptls_base64_decode_state_t *state)
 {
     state->nbc = 0;
     state->nbo = 3;
@@ -127,7 +120,7 @@ void ptls_base64_decode_init(ptls_base64_decode_state_t * state)
     state->status = PTLS_BASE64_DECODE_IN_PROGRESS;
 }
 
-int ptls_base64_decode(const char * text, ptls_base64_decode_state_t * state, ptls_buffer_t *buf)
+int ptls_base64_decode(const char *text, ptls_base64_decode_state_t *state, ptls_buffer_t *buf)
 {
     int ret = 0;
     uint8_t decoded[3];
@@ -136,113 +129,84 @@ int ptls_base64_decode(const char * text, ptls_base64_decode_state_t * state, pt
     char vc;
 
     /* skip initial blanks */
-    while (text[text_index] != 0)
-    {
+    while (text[text_index] != 0) {
         c = text[text_index];
 
-        if (c == ' ' || c == '\t' || c == '\r' || c == '\n')
-        {
+        if (c == ' ' || c == '\t' || c == '\r' || c == '\n') {
             text_index++;
-        }
-        else
-        {
+        } else {
             break;
         }
     }
 
-    while (text[text_index] != 0 && ret == 0 && state->status == PTLS_BASE64_DECODE_IN_PROGRESS)
-    {
+    while (text[text_index] != 0 && ret == 0 && state->status == PTLS_BASE64_DECODE_IN_PROGRESS) {
         c = text[text_index++];
-        
+
         vc = ptls_base64_values[c];
-        if (vc == -1)
-        {
-            if (state->nbc == 2 && c == '=' && text[text_index] == '=')
-            {
+        if (vc == -1) {
+            if (state->nbc == 2 && c == '=' && text[text_index] == '=') {
                 state->nbc = 4;
                 text_index++;
                 state->nbo = 1;
                 state->v <<= 12;
-            }
-            else if (state->nbc == 3 && c == '=')
-            {
+            } else if (state->nbc == 3 && c == '=') {
                 state->nbc = 4;
                 state->nbo = 2;
                 state->v <<= 6;
-            }
-            else
-            {
+            } else {
                 /* Skip final blanks */
                 text_index--;
-                while (text[text_index] != 0)
-                {
+                while (text[text_index] != 0) {
                     c = text[text_index++];
 
-                    if (c == ' ' || c == '\t' || c == '\r' || c == '\n' || c == 0x0B || c == 0x0C)
-                    {
+                    if (c == ' ' || c == '\t' || c == '\r' || c == '\n' || c == 0x0B || c == 0x0C) {
                         continue;
                     }
                 }
 
                 /* Should now be at end of buffer */
-                if (text[text_index] == 0)
-                {
+                if (text[text_index] == 0) {
                     break;
-                }
-                else
-                {
+                } else {
                     /* Not at end of buffer, signal a decoding error */
                     state->nbo = 0;
                     state->status = PTLS_BASE64_DECODE_FAILED;
                     ret = PTLS_ERROR_INCORRECT_BASE64;
                 }
             }
-        }
-        else
-        {
+        } else {
             state->nbc++;
             state->v <<= 6;
             state->v |= vc;
         }
 
-        if (ret == 0 && state->nbc == 4)
-        {
+        if (ret == 0 && state->nbc == 4) {
             /* Convert to up to 3 octets */
-            for (int j = 0; j < state->nbo; j++)
-            {
+            for (int j = 0; j < state->nbo; j++) {
                 decoded[j] = (uint8_t)(state->v >> (8 * (2 - j)));
             }
 
             ret = ptls_buffer__do_pushv(buf, decoded, state->nbo);
 
-            if (ret == 0)
-            {
+            if (ret == 0) {
                 /* test for fin or continuation */
-                if (state->nbo < 3)
-                {
+                if (state->nbo < 3) {
                     /* Check that there are only trainling blanks on this line */
-                    while (text[text_index] != 0)
-                    {
+                    while (text[text_index] != 0) {
                         c = text[text_index++];
 
-                        if (c == ' ' || c == '\t' || c == '\r' || c == '\n' || c == 0x0B || c == 0x0C)
-                        {
+                        if (c == ' ' || c == '\t' || c == '\r' || c == '\n' || c == 0x0B || c == 0x0C) {
                             continue;
                         }
                     }
-                    if (text[text_index] == 0)
-                    {
+                    if (text[text_index] == 0) {
                         state->status = PTLS_BASE64_DECODE_DONE;
-                    }
-                    else
-                    {
+                    } else {
                         state->status = PTLS_BASE64_DECODE_FAILED;
                         ret = PTLS_ERROR_INCORRECT_BASE64;
                     }
                     break;
-                }
-                else
-                {
+                } else {
                     state->v = 0;
                     state->nbo = 3;
                     state->nbc = 0;
@@ -260,7 +224,7 @@ int ptls_base64_decode(const char * text, ptls_base64_decode_state_t * state, pt
  * - If object label is what the application expects, parse, else skip to end.
  *
  * The following labels are defined in RFC 7468:
- * 
+ *
  * Sec. Label                  ASN.1 Type              Reference Module
  * ----+----------------------+-----------------------+---------+----------
  * 5  CERTIFICATE            Certificate             [RFC5280] id-pkix1-e
@@ -275,73 +239,59 @@ int ptls_base64_decode(const char * text, ptls_base64_decode_state_t * state, pt
  * 13 PUBLIC KEY             SubjectPublicKeyInfo    [RFC5280] id-pkix1-e
  */
 
-static int ptls_compare_separator_line(const char * line, const char* begin_or_end, const char * label)
+static int ptls_compare_separator_line(const char *line, const char *begin_or_end, const char *label)
 {
     int ret = strncmp(line, "-----", 5);
     int text_index = 5;
 
-    if (ret == 0)
-    {
+    if (ret == 0) {
         int begin_or_end_length = strlen(begin_or_end);
         ret = strncmp(line + text_index, begin_or_end, begin_or_end_length);
         text_index += begin_or_end_length;
     }
 
-    if (ret == 0)
-    {   
+    if (ret == 0) {
         ret = line[text_index] - ' ';
         text_index++;
     }
 
-    if (ret == 0)
-    {
+    if (ret == 0) {
         int label_length = strlen(label);
         ret = strncmp(line + text_index, label, label_length);
         text_index += label_length;
     }
 
-    if (ret == 0)
-    {
+    if (ret == 0) {
         ret = strncmp(line + text_index, "-----", 5);
     }
 
     return ret;
 }
 
-static int ptls_get_pem_object(FILE * F, const char * label, ptls_buffer_t *buf)
+static int ptls_get_pem_object(FILE *F, const char *label, ptls_buffer_t *buf)
 {
     int ret = PTLS_ERROR_PEM_LABEL_NOT_FOUND;
     char line[256];
     ptls_base64_decode_state_t state;
 
     /* Get the label on a line by itself */
-    while (fgets(line, 256, F))
-    {
-        if (ptls_compare_separator_line(line, "BEGIN", label) == 0)
-        {
+    while (fgets(line, 256, F)) {
+        if (ptls_compare_separator_line(line, "BEGIN", label) == 0) {
             ret = 0;
             ptls_base64_decode_init(&state);
             break;
         }
     }
     /* Get the data in the buffer */
-    while (ret == 0 && fgets(line, 256, F))
-    {
-        if (ptls_compare_separator_line(line, "END", label) == 0)
-        {
-            if (state.status == PTLS_BASE64_DECODE_DONE ||
-                (state.status == PTLS_BASE64_DECODE_IN_PROGRESS && state.nbc == 0))
-            {
+    while (ret == 0 && fgets(line, 256, F)) {
+        if (ptls_compare_separator_line(line, "END", label) == 0) {
+            if (state.status == PTLS_BASE64_DECODE_DONE || (state.status == PTLS_BASE64_DECODE_IN_PROGRESS && state.nbc == 0)) {
                 ret = 0;
-            }
-            else
-            {
+            } else {
                 ret = PTLS_ERROR_INCORRECT_BASE64;
             }
             break;
-        }
-        else
-        {
+        } else {
             ret = ptls_base64_decode(line, &state, buf);
         }
     }
@@ -349,72 +299,57 @@ static int ptls_get_pem_object(FILE * F, const char * label, ptls_buffer_t *buf)
     return ret;
 }
 
-int ptls_load_pem_objects(char const * pem_fname, const char * label, 
-	ptls_iovec_t ** list, size_t list_max, size_t * nb_objects)
+int ptls_load_pem_objects(char const *pem_fname, const char *label, ptls_iovec_t **list, size_t list_max, size_t *nb_objects)
 {
-    FILE * F;
+    FILE *F;
     int ret = 0;
     size_t count = 0;
 #ifdef WIN32
     errno_t err = fopen_s(&F, pem_fname, "r");
-    if (err != 0)
-    {
+    if (err != 0) {
         ret = -1;
     }
 #else
     F = fopen(pem_fname, "r");
-    if (F == NULL)
-    {
+    if (F == NULL) {
         ret = -1;
     }
 #endif
 
-
     *nb_objects = 0;
 
-    if (ret == 0)
-    {
-        while (count < list_max)
-        {
-			ptls_buffer_t buf;
+    if (ret == 0) {
+        while (count < list_max) {
+            ptls_buffer_t buf;
 
-			ptls_buffer_init(&buf, "", 0);
+            ptls_buffer_init(&buf, "", 0);
 
             ret = ptls_get_pem_object(F, label, &buf);
 
-            if (ret == 0)
-            {
-                if (buf.off > 0 && buf.is_allocated)
-                {
+            if (ret == 0) {
+                if (buf.off > 0 && buf.is_allocated) {
                     list[count]->base = buf.base;
                     list[count]->len = buf.off;
                     count++;
+                } else {
+                    ptls_buffer_dispose(&buf);
                 }
-				else
-				{
-					ptls_buffer_dispose(&buf);
-				}
-            }
-            else
-            {
+            } else {
                 ptls_buffer_dispose(&buf);
                 break;
             }
         }
     }
-    
-    if (ret == PTLS_ERROR_PEM_LABEL_NOT_FOUND && count > 0)
-    {
+
+    if (ret == PTLS_ERROR_PEM_LABEL_NOT_FOUND && count > 0) {
         ret = 0;
     }
 
     *nb_objects = count;
 
-    if (F != NULL)
-    {
+    if (F != NULL) {
         fclose(F);
     }
 
     return ret;
 }
-
