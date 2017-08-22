@@ -7,6 +7,7 @@
 #include "../../include/picotls/openssl.h"
 #include "../../include/picotls/minicrypto.h"
 #include "../../include/picotls/asn1.h"
+#include "../../include/picotls/pembase64.h"
 
 void log_printf(void * ctx, const char * format, ...)
 {
@@ -274,7 +275,7 @@ int openssl_init_test_server(ptls_context_t *ctx_server, char * key_file, char *
 	ctx_server->key_exchanges = ptls_openssl_key_exchanges;
 	ctx_server->cipher_suites = ptls_openssl_cipher_suites;
 
-	ret = ptls_minicrypto_set_certificates(ctx_server, cert_file);
+	ret = ptls_load_certificates(ctx_server, cert_file);
 	if (ret != 0)
 	{
 		fprintf(stderr, "Could not read the server certificates\n");
@@ -313,7 +314,7 @@ int minicrypto_init_test_server(ptls_context_t *ctx_server, char * key_file, cha
 	ctx_server->key_exchanges = ptls_minicrypto_key_exchanges;
 	ctx_server->cipher_suites = ptls_minicrypto_cipher_suites;
 
-	ret = ptls_minicrypto_set_certificates(ctx_server, cert_file);
+	ret = ptls_load_certificates(ctx_server, cert_file);
 
 	if (ret != 0)
 	{
@@ -321,7 +322,7 @@ int minicrypto_init_test_server(ptls_context_t *ctx_server, char * key_file, cha
 	}
 	else
 	{
-		ret = ptls_minicrypto_set_private_key(ctx_server, key_file);
+		ret = ptls_minicrypto_load_private_key(ctx_server, key_file);
 	}
 
 	return ret;

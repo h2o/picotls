@@ -153,6 +153,7 @@
     <ClInclude Include="..\..\deps\cifra\src\tassert.h" />
     <ClInclude Include="..\..\include\picotls\asn1.h" />
     <ClInclude Include="..\..\include\picotls\minicrypto.h" />
+    <ClInclude Include="..\..\include\picotls\pembase64.h" />
     <ClInclude Include="targetver.h" />
     <ClInclude Include="wincompat.h" />
   </ItemGroup>

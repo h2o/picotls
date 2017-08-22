@@ -27,8 +27,7 @@
 #include <string.h>
 #include <stdio.h>
 #include "picotls.h"
-#include "picotls/minicrypto.h"
-#include "picotls/asn1.h"
+#include "picotls/pembase64.h"
 
 static char ptls_base64_alphabet[] = {
     'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',

@@ -34,6 +34,7 @@
 #include "picotls.h"
 #include "picotls/minicrypto.h"
 #include "picotls/asn1.h"
+#include "picotls/pembase64.h"
 
 #define TYPE_UNCOMPRESSED_PUBLIC_KEY 4
 
@@ -560,7 +561,7 @@ static int ptls_set_ecdsa_private_key(ptls_context_t * ctx,
 	return decode_error;
 }
 
-int ptls_minicrypto_set_private_key(ptls_context_t * ctx, char const * pem_fname)
+int ptls_minicrypto_load_private_key(ptls_context_t * ctx, char const * pem_fname)
 {
 	ptls_asn1_pkcs8_private_key_t pkey = { { 0 } };
 	int ret = ptls_pem_parse_private_key(pem_fname, &pkey, NULL);
@@ -586,25 +587,4 @@ int ptls_minicrypto_set_private_key(ptls_context_t * ctx, char const * pem_fname
 	return ret;
 }
 
-#define PTLS_MAX_CERTS_IN_CONTEXT 16
-
-int ptls_minicrypto_set_certificates(ptls_context_t * ctx, char * cert_pem_file)
-{
-	int ret = 0;
-
-	ctx->certificates.list = (ptls_iovec_t *)
-		malloc(PTLS_MAX_CERTS_IN_CONTEXT * sizeof(ptls_iovec_t));
-
-	if (ctx->certificates.list == NULL)
-	{
-		ret = PTLS_ERROR_NO_MEMORY;
-	}
-	else
-	{
-		ret = ptls_minicrypto_get_pem_objects(cert_pem_file, "CERTIFICATE",
-			&ctx->certificates.list, PTLS_MAX_CERTS_IN_CONTEXT, &ctx->certificates.count);
-	}
-
-	return ret;
-}
 
