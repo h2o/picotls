@@ -1280,6 +1280,15 @@ static int check_server_hello_version(uint16_t ver)
     return 0;
 }
 
+static ptls_cipher_suite_t *find_cipher_suite(ptls_context_t *ctx, uint16_t id)
+{
+    ptls_cipher_suite_t **cs;
+
+    for (cs = ctx->cipher_suites; *cs != NULL && (*cs)->id != id; ++cs)
+        ;
+    return *cs;
+}
+
 static int client_handle_hello_retry_request(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t message,
                                              ptls_handshake_properties_t *properties)
 {
@@ -1293,6 +1302,16 @@ static int client_handle_hello_retry_request(ptls_t *tls, ptls_buffer_t *sendbuf
         uint16_t ver;
         if ((ret = ptls_decode16(&ver, &src, end)) != 0 || (ret = check_server_hello_version(ver)) != 0)
             goto Exit;
+    }
+
+    { /* check cipher suite */
+        uint16_t csid;
+        if ((ret = ptls_decode16(&csid, &src, end)) != 0)
+            goto Exit;
+        if (find_cipher_suite(tls->ctx, csid) == NULL) {
+            ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+            goto Exit;
+        }
     }
 
     decode_extensions(src, end, PTLS_HANDSHAKE_TYPE_HELLO_RETRY_REQUEST, &type, {
@@ -1360,17 +1379,12 @@ static int decode_server_hello(ptls_t *tls, struct st_ptls_server_hello_t *sh, c
 
     { /* select cipher_suite */
         uint16_t csid;
-        ptls_cipher_suite_t **cs;
         if ((ret = ptls_decode16(&csid, &src, end)) != 0)
             goto Exit;
-        for (cs = tls->ctx->cipher_suites; *cs != NULL; ++cs)
-            if ((*cs)->id == csid)
-                break;
-        if (*cs == NULL) {
-            ret = PTLS_ALERT_HANDSHAKE_FAILURE;
+        if ((tls->cipher_suite = find_cipher_suite(tls->ctx, csid)) == NULL) {
+            ret = PTLS_ALERT_ILLEGAL_PARAMETER;
             goto Exit;
         }
-        tls->cipher_suite = *cs;
     }
 
     uint16_t type;
@@ -2217,6 +2231,7 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
             key_schedule_extract(tls->key_schedule, ptls_iovec_init(NULL, 0));
             buffer_push_handshake(sendbuf, tls->key_schedule, PTLS_HANDSHAKE_TYPE_HELLO_RETRY_REQUEST, {
                 ptls_buffer_push16(sendbuf, PTLS_PROTOCOL_VERSION_DRAFT21);
+                ptls_buffer_push16(sendbuf, tls->cipher_suite->id);
                 ptls_buffer_push_block(sendbuf, 2, {
                     buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_KEY_SHARE,
                                           { ptls_buffer_push16(sendbuf, negotiated_group->id); });
