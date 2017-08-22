@@ -22,9 +22,9 @@ SET(MINICRYPTO_LIBRARY_FILES
     deps/cifra/src/poly1305.c
     deps/cifra/src/sha256.c)
 
-ADD_LIBRARY(picotls-core lib/picotls.c)
-ADD_LIBRARY(picotls-minicrypto ${MINICRYPTO_LIBRARY_FILES} lib/cifra.c lib/uecc.c lib/pembase64.c lib/asn1.c)
-ADD_EXECUTABLE(test-minicrypto.t ${MINICRYPTO_LIBRARY_FILES} deps/picotest/picotest.c t/picotls.c t/minicrypto.c lib/pembase64.c lib/asn1.c)
+ADD_LIBRARY(picotls-core lib/picotls.c lib/pembase64.c)
+ADD_LIBRARY(picotls-minicrypto ${MINICRYPTO_LIBRARY_FILES} lib/cifra.c lib/uecc.c lib/asn1.c)
+ADD_EXECUTABLE(test-minicrypto.t ${MINICRYPTO_LIBRARY_FILES} deps/picotest/picotest.c t/picotls.c t/minicrypto.c lib/asn1.c)
 
 SET(TEST_EXES test-minicrypto.t)
 
@@ -32,7 +32,7 @@ FIND_PACKAGE(OpenSSL)
 IF (OPENSSL_FOUND AND NOT (OPENSSL_VERSION VERSION_LESS "1.0.1"))
     MESSAGE(WARNING "Enabling OpenSSL support")
     INCLUDE_DIRECTORIES(${OPENSSL_INCLUDE_DIR})
-    ADD_LIBRARY(picotls-openssl lib/openssl.c lib/pembase64.c)
+    ADD_LIBRARY(picotls-openssl lib/openssl.c)
     ADD_EXECUTABLE(cli t/cli.c)
     TARGET_LINK_LIBRARIES(cli picotls-openssl picotls-core ${OPENSSL_LIBRARIES})
     ADD_EXECUTABLE(test-openssl.t ${MINICRYPTO_LIBRARY_FILES} lib/cifra.c lib/uecc.c lib/pembase64.c lib/asn1.c deps/picotest/picotest.c t/picotls.c t/openssl.c)
