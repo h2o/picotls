@@ -349,7 +349,7 @@ static int ptls_get_pem_object(FILE * F, const char * label, ptls_buffer_t *buf)
     return ret;
 }
 
-int ptls_minicrypto_get_pem_objects(char const * pem_fname, const char * label, 
+int ptls_load_pem_objects(char const * pem_fname, const char * label, 
 	ptls_iovec_t ** list, size_t list_max, size_t * nb_objects)
 {
     FILE * F;

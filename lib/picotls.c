@@ -3275,7 +3275,7 @@ int ptls_load_certificates(ptls_context_t * ctx, char * cert_pem_file)
 	}
 	else
 	{
-		ret = ptls_minicrypto_get_pem_objects(cert_pem_file, "CERTIFICATE",
+		ret = ptls_load_pem_objects(cert_pem_file, "CERTIFICATE",
 			&ctx->certificates.list, PTLS_MAX_CERTS_IN_CONTEXT, &ctx->certificates.count);
 	}
 

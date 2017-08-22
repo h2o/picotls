@@ -42,7 +42,7 @@ int openPemTest(char const * filename)
 	size_t byte_index = 0;
 	int decode_error;
 
-	int ret = ptls_minicrypto_get_pem_objects(filename, "PRIVATE KEY", &list, 1, &count);
+	int ret = ptls_load_pem_objects(filename, "PRIVATE KEY", &list, 1, &count);
 
 
 	if (ret == 0)
