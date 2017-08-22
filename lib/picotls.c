@@ -30,7 +30,6 @@
 #include <sys/time.h>
 #endif
 #include "picotls.h"
-#include "picotls/pembase64.h"
 
 #define PTLS_MAX_PLAINTEXT_RECORD_SIZE 16384
 #define PTLS_MAX_ENCRYPTED_RECORD_SIZE (16384 + 256)
@@ -3261,6 +3260,9 @@ static void clear_memory(void *p, size_t len)
 void (*volatile ptls_clear_memory)(void *p, size_t len) = clear_memory;
 
 #define PTLS_MAX_CERTS_IN_CONTEXT 16
+
+int ptls_load_pem_objects(char const * pem_fname, const char * label,
+	ptls_iovec_t ** list, size_t list_max, size_t * nb_objects);
 
 int ptls_load_certificates(ptls_context_t * ctx, char * cert_pem_file)
 {
