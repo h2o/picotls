@@ -46,15 +46,15 @@ extern ptls_cipher_suite_t ptls_minicrypto_aes128gcmsha256;
 extern ptls_cipher_suite_t *ptls_minicrypto_cipher_suites[];
 
 typedef struct st_ptls_asn1_pkcs8_private_key_t {
-	ptls_iovec_t vec;
-	size_t algorithm_index;
-	uint32_t algorithm_length;
-	size_t parameters_index;
-	uint32_t parameters_length;
-	size_t key_data_index;
-	uint32_t key_data_length;
+    ptls_iovec_t vec;
+    size_t algorithm_index;
+    uint32_t algorithm_length;
+    size_t parameters_index;
+    uint32_t parameters_length;
+    size_t key_data_index;
+    uint32_t key_data_length;
 } ptls_asn1_pkcs8_private_key_t;
 
-int ptls_minicrypto_load_private_key(ptls_context_t * ctx, char const * pem_fname);
+int ptls_minicrypto_load_private_key(ptls_context_t *ctx, char const *pem_fname);
 
 #endif
