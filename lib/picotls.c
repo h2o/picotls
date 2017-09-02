@@ -3277,22 +3277,18 @@ void (*volatile ptls_clear_memory)(void *p, size_t len) = clear_memory;
 
 #define PTLS_MAX_CERTS_IN_CONTEXT 16
 
-int ptls_load_certificates(ptls_context_t * ctx, char * cert_pem_file)
+int ptls_load_certificates(ptls_context_t *ctx, char *cert_pem_file)
 {
-	int ret = 0;
+    int ret = 0;
 
-	ctx->certificates.list = (ptls_iovec_t *)
-		malloc(PTLS_MAX_CERTS_IN_CONTEXT * sizeof(ptls_iovec_t));
+    ctx->certificates.list = (ptls_iovec_t *)malloc(PTLS_MAX_CERTS_IN_CONTEXT * sizeof(ptls_iovec_t));
 
-	if (ctx->certificates.list == NULL)
-	{
-		ret = PTLS_ERROR_NO_MEMORY;
-	}
-	else
-	{
-		ret = ptls_load_pem_objects(cert_pem_file, "CERTIFICATE",
-			&ctx->certificates.list, PTLS_MAX_CERTS_IN_CONTEXT, &ctx->certificates.count);
-	}
+    if (ctx->certificates.list == NULL) {
+        ret = PTLS_ERROR_NO_MEMORY;
+    } else {
+        ret = ptls_load_pem_objects(cert_pem_file, "CERTIFICATE", &ctx->certificates.list, PTLS_MAX_CERTS_IN_CONTEXT,
+                                    &ctx->certificates.count);
+    }
 
-	return ret;
+    return ret;
 }
