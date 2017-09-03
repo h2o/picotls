@@ -1273,7 +1273,7 @@ static int client_handle_hello_retry_request(ptls_t *tls, ptls_buffer_t *sendbuf
                     goto Exit;
                 }
                 cookie = ptls_iovec_init(src, end - src);
-                end = src;
+                src = end;
             });
             break;
         }
