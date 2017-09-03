@@ -1334,7 +1334,7 @@ static int client_handle_hello_retry_request(ptls_t *tls, ptls_buffer_t *sendbuf
         case PTLS_EXTENSION_TYPE_COOKIE:
             ptls_decode_block(src, end, 2, {
                 if (src == end) {
-					ret = PTLS_ALERT_DECODE_ERROR;
+                    ret = PTLS_ALERT_DECODE_ERROR;
                     goto Exit;
                 }
                 cookie = ptls_iovec_init(src, end - src);
