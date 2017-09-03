@@ -569,7 +569,7 @@ int ptls_decode64(uint64_t *value, const uint8_t **src, const uint8_t *end);
             goto Exit;                                                                                                             \
         }                                                                                                                          \
         do {                                                                                                                       \
-            const uint8_t *end = (src) + _block_size;                                                                              \
+            const uint8_t *const end = (src) + _block_size;                                                                        \
             do {                                                                                                                   \
                 block                                                                                                              \
             } while (0);                                                                                                           \
