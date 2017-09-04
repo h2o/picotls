@@ -254,7 +254,7 @@ struct st_ptls_key_schedule_t {
 
 struct st_ptls_extension_decoder_t {
     uint16_t type;
-    int (*cb)(ptls_t *tls, void *arg, const uint8_t *src, const uint8_t *end);
+    int (*cb)(ptls_t *tls, void *arg, const uint8_t *src, const uint8_t *const end);
 };
 
 struct st_ptls_extension_bitmap_t {
@@ -417,7 +417,7 @@ int ptls_buffer__adjust_asn1_blocksize(ptls_buffer_t *buf, size_t body_size)
 
 int ptls_buffer_push_asn1_ubigint(ptls_buffer_t *buf, const void *bignum, size_t size)
 {
-    const uint8_t *p = bignum, *end = p + size;
+    const uint8_t *p = bignum, *const end = p + size;
     int ret;
 
     /* skip zeroes */
@@ -552,7 +552,7 @@ Exit:
         ptls_decode_assert_block_close((src), end);                                                                                \
     } while (0)
 
-int ptls_decode16(uint16_t *value, const uint8_t **src, const uint8_t *end)
+int ptls_decode16(uint16_t *value, const uint8_t **src, const uint8_t *const end)
 {
     if (end - *src < 2)
         return PTLS_ALERT_DECODE_ERROR;
@@ -561,7 +561,7 @@ int ptls_decode16(uint16_t *value, const uint8_t **src, const uint8_t *end)
     return 0;
 }
 
-int ptls_decode32(uint32_t *value, const uint8_t **src, const uint8_t *end)
+int ptls_decode32(uint32_t *value, const uint8_t **src, const uint8_t *const end)
 {
     if (end - *src < 4)
         return PTLS_ALERT_DECODE_ERROR;
@@ -570,7 +570,7 @@ int ptls_decode32(uint32_t *value, const uint8_t **src, const uint8_t *end)
     return 0;
 }
 
-int ptls_decode64(uint64_t *value, const uint8_t **src, const uint8_t *end)
+int ptls_decode64(uint64_t *value, const uint8_t **src, const uint8_t *const end)
 {
     if (end - *src < 8)
         return PTLS_ALERT_DECODE_ERROR;
@@ -714,7 +714,7 @@ Exit:
 }
 
 static int decode_new_session_ticket(uint32_t *lifetime, uint32_t *age_add, ptls_iovec_t *nonce, ptls_iovec_t *ticket,
-                                     uint32_t *max_early_data_size, const uint8_t *src, const uint8_t *end)
+                                     uint32_t *max_early_data_size, const uint8_t *src, const uint8_t *const end)
 {
     uint16_t exttype;
     int ret;
@@ -756,7 +756,7 @@ Exit:
 
 static int decode_stored_session_ticket(ptls_context_t *ctx, ptls_cipher_suite_t **cs, ptls_iovec_t *secret,
                                         uint32_t *obfuscated_ticket_age, ptls_iovec_t *ticket, uint32_t *max_early_data_size,
-                                        const uint8_t *src, const uint8_t *end)
+                                        const uint8_t *src, const uint8_t *const end)
 {
     uint16_t csid;
     uint32_t lifetime, age_add;
@@ -891,7 +891,7 @@ Exit:
 }
 
 int decode_session_identifier(uint64_t *issued_at, ptls_iovec_t *psk, uint32_t *ticket_age_add, ptls_iovec_t *server_name,
-                              uint16_t *csid, ptls_iovec_t *negotiated_protocol, const uint8_t *src, const uint8_t *end)
+                              uint16_t *csid, ptls_iovec_t *negotiated_protocol, const uint8_t *src, const uint8_t *const end)
 {
     int ret = 0;
 
@@ -1258,7 +1258,7 @@ Exit:
     return ret;
 }
 
-static int decode_key_share_entry(uint16_t *group, ptls_iovec_t *key_exchange, const uint8_t **src, const uint8_t *end)
+static int decode_key_share_entry(uint16_t *group, ptls_iovec_t *key_exchange, const uint8_t **src, const uint8_t *const end)
 {
     int ret;
 
@@ -1292,7 +1292,7 @@ static ptls_cipher_suite_t *find_cipher_suite(ptls_context_t *ctx, uint16_t id)
 static int client_handle_hello_retry_request(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t message,
                                              ptls_handshake_properties_t *properties)
 {
-    const uint8_t *src = message.base + PTLS_HANDSHAKE_HEADER_SIZE, *end = message.base + message.len;
+    const uint8_t *src = message.base + PTLS_HANDSHAKE_HEADER_SIZE, *const end = message.base + message.len;
     uint16_t type;
     ptls_key_exchange_algorithm_t **selected_group = NULL;
     ptls_iovec_t cookie = {NULL};
@@ -1357,7 +1357,7 @@ Exit:
     return ret;
 }
 
-static int decode_server_hello(ptls_t *tls, struct st_ptls_server_hello_t *sh, const uint8_t *src, const uint8_t *end)
+static int decode_server_hello(ptls_t *tls, struct st_ptls_server_hello_t *sh, const uint8_t *src, const uint8_t *const end)
 {
     uint16_t selected_psk_identity = UINT16_MAX;
     int ret;
@@ -1472,7 +1472,7 @@ Exit:
 }
 
 static int handle_unknown_extension(ptls_t *tls, ptls_handshake_properties_t *properties, uint16_t type, const uint8_t *src,
-                                    const uint8_t *end, ptls_raw_extension_t *slots)
+                                    const uint8_t *const end, ptls_raw_extension_t *slots)
 {
 
     if (properties != NULL && properties->collect_extension != NULL && properties->collect_extension(tls, properties, type)) {
@@ -1503,7 +1503,7 @@ static int report_unknown_extensions(ptls_t *tls, ptls_handshake_properties_t *p
 
 static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message, ptls_handshake_properties_t *properties)
 {
-    const uint8_t *src = message.base + PTLS_HANDSHAKE_HEADER_SIZE, *end = message.base + message.len;
+    const uint8_t *src = message.base + PTLS_HANDSHAKE_HEADER_SIZE, *const end = message.base + message.len;
     uint16_t type;
     ptls_raw_extension_t unknown_extensions[MAX_UNKNOWN_EXTENSIONS + 1];
     int ret, skip_early_data = 1;
@@ -1572,7 +1572,7 @@ Exit:
 
 static int client_handle_certificate(ptls_t *tls, ptls_iovec_t message)
 {
-    const uint8_t *src = message.base + PTLS_HANDSHAKE_HEADER_SIZE, *end = message.base + message.len;
+    const uint8_t *src = message.base + PTLS_HANDSHAKE_HEADER_SIZE, *const end = message.base + message.len;
     ptls_iovec_t certs[16];
     size_t num_certs = 0;
     int ret;
@@ -1613,7 +1613,7 @@ Exit:
 
 static int client_handle_certificate_verify(ptls_t *tls, ptls_iovec_t message)
 {
-    const uint8_t *src = message.base + PTLS_HANDSHAKE_HEADER_SIZE, *end = message.base + message.len;
+    const uint8_t *src = message.base + PTLS_HANDSHAKE_HEADER_SIZE, *const end = message.base + message.len;
     uint16_t algo;
     ptls_iovec_t signature;
     uint8_t signdata[PTLS_MAX_CERTIFICATE_VERIFY_SIGNDATA_SIZE];
@@ -1703,7 +1703,7 @@ Exit:
 
 static int client_handle_new_session_ticket(ptls_t *tls, ptls_iovec_t message)
 {
-    const uint8_t *src = message.base + PTLS_HANDSHAKE_HEADER_SIZE, *end = message.base + message.len;
+    const uint8_t *src = message.base + PTLS_HANDSHAKE_HEADER_SIZE, *const end = message.base + message.len;
     ptls_iovec_t ticket_nonce;
     int ret;
 
@@ -1743,7 +1743,7 @@ Exit:
     return ret;
 }
 
-static int client_hello_decode_server_name(ptls_iovec_t *name, const uint8_t *src, const uint8_t *end)
+static int client_hello_decode_server_name(ptls_iovec_t *name, const uint8_t *src, const uint8_t *const end)
 {
     int ret = 0;
 
@@ -1776,7 +1776,7 @@ Exit:
 }
 
 static int select_cipher_suite(ptls_cipher_suite_t **selected, ptls_cipher_suite_t **candidates, const uint8_t *src,
-                               const uint8_t *end)
+                               const uint8_t *const end)
 {
     int ret;
 
@@ -1802,7 +1802,7 @@ Exit:
 }
 
 static int select_key_share(ptls_key_exchange_algorithm_t **selected, ptls_iovec_t *peer_key,
-                            ptls_key_exchange_algorithm_t **candidates, const uint8_t *src, const uint8_t *end)
+                            ptls_key_exchange_algorithm_t **candidates, const uint8_t *src, const uint8_t *const end)
 {
     int ret;
 
@@ -1831,7 +1831,7 @@ Exit:
 }
 
 static int select_negotiated_group(ptls_key_exchange_algorithm_t **selected, ptls_key_exchange_algorithm_t **candidates,
-                                   const uint8_t *src, const uint8_t *end)
+                                   const uint8_t *src, const uint8_t *const end)
 {
     int ret;
 
@@ -1856,7 +1856,7 @@ Exit:
     return ret;
 }
 
-static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, const uint8_t *src, const uint8_t *end,
+static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, const uint8_t *src, const uint8_t *const end,
                                ptls_handshake_properties_t *properties)
 {
     uint16_t exttype = 0;
@@ -2507,7 +2507,7 @@ static int parse_record(ptls_t *tls, struct st_ptls_record_t *rec, const uint8_t
     }
 
     /* slow path */
-    const uint8_t *end = src + *len;
+    const uint8_t *const end = src + *len;
     *rec = (struct st_ptls_record_t){0};
 
     if (tls->recvbuf.rec.base == NULL) {
@@ -2946,7 +2946,7 @@ int ptls_handshake(ptls_t *tls, ptls_buffer_t *sendbuf, const void *input, size_
         break;
     }
 
-    const uint8_t *src = input, *src_end = src + *inlen;
+    const uint8_t *src = input, *const src_end = src + *inlen;
     ptls_buffer_t decryptbuf;
     uint8_t decryptbuf_small[256];
 
@@ -2980,7 +2980,7 @@ int ptls_handshake(ptls_t *tls, ptls_buffer_t *sendbuf, const void *input, size_
 
 int ptls_receive(ptls_t *tls, ptls_buffer_t *decryptbuf, const void *_input, size_t *inlen)
 {
-    const uint8_t *input = (const uint8_t *)_input, *end = input + *inlen;
+    const uint8_t *input = (const uint8_t *)_input, *const end = input + *inlen;
     size_t decryptbuf_orig_size = decryptbuf->off;
     int ret = 0;
 
