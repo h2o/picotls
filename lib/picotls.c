@@ -1280,8 +1280,8 @@ static int client_handle_hello_retry_request(ptls_t *tls, ptls_buffer_t *sendbuf
     });
 
     if (selected_group == NULL) {
-        ret = PTLS_ALERT_DECODE_ERROR;
-        goto Exit;
+        /* This will happen when there was no Key Share extension in the HRR */
+        selected_group = &tls->ctx->key_exchanges[0];
     }
 
     key_schedule_update_hash(tls->key_schedule, message.base, message.len);
