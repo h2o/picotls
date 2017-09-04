@@ -142,7 +142,7 @@ int ptls_base64_decode(const char *text, ptls_base64_decode_state_t *state, ptls
     while (text[text_index] != 0 && ret == 0 && state->status == PTLS_BASE64_DECODE_IN_PROGRESS) {
         c = text[text_index++];
 
-        vc = ptls_base64_values[c];
+        vc = 0 < c && c < 0x7f ? ptls_base64_values[c] : -1;
         if (vc == -1) {
             if (state->nbc == 2 && c == '=' && text[text_index] == '=') {
                 state->nbc = 4;
