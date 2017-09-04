@@ -92,6 +92,10 @@
 		10EACB1A1DCEC2A300CA0341 /* libpicotls-core.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 106530DA1D9B3E6F005B2C60 /* libpicotls-core.a */; };
 		E99B75E01F5CDDB500CF503E /* asn1.c in Sources */ = {isa = PBXBuildFile; fileRef = E99B75DE1F5CDDB500CF503E /* asn1.c */; };
 		E99B75E11F5CDDB500CF503E /* pembase64.c in Sources */ = {isa = PBXBuildFile; fileRef = E99B75DF1F5CDDB500CF503E /* pembase64.c */; };
+		E99B75E21F5CE54D00CF503E /* asn1.c in Sources */ = {isa = PBXBuildFile; fileRef = E99B75DE1F5CDDB500CF503E /* asn1.c */; };
+		E99B75E31F5CE54D00CF503E /* asn1.c in Sources */ = {isa = PBXBuildFile; fileRef = E99B75DE1F5CDDB500CF503E /* asn1.c */; };
+		E99B75E41F5CE64E00CF503E /* pembase64.c in Sources */ = {isa = PBXBuildFile; fileRef = E99B75DF1F5CDDB500CF503E /* pembase64.c */; };
+		E99B75E51F5CE64E00CF503E /* pembase64.c in Sources */ = {isa = PBXBuildFile; fileRef = E99B75DF1F5CDDB500CF503E /* pembase64.c */; };
 		E9BC76CF1EF3A35E00EB7A09 /* chacha20.c in Sources */ = {isa = PBXBuildFile; fileRef = E9BC76C61EF3A2F700EB7A09 /* chacha20.c */; };
 		E9BC76D21EF3A36A00EB7A09 /* chacha20.c in Sources */ = {isa = PBXBuildFile; fileRef = E9BC76C61EF3A2F700EB7A09 /* chacha20.c */; };
 		E9BC76D41EF3A37200EB7A09 /* chacha20.c in Sources */ = {isa = PBXBuildFile; fileRef = E9BC76C61EF3A2F700EB7A09 /* chacha20.c */; };
@@ -601,12 +605,14 @@
 			buildActionMask = 2147483647;
 			files = (
 				105900B61DC943D400FB4085 /* aes.c in Sources */,
+				E99B75E51F5CE64E00CF503E /* pembase64.c in Sources */,
 				105900431DC8D57000FB4085 /* picotls.c in Sources */,
 				105900C41DC96B2200FB4085 /* uECC.c in Sources */,
 				105900441DC8D57000FB4085 /* picotest.c in Sources */,
 				105900611DC8DF8C00FB4085 /* sha256.c in Sources */,
 				E9BC76D21EF3A36A00EB7A09 /* chacha20.c in Sources */,
 				1059004E1DC8D61800FB4085 /* minicrypto.c in Sources */,
+				E99B75E31F5CE54D00CF503E /* asn1.c in Sources */,
 				10EACAF01DCC843A00CA0341 /* drbg.c in Sources */,
 				E9BC76E11EF3CCDE00EB7A09 /* poly1305.c in Sources */,
 				1059006A1DC8DFE300FB4085 /* hmac.c in Sources */,
@@ -638,6 +644,7 @@
 				105900D01DCBECFE00FB4085 /* sha256.c in Sources */,
 				1059004C1DC8D5B700FB4085 /* openssl.c in Sources */,
 				105900D21DCBED0A00FB4085 /* uecc.c in Sources */,
+				E99B75E21F5CE54D00CF503E /* asn1.c in Sources */,
 				105900C81DCBECDD00FB4085 /* blockwise.c in Sources */,
 				105900D31DCBED1D00FB4085 /* uECC.c in Sources */,
 				105900C91DCBECE100FB4085 /* chash.c in Sources */,
@@ -649,6 +656,7 @@
 				E9BC76D41EF3A37200EB7A09 /* chacha20.c in Sources */,
 				105900CB1DCBECEA00FB4085 /* drbg.c in Sources */,
 				105900CA1DCBECE500FB4085 /* curve25519.c in Sources */,
+				E99B75E41F5CE64E00CF503E /* pembase64.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
