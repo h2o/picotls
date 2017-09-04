@@ -245,7 +245,7 @@ static int ptls_compare_separator_line(const char *line, const char *begin_or_en
     int text_index = 5;
 
     if (ret == 0) {
-        int begin_or_end_length = strlen(begin_or_end);
+        size_t begin_or_end_length = strlen(begin_or_end);
         ret = strncmp(line + text_index, begin_or_end, begin_or_end_length);
         text_index += begin_or_end_length;
     }
@@ -256,7 +256,7 @@ static int ptls_compare_separator_line(const char *line, const char *begin_or_en
     }
 
     if (ret == 0) {
-        int label_length = strlen(label);
+        size_t label_length = strlen(label);
         ret = strncmp(line + text_index, label, label_length);
         text_index += label_length;
     }
