@@ -520,6 +520,74 @@ static void test_resumption(void)
     ctx->save_ticket = NULL;
 }
 
+static void test_stateless_hrr(void)
+{
+    ptls_t *client, *server;
+    ptls_handshake_properties_t server_hs_prop = {{{{NULL}}}};
+    uint8_t cbuf_small[16384], sbuf_small[16384], decbuf_small[16384];
+    ptls_buffer_t cbuf, sbuf, decbuf;
+    size_t consumed;
+    int ret;
+
+    server_hs_prop.server.cookie.key = "0123456789abcdef0123456789abcdef";
+    server_hs_prop.server.cookie.additional_data = ptls_iovec_init("1.2.3.4:1234", 12);
+    server_hs_prop.server.cookie.enforce_use = 1;
+
+    ptls_buffer_init(&cbuf, cbuf_small, sizeof(cbuf_small));
+    ptls_buffer_init(&sbuf, sbuf_small, sizeof(sbuf_small));
+    ptls_buffer_init(&decbuf, decbuf_small, sizeof(decbuf_small));
+
+    client = ptls_new(ctx, 0);
+
+    ret = ptls_handshake(client, &cbuf, NULL, NULL, NULL);
+    ok(ret == PTLS_ERROR_IN_PROGRESS);
+    ok(cbuf.off != 0);
+
+    server = ptls_new(ctx, 1);
+
+    consumed = cbuf.off;
+    ret = ptls_handshake(server, &sbuf, cbuf.base, &consumed, &server_hs_prop);
+    ok(ret == PTLS_ERROR_STATELESS_RETRY);
+    cbuf.off = 0;
+
+    ptls_free(server);
+    server = ptls_new(ctx, 1);
+
+    consumed = sbuf.off;
+    ret = ptls_handshake(client, &cbuf, sbuf.base, &consumed, NULL);
+    ok(ret == PTLS_ERROR_IN_PROGRESS);
+    ok(sbuf.off == consumed);
+    sbuf.off = 0;
+
+    consumed = cbuf.off;
+    ret = ptls_handshake(server, &sbuf, cbuf.base, &consumed, &server_hs_prop);
+    ok(ret == 0);
+    ok(cbuf.off == consumed);
+    cbuf.off = 0;
+
+    consumed = sbuf.off;
+    ret = ptls_handshake(client, &cbuf, sbuf.base, &consumed, NULL);
+    ok(ret == 0);
+    ok(sbuf.off == consumed);
+    sbuf.off = 0;
+
+    ret = ptls_send(client, &cbuf, "hello world", 11);
+    ok(ret == 0);
+
+    consumed = cbuf.off;
+    ret = ptls_receive(server, &decbuf, cbuf.base, &consumed);
+    ok(ret == 0);
+    ok(cbuf.off == consumed);
+    cbuf.off = 0;
+
+    ok(decbuf.off == 11);
+    ok(memcmp(decbuf.base, "hello world", 11) == 0);
+    decbuf.off = 0;
+
+    ptls_free(client);
+    ptls_free(server);
+}
+
 void test_picotls(void)
 {
     subtest("sha256", test_sha256);
@@ -537,6 +605,8 @@ void test_picotls(void)
     subtest("full-handshake", test_full_handshake);
     subtest("hrr-handshake", test_hrr_handshake);
     subtest("resumption", test_resumption);
+
+    subtest("stateless-hrr", test_stateless_hrr);
 
     ctx_peer->sign_certificate = sc_orig;
 }
