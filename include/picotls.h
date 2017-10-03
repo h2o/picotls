@@ -22,6 +22,10 @@
 #ifndef picotls_h
 #define picotls_h
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <assert.h>
 #include <inttypes.h>
 #include <sys/types.h>
@@ -766,7 +770,7 @@ inline ptls_iovec_t ptls_iovec_init(const void *p, size_t len)
 inline void ptls_buffer_init(ptls_buffer_t *buf, void *smallbuf, size_t smallbuf_size)
 {
     assert(smallbuf != NULL);
-    buf->base = smallbuf;
+    buf->base = (uint8_t *)smallbuf;
     buf->off = 0;
     buf->capacity = smallbuf_size;
     buf->is_allocated = 0;
@@ -806,5 +810,9 @@ inline size_t ptls_aead_decrypt(ptls_aead_context_t *ctx, void *output, const vo
 }
 
 int ptls_load_certificates(ptls_context_t *ctx, char *cert_pem_file);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
