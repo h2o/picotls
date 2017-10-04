@@ -3043,6 +3043,7 @@ static int handle_handshake_record(ptls_t *tls, int (*cb)(ptls_t *tls, ptls_buff
             memmove(tls->recvbuf.mess.base, src, src_end - src);
         }
         tls->recvbuf.mess.off = src_end - src;
+        ret = PTLS_ERROR_IN_PROGRESS;
     } else {
         ptls_buffer_dispose(&tls->recvbuf.mess);
     }
