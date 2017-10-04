@@ -231,6 +231,7 @@ struct st_ptls_client_hello_t {
         ptls_iovec_t tbs;
         ptls_iovec_t ch1_hash;
         ptls_iovec_t signature;
+        unsigned sent_key_share : 1;
     } cookie;
     struct {
         const uint8_t *hash_end;
@@ -1974,10 +1975,25 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
             ptls_decode_block(src, end, 2, {
                 ch->cookie.tbs.base = (void *)src;
                 ptls_decode_open_block(src, end, 2, {
-                    ptls_decode_block(src, end, 1, {
+                    ptls_decode_open_block(src, end, 1, {
                         ch->cookie.ch1_hash = ptls_iovec_init(src, end - src);
                         src = end;
                     });
+                    if (src == end) {
+                        ret = PTLS_ALERT_DECODE_ERROR;
+                        goto Exit;
+                    }
+                    switch (*src++) {
+                    case 0:
+                        assert(!ch->cookie.sent_key_share);
+                        break;
+                    case 1:
+                        ch->cookie.sent_key_share = 1;
+                        break;
+                    default:
+                        ret = PTLS_ALERT_DECODE_ERROR;
+                        goto Exit;
+                    }
                 });
                 ch->cookie.tbs.len = src - ch->cookie.tbs.base;
                 ptls_decode_block(src, end, 1, {
@@ -2219,17 +2235,22 @@ static int calc_cookie_signature(ptls_t *tls, ptls_handshake_properties_t *prope
 static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t message, ptls_handshake_properties_t *properties)
 {
 #define EMIT_HRR(sched, negotiated_group, additional_extensions)                                                                   \
-    buffer_push_handshake(sendbuf, sched, PTLS_HANDSHAKE_TYPE_HELLO_RETRY_REQUEST, {                                               \
-        ptls_buffer_push16(sendbuf, PTLS_PROTOCOL_VERSION_DRAFT21);                                                                \
-        ptls_buffer_push16(sendbuf, tls->cipher_suite->id);                                                                        \
-        ptls_buffer_push_block(sendbuf, 2, {                                                                                       \
-            buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_KEY_SHARE,                                                          \
-                                  { ptls_buffer_push16(sendbuf, (negotiated_group)->id); });                                       \
-            {                                                                                                                      \
-                additional_extensions                                                                                              \
-            }                                                                                                                      \
+    do {                                                                                                                           \
+        ptls_key_exchange_algorithm_t *_negotiated_group = (negotiated_group);                                                     \
+        buffer_push_handshake(sendbuf, (sched), PTLS_HANDSHAKE_TYPE_HELLO_RETRY_REQUEST, {                                         \
+            ptls_buffer_push16(sendbuf, PTLS_PROTOCOL_VERSION_DRAFT21);                                                            \
+            ptls_buffer_push16(sendbuf, tls->cipher_suite->id);                                                                    \
+            ptls_buffer_push_block(sendbuf, 2, {                                                                                   \
+                if (_negotiated_group != NULL) {                                                                                   \
+                    buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_KEY_SHARE,                                                  \
+                                          { ptls_buffer_push16(sendbuf, _negotiated_group->id); });                                \
+                }                                                                                                                  \
+                {                                                                                                                  \
+                    additional_extensions                                                                                          \
+                }                                                                                                                  \
+            });                                                                                                                    \
         });                                                                                                                        \
-    })
+    } while (0)
 
     struct st_ptls_client_hello_t ch = {NULL,  {NULL}, 0,          {NULL},   {NULL}, {NULL},
                                         {{0}}, {NULL}, {{{NULL}}}, {{NULL}}, {NULL}, {{UINT16_MAX}}};
@@ -2318,7 +2339,7 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
             key_schedule_extract(tls->key_schedule, ptls_iovec_init(NULL, 0));
             /* ... reusing sendbuf to rebuild HRR for hash calculation */
             size_t hrr_start = sendbuf->off;
-            EMIT_HRR(tls->key_schedule, key_share.algorithm, {
+            EMIT_HRR(tls->key_schedule, ch.cookie.sent_key_share ? key_share.algorithm : NULL, {
                 buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_COOKIE,
                                       { ptls_buffer_pushv(sendbuf, ch.cookie.all.base, ch.cookie.all.len); });
             });
@@ -2340,7 +2361,7 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
                 key_schedule_extract(tls->key_schedule, ptls_iovec_init(NULL, 0));
             }
             /* emit HelloRetryRequest */
-            EMIT_HRR(enforce_cookie_use ? NULL : tls->key_schedule, negotiated_group, {
+            EMIT_HRR(enforce_cookie_use ? NULL : tls->key_schedule, key_share.algorithm != NULL ? NULL : negotiated_group, {
                 if (enforce_cookie_use) {
                     buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_COOKIE, {
                         ptls_buffer_push_block(sendbuf, 2, {
@@ -2355,6 +2376,8 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
                                     key_schedule_extract_ch1hash(tls->key_schedule, sendbuf->base + sendbuf->off);
                                     sendbuf->off += sz;
                                 });
+                                /* second is if we have sent key_share extension */
+                                ptls_buffer_push(sendbuf, key_share.algorithm == NULL);
                                 /* we can add more data here */
                             });
                             size_t tbs_len = sendbuf->off - tbs_start;
