@@ -226,7 +226,7 @@ static int run_server(struct sockaddr *sa, socklen_t salen, ptls_context_t *ctx,
 {
     int listen_fd, conn_fd, on = 1;
 
-    if ((listen_fd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
+    if ((listen_fd = socket(sa->sa_family, SOCK_STREAM, 0)) == -1) {
         perror("socket(2) failed");
         return 1;
     }
