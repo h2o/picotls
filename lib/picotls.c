@@ -467,39 +467,73 @@ static int aead_decrypt(struct st_ptls_traffic_protection_t *ctx, void *output, 
     return 0;
 }
 
-static int buffer_encrypt_record(ptls_buffer_t *buf, size_t rec_start, struct st_ptls_traffic_protection_t *enc)
-{
-    uint8_t encrypted[PTLS_MAX_ENCRYPTED_RECORD_SIZE];
-    size_t enclen, bodylen = buf->off - rec_start - 5;
-    int ret;
-
-    assert(bodylen <= PTLS_MAX_PLAINTEXT_RECORD_SIZE);
-
-    enclen = aead_encrypt(enc, encrypted, buf->base + rec_start + 5, bodylen, buf->base[rec_start]);
-    buf->off = rec_start;
-    ptls_buffer_push(buf, PTLS_CONTENT_TYPE_APPDATA, 3, 1);
-    ptls_buffer_push16(buf, (uint16_t)enclen);
-    ptls_buffer_pushv(buf, encrypted, enclen);
-
-Exit:
-    return ret;
-}
-
 #define buffer_push_record(buf, type, block)                                                                                       \
     do {                                                                                                                           \
         ptls_buffer_push((buf), (type), PTLS_RECORD_VERSION_MAJOR, PTLS_RECORD_VERSION_MINOR);                                     \
         ptls_buffer_push_block((buf), 2, block);                                                                                   \
     } while (0)
 
-#define buffer_encrypt(buf, enc, block)                                                                                            \
-    do {                                                                                                                           \
-        size_t rec_start = (buf)->off;                                                                                             \
-        do {                                                                                                                       \
-            block                                                                                                                  \
-        } while (0);                                                                                                               \
-        if ((ret = buffer_encrypt_record((buf), rec_start, (enc))) != 0)                                                           \
-            goto Exit;                                                                                                             \
-    } while (0);
+static int buffer_push_encrypted_records(ptls_buffer_t *buf, uint8_t type, const uint8_t *src, size_t len,
+                                         struct st_ptls_traffic_protection_t *enc)
+{
+    int ret = 0;
+
+    while (len != 0) {
+        size_t chunk_size = len;
+        if (chunk_size > PTLS_MAX_PLAINTEXT_RECORD_SIZE)
+            chunk_size = PTLS_MAX_PLAINTEXT_RECORD_SIZE;
+        buffer_push_record(buf, PTLS_CONTENT_TYPE_APPDATA, {
+            if ((ret = ptls_buffer_reserve(buf, chunk_size + enc->aead->algo->tag_size + 1)) != 0)
+                goto Exit;
+            buf->off += aead_encrypt(enc, buf->base + buf->off, src, chunk_size, type);
+        });
+        src += chunk_size;
+        len -= chunk_size;
+    }
+
+Exit:
+    return ret;
+}
+
+static int buffer_encrypt_record(ptls_buffer_t *buf, size_t rec_start, struct st_ptls_traffic_protection_t *enc)
+{
+    size_t bodylen = buf->off - rec_start - 5;
+    uint8_t *tmpbuf, type = buf->base[rec_start];
+    int ret;
+
+    /* fast path: do in-place encryption if only one record needs to be emitted */
+    if (bodylen <= PTLS_MAX_PLAINTEXT_RECORD_SIZE) {
+        size_t overhead = 1 + enc->aead->algo->tag_size;
+        if ((ret = ptls_buffer_reserve(buf, overhead)) != 0)
+            return ret;
+        size_t encrypted_len = aead_encrypt(enc, buf->base + rec_start + 5, buf->base + rec_start + 5, bodylen, type);
+        assert(encrypted_len == bodylen + overhead);
+        buf->off += overhead;
+        buf->base[rec_start] = PTLS_CONTENT_TYPE_APPDATA;
+        buf->base[rec_start + 3] = (encrypted_len >> 8) & 0xff;
+        buf->base[rec_start + 4] = encrypted_len & 0xff;
+        return 0;
+    }
+
+    /* move plaintext to temporary buffer */
+    if ((tmpbuf = malloc(bodylen)) == NULL) {
+        ret = PTLS_ERROR_NO_MEMORY;
+        goto Exit;
+    }
+    memcpy(tmpbuf, buf->base + rec_start + 5, bodylen);
+    ptls_clear_memory(buf->base + rec_start, bodylen + 5);
+    buf->off = rec_start;
+
+    /* push encrypted records */
+    ret = buffer_push_encrypted_records(buf, type, tmpbuf, bodylen, enc);
+
+Exit:
+    if (tmpbuf != NULL) {
+        ptls_clear_memory(tmpbuf, bodylen);
+        free(tmpbuf);
+    }
+    return ret;
+}
 
 #define buffer_push_handshake_core(buf, key_sched, type, mess_start, block)                                                        \
     do {                                                                                                                           \
@@ -510,14 +544,19 @@ Exit:
             } while (0);                                                                                                           \
         });                                                                                                                        \
         if ((key_sched) != NULL)                                                                                                   \
-            key_schedule_update_hash((key_sched), (buf)->base + mess_start, (buf)->off - (mess_start));                            \
+            key_schedule_update_hash((key_sched), (buf)->base + (mess_start), (buf)->off - (mess_start));                          \
     } while (0)
 
-#define buffer_push_handshake(buf, key_sched, type, block)                                                                         \
-    buffer_push_record((buf), PTLS_CONTENT_TYPE_HANDSHAKE, {                                                                       \
-        size_t mess_start = (buf)->off;                                                                                            \
-        buffer_push_handshake_core((buf), (key_sched), (type), mess_start, block);                                                 \
-    })
+#define buffer_push_handshake(buf, key_sched, enc, type, block)                                                                    \
+    do {                                                                                                                           \
+        size_t rec_start = (buf)->off;                                                                                             \
+        buffer_push_record((buf), PTLS_CONTENT_TYPE_HANDSHAKE,                                                                     \
+                           { buffer_push_handshake_core((buf), (key_sched), (type), rec_start + 5, block); });                     \
+        if ((enc) != NULL) {                                                                                                       \
+            if ((ret = buffer_encrypt_record((buf), rec_start, (enc))) != 0)                                                       \
+                goto Exit;                                                                                                         \
+        }                                                                                                                          \
+    } while (0)
 
 #define buffer_calc_handshake_hash(buf, key_sched, type, block)                                                                    \
     do {                                                                                                                           \
@@ -945,14 +984,12 @@ static int send_finished(ptls_t *tls, ptls_buffer_t *sendbuf)
 {
     int ret;
 
-    buffer_encrypt(sendbuf, &tls->traffic_protection.enc, {
-        buffer_push_handshake(sendbuf, tls->key_schedule, PTLS_HANDSHAKE_TYPE_FINISHED, {
-            if ((ret = ptls_buffer_reserve(sendbuf, tls->key_schedule->algo->digest_size)) != 0)
-                goto Exit;
-            if ((ret = calc_verify_data(sendbuf->base + sendbuf->off, tls->key_schedule, tls->traffic_protection.enc.secret)) != 0)
-                goto Exit;
-            sendbuf->off += tls->key_schedule->algo->digest_size;
-        });
+    buffer_push_handshake(sendbuf, tls->key_schedule, &tls->traffic_protection.enc, PTLS_HANDSHAKE_TYPE_FINISHED, {
+        if ((ret = ptls_buffer_reserve(sendbuf, tls->key_schedule->algo->digest_size)) != 0)
+            goto Exit;
+        if ((ret = calc_verify_data(sendbuf->base + sendbuf->off, tls->key_schedule, tls->traffic_protection.enc.secret)) != 0)
+            goto Exit;
+        sendbuf->off += tls->key_schedule->algo->digest_size;
     });
 
 Exit:
@@ -991,20 +1028,18 @@ static int send_session_ticket(ptls_t *tls, ptls_buffer_t *sendbuf)
         goto Exit;
 
     /* encrypt and send */
-    buffer_encrypt(sendbuf, &tls->traffic_protection.enc, {
-        buffer_push_handshake(sendbuf, tls->key_schedule, PTLS_HANDSHAKE_TYPE_NEW_SESSION_TICKET, {
-            ptls_buffer_push32(sendbuf, tls->ctx->ticket_lifetime);
-            ptls_buffer_push32(sendbuf, ticket_age_add);
-            ptls_buffer_push_block(sendbuf, 2, {
-                if ((ret = tls->ctx->encrypt_ticket->cb(tls->ctx->encrypt_ticket, tls, 1, sendbuf,
-                                                        ptls_iovec_init(session_id.base, session_id.off))) != 0)
-                    goto Exit;
-            });
-            ptls_buffer_push_block(sendbuf, 2, {
-                if (tls->ctx->max_early_data_size != 0)
-                    buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_TICKET_EARLY_DATA_INFO,
-                                          { ptls_buffer_push32(sendbuf, tls->ctx->max_early_data_size); });
-            });
+    buffer_push_handshake(sendbuf, tls->key_schedule, &tls->traffic_protection.enc, PTLS_HANDSHAKE_TYPE_NEW_SESSION_TICKET, {
+        ptls_buffer_push32(sendbuf, tls->ctx->ticket_lifetime);
+        ptls_buffer_push32(sendbuf, ticket_age_add);
+        ptls_buffer_push_block(sendbuf, 2, {
+            if ((ret = tls->ctx->encrypt_ticket->cb(tls->ctx->encrypt_ticket, tls, 1, sendbuf,
+                                                    ptls_iovec_init(session_id.base, session_id.off))) != 0)
+                goto Exit;
+        });
+        ptls_buffer_push_block(sendbuf, 2, {
+            if (tls->ctx->max_early_data_size != 0)
+                buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_TICKET_EARLY_DATA_INFO,
+                                      { ptls_buffer_push32(sendbuf, tls->ctx->max_early_data_size); });
         });
     });
 
@@ -1075,7 +1110,7 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_handshake
     }
 
     msghash_off = sendbuf->off + 5;
-    buffer_push_handshake(sendbuf, NULL, PTLS_HANDSHAKE_TYPE_CLIENT_HELLO, {
+    buffer_push_handshake(sendbuf, NULL, NULL, PTLS_HANDSHAKE_TYPE_CLIENT_HELLO, {
         /* legacy_version */
         ptls_buffer_push16(sendbuf, 0x0303);
         /* random_bytes */
@@ -2150,7 +2185,7 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
             key_schedule_update_hash(tls->key_schedule, message.base, message.len);
             assert(tls->key_schedule->generation == 0);
             key_schedule_extract(tls->key_schedule, ptls_iovec_init(NULL, 0));
-            buffer_push_handshake(sendbuf, tls->key_schedule, PTLS_HANDSHAKE_TYPE_HELLO_RETRY_REQUEST, {
+            buffer_push_handshake(sendbuf, tls->key_schedule, NULL, PTLS_HANDSHAKE_TYPE_HELLO_RETRY_REQUEST, {
                 ptls_buffer_push16(sendbuf, PTLS_PROTOCOL_VERSION_DRAFT18);
                 ptls_buffer_push_block(sendbuf, 2, {
                     buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_KEY_SHARE,
@@ -2228,7 +2263,7 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
     }
 
     /* send ServerHello */
-    buffer_push_handshake(sendbuf, tls->key_schedule, PTLS_HANDSHAKE_TYPE_SERVER_HELLO, {
+    buffer_push_handshake(sendbuf, tls->key_schedule, NULL, PTLS_HANDSHAKE_TYPE_SERVER_HELLO, {
         ptls_buffer_push16(sendbuf, PTLS_PROTOCOL_VERSION_DRAFT18);
         if ((ret = ptls_buffer_reserve(sendbuf, PTLS_HELLO_RANDOM_SIZE)) != 0)
             goto Exit;
@@ -2267,78 +2302,72 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
     }
 
     /* send EncryptedExtensions */
-    buffer_encrypt(sendbuf, &tls->traffic_protection.enc, {
-        buffer_push_handshake(sendbuf, tls->key_schedule, PTLS_HANDSHAKE_TYPE_ENCRYPTED_EXTENSIONS, {
-            ptls_buffer_push_block(sendbuf, 2, {
-                if (tls->server_name != NULL) {
-                    /* In this event, the server SHALL include an extension of type "server_name" in the (extended) server hello.
-                     * The "extension_data" field of this extension SHALL be empty. (RFC 6066 section 3) */
-                    buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SERVER_NAME, {});
-                }
-                if (tls->negotiated_protocol != NULL) {
-                    buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_ALPN, {
-                        ptls_buffer_push_block(sendbuf, 2, {
-                            ptls_buffer_push_block(sendbuf, 1, {
-                                ptls_buffer_pushv(sendbuf, tls->negotiated_protocol, strlen(tls->negotiated_protocol));
-                            });
+    buffer_push_handshake(sendbuf, tls->key_schedule, &tls->traffic_protection.enc, PTLS_HANDSHAKE_TYPE_ENCRYPTED_EXTENSIONS, {
+        ptls_buffer_push_block(sendbuf, 2, {
+            if (tls->server_name != NULL) {
+                /* In this event, the server SHALL include an extension of type "server_name" in the (extended) server hello.
+                 * The "extension_data" field of this extension SHALL be empty. (RFC 6066 section 3) */
+                buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SERVER_NAME, {});
+            }
+            if (tls->negotiated_protocol != NULL) {
+                buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_ALPN, {
+                    ptls_buffer_push_block(sendbuf, 2, {
+                        ptls_buffer_push_block(sendbuf, 1, {
+                            ptls_buffer_pushv(sendbuf, tls->negotiated_protocol, strlen(tls->negotiated_protocol));
                         });
                     });
-                }
-                if (tls->server.early_data != NULL && tls->traffic_protection.dec.aead != NULL)
-                    buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_EARLY_DATA, {});
-                if ((ret = push_additional_extensions(properties, sendbuf)) != 0)
-                    goto Exit;
-            });
+                });
+            }
+            if (tls->server.early_data != NULL && tls->traffic_protection.dec.aead != NULL)
+                buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_EARLY_DATA, {});
+            if ((ret = push_additional_extensions(properties, sendbuf)) != 0)
+                goto Exit;
         });
     });
 
     if (mode == HANDSHAKE_MODE_FULL) {
         /* send Certificate */
-        buffer_encrypt(sendbuf, &tls->traffic_protection.enc, {
-            buffer_push_handshake(sendbuf, tls->key_schedule, PTLS_HANDSHAKE_TYPE_CERTIFICATE, {
-                ptls_buffer_push(sendbuf, 0);
-                ptls_buffer_push_block(sendbuf, 3, {
-                    size_t i;
-                    for (i = 0; i != tls->ctx->certificates.count; ++i) {
-                        ptls_buffer_push_block(sendbuf, 3, {
-                            ptls_buffer_pushv(sendbuf, tls->ctx->certificates.list[i].base, tls->ctx->certificates.list[i].len);
-                        });
-                        ptls_buffer_push_block(sendbuf, 2, {
-                            /* emit OCSP stapling only when requested and when the callback successfully returns one */
-                            if (ch.status_request && i == 0 && tls->ctx->staple_ocsp != NULL) {
-                                size_t reset_off_to = sendbuf->off;
-                                buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_STATUS_REQUEST, {
-                                    ptls_buffer_push(sendbuf, 1); /* status_type == ocsp */
-                                    ptls_buffer_push_block(sendbuf, 3, {
-                                        if ((ret = tls->ctx->staple_ocsp->cb(tls->ctx->staple_ocsp, tls, sendbuf, i)) == 0)
-                                            reset_off_to = 0;
-                                    });
+        buffer_push_handshake(sendbuf, tls->key_schedule, &tls->traffic_protection.enc, PTLS_HANDSHAKE_TYPE_CERTIFICATE, {
+            ptls_buffer_push(sendbuf, 0);
+            ptls_buffer_push_block(sendbuf, 3, {
+                size_t i;
+                for (i = 0; i != tls->ctx->certificates.count; ++i) {
+                    ptls_buffer_push_block(sendbuf, 3, {
+                        ptls_buffer_pushv(sendbuf, tls->ctx->certificates.list[i].base, tls->ctx->certificates.list[i].len);
+                    });
+                    ptls_buffer_push_block(sendbuf, 2, {
+                        /* emit OCSP stapling only when requested and when the callback successfully returns one */
+                        if (ch.status_request && i == 0 && tls->ctx->staple_ocsp != NULL) {
+                            size_t reset_off_to = sendbuf->off;
+                            buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_STATUS_REQUEST, {
+                                ptls_buffer_push(sendbuf, 1); /* status_type == ocsp */
+                                ptls_buffer_push_block(sendbuf, 3, {
+                                    if ((ret = tls->ctx->staple_ocsp->cb(tls->ctx->staple_ocsp, tls, sendbuf, i)) == 0)
+                                        reset_off_to = 0;
                                 });
-                                if (reset_off_to != 0)
-                                    sendbuf->off = reset_off_to;
-                            }
-                        });
-                    }
-                });
+                            });
+                            if (reset_off_to != 0)
+                                sendbuf->off = reset_off_to;
+                        }
+                    });
+                }
             });
         });
         /* build and send CertificateVerify */
-        buffer_encrypt(sendbuf, &tls->traffic_protection.enc, {
-            buffer_push_handshake(sendbuf, tls->key_schedule, PTLS_HANDSHAKE_TYPE_CERTIFICATE_VERIFY, {
-                size_t algo_off = sendbuf->off;
-                ptls_buffer_push16(sendbuf, 0); /* filled in later */
-                ptls_buffer_push_block(sendbuf, 2, {
-                    uint16_t algo;
-                    uint8_t data[PTLS_MAX_CERTIFICATE_VERIFY_SIGNDATA_SIZE];
-                    size_t datalen =
-                        build_certificate_verify_signdata(data, tls->key_schedule, PTLS_SERVER_CERTIFICATE_VERIFY_CONTEXT_STRING);
-                    if ((ret = tls->ctx->sign_certificate->cb(tls->ctx->sign_certificate, tls, &algo, sendbuf,
-                                                              ptls_iovec_init(data, datalen), ch.signature_algorithms.list,
-                                                              ch.signature_algorithms.count)) != 0)
-                        goto Exit;
-                    sendbuf->base[algo_off] = (uint8_t)(algo >> 8);
-                    sendbuf->base[algo_off + 1] = (uint8_t)algo;
-                });
+        buffer_push_handshake(sendbuf, tls->key_schedule, &tls->traffic_protection.enc, PTLS_HANDSHAKE_TYPE_CERTIFICATE_VERIFY, {
+            size_t algo_off = sendbuf->off;
+            ptls_buffer_push16(sendbuf, 0); /* filled in later */
+            ptls_buffer_push_block(sendbuf, 2, {
+                uint16_t algo;
+                uint8_t data[PTLS_MAX_CERTIFICATE_VERIFY_SIGNDATA_SIZE];
+                size_t datalen =
+                    build_certificate_verify_signdata(data, tls->key_schedule, PTLS_SERVER_CERTIFICATE_VERIFY_CONTEXT_STRING);
+                if ((ret = tls->ctx->sign_certificate->cb(tls->ctx->sign_certificate, tls, &algo, sendbuf,
+                                                          ptls_iovec_init(data, datalen), ch.signature_algorithms.list,
+                                                          ch.signature_algorithms.count)) != 0)
+                    goto Exit;
+                sendbuf->base[algo_off] = (uint8_t)(algo >> 8);
+                sendbuf->base[algo_off + 1] = (uint8_t)algo;
             });
         });
     }
@@ -2761,6 +2790,7 @@ static int handle_handshake_record(ptls_t *tls, int (*cb)(ptls_t *tls, ptls_buff
             memmove(tls->recvbuf.mess.base, src, src_end - src);
         }
         tls->recvbuf.mess.off = src_end - src;
+        ret = PTLS_ERROR_IN_PROGRESS;
     } else {
         ptls_buffer_dispose(&tls->recvbuf.mess);
     }
@@ -2932,28 +2962,10 @@ int ptls_receive(ptls_t *tls, ptls_buffer_t *decryptbuf, const void *_input, siz
     return ret;
 }
 
-int ptls_send(ptls_t *tls, ptls_buffer_t *sendbuf, const void *_input, size_t inlen)
+int ptls_send(ptls_t *tls, ptls_buffer_t *sendbuf, const void *input, size_t inlen)
 {
-    const uint8_t *input = (const uint8_t *)_input;
-    size_t pt_size;
-    int ret = 0;
-
-    assert(tls->state >= PTLS_STATE_SERVER_EXPECT_FINISHED || tls->state == PTLS_STATE_CLIENT_SEND_EARLY_DATA);
-
-    for (; inlen != 0; input += pt_size, inlen -= pt_size) {
-        pt_size = inlen;
-        if (pt_size > PTLS_MAX_PLAINTEXT_RECORD_SIZE)
-            pt_size = PTLS_MAX_PLAINTEXT_RECORD_SIZE;
-        buffer_push_record(sendbuf, PTLS_CONTENT_TYPE_APPDATA, {
-            if ((ret = ptls_buffer_reserve(sendbuf, pt_size + tls->traffic_protection.enc.aead->algo->tag_size + 1)) != 0)
-                goto Exit;
-            sendbuf->off +=
-                aead_encrypt(&tls->traffic_protection.enc, sendbuf->base + sendbuf->off, input, pt_size, PTLS_CONTENT_TYPE_APPDATA);
-        });
-    }
-
-Exit:
-    return ret;
+    assert(tls->traffic_protection.enc.aead != NULL);
+    return buffer_push_encrypted_records(sendbuf, PTLS_CONTENT_TYPE_APPDATA, input, inlen, &tls->traffic_protection.enc);
 }
 
 size_t ptls_get_record_overhead(ptls_t *tls)

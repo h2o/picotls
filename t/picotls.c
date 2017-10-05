@@ -210,14 +210,14 @@ static void test_fragmented_message(void)
     SET_RECORD("\x01\x00\x00\x03"
                "a");
     ret = handle_handshake_record(&tls, test_fragmented_message_record, NULL, &rec, NULL);
-    ok(ret == 0);
+    ok(ret == PTLS_ERROR_IN_PROGRESS);
     ok(tls.recvbuf.mess.base != NULL);
     ok(test_fragmented_message_queue.count == 0);
     SET_RECORD("bc\x02\x00\x00\x02"
                "de"
                "\x03");
     ret = handle_handshake_record(&tls, test_fragmented_message_record, NULL, &rec, NULL);
-    ok(ret == 0);
+    ok(ret == PTLS_ERROR_IN_PROGRESS);
     ok(test_fragmented_message_queue.count == 2);
     ok(test_fragmented_message_queue.vec[0].len == 7);
     ok(memcmp(test_fragmented_message_queue.vec[0].buf, "\x01\x00\x00\x03"
