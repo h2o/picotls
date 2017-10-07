@@ -537,8 +537,9 @@ Exit:
     return ret;
 }
 
-#define buffer_push_handshake_core(buf, key_sched, type, mess_start, block)                                                        \
+#define buffer_push_handshake_body(buf, key_sched, type, block)                                                                    \
     do {                                                                                                                           \
+        size_t mess_start = (buf)->off;                                                                                            \
         ptls_buffer_push((buf), (type));                                                                                           \
         ptls_buffer_push_block((buf), 3, {                                                                                         \
             do {                                                                                                                   \
@@ -553,18 +554,11 @@ Exit:
     do {                                                                                                                           \
         size_t rec_start = (buf)->off;                                                                                             \
         buffer_push_record((buf), PTLS_CONTENT_TYPE_HANDSHAKE,                                                                     \
-                           { buffer_push_handshake_core((buf), (key_sched), (type), rec_start + 5, block); });                     \
+                           { buffer_push_handshake_body((buf), (key_sched), (type), block); });                                    \
         if ((enc) != NULL) {                                                                                                       \
             if ((ret = buffer_encrypt_record((buf), rec_start, (enc))) != 0)                                                       \
                 goto Exit;                                                                                                         \
         }                                                                                                                          \
-    } while (0)
-
-#define buffer_calc_handshake_hash(buf, key_sched, type, block)                                                                    \
-    do {                                                                                                                           \
-        size_t mess_start = (buf)->off;                                                                                            \
-        buffer_push_handshake_core((buf), (key_sched), (type), mess_start, block);                                                 \
-        (buf)->off = mess_start;                                                                                                   \
     } while (0)
 
 #define buffer_push_extension(buf, type, block)                                                                                    \
@@ -1067,16 +1061,24 @@ static int send_session_ticket(ptls_t *tls, ptls_buffer_t *sendbuf)
     assert(tls->ctx->ticket_lifetime != 0);
     assert(tls->ctx->encrypt_ticket != NULL);
 
-    /* calculate verify-data that will be sent by the client */
-    buffer_calc_handshake_hash(sendbuf, tls->key_schedule, PTLS_HANDSHAKE_TYPE_FINISHED, {
-        if ((ret = ptls_buffer_reserve(sendbuf, tls->key_schedule->algo->digest_size)) != 0)
-            goto Exit;
-        if ((ret = calc_verify_data(sendbuf->base + sendbuf->off, tls->key_schedule,
-                                    tls->early_data != NULL ? tls->early_data->next_secret : tls->traffic_protection.dec.secret)) !=
-            0)
-            goto Exit;
-        sendbuf->off += tls->key_schedule->algo->digest_size;
-    });
+    { /* calculate verify-data that will be sent by the client */
+        size_t orig_off = sendbuf->off;
+        if (tls->early_data != NULL) {
+            assert(tls->state == PTLS_STATE_SERVER_EXPECT_END_OF_EARLY_DATA);
+            buffer_push_handshake_body(sendbuf, tls->key_schedule, PTLS_HANDSHAKE_TYPE_END_OF_EARLY_DATA, {});
+            sendbuf->off = orig_off;
+        }
+        buffer_push_handshake_body(sendbuf, tls->key_schedule, PTLS_HANDSHAKE_TYPE_FINISHED, {
+            if ((ret = ptls_buffer_reserve(sendbuf, tls->key_schedule->algo->digest_size)) != 0)
+                goto Exit;
+            if ((ret = calc_verify_data(sendbuf->base + sendbuf->off, tls->key_schedule,
+                                        tls->early_data != NULL ? tls->early_data->next_secret
+                                                                : tls->traffic_protection.dec.secret)) != 0)
+                goto Exit;
+            sendbuf->off += tls->key_schedule->algo->digest_size;
+        });
+        sendbuf->off = orig_off;
+    }
 
     tls->ctx->random_bytes(&ticket_age_add, sizeof(ticket_age_add));
 
