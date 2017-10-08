@@ -231,12 +231,13 @@ static inline void setup_session_cache(ptls_context_t *ctx)
     ctx->encrypt_ticket = &sc.super;
 }
 
-static inline int resolve_address(struct sockaddr *sa, socklen_t *salen, const char *host, const char *port, int type, int proto)
+static inline int resolve_address(struct sockaddr *sa, socklen_t *salen, const char *host, const char *port, int family, int type, int proto)
 {
     struct addrinfo hints, *res;
     int err;
 
     memset(&hints, 0, sizeof(hints));
+    hints.ai_family = family;
     hints.ai_socktype = type;
     hints.ai_protocol = proto;
     hints.ai_flags = AI_ADDRCONFIG | AI_NUMERICSERV | AI_PASSIVE;

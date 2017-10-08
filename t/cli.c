@@ -226,7 +226,7 @@ static int run_server(struct sockaddr *sa, socklen_t salen, ptls_context_t *ctx,
 {
     int listen_fd, conn_fd, on = 1;
 
-    if ((listen_fd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
+    if ((listen_fd = socket(sa->sa_family, SOCK_STREAM, 0)) == -1) {
         perror("socket(2) failed");
         return 1;
     }
@@ -275,6 +275,8 @@ static void usage(const char *cmd)
     printf("Usage: %s [options] host port\n"
            "\n"
            "Options:\n"
+           "  -4                   force IPv4\n"
+           "  -6                   force IPv6\n"
            "  -c certificate-file\n"
            "  -k key-file          specifies the credentials to be used for running the\n"
            "                       server. If omitted, the command runs as a client.\n"
@@ -305,9 +307,16 @@ int main(int argc, char **argv)
     int use_early_data = 0, ch;
     struct sockaddr_storage sa;
     socklen_t salen;
+    int family = 0;
 
-    while ((ch = getopt(argc, argv, "c:k:es:l:vh")) != -1) {
+    while ((ch = getopt(argc, argv, "46c:k:es:l:vh")) != -1) {
         switch (ch) {
+        case '4':
+            family = AF_INET;
+            break;
+        case '6':
+            family = AF_INET6;
+            break;
         case 'c':
             load_certificate_chain(&ctx, optarg);
             break;
@@ -354,7 +363,7 @@ int main(int argc, char **argv)
     host = (--argc, *argv++);
     port = (--argc, *argv++);
 
-    if (resolve_address((struct sockaddr *)&sa, &salen, host, port, SOCK_STREAM, IPPROTO_TCP) != 0)
+    if (resolve_address((struct sockaddr *)&sa, &salen, host, port, family, SOCK_STREAM, IPPROTO_TCP) != 0)
         exit(1);
 
     if (ctx.certificates.count != 0) {
