@@ -2114,13 +2114,6 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
             ret = PTLS_ALERT_ILLEGAL_PARAMETER;
             goto Exit;
         }
-        /* cookie can be missing, quote section 4.2.2: When sending a HelloRetryRequest, the server MAY provide a “cookie” extension
-         * to the client (this is an exception to the usual rule that the only extensions that may be sent are those that appear in
-         * the ClientHello). */
-        if (ch->negotiated_groups.base == NULL || ch->key_shares.base == NULL || ch->signature_algorithms.count == 0) {
-            ret = PTLS_ALERT_MISSING_EXTENSION;
-            goto Exit;
-        }
         /* pre-shared key */
         if (ch->psk.hash_end != NULL) {
             /* PSK must be the last extension */
@@ -2331,6 +2324,8 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
     if ((ret = decode_client_hello(tls, &ch, message.base + PTLS_HANDSHAKE_HEADER_SIZE, message.base + message.len, properties)) !=
         0)
         goto Exit;
+    if (tls->ctx->require_dhe_on_psk)
+        ch.psk.ke_modes &= ~(1u << PTLS_PSK_KE_MODE_PSK);
 
     /* handle client_random and SNI */
     if (!is_second_flight) {
@@ -2378,7 +2373,8 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
     }
 
     /* select key_share */
-    if ((ret = select_key_share(&key_share.algorithm, &key_share.peer_key, tls->ctx->key_exchanges, ch.key_shares.base,
+    if (ch.key_shares.base != NULL &&
+        (ret = select_key_share(&key_share.algorithm, &key_share.peer_key, tls->ctx->key_exchanges, ch.key_shares.base,
                                 ch.key_shares.base + ch.key_shares.len)) != 0)
         goto Exit;
 
@@ -2408,9 +2404,13 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
             sendbuf->off = hrr_start;
             is_second_flight = 1;
 
-        } else if (key_share.algorithm == NULL || enforce_cookie_use) {
+        } else if ((key_share.algorithm == NULL && ch.psk.identities.count == 0) || enforce_cookie_use) {
 
             /* send HelloRetryRequest  */
+            if (ch.negotiated_groups.base == NULL) {
+                ret = PTLS_ALERT_MISSING_EXTENSION;
+                goto Exit;
+            }
             ptls_key_exchange_algorithm_t *negotiated_group;
             if ((ret = select_negotiated_group(&negotiated_group, tls->ctx->key_exchanges, ch.negotiated_groups.base,
                                                ch.negotiated_groups.base + ch.negotiated_groups.len)) != 0)
@@ -2471,18 +2471,11 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
         }
     }
 
-    if (key_share.algorithm == NULL) {
-        ret = PTLS_ALERT_HANDSHAKE_FAILURE;
-        goto Exit;
-    }
-
     /* handle unknown extensions */
     if ((ret = report_unknown_extensions(tls, properties, ch.unknown_extensions)) != 0)
         goto Exit;
 
     /* try psk handshake */
-    if (tls->ctx->require_dhe_on_psk)
-        ch.psk.ke_modes &= ~(1u << PTLS_PSK_KE_MODE_PSK);
     if (!is_second_flight && ch.psk.hash_end != 0 &&
         (ch.psk.ke_modes & ((1u << PTLS_PSK_KE_MODE_PSK) | (1u << PTLS_PSK_KE_MODE_PSK_DHE))) != 0 &&
         tls->ctx->encrypt_ticket != NULL) {
@@ -2530,6 +2523,10 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
 
     /* run key-exchange, to obtain pubkey and secret */
     if (mode != HANDSHAKE_MODE_PSK) {
+        if (key_share.algorithm == NULL) {
+            ret = ch.key_shares.base != NULL ? PTLS_ALERT_HANDSHAKE_FAILURE : PTLS_ALERT_MISSING_EXTENSION;
+            goto Exit;
+        }
         if ((ret = key_share.algorithm->exchange(&pubkey, &ecdh_secret, key_share.peer_key)) != 0)
             goto Exit;
     }
@@ -2589,6 +2586,10 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
     });
 
     if (mode == HANDSHAKE_MODE_FULL) {
+        if (ch.signature_algorithms.count == 0) {
+            ret = PTLS_ALERT_MISSING_EXTENSION;
+            goto Exit;
+        }
         /* send Certificate */
         buffer_push_handshake(sendbuf, tls->key_schedule, &tls->traffic_protection.enc, PTLS_HANDSHAKE_TYPE_CERTIFICATE, {
             ptls_buffer_push(sendbuf, 0);

@@ -281,6 +281,7 @@ static void usage(const char *cmd)
            "  -k key-file          specifies the credentials to be used for running the\n"
            "                       server. If omitted, the command runs as a client.\n"
            "  -l log-file          file to log traffic secrets\n"
+           "  -n                   negotiates the key exchange method (i.e. wait for HRR)\n"
            "  -s session-file      file to read/write the session ticket\n"
            "  -e                   when resuming a session, send first 8,192 bytes of input\n"
            "                       as early data\n"
@@ -309,7 +310,7 @@ int main(int argc, char **argv)
     socklen_t salen;
     int family = 0;
 
-    while ((ch = getopt(argc, argv, "46c:k:es:l:vh")) != -1) {
+    while ((ch = getopt(argc, argv, "46c:k:nes:l:vh")) != -1) {
         switch (ch) {
         case '4':
             family = AF_INET;
@@ -322,6 +323,9 @@ int main(int argc, char **argv)
             break;
         case 'k':
             load_private_key(&ctx, optarg);
+            break;
+        case 'n':
+            hsprop.client.negotiate_before_key_exchange = 1;
             break;
         case 'e':
             use_early_data = 1;
