@@ -2356,7 +2356,7 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
             sendbuf->off = hrr_start;
             is_second_flight = 1;
 
-        } else if ((key_share.algorithm == NULL && ch.psk.ke_modes == 0) || enforce_cookie_use) {
+        } else if ((key_share.algorithm == NULL && ch.psk.identities.count == 0) || enforce_cookie_use) {
 
             /* send HelloRetryRequest  */
             if (ch.negotiated_groups.base == NULL) {
