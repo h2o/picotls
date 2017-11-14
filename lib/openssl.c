@@ -901,7 +901,7 @@ int ptls_openssl_encrypt_ticket(ptls_buffer_t *buf, ptls_iovec_t src,
         goto Exit;
     }
     dst += clen;
-    if (!EVP_EncryptFinal(cctx, dst, &clen)) {
+    if (!EVP_EncryptFinal_ex(cctx, dst, &clen)) {
         ret = PTLS_ERROR_LIBRARY;
         goto Exit;
     }
@@ -980,7 +980,7 @@ int ptls_openssl_decrypt_ticket(ptls_buffer_t *buf, ptls_iovec_t src,
         goto Exit;
     }
     buf->off += clen;
-    if (!EVP_DecryptFinal(cctx, buf->base + buf->off, &clen)) {
+    if (!EVP_DecryptFinal_ex(cctx, buf->base + buf->off, &clen)) {
         ret = PTLS_ERROR_LIBRARY;
         goto Exit;
     }
