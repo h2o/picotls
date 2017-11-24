@@ -70,8 +70,13 @@ static int run_handshake(int fd, ptls_t *tls, ptls_buffer_t *wbuf, uint8_t *pend
     while ((ret = ptls_handshake(tls, wbuf, pending_input, pending_input_len, hsprop)) == PTLS_ERROR_IN_PROGRESS) {
         /* send early-data if possible */
         if (early_data.len != 0) {
-            if (hsprop->client.max_early_data_size != NULL && early_data.len <= *hsprop->client.max_early_data_size) {
-                if ((ret = ptls_send(tls, wbuf, early_data.base, early_data.len)) != 0) {
+            if (hsprop->client.max_early_data_size != NULL) {
+                size_t early_data_size = early_data.len;
+                if (early_data_size > *hsprop->client.max_early_data_size) {
+                    early_data_size = *hsprop->client.max_early_data_size;
+                }
+                if (early_data_size &&
+                    (ret = ptls_send(tls, wbuf, early_data.base, early_data.len)) != 0) {
                     fprintf(stderr, "ptls_send(early_data): %d\n", ret);
                     return ret;
                 }
