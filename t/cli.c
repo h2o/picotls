@@ -139,8 +139,8 @@ Exit:
     return ret;
 }
 
-static int handle_connection(int fd, ptls_context_t *ctx, const char *server_name,
-                             const char *input_file, ptls_handshake_properties_t *hsprop)
+static int handle_connection(int fd, ptls_context_t *ctx, const char *server_name, const char *input_file,
+                             ptls_handshake_properties_t *hsprop)
 {
     ptls_t *tls = ptls_new(ctx, server_name == NULL);
     uint8_t rbuf[1024], wbuf_small[1024], early_data[1024];
@@ -151,8 +151,9 @@ static int handle_connection(int fd, ptls_context_t *ctx, const char *server_nam
     int inputfd = 0, maxfd = fd + 1;
 
     if (input_file != NULL) {
-      inputfd = open(input_file, O_RDONLY);
-      if (inputfd >= maxfd) maxfd = inputfd + 1;
+        inputfd = open(input_file, O_RDONLY);
+        if (inputfd >= maxfd)
+            maxfd = inputfd + 1;
     }
 
     if (server_name != NULL)
@@ -236,8 +237,8 @@ Exit:
     return 0;
 }
 
-static int run_server(struct sockaddr *sa, socklen_t salen, ptls_context_t *ctx,
-                      const char *input_file, ptls_handshake_properties_t *hsprop)
+static int run_server(struct sockaddr *sa, socklen_t salen, ptls_context_t *ctx, const char *input_file,
+                      ptls_handshake_properties_t *hsprop)
 {
     int listen_fd, conn_fd, on = 1;
 
@@ -268,8 +269,8 @@ static int run_server(struct sockaddr *sa, socklen_t salen, ptls_context_t *ctx,
     return 0;
 }
 
-static int run_client(struct sockaddr *sa, socklen_t salen, ptls_context_t *ctx, const char *server_name,
-                      const char *input_file, ptls_handshake_properties_t *hsprop)
+static int run_client(struct sockaddr *sa, socklen_t salen, ptls_context_t *ctx, const char *server_name, const char *input_file,
+                      ptls_handshake_properties_t *hsprop)
 {
     int fd;
 
