@@ -151,7 +151,10 @@ static int handle_connection(int fd, ptls_context_t *ctx, const char *server_nam
     int inputfd = 0, maxfd = fd + 1;
 
     if (input_file != NULL) {
-        inputfd = open(input_file, O_RDONLY);
+        if ((inputfd = open(input_file, O_RDONLY)) == -1) {
+            fprintf(stderr, "failed to open file:%s:%s\n", input_file, strerror(errno));
+            exit(1);
+        }
         if (inputfd >= maxfd)
             maxfd = inputfd + 1;
     }
@@ -234,6 +237,8 @@ static int handle_connection(int fd, ptls_context_t *ctx, const char *server_nam
 Exit:
     ptls_buffer_dispose(&wbuf);
     ptls_free(tls);
+    if (input_file != NULL)
+        close(inputfd);
     return 0;
 }
 
