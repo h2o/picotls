@@ -26,12 +26,14 @@
 #include <arpa/inet.h>
 #include <assert.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <getopt.h>
 #include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/select.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
 #include <openssl/err.h>
@@ -137,21 +139,32 @@ Exit:
     return ret;
 }
 
-static int handle_connection(int fd, ptls_context_t *ctx, const char *server_name, ptls_handshake_properties_t *hsprop)
+static int handle_connection(int fd, ptls_context_t *ctx, const char *server_name, const char *input_file,
+                             ptls_handshake_properties_t *hsprop)
 {
     ptls_t *tls = ptls_new(ctx, server_name == NULL);
     uint8_t rbuf[1024], wbuf_small[1024], early_data[1024];
     ptls_buffer_t wbuf;
-    int stdin_closed = 0, ret;
+    int input_closed = 0, ret;
     size_t early_data_size = 0, roff;
     ssize_t rret;
+    int inputfd = 0, maxfd = fd + 1;
+
+    if (input_file != NULL) {
+        if ((inputfd = open(input_file, O_RDONLY)) == -1) {
+            fprintf(stderr, "failed to open file:%s:%s\n", input_file, strerror(errno));
+            exit(1);
+        }
+        if (inputfd >= maxfd)
+            maxfd = inputfd + 1;
+    }
 
     if (server_name != NULL)
         ptls_set_server_name(tls, server_name, 0);
 
     if (server_name != NULL && hsprop->client.max_early_data_size != NULL) {
         /* using early data */
-        if ((rret = read(0, early_data, sizeof(early_data))) > 0)
+        if ((rret = read(inputfd, early_data, sizeof(early_data))) > 0)
             early_data_size = rret;
     }
 
@@ -183,19 +196,24 @@ static int handle_connection(int fd, ptls_context_t *ctx, const char *server_nam
 
         /* wait for either of STDIN or read-side of the socket to become available */
         fd_set readfds;
+        fd_set exceptfds;
         FD_ZERO(&readfds);
-        if (!stdin_closed)
-            FD_SET(0, &readfds);
+        FD_ZERO(&exceptfds);
+        if (!input_closed) {
+            FD_SET(inputfd, &readfds);
+            FD_SET(inputfd, &exceptfds);
+        }
         FD_SET(fd, &readfds);
-        if (select(fd + 1, &readfds, NULL, NULL, NULL) <= 0)
+        FD_SET(fd, &exceptfds);
+        if (select(maxfd, &readfds, NULL, &exceptfds, NULL) <= 0)
             continue;
 
-        if (FD_ISSET(0, &readfds)) {
+        if (FD_ISSET(inputfd, &readfds) || FD_ISSET(inputfd, &exceptfds)) {
             /* read from stdin, encrypt and send */
-            while ((rret = read(0, rbuf, sizeof(rbuf))) == -1 && errno == EINTR)
+            while ((rret = read(inputfd, rbuf, sizeof(rbuf))) == -1 && errno == EINTR)
                 ;
             if (rret == 0)
-                stdin_closed = 1;
+                input_closed = 1;
             if ((ret = ptls_send(tls, &wbuf, rbuf, rret)) != 0) {
                 fprintf(stderr, "ptls_send:%d\n", ret);
                 goto Exit;
@@ -205,7 +223,7 @@ static int handle_connection(int fd, ptls_context_t *ctx, const char *server_nam
             wbuf.off = 0;
         }
 
-        if (FD_ISSET(fd, &readfds)) {
+        if (FD_ISSET(fd, &readfds) || FD_ISSET(fd, &exceptfds)) {
             /* read from socket, decrypt and print */
             while ((rret = read(fd, rbuf, sizeof(rbuf))) == -1 && errno == EINTR)
                 ;
@@ -219,10 +237,13 @@ static int handle_connection(int fd, ptls_context_t *ctx, const char *server_nam
 Exit:
     ptls_buffer_dispose(&wbuf);
     ptls_free(tls);
+    if (input_file != NULL)
+        close(inputfd);
     return 0;
 }
 
-static int run_server(struct sockaddr *sa, socklen_t salen, ptls_context_t *ctx, ptls_handshake_properties_t *hsprop)
+static int run_server(struct sockaddr *sa, socklen_t salen, ptls_context_t *ctx, const char *input_file,
+                      ptls_handshake_properties_t *hsprop)
 {
     int listen_fd, conn_fd, on = 1;
 
@@ -245,7 +266,7 @@ static int run_server(struct sockaddr *sa, socklen_t salen, ptls_context_t *ctx,
 
     while (1) {
         if ((conn_fd = accept(listen_fd, NULL, 0)) != -1) {
-            handle_connection(conn_fd, ctx, NULL, hsprop);
+            handle_connection(conn_fd, ctx, NULL, input_file, hsprop);
             close(conn_fd);
         }
     }
@@ -253,7 +274,7 @@ static int run_server(struct sockaddr *sa, socklen_t salen, ptls_context_t *ctx,
     return 0;
 }
 
-static int run_client(struct sockaddr *sa, socklen_t salen, ptls_context_t *ctx, const char *server_name,
+static int run_client(struct sockaddr *sa, socklen_t salen, ptls_context_t *ctx, const char *server_name, const char *input_file,
                       ptls_handshake_properties_t *hsprop)
 {
     int fd;
@@ -267,7 +288,7 @@ static int run_client(struct sockaddr *sa, socklen_t salen, ptls_context_t *ctx,
         return 1;
     }
 
-    return handle_connection(fd, ctx, server_name, hsprop);
+    return handle_connection(fd, ctx, server_name, input_file, hsprop);
 }
 
 static void usage(const char *cmd)
@@ -278,9 +299,11 @@ static void usage(const char *cmd)
            "  -4                   force IPv4\n"
            "  -6                   force IPv6\n"
            "  -c certificate-file\n"
+           "  -i file              a file to read from and send to the peer (default: stdin)\n"
            "  -k key-file          specifies the credentials to be used for running the\n"
            "                       server. If omitted, the command runs as a client.\n"
            "  -l log-file          file to log traffic secrets\n"
+           "  -n                   negotiates the key exchange method (i.e. wait for HRR)\n"
            "  -s session-file      file to read/write the session ticket\n"
            "  -e                   when resuming a session, send first 8,192 bytes of input\n"
            "                       as early data\n"
@@ -303,13 +326,13 @@ int main(int argc, char **argv)
 
     ptls_context_t ctx = {ptls_openssl_random_bytes, ptls_openssl_key_exchanges, ptls_openssl_cipher_suites};
     ptls_handshake_properties_t hsprop = {{{{NULL}}}};
-    const char *host, *port;
+    const char *host, *port, *file = NULL;
     int use_early_data = 0, ch;
     struct sockaddr_storage sa;
     socklen_t salen;
     int family = 0;
 
-    while ((ch = getopt(argc, argv, "46c:k:es:l:vh")) != -1) {
+    while ((ch = getopt(argc, argv, "46c:i:k:nes:l:vh")) != -1) {
         switch (ch) {
         case '4':
             family = AF_INET;
@@ -320,8 +343,14 @@ int main(int argc, char **argv)
         case 'c':
             load_certificate_chain(&ctx, optarg);
             break;
+        case 'i':
+            file = optarg;
+            break;
         case 'k':
             load_private_key(&ctx, optarg);
+            break;
+        case 'n':
+            hsprop.client.negotiate_before_key_exchange = 1;
             break;
         case 'e':
             use_early_data = 1;
@@ -367,8 +396,8 @@ int main(int argc, char **argv)
         exit(1);
 
     if (ctx.certificates.count != 0) {
-        return run_server((struct sockaddr *)&sa, salen, &ctx, &hsprop);
+        return run_server((struct sockaddr *)&sa, salen, &ctx, file, &hsprop);
     } else {
-        return run_client((struct sockaddr *)&sa, salen, &ctx, host, &hsprop);
+        return run_client((struct sockaddr *)&sa, salen, &ctx, host, file, &hsprop);
     }
 }
