@@ -18,7 +18,7 @@
 * Basic ASN1 validation and optional print-out
 */
 
-#ifdef WIN32
+#ifdef _WINDOWS
 #include "wincompat.h"
 #else
 #include <sys/time.h>

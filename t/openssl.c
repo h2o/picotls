@@ -19,7 +19,7 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
-#ifdef WIN32
+#ifdef _WINDOWS
 #include "wincompat.h"
 #endif
 #include <assert.h>
