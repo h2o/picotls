@@ -174,17 +174,22 @@ struct st_ptls_t {
     /**
      * misc.
      */
-    struct {
+    union {
         struct {
-            ptls_key_exchange_algorithm_t *algo;
-            ptls_key_exchange_context_t *ctx;
-        } key_exchange;
+            struct {
+                ptls_key_exchange_algorithm_t *algo;
+                ptls_key_exchange_context_t *ctx;
+            } key_exchange;
+            struct {
+                int (*cb)(void *verify_ctx, ptls_iovec_t data, ptls_iovec_t signature);
+                void *verify_ctx;
+            } certificate_verify;
+            unsigned offered_psk : 1;
+        } client;
         struct {
-            int (*cb)(void *verify_ctx, ptls_iovec_t data, ptls_iovec_t signature);
-            void *verify_ctx;
-        } certificate_verify;
-        unsigned offered_psk : 1;
-    } client;
+            uint8_t pending_traffic_secret[PTLS_MAX_DIGEST_SIZE];
+        } server;
+    };
     /**
      * the value contains the traffic secret to be commisioned after END_OF_EARLY_DATA
      * END_OF_EARLY_DATA
@@ -706,6 +711,8 @@ static int derive_secret(struct st_ptls_key_schedule_t *sched, void *secret, con
                                      ptls_iovec_init(sched->secret, sched->algo->digest_size), label,
                                      ptls_iovec_init(hash_value, sched->algo->digest_size));
 
+    PTLS_DEBUGF("%s: (label=%s, hash=%02x%02x) => %02x%02x\n", __FUNCTION__, label, hash_value[0], hash_value[1],
+                ((uint8_t *)secret)[0], ((uint8_t *)secret)[1]);
     ptls_clear_memory(hash_value, sizeof(hash_value));
     return ret;
 }
@@ -854,7 +861,7 @@ static int setup_traffic_protection(ptls_t *tls, ptls_cipher_suite_t *cs, int is
     if (tls->ctx->log_secret != NULL)
         tls->ctx->log_secret->cb(tls->ctx->log_secret, tls, log_label,
                                  ptls_iovec_init(ctx->secret, tls->key_schedule->algo->digest_size));
-    PTLS_DEBUGF("[%s] %02x%02x,%02x%02x\n", secret_label, (unsigned)ctx->secret[0], (unsigned)ctx->secret[1],
+    PTLS_DEBUGF("[%s] %02x%02x,%02x%02x\n", log_label, (unsigned)ctx->secret[0], (unsigned)ctx->secret[1],
                 (unsigned)ctx->aead->static_iv[0], (unsigned)ctx->aead->static_iv[1]);
 
     return 0;
@@ -1701,9 +1708,9 @@ static int client_handle_finished(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iove
         goto Exit;
     if ((ret = setup_traffic_protection(tls, tls->cipher_suite, 0, "s ap traffic", "SERVER_TRAFFIC_SECRET_0")) != 0)
         goto Exit;
-    if ((ret = derive_exporter_secret(tls, 0)) != 0)
-        goto Exit;
     if ((ret = derive_secret(tls->key_schedule, send_secret, "c ap traffic")) != 0)
+        goto Exit;
+    if ((ret = derive_exporter_secret(tls, 0)) != 0)
         goto Exit;
 
     /* if sending early data, emit EOED and commision the client handshake traffic secret */
@@ -2600,9 +2607,11 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
 
     assert(tls->key_schedule->generation == 2);
     if ((ret = key_schedule_extract(tls->key_schedule, ptls_iovec_init(NULL, 0))) != 0)
-        return ret;
+        goto Exit;
     if ((ret = setup_traffic_protection(tls, tls->cipher_suite, 1, "s ap traffic", "SERVER_TRAFFIC_SECRET_0")) != 0)
-        return ret;
+        goto Exit;
+    if ((ret = derive_secret(tls->key_schedule, tls->server.pending_traffic_secret, "c ap traffic")) != 0)
+        goto Exit;
     if ((ret = derive_exporter_secret(tls, 0)) != 0)
         goto Exit;
 
@@ -2645,7 +2654,9 @@ static int server_handle_finished(ptls_t *tls, ptls_iovec_t message)
     if ((ret = verify_finished(tls, message)) != 0)
         return ret;
 
-    if ((ret = setup_traffic_protection(tls, tls->cipher_suite, 0, "c ap traffic", "CLIENT_TRAFFIC_SECRET_0")) != 0)
+    memcpy(tls->traffic_protection.dec.secret, tls->server.pending_traffic_secret, sizeof(tls->server.pending_traffic_secret));
+    ptls_clear_memory(tls->server.pending_traffic_secret, sizeof(tls->server.pending_traffic_secret));
+    if ((ret = setup_traffic_protection(tls, tls->cipher_suite, 0, NULL, "CLIENT_TRAFFIC_SECRET_0")) != 0)
         return ret;
 
     key_schedule_update_hash(tls->key_schedule, message.base, message.len);
