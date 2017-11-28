@@ -722,6 +722,8 @@ static int derive_secret(struct st_ptls_key_schedule_t *sched, void *secret, con
                                      ptls_iovec_init(sched->secret, sched->algo->digest_size), label,
                                      ptls_iovec_init(hash_value, sched->algo->digest_size));
 
+    PTLS_DEBUGF("%s: (label=%s, hash=%02x%02x) => %02x%02x\n", __FUNCTION__, label, hash_value[0], hash_value[1],
+                ((uint8_t *)secret)[0], ((uint8_t *)secret)[1]);
     ptls_clear_memory(hash_value, sizeof(hash_value));
     return ret;
 }
@@ -870,7 +872,7 @@ static int setup_traffic_protection(ptls_t *tls, ptls_cipher_suite_t *cs, int is
     if (tls->ctx->log_secret != NULL)
         tls->ctx->log_secret->cb(tls->ctx->log_secret, tls, log_label,
                                  ptls_iovec_init(ctx->secret, tls->key_schedule->algo->digest_size));
-    PTLS_DEBUGF("[%s] %02x%02x,%02x%02x\n", secret_label, (unsigned)ctx->secret[0], (unsigned)ctx->secret[1],
+    PTLS_DEBUGF("[%s] %02x%02x,%02x%02x\n", log_label, (unsigned)ctx->secret[0], (unsigned)ctx->secret[1],
                 (unsigned)ctx->aead->static_iv[0], (unsigned)ctx->aead->static_iv[1]);
 
     return 0;
