@@ -116,7 +116,7 @@ int get_certificates(char * pem_fname, ptls_iovec_t ** list, int * nb_certs)
         dst->len = i2d_X509(cert, &dst->base);
     }
     
-    *nb_certs = count;
+    *nb_certs = (int) count;
     *list = certs;
 
     return ret;
@@ -163,7 +163,7 @@ int handshake_progress(ptls_t * tls, ptls_buffer_t * sendbuf, ptls_buffer_t * re
     if (roff < recvbuf->off)
     {
         // Could not consume all the data. This is bad.
-        fprintf(stderr, "Could only process %d bytes out of %d\n", roff, recvbuf->off);
+        fprintf(stderr, "Could only process %d bytes out of %d\n", (int) roff, (int) recvbuf->off);
     }
     ptls_buffer_dispose(recvbuf);
 
@@ -237,7 +237,7 @@ int verify_1rtt_secret_extraction(ptls_t *tls_client, ptls_t *tls_server)
         else if (cipher_client->hash->digest_size != cipher_server->hash->digest_size)
         {
             fprintf(stderr, "Key length differ, client:%d, server:%d\n",
-                cipher_client->hash->digest_size, cipher_server->hash->digest_size);
+                (int) cipher_client->hash->digest_size, (int) cipher_server->hash->digest_size);
             ret = -1;
         }
         else if (memcmp(secret_client, secret_server, cipher_client->hash->digest_size) != 0)
@@ -510,7 +510,7 @@ int ptls_memory_loopback_test(int openssl_client, int openssl_server, char * key
 
 		ret = handshake_init(tls_client, &client_buf,
 			&app_ctx_client.handshake_properties);
-		printf("First message from client, ret = %d, %d bytes.\n", ret, client_buf.off);
+		printf("First message from client, ret = %d, %d bytes.\n", ret, (int) client_buf.off);
 
 		while ((ret == 0 || ret == PTLS_ERROR_IN_PROGRESS) && client_buf.off > 0 && nb_rounds < 12)
 		{
@@ -520,7 +520,7 @@ int ptls_memory_loopback_test(int openssl_client, int openssl_server, char * key
 				&app_ctx_server.handshake_properties);
 			app_ctx_server.handshake_properties.additional_extensions = NULL;
 
-			printf("Message from server, ret = %d, %d bytes.\n", ret, server_buf.off);
+			printf("Message from server, ret = %d, %d bytes.\n", ret, (int) server_buf.off);
 
 			if ((ret == 0 || ret == PTLS_ERROR_IN_PROGRESS) && server_buf.off > 0)
 			{
@@ -529,7 +529,7 @@ int ptls_memory_loopback_test(int openssl_client, int openssl_server, char * key
 				ret = handshake_progress(tls_client, &client_buf, &server_buf, 
 					&app_ctx_client.handshake_properties);
 
-				printf("Message from client, ret = %d, %d bytes.\n", ret, client_buf.off);
+				printf("Message from client, ret = %d, %d bytes.\n", ret, (int) client_buf.off);
 			}
 		}
 

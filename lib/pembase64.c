@@ -17,7 +17,7 @@
 /*
  * Manage Base64 encoding.
  */
-#ifdef WIN32
+#ifdef _WINDOWS
 #include "wincompat.h"
 #else
 #include <sys/time.h>
@@ -124,7 +124,7 @@ int ptls_base64_decode(const char *text, ptls_base64_decode_state_t *state, ptls
 {
     int ret = 0;
     uint8_t decoded[3];
-    int text_index = 0;
+    size_t text_index = 0;
     int c;
     char vc;
 
@@ -242,7 +242,7 @@ int ptls_base64_decode(const char *text, ptls_base64_decode_state_t *state, ptls
 static int ptls_compare_separator_line(const char *line, const char *begin_or_end, const char *label)
 {
     int ret = strncmp(line, "-----", 5);
-    int text_index = 5;
+    size_t text_index = 5;
 
     if (ret == 0) {
         size_t begin_or_end_length = strlen(begin_or_end);
@@ -304,7 +304,7 @@ int ptls_load_pem_objects(char const *pem_fname, const char *label, ptls_iovec_t
     FILE *F;
     int ret = 0;
     size_t count = 0;
-#ifdef WIN32
+#ifdef _WINDOWS
     errno_t err = fopen_s(&F, pem_fname, "r");
     if (err != 0) {
         ret = -1;

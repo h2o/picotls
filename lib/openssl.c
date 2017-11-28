@@ -20,7 +20,7 @@
  * IN THE SOFTWARE.
  */
 
-#ifdef WIN32
+#ifdef _WINDOWS
 #include "wincompat.h"
 #else
 #include <unistd.h>
