@@ -1740,9 +1740,9 @@ static int client_handle_finished(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iove
         goto Exit;
     if ((ret = setup_traffic_protection(tls, tls->cipher_suite, 0, "s ap traffic", "SERVER_TRAFFIC_SECRET_0")) != 0)
         goto Exit;
-    if ((ret = derive_exporter_secret(tls, 0)) != 0)
-        goto Exit;
     if ((ret = derive_secret(tls->key_schedule, send_secret, "c ap traffic")) != 0)
+        goto Exit;
+    if ((ret = derive_exporter_secret(tls, 0)) != 0)
         goto Exit;
 
     /* if sending early data, emit EOED and commision the client handshake traffic secret */
@@ -2652,9 +2652,9 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
         goto Exit;
     if ((ret = setup_traffic_protection(tls, tls->cipher_suite, 1, "s ap traffic", "SERVER_TRAFFIC_SECRET_0")) != 0)
         goto Exit;
-    if ((ret = derive_exporter_secret(tls, 0)) != 0)
-        goto Exit;
     if ((ret = derive_secret(tls->key_schedule, tls->server.pending_traffic_secret, "c ap traffic")) != 0)
+        goto Exit;
+    if ((ret = derive_exporter_secret(tls, 0)) != 0)
         goto Exit;
 
     tls->state = tls->early_data != NULL ? PTLS_STATE_SERVER_EXPECT_END_OF_EARLY_DATA : PTLS_STATE_SERVER_EXPECT_FINISHED;
