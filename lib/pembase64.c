@@ -242,7 +242,7 @@ int ptls_base64_decode(const char *text, ptls_base64_decode_state_t *state, ptls
 static int ptls_compare_separator_line(const char *line, const char *begin_or_end, const char *label)
 {
     int ret = strncmp(line, "-----", 5);
-    int text_index = 5;
+    size_t text_index = 5;
 
     if (ret == 0) {
         size_t begin_or_end_length = strlen(begin_or_end);
