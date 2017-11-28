@@ -178,18 +178,23 @@ struct st_ptls_t {
     /**
      * misc.
      */
-    struct {
-        uint8_t legacy_session_id[16];
+    union {
         struct {
-            ptls_key_exchange_algorithm_t *algo;
-            ptls_key_exchange_context_t *ctx;
-        } key_exchange;
+            uint8_t legacy_session_id[16];
+            struct {
+                ptls_key_exchange_algorithm_t *algo;
+                ptls_key_exchange_context_t *ctx;
+            } key_exchange;
+            struct {
+                int (*cb)(void *verify_ctx, ptls_iovec_t data, ptls_iovec_t signature);
+                void *verify_ctx;
+            } certificate_verify;
+            unsigned offered_psk : 1;
+        } client;
         struct {
-            int (*cb)(void *verify_ctx, ptls_iovec_t data, ptls_iovec_t signature);
-            void *verify_ctx;
-        } certificate_verify;
-        unsigned offered_psk : 1;
-    } client;
+            uint8_t pending_traffic_secret[PTLS_MAX_DIGEST_SIZE];
+        } server;
+    };
     /**
      * the value contains the traffic secret to be commisioned after END_OF_EARLY_DATA
      * END_OF_EARLY_DATA
@@ -2649,6 +2654,8 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
         return ret;
     if ((ret = derive_exporter_secret(tls, 0)) != 0)
         goto Exit;
+    if ((ret = derive_secret(tls->key_schedule, tls->server.pending_traffic_secret, "c ap traffic")) != 0)
+        goto Exit;
 
     tls->state = tls->early_data != NULL ? PTLS_STATE_SERVER_EXPECT_END_OF_EARLY_DATA : PTLS_STATE_SERVER_EXPECT_FINISHED;
 
@@ -2692,7 +2699,9 @@ static int server_handle_finished(ptls_t *tls, ptls_iovec_t message)
     if ((ret = verify_finished(tls, message)) != 0)
         return ret;
 
-    if ((ret = setup_traffic_protection(tls, tls->cipher_suite, 0, "c ap traffic", "CLIENT_TRAFFIC_SECRET_0")) != 0)
+    memcpy(tls->traffic_protection.dec.secret, tls->server.pending_traffic_secret, sizeof(tls->server.pending_traffic_secret));
+    ptls_clear_memory(tls->server.pending_traffic_secret, sizeof(tls->server.pending_traffic_secret));
+    if ((ret = setup_traffic_protection(tls, tls->cipher_suite, 0, NULL, "CLIENT_TRAFFIC_SECRET_0")) != 0)
         return ret;
 
     key_schedule_update_hash(tls->key_schedule, message.base, message.len);
