@@ -61,24 +61,28 @@ static int write_all(int fd, const uint8_t *data, size_t len)
 }
 
 static int run_handshake(int fd, ptls_t *tls, ptls_buffer_t *wbuf, uint8_t *pending_input, size_t *pending_input_len,
-                         ptls_handshake_properties_t *hsprop, ptls_iovec_t early_data)
+                         ptls_handshake_properties_t *hsprop, const void *early_data, size_t *early_data_size)
 {
     size_t pending_input_bufsz = *pending_input_len;
     int ret;
+    size_t early_data_sent = 0;
     ssize_t rret = 0;
 
     *pending_input_len = 0;
 
     while ((ret = ptls_handshake(tls, wbuf, pending_input, pending_input_len, hsprop)) == PTLS_ERROR_IN_PROGRESS) {
         /* send early-data if possible */
-        if (early_data.len != 0) {
-            if (hsprop->client.max_early_data_size != NULL && early_data.len <= *hsprop->client.max_early_data_size) {
-                if ((ret = ptls_send(tls, wbuf, early_data.base, early_data.len)) != 0) {
+        if (early_data != NULL) {
+            assert(early_data_size != NULL);
+            early_data_sent =
+                *hsprop->client.max_early_data_size < *early_data_size ? *hsprop->client.max_early_data_size : *early_data_size;
+            if (early_data_sent != 0) {
+                if ((ret = ptls_send(tls, wbuf, early_data, early_data_sent)) != 0) {
                     fprintf(stderr, "ptls_send(early_data): %d\n", ret);
                     return ret;
                 }
             }
-            early_data.len = 0; /* do not send twice! */
+            early_data = NULL; /* do not send twice! */
         }
         /* write to socket */
         if (write_all(fd, wbuf->base, wbuf->off) != 0)
@@ -103,6 +107,8 @@ static int run_handshake(int fd, ptls_t *tls, ptls_buffer_t *wbuf, uint8_t *pend
     if (rret != *pending_input_len)
         memmove(pending_input, pending_input + *pending_input_len, rret - *pending_input_len);
     *pending_input_len = rret - *pending_input_len;
+    if (early_data_size != NULL)
+        *early_data_size = early_data_sent;
     return 0;
 }
 
@@ -146,7 +152,7 @@ static int handle_connection(int fd, ptls_context_t *ctx, const char *server_nam
     uint8_t rbuf[1024], wbuf_small[1024], early_data[1024];
     ptls_buffer_t wbuf;
     int input_closed = 0, ret;
-    size_t early_data_size = 0, roff;
+    size_t early_data_size = 0, early_data_sent, roff;
     ssize_t rret;
     int inputfd = 0, maxfd = fd + 1;
 
@@ -171,13 +177,16 @@ static int handle_connection(int fd, ptls_context_t *ctx, const char *server_nam
     ptls_buffer_init(&wbuf, wbuf_small, sizeof(wbuf_small));
 
     roff = sizeof(rbuf);
-    if (run_handshake(fd, tls, &wbuf, rbuf, &roff, hsprop, ptls_iovec_init(early_data, early_data_size)) != 0)
+    early_data_sent = early_data_size;
+    if (run_handshake(fd, tls, &wbuf, rbuf, &roff, hsprop, early_data_size != 0 ? early_data : NULL, &early_data_sent) != 0)
         goto Exit;
     wbuf.off = 0;
+    if (!hsprop->client.early_data_accepted_by_peer)
+        early_data_sent = 0;
 
     /* re-send early data if necessary */
-    if (early_data_size != 0 && !hsprop->client.early_data_accepted_by_peer) {
-        if ((ret = ptls_send(tls, &wbuf, early_data, early_data_size)) != 0) {
+    if (early_data_size != early_data_sent) {
+        if ((ret = ptls_send(tls, &wbuf, early_data + early_data_sent, early_data_size - early_data_sent)) != 0) {
             fprintf(stderr, "ptls_send:%d\n", ret);
             goto Exit;
         }
