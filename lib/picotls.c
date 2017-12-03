@@ -1300,6 +1300,9 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_handshake
     if (tls->early_data != NULL) {
         if ((ret = setup_traffic_protection(tls, resumption_cipher_suite, 1, "c e traffic", "CLIENT_EARLY_TRAFFIC_SECRET")) != 0)
             goto Exit;
+        buffer_push_record(sendbuf, PTLS_CONTENT_TYPE_CHANGE_CIPHER_SPEC, {
+            ptls_buffer_push(sendbuf, 1);
+        });
     }
     if (resumption_secret.base != NULL) {
         if ((ret = derive_exporter_secret(tls, 1)) != 0)
@@ -1754,6 +1757,11 @@ static int client_handle_finished(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iove
         }
         if ((ret = retire_early_data_secret(tls, 1)) != 0)
             goto Exit;
+    } else {
+        /* else send ChangeCipherSpec */
+        buffer_push_record(sendbuf, PTLS_CONTENT_TYPE_CHANGE_CIPHER_SPEC, {
+            ptls_buffer_push(sendbuf, 1);
+        });
     }
 
     ret = send_finished(tls, sendbuf);
@@ -2554,6 +2562,11 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
                                                     { ptls_buffer_push16(sendbuf, (uint16_t)psk_index); });
                           }
                       });
+
+    /* send ChangeCipherSpec */
+    buffer_push_record(sendbuf, PTLS_CONTENT_TYPE_CHANGE_CIPHER_SPEC, {
+        ptls_buffer_push(sendbuf, 1);
+    });
 
     /* create protection contexts for the handshake */
     assert(tls->key_schedule->generation == 1);
