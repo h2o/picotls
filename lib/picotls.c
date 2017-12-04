@@ -169,6 +169,7 @@ struct st_ptls_t {
      */
     uint8_t client_random[PTLS_HELLO_RANDOM_SIZE];
     /* flags */
+    unsigned is_server : 1;
     unsigned is_psk_handshake : 1;
     unsigned skip_early_data : 1; /* if early-data is not recognized by the server */
     /**
@@ -2798,6 +2799,7 @@ ptls_t *ptls_new(ptls_context_t *ctx, int is_server)
 
     update_open_count(ctx, 1);
     *tls = (ptls_t){ctx};
+    tls->is_server = is_server;
     if (!is_server) {
         tls->state = PTLS_STATE_CLIENT_HANDSHAKE_START;
         tls->ctx->random_bytes(tls->client_random, sizeof(tls->client_random));
@@ -2826,11 +2828,15 @@ void ptls_free(ptls_t *tls)
         ptls_aead_free(tls->traffic_protection.enc.aead);
     free(tls->server_name);
     free(tls->negotiated_protocol);
-    if (tls->client.key_exchange.ctx != NULL)
-        tls->client.key_exchange.ctx->on_exchange(&tls->client.key_exchange.ctx, NULL, ptls_iovec_init(NULL, 0));
-    if (tls->client.certificate_verify.cb != NULL)
-        tls->client.certificate_verify.cb(tls->client.certificate_verify.verify_ctx, ptls_iovec_init(NULL, 0),
-                                          ptls_iovec_init(NULL, 0));
+    if (tls->is_server) {
+        /* nothing to do */
+    } else {
+        if (tls->client.key_exchange.ctx != NULL)
+            tls->client.key_exchange.ctx->on_exchange(&tls->client.key_exchange.ctx, NULL, ptls_iovec_init(NULL, 0));
+        if (tls->client.certificate_verify.cb != NULL)
+            tls->client.certificate_verify.cb(tls->client.certificate_verify.verify_ctx, ptls_iovec_init(NULL, 0),
+                                              ptls_iovec_init(NULL, 0));
+    }
     if (tls->early_data != NULL) {
         ptls_clear_memory(tls->early_data, sizeof(*tls->early_data));
         free(tls->early_data);

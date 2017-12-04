@@ -621,7 +621,7 @@ int ptls_decode64(uint64_t *value, const uint8_t **src, const uint8_t *end);
  * create a object to handle new TLS connection. Client-side of a TLS connection is created if server_name is non-NULL. Otherwise,
  * a server-side connection is created.
  */
-ptls_t *ptls_new(ptls_context_t *ctx, int is_client);
+ptls_t *ptls_new(ptls_context_t *ctx, int is_server);
 /**
  * releases all resources associated to the object
  */
