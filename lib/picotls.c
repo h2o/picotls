@@ -613,7 +613,7 @@ Exit:
         ptls_decode_assert_block_close((src), end);                                                                                \
     } while (0)
 
-int ptls_decode16(uint16_t *value, const uint8_t **src, const uint8_t *const end)
+int ptls_decode16(uint16_t *value, const uint8_t **src, const uint8_t *end)
 {
     if (end - *src < 2)
         return PTLS_ALERT_DECODE_ERROR;
@@ -622,7 +622,7 @@ int ptls_decode16(uint16_t *value, const uint8_t **src, const uint8_t *const end
     return 0;
 }
 
-int ptls_decode32(uint32_t *value, const uint8_t **src, const uint8_t *const end)
+int ptls_decode32(uint32_t *value, const uint8_t **src, const uint8_t *end)
 {
     if (end - *src < 4)
         return PTLS_ALERT_DECODE_ERROR;
@@ -631,7 +631,7 @@ int ptls_decode32(uint32_t *value, const uint8_t **src, const uint8_t *const end
     return 0;
 }
 
-int ptls_decode64(uint64_t *value, const uint8_t **src, const uint8_t *const end)
+int ptls_decode64(uint64_t *value, const uint8_t **src, const uint8_t *end)
 {
     if (end - *src < 8)
         return PTLS_ALERT_DECODE_ERROR;
