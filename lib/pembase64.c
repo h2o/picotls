@@ -239,7 +239,7 @@ int ptls_base64_decode(const char *text, ptls_base64_decode_state_t *state, ptls
  * 13 PUBLIC KEY             SubjectPublicKeyInfo    [RFC5280] id-pkix1-e
  */
 
-static int ptls_compare_separator_line(const char *line, const char *begin_or_end, const char *label)
+static int ptls_compare_separator_line(const char *line, const char *begin_or_end, const char *const label)
 {
     int ret = strncmp(line, "-----", 5);
     size_t text_index = 5;

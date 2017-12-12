@@ -130,7 +130,7 @@ static void test_ecdsa_sign(void)
 
 static void setup_certificate(ptls_iovec_t *dst)
 {
-    BIO *bio = BIO_new_mem_buf(RSA_CERTIFICATE, strlen(RSA_CERTIFICATE));
+    BIO *bio = BIO_new_mem_buf(RSA_CERTIFICATE, (int) strlen(RSA_CERTIFICATE));
     X509 *cert = PEM_read_bio_X509(bio, NULL, NULL, NULL);
     assert(cert != NULL || !!"failed to load certificate");
     BIO_free(bio);
@@ -143,7 +143,7 @@ static void setup_certificate(ptls_iovec_t *dst)
 
 static void setup_sign_certificate(ptls_openssl_sign_certificate_t *sc)
 {
-    BIO *bio = BIO_new_mem_buf(RSA_PRIVATE_KEY, strlen(RSA_PRIVATE_KEY));
+    BIO *bio = BIO_new_mem_buf(RSA_PRIVATE_KEY, (int) strlen(RSA_PRIVATE_KEY));
     EVP_PKEY *pkey = PEM_read_bio_PrivateKey(bio, NULL, NULL, NULL);
     assert(pkey != NULL || !"failed to load private key");
     BIO_free(bio);

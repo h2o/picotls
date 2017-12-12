@@ -30,7 +30,7 @@ static void hash_df(const cf_chash *H,
                     uint8_t *out, size_t nout)
 {
   uint8_t counter = 1;
-  uint32_t bits_to_return = nout * 8;
+  uint32_t bits_to_return = (uint32_t)(nout * 8);
   uint8_t cbuf[4];
   uint8_t block[CF_MAXHASH];
 
@@ -100,7 +100,7 @@ static void add(uint8_t *out, size_t nout, const uint8_t *in, size_t nin)
   uint16_t carry = 0;
   int oi, ii;
 
-  for (oi = nout - 1, ii = nin - 1;
+  for (oi = (int)(nout - 1), ii = (int)(nin - 1);
        oi >= 0;
        ii--, oi--)
   {
