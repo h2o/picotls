@@ -704,17 +704,17 @@ static void vli_mmod_fast_secp224r1(uint64_t *result, uint64_t *product)
     tmp[1] = (product[4] >> 32) | (product[5] << 32);
     tmp[2] = (product[5] >> 32) | (product[6] << 32);
     tmp[3] = product[6] >> 32;
-    carry -= (int) uECC_vli_sub(result, result, tmp, num_words_secp224r1);
+    carry -= uECC_vli_sub(result, result, tmp, num_words_secp224r1);
 
     /* d2 */
     tmp[0] = (product[5] >> 32) | (product[6] << 32);
     tmp[1] = product[6] >> 32;
     tmp[2] = tmp[3] = 0;
-    carry -= (int) uECC_vli_sub(result, result, tmp, num_words_secp224r1);
+    carry -= uECC_vli_sub(result, result, tmp, num_words_secp224r1);
 
     if (carry < 0) {
         do {
-            carry += (int) uECC_vli_add(result, result, curve_secp224r1.p, num_words_secp224r1);
+            carry += uECC_vli_add(result, result, curve_secp224r1.p, num_words_secp224r1);
         } while (carry < 0);
     } else {
         while (uECC_vli_cmp_unsafe(curve_secp224r1.p, result, num_words_secp224r1) != 1) {
@@ -990,43 +990,43 @@ static void vli_mmod_fast_secp256r1(uint64_t *result, uint64_t *product) {
     tmp[1] = product[5] & 0xffffffff00000000ull;
     tmp[2] = product[6];
     tmp[3] = product[7];
-    carry = (int)uECC_vli_add(tmp, tmp, tmp, num_words_secp256r1);
-    carry += (int)uECC_vli_add(result, result, tmp, num_words_secp256r1);
+    carry = uECC_vli_add(tmp, tmp, tmp, num_words_secp256r1);
+    carry += uECC_vli_add(result, result, tmp, num_words_secp256r1);
     
     /* s2 */
     tmp[1] = product[6] << 32;
     tmp[2] = (product[6] >> 32) | (product[7] << 32);
     tmp[3] = product[7] >> 32;
-    carry += (int)uECC_vli_add(tmp, tmp, tmp, num_words_secp256r1);
-    carry += (int)uECC_vli_add(result, result, tmp, num_words_secp256r1);
+    carry += uECC_vli_add(tmp, tmp, tmp, num_words_secp256r1);
+    carry += uECC_vli_add(result, result, tmp, num_words_secp256r1);
     
     /* s3 */
     tmp[0] = product[4];
     tmp[1] = product[5] & 0xffffffff;
     tmp[2] = 0;
     tmp[3] = product[7];
-    carry += (int)uECC_vli_add(result, result, tmp, num_words_secp256r1);
+    carry += uECC_vli_add(result, result, tmp, num_words_secp256r1);
     
     /* s4 */
     tmp[0] = (product[4] >> 32) | (product[5] << 32);
     tmp[1] = (product[5] >> 32) | (product[6] & 0xffffffff00000000ull);
     tmp[2] = product[7];
     tmp[3] = (product[6] >> 32) | (product[4] << 32);
-    carry += (int)uECC_vli_add(result, result, tmp, num_words_secp256r1);
+    carry += uECC_vli_add(result, result, tmp, num_words_secp256r1);
     
     /* d1 */
     tmp[0] = (product[5] >> 32) | (product[6] << 32);
     tmp[1] = (product[6] >> 32);
     tmp[2] = 0;
     tmp[3] = (product[4] & 0xffffffff) | (product[5] << 32);
-    carry -= (int) uECC_vli_sub(result, result, tmp, num_words_secp256r1);
+    carry -= uECC_vli_sub(result, result, tmp, num_words_secp256r1);
     
     /* d2 */
     tmp[0] = product[6];
     tmp[1] = product[7];
     tmp[2] = 0;
     tmp[3] = (product[4] >> 32) | (product[5] & 0xffffffff00000000ull);
-    carry -= (int) uECC_vli_sub(result, result, tmp, num_words_secp256r1);
+    carry -= uECC_vli_sub(result, result, tmp, num_words_secp256r1);
     
     /* d3 */
     tmp[0] = (product[6] >> 32) | (product[7] << 32);
@@ -1040,7 +1040,7 @@ static void vli_mmod_fast_secp256r1(uint64_t *result, uint64_t *product) {
     tmp[1] = product[4] & 0xffffffff00000000ull;
     tmp[2] = product[5];
     tmp[3] = product[6] & 0xffffffff00000000ull;
-    carry -= (int) uECC_vli_sub(result, result, tmp, num_words_secp256r1);
+    carry -= uECC_vli_sub(result, result, tmp, num_words_secp256r1);
     
     if (carry < 0) {
         do {
@@ -1048,7 +1048,7 @@ static void vli_mmod_fast_secp256r1(uint64_t *result, uint64_t *product) {
         } while (carry < 0);
     } else {
         while (carry || uECC_vli_cmp_unsafe(curve_secp256r1.p, result, num_words_secp256r1) != 1) {
-            carry -= (int) uECC_vli_sub(result, result, curve_secp256r1.p, num_words_secp256r1);
+            carry -= uECC_vli_sub(result, result, curve_secp256r1.p, num_words_secp256r1);
         }
     }
 }
