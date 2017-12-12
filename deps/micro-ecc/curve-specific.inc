@@ -387,14 +387,14 @@ static void vli_mmod_fast_secp192r1(uint64_t *result, uint64_t *product) {
     tmp[0] = 0;
     tmp[1] = product[3];
     tmp[2] = product[4];
-    carry += (int) uECC_vli_add(result, result, tmp, num_words_secp192r1);
+    carry += uECC_vli_add(result, result, tmp, num_words_secp192r1);
     
     tmp[0] = tmp[1] = product[5];
     tmp[2] = 0;
-    carry += (int) uECC_vli_add(result, result, tmp, num_words_secp192r1);
+    carry += uECC_vli_add(result, result, tmp, num_words_secp192r1);
     
     while (carry || uECC_vli_cmp_unsafe(curve_secp192r1.p, result, num_words_secp192r1) != 1) {
-        carry -= (int) uECC_vli_sub(result, result, curve_secp192r1.p, num_words_secp192r1);
+        carry -= uECC_vli_sub(result, result, curve_secp192r1.p, num_words_secp192r1);
     }
 }
 #endif /* uECC_WORD_SIZE */
@@ -990,7 +990,7 @@ static void vli_mmod_fast_secp256r1(uint64_t *result, uint64_t *product) {
     tmp[1] = product[5] & 0xffffffff00000000ull;
     tmp[2] = product[6];
     tmp[3] = product[7];
-    carry = uECC_vli_add(tmp, tmp, tmp, num_words_secp256r1);
+    carry = (int)uECC_vli_add(tmp, tmp, tmp, num_words_secp256r1);
     carry += uECC_vli_add(result, result, tmp, num_words_secp256r1);
     
     /* s2 */
@@ -1033,7 +1033,7 @@ static void vli_mmod_fast_secp256r1(uint64_t *result, uint64_t *product) {
     tmp[1] = (product[7] >> 32) | (product[4] << 32);
     tmp[2] = (product[4] >> 32) | (product[5] << 32);
     tmp[3] = (product[6] << 32);
-    carry -= (int) uECC_vli_sub(result, result, tmp, num_words_secp256r1);
+    carry -= uECC_vli_sub(result, result, tmp, num_words_secp256r1);
     
     /* d4 */
     tmp[0] = product[7];
@@ -1044,7 +1044,7 @@ static void vli_mmod_fast_secp256r1(uint64_t *result, uint64_t *product) {
     
     if (carry < 0) {
         do {
-            carry += (int)uECC_vli_add(result, result, curve_secp256r1.p, num_words_secp256r1);
+            carry += uECC_vli_add(result, result, curve_secp256r1.p, num_words_secp256r1);
         } while (carry < 0);
     } else {
         while (carry || uECC_vli_cmp_unsafe(curve_secp256r1.p, result, num_words_secp256r1) != 1) {
