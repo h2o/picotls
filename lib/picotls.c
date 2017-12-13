@@ -2787,6 +2787,8 @@ ptls_t *ptls_new(ptls_context_t *ctx, int is_server)
 {
     ptls_t *tls;
 
+    assert(ctx->get_time != NULL && "please set ctx->get_time to `&ptls_get_time`; see #92");
+
     if ((tls = malloc(sizeof(*tls))) == NULL)
         return NULL;
 
