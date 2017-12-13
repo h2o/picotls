@@ -258,6 +258,7 @@ int openssl_init_test_client(ptls_context_t *ctx_client)
 	/* Initialize the client context */
 	memset(ctx_client, 0, sizeof(ptls_context_t));
 	ctx_client->random_bytes = ptls_openssl_random_bytes;
+    ctx_client->get_time = &ptls_get_time;
 	ctx_client->key_exchanges = ptls_openssl_key_exchanges;
 	ctx_client->cipher_suites = ptls_openssl_cipher_suites;
 	ptls_openssl_init_verify_certificate(&verifier, NULL);
@@ -272,6 +273,7 @@ int openssl_init_test_server(ptls_context_t *ctx_server, char * key_file, char *
 	/* Initialize the server context */
 	memset(ctx_server, 0, sizeof(ptls_context_t));
 	ctx_server->random_bytes = ptls_openssl_random_bytes;
+    ctx_server->get_time = &ptls_get_time;
 	ctx_server->key_exchanges = ptls_openssl_key_exchanges;
 	ctx_server->cipher_suites = ptls_openssl_cipher_suites;
 
@@ -295,7 +297,8 @@ int minicrypto_init_test_client(ptls_context_t *ctx_client)
 
 	/* Initialize the client context */
 	memset(ctx_client, 0, sizeof(ptls_context_t));
-	ctx_client->random_bytes = ptls_minicrypto_random_bytes; 
+	ctx_client->random_bytes = ptls_minicrypto_random_bytes;
+    ctx_client->get_time = &ptls_get_time;
 	ctx_client->key_exchanges = ptls_minicrypto_key_exchanges;
 	ctx_client->cipher_suites = ptls_minicrypto_cipher_suites;
 	// ptls_openssl_init_verify_certificate(&verifier, NULL);
@@ -311,6 +314,7 @@ int minicrypto_init_test_server(ptls_context_t *ctx_server, char * key_file, cha
 	/* Initialize the server context */
 	memset(ctx_server, 0, sizeof(ptls_context_t));
 	ctx_server->random_bytes = ptls_minicrypto_random_bytes;
+    ctx_server->get_time = &ptls_get_time;
 	ctx_server->key_exchanges = ptls_minicrypto_key_exchanges;
 	ctx_server->cipher_suites = ptls_minicrypto_cipher_suites;
 
