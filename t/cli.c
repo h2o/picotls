@@ -309,7 +309,7 @@ int main(int argc, char **argv)
     ENGINE_register_all_digests();
 #endif
 
-    ptls_context_t ctx = {ptls_openssl_random_bytes, ptls_openssl_key_exchanges, ptls_openssl_cipher_suites};
+    ptls_context_t ctx = {ptls_openssl_random_bytes, &ptls_get_time, ptls_openssl_key_exchanges, ptls_openssl_cipher_suites};
     ptls_handshake_properties_t hsprop = {{{{NULL}}}};
     const char *host, *port, *file = NULL;
     int use_early_data = 0, ch;

@@ -364,13 +364,6 @@ static inline void init_extension_bitmap(struct st_ptls_extension_bitmap_t *bitm
 #undef EXT
 }
 
-static uint64_t gettime_millis(void)
-{
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    return (uint64_t)tv.tv_sec * 1000 + tv.tv_usec / 1000;
-}
-
 static uint16_t ntoh16(const uint8_t *src)
 {
     return (uint16_t)src[0] << 8 | src[1];
@@ -840,7 +833,7 @@ static int decode_stored_session_ticket(ptls_context_t *ctx, ptls_cipher_suite_t
     }
 
     /* calculate obfuscated_ticket_age */
-    now = gettime_millis();
+    now = ctx->get_time->cb(ctx->get_time);
     if (!(obtained_at <= now && now - obtained_at < 7 * 86400 * 1000)) {
         ret = PTLS_ERROR_LIBRARY;
         goto Exit;
@@ -899,9 +892,9 @@ static int retire_early_data_secret(ptls_t *tls, int is_enc)
 #define SESSION_IDENTIFIER_MAGIC "ptls0000" /* the number should be changed upon incompatible format change */
 #define SESSION_IDENTIFIER_MAGIC_SIZE (sizeof(SESSION_IDENTIFIER_MAGIC) - 1)
 
-int encode_session_identifier(ptls_buffer_t *buf, uint32_t ticket_age_add, ptls_iovec_t ticket_nonce,
-                              struct st_ptls_key_schedule_t *sched, const char *server_name, uint16_t csid,
-                              const char *negotiated_protocol)
+static int encode_session_identifier(ptls_context_t *ctx, ptls_buffer_t *buf, uint32_t ticket_age_add, ptls_iovec_t ticket_nonce,
+                                     struct st_ptls_key_schedule_t *sched, const char *server_name, uint16_t csid,
+                                     const char *negotiated_protocol)
 {
     int ret = 0;
 
@@ -909,7 +902,7 @@ int encode_session_identifier(ptls_buffer_t *buf, uint32_t ticket_age_add, ptls_
         /* format id */
         ptls_buffer_pushv(buf, SESSION_IDENTIFIER_MAGIC, SESSION_IDENTIFIER_MAGIC_SIZE);
         /* date */
-        ptls_buffer_push64(buf, gettime_millis());
+        ptls_buffer_push64(buf, ctx->get_time->cb(ctx->get_time));
         /* resumption master secret */
         ptls_buffer_push_block(buf, 2, {
             if ((ret = ptls_buffer_reserve(buf, sched->algo->digest_size)) != 0)
@@ -1085,8 +1078,8 @@ static int send_session_ticket(ptls_t *tls, ptls_buffer_t *sendbuf)
 
     /* build the raw nsk */
     ptls_buffer_init(&session_id, session_id_smallbuf, sizeof(session_id_smallbuf));
-    ret = encode_session_identifier(&session_id, ticket_age_add, ptls_iovec_init(NULL, 0), tls->key_schedule, tls->server_name,
-                                    tls->cipher_suite->id, tls->negotiated_protocol);
+    ret = encode_session_identifier(tls->ctx, &session_id, ticket_age_add, ptls_iovec_init(NULL, 0), tls->key_schedule,
+                                    tls->server_name, tls->cipher_suite->id, tls->negotiated_protocol);
     if (ret != 0)
         goto Exit;
 
@@ -1792,7 +1785,7 @@ static int client_handle_new_session_ticket(ptls_t *tls, ptls_iovec_t message)
     ptls_buffer_t ticket_buf;
     uint8_t ticket_buf_small[512];
     ptls_buffer_init(&ticket_buf, ticket_buf_small, sizeof(ticket_buf_small));
-    ptls_buffer_push64(&ticket_buf, gettime_millis());
+    ptls_buffer_push64(&ticket_buf, tls->ctx->get_time->cb(tls->ctx->get_time));
     ptls_buffer_push16(&ticket_buf, tls->cipher_suite->id);
     ptls_buffer_push_block(&ticket_buf, 3, { ptls_buffer_pushv(&ticket_buf, src, end - src); });
     ptls_buffer_push_block(&ticket_buf, 2, {
@@ -2158,7 +2151,7 @@ static int try_psk_handshake(ptls_t *tls, size_t *psk_index, int *accept_early_d
 {
     ptls_buffer_t decbuf;
     ptls_iovec_t ticket_psk, ticket_server_name, ticket_negotiated_protocol;
-    uint64_t issue_at, now = gettime_millis();
+    uint64_t issue_at, now = tls->ctx->get_time->cb(tls->ctx->get_time);
     uint32_t age_add;
     uint16_t ticket_csid;
     uint8_t decbuf_small[256], binder_key[PTLS_MAX_DIGEST_SIZE], verify_data[PTLS_MAX_DIGEST_SIZE];
@@ -3534,6 +3527,15 @@ static void clear_memory(void *p, size_t len)
 }
 
 void (*volatile ptls_clear_memory)(void *p, size_t len) = clear_memory;
+
+static uint64_t get_time(ptls_get_time_t *self)
+{
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return (uint64_t)tv.tv_sec * 1000 + tv.tv_usec / 1000;
+}
+
+ptls_get_time_t ptls_get_time = {get_time};
 
 #define PTLS_MAX_CERTS_IN_CONTEXT 16
 
