@@ -116,6 +116,7 @@ extern "C" {
     }
 
 typedef struct st_ptls_t ptls_t;
+typedef struct st_ptls_context_t ptls_context_t;
 
 /**
  * represents a sequence of octets
@@ -276,11 +277,20 @@ typedef const struct st_ptls_cipher_suite_t {
     ptls_hash_algorithm_t *hash;
 } ptls_cipher_suite_t;
 
+#define PTLS_CALLBACK_TYPE0(ret, name)                                                                                             \
+    typedef struct st_ptls_##name##_t {                                                                                            \
+        ret (*cb)(struct st_ptls_##name##_t * self);                                                                               \
+    } ptls_##name##_t
+
 #define PTLS_CALLBACK_TYPE(ret, name, ...)                                                                                         \
     typedef struct st_ptls_##name##_t {                                                                                            \
         ret (*cb)(struct st_ptls_##name##_t * self, __VA_ARGS__);                                                                  \
     } ptls_##name##_t
 
+/**
+ * returns current time in milliseconds (ptls_get_time can be used to return the physical time)
+ */
+PTLS_CALLBACK_TYPE0(uint64_t, get_time);
 /**
  * after receiving ClientHello, the core calls the optional callback to give a chance to the swap the context depending on the input
  * values. The callback is required to call `ptls_set_server_name` if an SNI extension needs to be sent to the client.
@@ -326,11 +336,15 @@ PTLS_CALLBACK_TYPE(void, update_open_count, ssize_t delta);
 /**
  * the configuration
  */
-typedef struct st_ptls_context_t {
+struct st_ptls_context_t {
     /**
      * PRNG to be used
      */
     void (*random_bytes)(void *buf, size_t len);
+    /**
+     *
+     */
+    ptls_get_time_t *get_time;
     /**
      * list of supported key-exchange algorithms terminated by NULL
      */
@@ -394,7 +408,7 @@ typedef struct st_ptls_context_t {
      *
      */
     ptls_update_open_count_t *update_open_count;
-} ptls_context_t;
+};
 
 typedef struct st_ptls_raw_extension_t {
     uint16_t type;
@@ -815,6 +829,8 @@ inline size_t ptls_aead_decrypt(ptls_aead_context_t *ctx, void *output, const vo
 }
 
 int ptls_load_certificates(ptls_context_t *ctx, char *cert_pem_file);
+
+extern ptls_get_time_t ptls_get_time;
 
 #ifdef __cplusplus
 }
