@@ -171,9 +171,15 @@ int main(int argc, char **argv)
     setup_certificate(&cert);
     setup_sign_certificate(&openssl_sign_certificate);
     ptls_openssl_init_verify_certificate(&openssl_verify_certificate, NULL);
-    ptls_context_t openssl_ctx = {
-        ptls_openssl_random_bytes,       ptls_openssl_key_exchanges,       ptls_openssl_cipher_suites, {&cert, 1}, NULL, NULL,
-        &openssl_sign_certificate.super, &openssl_verify_certificate.super};
+    ptls_context_t openssl_ctx = {ptls_openssl_random_bytes,
+                                  &ptls_get_time,
+                                  ptls_openssl_key_exchanges,
+                                  ptls_openssl_cipher_suites,
+                                  {&cert, 1},
+                                  NULL,
+                                  NULL,
+                                  &openssl_sign_certificate.super,
+                                  &openssl_verify_certificate.super};
     ctx = ctx_peer = &openssl_ctx;
 
     subtest("ecdh-key-exchange", test_ecdh_key_exchange);
@@ -186,6 +192,7 @@ int main(int argc, char **argv)
     ptls_minicrypto_init_secp256r1sha256_sign_certificate(
         &minicrypto_sign_certificate, ptls_iovec_init(SECP256R1_PRIVATE_KEY, sizeof(SECP256R1_PRIVATE_KEY) - 1));
     ptls_context_t minicrypto_ctx = {ptls_minicrypto_random_bytes,
+                                     &ptls_get_time,
                                      ptls_minicrypto_key_exchanges,
                                      ptls_minicrypto_cipher_suites,
                                      {&minicrypto_certificate, 1},
