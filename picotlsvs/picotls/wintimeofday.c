@@ -38,7 +38,7 @@ int wintimeofday(struct timeval* tv, struct timezone* tz)
 	 * Convert to plain 64 bit format, without making
 	 * assumptions about the FILETIME structure alignment.
 	 */
-	now |= ft.dwHighDateTime;
+	now = ft.dwHighDateTime;
 	now <<= 32;
 	now |= ft.dwLowDateTime;
 	/*
