@@ -175,7 +175,10 @@ struct st_ptls_t {
     /**
      * exporter master secret (either 0rtt or 1rtt)
      */
-    uint8_t *exporter_master_secret;
+    struct {
+        uint8_t *early;
+        uint8_t *one_rtt;
+    } exporter_master_secret;
     /**
      * misc.
      */
@@ -732,10 +735,21 @@ static int derive_exporter_secret(ptls_t *tls, int is_early)
     if (tls->ctx->use_exporter)
         return 0;
 
-    if (tls->exporter_master_secret == NULL && (tls->exporter_master_secret = malloc(tls->key_schedule->algo->digest_size)) == NULL)
+    uint8_t **slot = is_early ? &tls->exporter_master_secret.early : &tls->exporter_master_secret.one_rtt;
+    assert(*slot == NULL);
+    if ((*slot = malloc(tls->key_schedule->algo->digest_size)) == NULL)
         return PTLS_ERROR_NO_MEMORY;
+    return derive_secret(tls->key_schedule, *slot, is_early ? "e exp master" : "exp master");
+}
 
-    return derive_secret(tls->key_schedule, tls->exporter_master_secret, is_early ? "e exp master" : "exp master");
+static void free_exporter_master_secret(ptls_t *tls, int is_early)
+{
+    uint8_t *slot = is_early ? tls->exporter_master_secret.early : tls->exporter_master_secret.one_rtt;
+    if (slot == NULL)
+        return;
+    assert(tls->key_schedule != NULL);
+    ptls_clear_memory(slot, tls->key_schedule->algo->digest_size);
+    free(slot);
 }
 
 static int derive_resumption_secret(struct st_ptls_key_schedule_t *sched, uint8_t *secret, ptls_iovec_t nonce)
@@ -2810,11 +2824,8 @@ void ptls_free(ptls_t *tls)
 {
     ptls_buffer_dispose(&tls->recvbuf.rec);
     ptls_buffer_dispose(&tls->recvbuf.mess);
-    if (tls->exporter_master_secret != NULL) {
-        assert(tls->key_schedule != NULL);
-        ptls_clear_memory(tls->exporter_master_secret, tls->key_schedule->algo->digest_size);
-        free(tls->exporter_master_secret);
-    }
+    free_exporter_master_secret(tls, 1);
+    free_exporter_master_secret(tls, 0);
     if (tls->key_schedule != NULL)
         key_schedule_free(tls->key_schedule);
     if (tls->traffic_protection.dec.aead != NULL)
@@ -3290,14 +3301,15 @@ Exit:
     return ret;
 }
 
-int ptls_export_secret(ptls_t *tls, void *output, size_t outlen, const char *label, ptls_iovec_t context_value)
+int ptls_export_secret(ptls_t *tls, void *output, size_t outlen, const char *label, ptls_iovec_t context_value, int is_early)
 {
     ptls_hash_algorithm_t *algo = tls->key_schedule->algo;
     ptls_hash_context_t *hctx;
-    uint8_t derived_secret[PTLS_MAX_DIGEST_SIZE], context_value_hash[PTLS_MAX_DIGEST_SIZE];
+    uint8_t *master_secret = is_early ? tls->exporter_master_secret.early : tls->exporter_master_secret.one_rtt,
+            derived_secret[PTLS_MAX_DIGEST_SIZE], context_value_hash[PTLS_MAX_DIGEST_SIZE];
     int ret;
 
-    if (tls->exporter_master_secret == NULL)
+    if (master_secret == NULL)
         return PTLS_ERROR_IN_PROGRESS;
 
     if ((hctx = algo->create()) == NULL)
@@ -3305,9 +3317,8 @@ int ptls_export_secret(ptls_t *tls, void *output, size_t outlen, const char *lab
     hctx->update(hctx, context_value.base, context_value.len);
     hctx->final(hctx, context_value_hash, PTLS_HASH_FINAL_MODE_FREE);
 
-    if ((ret = ptls_hkdf_expand_label(algo, derived_secret, algo->digest_size,
-                                      ptls_iovec_init(tls->exporter_master_secret, algo->digest_size), label,
-                                      ptls_iovec_init(algo->empty_digest, algo->digest_size))) != 0)
+    if ((ret = ptls_hkdf_expand_label(algo, derived_secret, algo->digest_size, ptls_iovec_init(master_secret, algo->digest_size),
+                                      label, ptls_iovec_init(algo->empty_digest, algo->digest_size))) != 0)
         goto Exit;
     ret = ptls_hkdf_expand_label(tls->key_schedule->algo, output, outlen,
                                  ptls_iovec_init(derived_secret, tls->key_schedule->algo->digest_size), "exporter",
