@@ -18,7 +18,7 @@ void log_printf(void * ctx, const char * format, ...)
 
 ptls_minicrypto_log_ctx_t log_ctx = { NULL, log_printf };
 
-int ptls_export_secret(ptls_t *tls, void *output, size_t outlen, const char *label, ptls_iovec_t context_value);
+int ptls_export_secret(ptls_t *tls, void *output, size_t outlen, const char *label, ptls_iovec_t context_value, int is_early);
 
 /*
  * Testing the Base64 and ASN1 verifiers.
@@ -194,7 +194,7 @@ int extract_1rtt_secret(
     else
     {
         ret = ptls_export_secret(tls, secret, (*cipher)->hash->digest_size,
-            label, ptls_iovec_init(NULL, 0));
+            label, ptls_iovec_init(NULL, 0), 1);
     }
 
     return 0;
