@@ -39,28 +39,10 @@
 
 static inline void load_certificate_chain(ptls_context_t *ctx, const char *fn)
 {
-    static ptls_iovec_t certs[16];
-    FILE *fp;
-    size_t n = 0;
-    X509 *cert;
-
-    if ((fp = fopen(fn, "rb")) == NULL) {
-        fprintf(stderr, "failed to open file:%s:%s\n", fn, strerror(errno));
+    if (ptls_load_certificates(ctx, (char *)fn) != 0) {
+        fprintf(stderr, "failed to load certificate:%s:%s\n", fn, strerror(errno));
         exit(1);
     }
-    while ((cert = PEM_read_X509(fp, NULL, NULL, NULL)) != NULL) {
-        ptls_iovec_t *dst = certs + n++;
-        dst->len = i2d_X509(cert, &dst->base);
-    }
-    fclose(fp);
-
-    if (n == 0) {
-        fprintf(stderr, "failed to read certificates from file:%s\n", fn);
-        exit(1);
-    }
-
-    ctx->certificates.list = certs;
-    ctx->certificates.count = n;
 }
 
 static inline void load_private_key(ptls_context_t *ctx, const char *fn)
