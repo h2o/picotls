@@ -322,8 +322,7 @@ static int ptls_pem_parse_private_key(char const *pem_fname, ptls_asn1_pkcs8_pri
                                       ptls_minicrypto_log_ctx_t *log_ctx)
 {
     size_t nb_keys = 0;
-    ptls_iovec_t *list = &pkey->vec;
-    int ret = ptls_load_pem_objects(pem_fname, "PRIVATE KEY", &list, 1, &nb_keys);
+    int ret = ptls_load_pem_objects(pem_fname, "PRIVATE KEY", &pkey->vec, 1, &nb_keys);
 
     if (ret == 0) {
         if (nb_keys != 1) {

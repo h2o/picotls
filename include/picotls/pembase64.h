@@ -39,6 +39,6 @@ size_t ptls_base64_howlong(size_t data_length);
 void ptls_base64_decode_init(ptls_base64_decode_state_t *state);
 int ptls_base64_decode(const char *base64_text, ptls_base64_decode_state_t *state, ptls_buffer_t *buf);
 
-int ptls_load_pem_objects(char const *pem_fname, const char *label, ptls_iovec_t **list, size_t list_max, size_t *nb_objects);
+int ptls_load_pem_objects(char const *pem_fname, const char *label, ptls_iovec_t *list, size_t list_max, size_t *nb_objects);
 
 #endif /* PTLS_PEMBASE64_H */
