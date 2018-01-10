@@ -34,7 +34,6 @@ size_t ptls_minicrypto_asn1_decode_private_key(
 int openPemTest(char const * filename)
 {
 	ptls_iovec_t buf = { 0 };
-	ptls_iovec_t * list = &buf;
 	size_t count = 1;
 	size_t fuzz_index = 0;
 	uint8_t original_byte = 0;
@@ -42,7 +41,7 @@ int openPemTest(char const * filename)
 	size_t byte_index = 0;
 	int decode_error;
 
-	int ret = ptls_load_pem_objects(filename, "PRIVATE KEY", &list, 1, &count);
+	int ret = ptls_load_pem_objects(filename, "PRIVATE KEY", &buf, 1, &count);
 
 
 	if (ret == 0)
