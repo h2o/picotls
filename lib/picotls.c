@@ -1057,7 +1057,20 @@ Exit:
     return ret;
 }
 
-static int send_session_ticket(ptls_t *tls, ptls_buffer_t *sendbuf)
+static int push_additional_extensions(ptls_raw_extension_t *additional_extensions, ptls_buffer_t *sendbuf)
+{
+    ptls_raw_extension_t *ext;
+    int ret;
+
+    for (ext = additional_extensions; ext->type != UINT16_MAX; ++ext) {
+        buffer_push_extension(sendbuf, ext->type, { ptls_buffer_pushv(sendbuf, ext->data.base, ext->data.len); });
+    }
+    ret = 0;
+Exit:
+    return ret;
+}
+
+static int send_session_ticket(ptls_t *tls, ptls_raw_extension_t *additional_extensions, ptls_buffer_t *sendbuf)
 {
     ptls_hash_context_t *msghash_backup = tls->key_schedule->msghash->clone_(tls->key_schedule->msghash);
     ptls_buffer_t session_id;
@@ -1110,6 +1123,8 @@ static int send_session_ticket(ptls_t *tls, ptls_buffer_t *sendbuf)
             if (tls->ctx->max_early_data_size != 0)
                 buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_EARLY_DATA,
                                       { ptls_buffer_push32(sendbuf, tls->ctx->max_early_data_size); });
+            if (additional_extensions != NULL && (ret = push_additional_extensions(additional_extensions, sendbuf)) != 0)
+                goto Exit;
         });
     });
 
@@ -1120,21 +1135,6 @@ Exit:
     tls->key_schedule->msghash->final(tls->key_schedule->msghash, NULL, PTLS_HASH_FINAL_MODE_FREE);
     tls->key_schedule->msghash = msghash_backup;
 
-    return ret;
-}
-
-static int push_additional_extensions(ptls_handshake_properties_t *properties, ptls_buffer_t *sendbuf)
-{
-    int ret;
-
-    if (properties != NULL && properties->additional_extensions != NULL) {
-        ptls_raw_extension_t *ext;
-        for (ext = properties->additional_extensions; ext->type != UINT16_MAX; ++ext) {
-            buffer_push_extension(sendbuf, ext->type, { ptls_buffer_pushv(sendbuf, ext->data.base, ext->data.len); });
-        }
-    }
-    ret = 0;
-Exit:
     return ret;
 }
 
@@ -1259,7 +1259,8 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_handshake
                     ptls_buffer_push_block(sendbuf, 2, { ptls_buffer_pushv(sendbuf, cookie->base, cookie->len); });
                 });
             }
-            if ((ret = push_additional_extensions(properties, sendbuf)) != 0)
+            if (properties != NULL && properties->additional_extensions != NULL &&
+                (ret = push_additional_extensions(properties->additional_extensions, sendbuf)) != 0)
                 goto Exit;
             if (tls->ctx->save_ticket != NULL) {
                 buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_PSK_KEY_EXCHANGE_MODES, {
@@ -1551,7 +1552,8 @@ static int handle_unknown_extension(ptls_t *tls, ptls_handshake_properties_t *pr
                                     const uint8_t *const end, ptls_raw_extension_t *slots)
 {
 
-    if (properties != NULL && properties->collect_extension != NULL && properties->collect_extension(tls, properties, type)) {
+    if (properties != NULL && properties->collected_extensions != NULL &&
+        tls->ctx->collect_extension->cb(tls->ctx->collect_extension, tls, type)) {
         size_t i;
         for (i = 0; slots[i].type != UINT16_MAX; ++i) {
             assert(i < MAX_UNKNOWN_EXTENSIONS);
@@ -1569,7 +1571,7 @@ static int handle_unknown_extension(ptls_t *tls, ptls_handshake_properties_t *pr
 
 static int report_unknown_extensions(ptls_t *tls, ptls_handshake_properties_t *properties, ptls_raw_extension_t *slots)
 {
-    if (properties != NULL && properties->collect_extension != NULL) {
+    if (properties != NULL && properties->collected_extensions != NULL) {
         assert(properties->collected_extensions != NULL);
         return properties->collected_extensions(tls, properties, slots);
     } else {
@@ -1781,10 +1783,11 @@ static int client_handle_new_session_ticket(ptls_t *tls, ptls_iovec_t message)
 {
     const uint8_t *src = message.base + PTLS_HANDSHAKE_HEADER_SIZE, *const end = message.base + message.len;
     ptls_iovec_t ticket_nonce;
+    uint32_t max_early_data_size;
     int ret;
 
     { /* verify the format */
-        uint32_t ticket_lifetime, ticket_age_add, max_early_data_size;
+        uint32_t ticket_lifetime, ticket_age_add;
         ptls_iovec_t ticket;
         if ((ret = decode_new_session_ticket(&ticket_lifetime, &ticket_age_add, &ticket_nonce, &ticket, &max_early_data_size, src,
                                              end)) != 0)
@@ -2366,8 +2369,9 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
         }
         if (memcmp(tls->client_random, ch.random_bytes, sizeof(tls->client_random)) != 0 ||
             (tls->server_name != NULL) != (ch.server_name.base != NULL) ||
-            (tls->server_name != NULL && !(strncmp(tls->server_name, (char *)ch.server_name.base, ch.server_name.len) == 0 &&
-                                           tls->server_name[ch.server_name.len] == '\0'))) {
+            (tls->server_name != NULL &&
+             !(strncmp(tls->server_name, (char *)ch.server_name.base, ch.server_name.len) == 0 &&
+               tls->server_name[ch.server_name.len] == '\0'))) {
             ret = PTLS_ALERT_HANDSHAKE_FAILURE;
             goto Exit;
         }
@@ -2597,7 +2601,8 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
             }
             if (tls->early_data != NULL && tls->traffic_protection.dec.aead != NULL)
                 buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_EARLY_DATA, {});
-            if ((ret = push_additional_extensions(properties, sendbuf)) != 0)
+            if (properties != NULL && properties->additional_extensions != NULL &&
+                (ret = push_additional_extensions(properties->additional_extensions, sendbuf)) != 0)
                 goto Exit;
         });
     });
@@ -2669,7 +2674,8 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
 
     /* send session ticket if necessary */
     if (ch.psk.ke_modes != 0 && tls->ctx->ticket_lifetime != 0) {
-        if ((ret = send_session_ticket(tls, sendbuf)) != 0)
+        if ((ret = send_session_ticket(tls, properties != NULL ? properties->server.additional_ticket_extensions : NULL,
+                                       sendbuf)) != 0)
             goto Exit;
     }
 
@@ -3039,9 +3045,8 @@ static int handle_alert(ptls_t *tls, const uint8_t *src, size_t len)
     return PTLS_ALERT_TO_PEER_ERROR(desc);
 }
 
-static int handle_handshake_record(ptls_t *tls,
-                                   int (*cb)(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t message, int is_end_of_record,
-                                             ptls_handshake_properties_t *properties),
+static int handle_handshake_record(ptls_t *tls, int (*cb)(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t message,
+                                                          int is_end_of_record, ptls_handshake_properties_t *properties),
                                    ptls_buffer_t *sendbuf, struct st_ptls_record_t *rec, ptls_handshake_properties_t *properties)
 {
     int ret;

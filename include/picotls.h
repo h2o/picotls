@@ -332,6 +332,10 @@ PTLS_CALLBACK_TYPE(void, log_secret, ptls_t *tls, const char *label, ptls_iovec_
  * reference counting
  */
 PTLS_CALLBACK_TYPE(void, update_open_count, ssize_t delta);
+/**
+ * returns a boolean (i.e. 0 or 1) indicating if the given extension should be collected and reported to the application
+ */
+PTLS_CALLBACK_TYPE(int, collect_extension, ptls_t *tls, uint16_t type);
 
 /**
  * the configuration
@@ -408,6 +412,10 @@ struct st_ptls_context_t {
      *
      */
     ptls_update_open_count_t *update_open_count;
+    /**
+     * an optional callback that returns a boolean value indicating if a particular extension should be collected
+     */
+    ptls_collect_extension_t *collect_extension;
 };
 
 typedef struct st_ptls_raw_extension_t {
@@ -471,16 +479,16 @@ typedef struct st_ptls_handshake_properties_t {
                  */
                 ptls_iovec_t additional_data;
             } cookie;
+            /**
+             * an optional list of additional extensions to send on NewSessionTicket, terminated by type == UINT16_MAX
+             */
+            ptls_raw_extension_t *additional_ticket_extensions;
         } server;
     };
     /**
      * an optional list of additional extensions to send either in CH or EE, terminated by type == UINT16_MAX
      */
     ptls_raw_extension_t *additional_extensions;
-    /**
-     * an optional callback that returns a boolean value indicating if a particular extension should be collected
-     */
-    int (*collect_extension)(ptls_t *tls, struct st_ptls_handshake_properties_t *properties, uint16_t type);
     /**
      * an optional callback that reports the extensions being collected
      */
