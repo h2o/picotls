@@ -1483,6 +1483,11 @@ static int handle_hello_retry_request(ptls_t *tls, ptls_buffer_t *sendbuf, struc
     ptls_key_exchange_algorithm_t **selected_group = NULL;
     int ret;
 
+    if (tls->client.key_exchange.ctx != NULL) {
+        tls->client.key_exchange.ctx->on_exchange(&tls->client.key_exchange.ctx, NULL, ptls_iovec_init(NULL, 0));
+        tls->client.key_exchange.ctx = NULL;
+    }
+
     if (sh->retry_request.selected_group != UINT16_MAX) {
         /* we offer the first key_exchanges[0] as KEY_SHARE unless client.negotiate_before_key_exchange is set */
         for (selected_group = tls->ctx->key_exchanges; *selected_group != NULL; ++selected_group)
