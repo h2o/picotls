@@ -299,7 +299,7 @@ static int ptls_get_pem_object(FILE *F, const char *label, ptls_buffer_t *buf)
     return ret;
 }
 
-int ptls_load_pem_objects(char const *pem_fname, const char *label, ptls_iovec_t **list, size_t list_max, size_t *nb_objects)
+int ptls_load_pem_objects(char const *pem_fname, const char *label, ptls_iovec_t *list, size_t list_max, size_t *nb_objects)
 {
     FILE *F;
     int ret = 0;
@@ -328,8 +328,8 @@ int ptls_load_pem_objects(char const *pem_fname, const char *label, ptls_iovec_t
 
             if (ret == 0) {
                 if (buf.off > 0 && buf.is_allocated) {
-                    list[count]->base = buf.base;
-                    list[count]->len = buf.off;
+                    list[count].base = buf.base;
+                    list[count].len = buf.off;
                     count++;
                 } else {
                     ptls_buffer_dispose(&buf);
