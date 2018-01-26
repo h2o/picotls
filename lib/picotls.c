@@ -2401,7 +2401,7 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
         goto Exit;
 
     if (!is_second_flight) {
-        int enforce_cookie_use = properties != NULL && properties->server.cookie.enforce_use;
+        ptls_cookie_send_mode_t cookie_mode = properties != NULL ? properties->server.cookie.send_mode : PTLS_COOKIE_SEND_NEVER;
         if (ch.cookie.all.len != 0 && key_share.algorithm != NULL) {
 
             /* use cookie to check the integrity of the handshake, and update the context */
@@ -2426,7 +2426,7 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
             sendbuf->off = hrr_start;
             is_second_flight = 1;
 
-        } else if ((key_share.algorithm == NULL && ch.psk.identities.count == 0) || enforce_cookie_use) {
+        } else if ((key_share.algorithm == NULL && ch.psk.identities.count == 0) || cookie_mode == PTLS_COOKIE_SEND_ALWAYS) {
 
             /* send HelloRetryRequest  */
             if (ch.negotiated_groups.base == NULL) {
@@ -2440,14 +2440,15 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
             key_schedule_update_hash(tls->key_schedule, message.base, message.len);
             assert(tls->key_schedule->generation == 0);
             /* roll the key schedule if performing a statefull retry */
-            if (!enforce_cookie_use) {
+            if (cookie_mode == PTLS_COOKIE_SEND_NEVER) {
                 key_schedule_transform_post_ch1hash(tls->key_schedule);
                 key_schedule_extract(tls->key_schedule, ptls_iovec_init(NULL, 0));
             }
             /* emit HelloRetryRequest */
             EMIT_HELLO_RETRY_REQUEST(
-                enforce_cookie_use ? NULL : tls->key_schedule, key_share.algorithm != NULL ? NULL : negotiated_group, {
-                    if (enforce_cookie_use) {
+                cookie_mode != PTLS_COOKIE_SEND_NEVER ? NULL : tls->key_schedule,
+                key_share.algorithm != NULL ? NULL : negotiated_group, {
+                    if (cookie_mode != PTLS_COOKIE_SEND_NEVER) {
                         buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_COOKIE, {
                             ptls_buffer_push_block(sendbuf, 2, {
                                 /* push to-be-signed data */
@@ -2481,7 +2482,7 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
                         });
                     }
                 });
-            if (!enforce_cookie_use) {
+            if (cookie_mode == PTLS_COOKIE_SEND_NEVER) {
                 tls->state = PTLS_STATE_SERVER_EXPECT_SECOND_CLIENT_HELLO;
                 if (ch.psk.early_data_indication)
                     tls->skip_early_data = 1;
