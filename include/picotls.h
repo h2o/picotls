@@ -334,6 +334,15 @@ PTLS_CALLBACK_TYPE(void, log_secret, ptls_t *tls, const char *label, ptls_iovec_
 PTLS_CALLBACK_TYPE(void, update_open_count, ssize_t delta);
 
 /**
+ * when a HRR with cookie should be sent
+ */
+typedef enum en_ptls_cookie_send_mode_t {
+    PTLS_COOKIE_SEND_NEVER = 0,
+    PTLS_COOKIE_SEND_ON_HRR,
+    PTLS_COOKIE_SEND_ALWAYS
+} ptls_cookie_send_mode_t;
+
+/**
  * the configuration
  */
 struct st_ptls_context_t {
@@ -458,10 +467,6 @@ typedef struct st_ptls_handshake_properties_t {
              */
             struct {
                 /**
-                 * if the server should enforce the use of cookie
-                 */
-                unsigned enforce_use : 1;
-                /**
                  * HMAC key to protect the integrity of the cookie. The key should be as long as the digest size of the first
                  * ciphersuite specified in ptls_context_t (i.e. the hash algorithm of the best ciphersuite that can be chosen).
                  */
@@ -470,6 +475,10 @@ typedef struct st_ptls_handshake_properties_t {
                  * additional data to be used for verifying the cookie
                  */
                 ptls_iovec_t additional_data;
+                /**
+                 * when HRR with cookie should be sent
+                 */
+                ptls_cookie_send_mode_t send_mode;
             } cookie;
         } server;
     };
