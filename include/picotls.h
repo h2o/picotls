@@ -334,15 +334,6 @@ PTLS_CALLBACK_TYPE(void, log_secret, ptls_t *tls, const char *label, ptls_iovec_
 PTLS_CALLBACK_TYPE(void, update_open_count, ssize_t delta);
 
 /**
- * when a HRR with cookie should be sent
- */
-typedef enum en_ptls_cookie_send_mode_t {
-    PTLS_COOKIE_SEND_NEVER = 0,
-    PTLS_COOKIE_SEND_ON_HRR,
-    PTLS_COOKIE_SEND_ALWAYS
-} ptls_cookie_send_mode_t;
-
-/**
  * the configuration
  */
 struct st_ptls_context_t {
@@ -475,11 +466,15 @@ typedef struct st_ptls_handshake_properties_t {
                  * additional data to be used for verifying the cookie
                  */
                 ptls_iovec_t additional_data;
-                /**
-                 * when HRR with cookie should be sent
-                 */
-                ptls_cookie_send_mode_t send_mode;
             } cookie;
+            /**
+             * if HRR should always be sent
+             */
+            unsigned enforce_retry : 1;
+            /**
+             * if retry should be stateless
+             */
+            unsigned retry_uses_cookie : 1;
         } server;
     };
     /**

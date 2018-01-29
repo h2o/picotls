@@ -530,7 +530,8 @@ static void test_stateless_hrr(void)
 
     server_hs_prop.server.cookie.key = "0123456789abcdef0123456789abcdef";
     server_hs_prop.server.cookie.additional_data = ptls_iovec_init("1.2.3.4:1234", 12);
-    server_hs_prop.server.cookie.send_mode = PTLS_COOKIE_SEND_ALWAYS;
+    server_hs_prop.server.enforce_retry = 1;
+    server_hs_prop.server.retry_uses_cookie = 1;
 
     ptls_buffer_init(&cbuf, "", 0);
     ptls_buffer_init(&sbuf, "", 0);
@@ -624,7 +625,8 @@ static void test_stateless_hrr_aad_change(void)
 
     server_hs_prop.server.cookie.key = "0123456789abcdef0123456789abcdef";
     server_hs_prop.server.cookie.additional_data = ptls_iovec_init("1.2.3.4:1234", 12);
-    server_hs_prop.server.cookie.send_mode = PTLS_COOKIE_SEND_ALWAYS;
+    server_hs_prop.server.enforce_retry = 1;
+    server_hs_prop.server.retry_uses_cookie = 1;
 
     client = stateless_hrr_prepare(&sbuf, &server_hs_prop);
     ptls_buffer_init(&cbuf, "", 0);
