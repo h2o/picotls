@@ -263,12 +263,12 @@ static int save_client_hello(ptls_on_client_hello_t *self, ptls_t *tls, ptls_iov
     return 0;
 }
 
-enum { TEST_HANDSHAKE_FULL, TEST_HANDSHAKE_HRR, TEST_HANDSHAKE_RESUME, TEST_HANDSHAKE_EARLY_DATA };
+enum { TEST_HANDSHAKE_FULL, TEST_HANDSHAKE_HRR, TEST_HANDSHAKE_HRR_STATELESS, TEST_HANDSHAKE_RESUME, TEST_HANDSHAKE_EARLY_DATA };
 
 static void test_handshake(ptls_iovec_t ticket, int mode, int check_ch)
 {
     ptls_t *client, *server;
-    ptls_handshake_properties_t client_hs_prop = {{{{NULL}, ticket}}};
+    ptls_handshake_properties_t client_hs_prop = {{{{NULL}, ticket}}}, server_hs_prop = {{{{NULL}}}};
     uint8_t cbuf_small[16384], sbuf_small[16384], decbuf_small[16384];
     ptls_buffer_t cbuf, sbuf, decbuf;
     size_t consumed, max_early_data_size = 0;
@@ -295,6 +295,11 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int check_ch)
     case TEST_HANDSHAKE_HRR:
         client_hs_prop.client.negotiate_before_key_exchange = 1;
         break;
+    case TEST_HANDSHAKE_HRR_STATELESS:
+        client_hs_prop.client.negotiate_before_key_exchange = 1;
+        server_hs_prop.server.cookie.key = "0123456789abcdef0123456789abcdef";
+        server_hs_prop.server.retry_uses_cookie = 1;
+        break;
     case TEST_HANDSHAKE_EARLY_DATA:
         assert(ctx_peer->max_early_data_size != 0);
         client_hs_prop.client.max_early_data_size = &max_early_data_size;
@@ -305,10 +310,18 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int check_ch)
     ok(ret == PTLS_ERROR_IN_PROGRESS);
     ok(cbuf.off != 0);
 
-    if (mode == TEST_HANDSHAKE_HRR) {
+    switch (mode) {
+    case TEST_HANDSHAKE_HRR:
+    case TEST_HANDSHAKE_HRR_STATELESS:
         consumed = cbuf.off;
-        ret = ptls_handshake(server, &sbuf, cbuf.base, &consumed, NULL);
-        ok(ret == PTLS_ERROR_IN_PROGRESS);
+        ret = ptls_handshake(server, &sbuf, cbuf.base, &consumed, &server_hs_prop);
+        if (mode == TEST_HANDSHAKE_HRR_STATELESS) {
+            ok(ret == PTLS_ERROR_STATELESS_RETRY);
+            ptls_free(server);
+            server = ptls_new(ctx_peer, 1);
+        } else {
+            ok(ret == PTLS_ERROR_IN_PROGRESS);
+        }
         ok(cbuf.off == consumed);
         ok(sbuf.off != 0);
         cbuf.off = 0;
@@ -318,16 +331,16 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int check_ch)
         ok(sbuf.off == consumed);
         ok(cbuf.off != 0);
         sbuf.off = 0;
-    }
-
-    if (mode == TEST_HANDSHAKE_EARLY_DATA) {
+        break;
+    case TEST_HANDSHAKE_EARLY_DATA:
         ok(max_early_data_size == ctx_peer->max_early_data_size);
         ret = ptls_send(client, &cbuf, req, strlen(req));
         ok(ret == 0);
+        break;
     }
 
     consumed = cbuf.off;
-    ret = ptls_handshake(server, &sbuf, cbuf.base, &consumed, NULL);
+    ret = ptls_handshake(server, &sbuf, cbuf.base, &consumed, &server_hs_prop);
     ok(ret == 0);
     ok(sbuf.off != 0);
     if (check_ch) {
@@ -455,6 +468,13 @@ static void test_hrr_handshake(void)
 {
     sc_callcnt = 0;
     test_handshake(ptls_iovec_init(NULL, 0), TEST_HANDSHAKE_HRR, 0);
+    ok(sc_callcnt == 1);
+}
+
+static void test_hrr_stateless_handshake(void)
+{
+    sc_callcnt = 0;
+    test_handshake(ptls_iovec_init(NULL, 0), TEST_HANDSHAKE_HRR_STATELESS, 0);
     ok(sc_callcnt == 1);
 }
 
@@ -667,6 +687,7 @@ void test_picotls(void)
 
     subtest("full-handshake", test_full_handshake);
     subtest("hrr-handshake", test_hrr_handshake);
+    subtest("hrr-stateless-handshake", test_hrr_stateless_handshake);
     subtest("resumption", test_resumption);
 
     subtest("stateless-hrr", test_stateless_hrr);
