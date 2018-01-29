@@ -472,7 +472,7 @@ typedef struct st_ptls_handshake_properties_t {
              */
             unsigned enforce_retry : 1;
             /**
-             * if retry should be stateless
+             * if retry should be stateless (cookie.key MUST be set when this option is used)
              */
             unsigned retry_uses_cookie : 1;
         } server;

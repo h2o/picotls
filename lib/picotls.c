@@ -2440,7 +2440,7 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
             key_schedule_update_hash(tls->key_schedule, message.base, message.len);
             assert(tls->key_schedule->generation == 0);
             if (properties != NULL && properties->server.retry_uses_cookie) {
-                /* emit HRR with cookie */
+                /* emit HRR with cookie (note: we MUST omit KeyShare if the client has specified the correct one; see 46554f0) */
                 EMIT_HELLO_RETRY_REQUEST(NULL, key_share.algorithm != NULL ? NULL : negotiated_group, {
                     buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_COOKIE, {
                         ptls_buffer_push_block(sendbuf, 2, {
