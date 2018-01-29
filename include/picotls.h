@@ -736,7 +736,7 @@ int ptls_hkdf_expand(ptls_hash_algorithm_t *hash, void *output, size_t outlen, p
  *
  */
 int ptls_hkdf_expand_label(ptls_hash_algorithm_t *algo, void *output, size_t outlen, ptls_iovec_t secret, const char *label,
-                           ptls_iovec_t hash_value);
+                           ptls_iovec_t hash_value, const char *base_label);
 /**
  * instantiates an AEAD cipher given a secret, which is expanded using hkdf to a set of key and iv
  * @param aead
@@ -745,7 +745,8 @@ int ptls_hkdf_expand_label(ptls_hash_algorithm_t *algo, void *output, size_t out
  * @param secret the secret. The size must be the digest length of the hash algorithm
  * @return pointer to an AEAD context if successful, otherwise NULL
  */
-ptls_aead_context_t *ptls_aead_new(ptls_aead_algorithm_t *aead, ptls_hash_algorithm_t *hash, int is_enc, const void *secret);
+ptls_aead_context_t *ptls_aead_new(ptls_aead_algorithm_t *aead, ptls_hash_algorithm_t *hash, int is_enc, const void *secret,
+                                   const char *base_label);
 /**
  * destroys an AEAD cipher context
  */
