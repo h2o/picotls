@@ -540,7 +540,7 @@ static void test_resumption(void)
     ctx->save_ticket = NULL;
 }
 
-static void test_stateless_hrr(void)
+static void test_enforce_retry(int use_cookie)
 {
     ptls_t *client, *server;
     ptls_handshake_properties_t server_hs_prop = {{{{NULL}}}};
@@ -551,7 +551,7 @@ static void test_stateless_hrr(void)
     server_hs_prop.server.cookie.key = "0123456789abcdef0123456789abcdef";
     server_hs_prop.server.cookie.additional_data = ptls_iovec_init("1.2.3.4:1234", 12);
     server_hs_prop.server.enforce_retry = 1;
-    server_hs_prop.server.retry_uses_cookie = 1;
+    server_hs_prop.server.retry_uses_cookie = use_cookie;
 
     ptls_buffer_init(&cbuf, "", 0);
     ptls_buffer_init(&sbuf, "", 0);
@@ -567,11 +567,15 @@ static void test_stateless_hrr(void)
 
     consumed = cbuf.off;
     ret = ptls_handshake(server, &sbuf, cbuf.base, &consumed, &server_hs_prop);
-    ok(ret == PTLS_ERROR_STATELESS_RETRY);
     cbuf.off = 0;
 
-    ptls_free(server);
-    server = ptls_new(ctx, 1);
+    if (use_cookie) {
+        ok(ret == PTLS_ERROR_STATELESS_RETRY);
+        ptls_free(server);
+        server = ptls_new(ctx, 1);
+    } else {
+        ok(ret == PTLS_ERROR_IN_PROGRESS);
+    }
 
     consumed = sbuf.off;
     ret = ptls_handshake(client, &cbuf, sbuf.base, &consumed, NULL);
@@ -610,6 +614,16 @@ static void test_stateless_hrr(void)
     ptls_buffer_dispose(&cbuf);
     ptls_buffer_dispose(&sbuf);
     ptls_buffer_dispose(&decbuf);
+}
+
+static void test_enforce_retry_stateful(void)
+{
+    test_enforce_retry(0);
+}
+
+static void test_enforce_retry_stateless(void)
+{
+    test_enforce_retry(1);
 }
 
 static ptls_t *stateless_hrr_prepare(ptls_buffer_t *sbuf, ptls_handshake_properties_t *server_hs_prop)
@@ -690,7 +704,9 @@ void test_picotls(void)
     subtest("hrr-stateless-handshake", test_hrr_stateless_handshake);
     subtest("resumption", test_resumption);
 
-    subtest("stateless-hrr", test_stateless_hrr);
+    subtest("enforce-retry-stateful", test_enforce_retry_stateful);
+    subtest("enforce-retry-stateless", test_enforce_retry_stateless);
+
     subtest("stateless-hrr-aad-change", test_stateless_hrr_aad_change);
 
     ctx_peer->sign_certificate = sc_orig;
