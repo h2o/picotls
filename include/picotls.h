@@ -334,15 +334,6 @@ PTLS_CALLBACK_TYPE(void, log_secret, ptls_t *tls, const char *label, ptls_iovec_
 PTLS_CALLBACK_TYPE(void, update_open_count, ssize_t delta);
 
 /**
- * when a HRR with cookie should be sent
- */
-typedef enum en_ptls_cookie_send_mode_t {
-    PTLS_COOKIE_SEND_NEVER = 0,
-    PTLS_COOKIE_SEND_ON_HRR,
-    PTLS_COOKIE_SEND_ALWAYS
-} ptls_cookie_send_mode_t;
-
-/**
  * the configuration
  */
 struct st_ptls_context_t {
@@ -475,11 +466,15 @@ typedef struct st_ptls_handshake_properties_t {
                  * additional data to be used for verifying the cookie
                  */
                 ptls_iovec_t additional_data;
-                /**
-                 * when HRR with cookie should be sent
-                 */
-                ptls_cookie_send_mode_t send_mode;
             } cookie;
+            /**
+             * if HRR should always be sent
+             */
+            unsigned enforce_retry : 1;
+            /**
+             * if retry should be stateless (cookie.key MUST be set when this option is used)
+             */
+            unsigned retry_uses_cookie : 1;
         } server;
     };
     /**
@@ -736,7 +731,7 @@ int ptls_hkdf_expand(ptls_hash_algorithm_t *hash, void *output, size_t outlen, p
  *
  */
 int ptls_hkdf_expand_label(ptls_hash_algorithm_t *algo, void *output, size_t outlen, ptls_iovec_t secret, const char *label,
-                           ptls_iovec_t hash_value);
+                           ptls_iovec_t hash_value, const char *base_label);
 /**
  * instantiates an AEAD cipher given a secret, which is expanded using hkdf to a set of key and iv
  * @param aead
@@ -745,7 +740,8 @@ int ptls_hkdf_expand_label(ptls_hash_algorithm_t *algo, void *output, size_t out
  * @param secret the secret. The size must be the digest length of the hash algorithm
  * @return pointer to an AEAD context if successful, otherwise NULL
  */
-ptls_aead_context_t *ptls_aead_new(ptls_aead_algorithm_t *aead, ptls_hash_algorithm_t *hash, int is_enc, const void *secret);
+ptls_aead_context_t *ptls_aead_new(ptls_aead_algorithm_t *aead, ptls_hash_algorithm_t *hash, int is_enc, const void *secret,
+                                   const char *base_label);
 /**
  * destroys an AEAD cipher context
  */
