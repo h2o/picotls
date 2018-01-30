@@ -2403,7 +2403,6 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
         goto Exit;
 
     if (!is_second_flight) {
-        ptls_cookie_send_mode_t cookie_mode = properties != NULL ? properties->server.cookie.send_mode : PTLS_COOKIE_SEND_NEVER;
         if (ch.cookie.all.len != 0 && key_share.algorithm != NULL) {
 
             /* use cookie to check the integrity of the handshake, and update the context */
@@ -2428,7 +2427,8 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
             sendbuf->off = hrr_start;
             is_second_flight = 1;
 
-        } else if ((key_share.algorithm == NULL && ch.psk.identities.count == 0) || cookie_mode == PTLS_COOKIE_SEND_ALWAYS) {
+        } else if ((key_share.algorithm == NULL && ch.psk.identities.count == 0) ||
+                   (properties != NULL && properties->server.enforce_retry)) {
 
             /* send HelloRetryRequest  */
             if (ch.negotiated_groups.base == NULL) {
@@ -2441,56 +2441,51 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
                 goto Exit;
             key_schedule_update_hash(tls->key_schedule, message.base, message.len);
             assert(tls->key_schedule->generation == 0);
-            /* roll the key schedule if performing a statefull retry */
-            if (cookie_mode == PTLS_COOKIE_SEND_NEVER) {
-                key_schedule_transform_post_ch1hash(tls->key_schedule);
-                key_schedule_extract(tls->key_schedule, ptls_iovec_init(NULL, 0));
-            }
-            /* emit HelloRetryRequest */
-            EMIT_HELLO_RETRY_REQUEST(
-                cookie_mode != PTLS_COOKIE_SEND_NEVER ? NULL : tls->key_schedule,
-                key_share.algorithm != NULL ? NULL : negotiated_group, {
-                    if (cookie_mode != PTLS_COOKIE_SEND_NEVER) {
-                        buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_COOKIE, {
+            if (properties != NULL && properties->server.retry_uses_cookie) {
+                /* emit HRR with cookie (note: we MUST omit KeyShare if the client has specified the correct one; see 46554f0) */
+                EMIT_HELLO_RETRY_REQUEST(NULL, key_share.algorithm != NULL ? NULL : negotiated_group, {
+                    buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_COOKIE, {
+                        ptls_buffer_push_block(sendbuf, 2, {
+                            /* push to-be-signed data */
+                            size_t tbs_start = sendbuf->off;
                             ptls_buffer_push_block(sendbuf, 2, {
-                                /* push to-be-signed data */
-                                size_t tbs_start = sendbuf->off;
-                                ptls_buffer_push_block(sendbuf, 2, {
-                                    /* first block of the cookie data is the hash(ch1) */
-                                    ptls_buffer_push_block(sendbuf, 1, {
-                                        size_t sz = tls->cipher_suite->hash->digest_size;
-                                        if ((ret = ptls_buffer_reserve(sendbuf, sz)) != 0)
-                                            goto Exit;
-                                        key_schedule_extract_ch1hash(tls->key_schedule, sendbuf->base + sendbuf->off);
-                                        sendbuf->off += sz;
-                                    });
-                                    /* second is if we have sent key_share extension */
-                                    ptls_buffer_push(sendbuf, key_share.algorithm == NULL);
-                                    /* we can add more data here */
-                                });
-                                size_t tbs_len = sendbuf->off - tbs_start;
-                                /* push the signature */
+                                /* first block of the cookie data is the hash(ch1) */
                                 ptls_buffer_push_block(sendbuf, 1, {
-                                    size_t sz = tls->ctx->cipher_suites[0]->hash->digest_size;
+                                    size_t sz = tls->cipher_suite->hash->digest_size;
                                     if ((ret = ptls_buffer_reserve(sendbuf, sz)) != 0)
                                         goto Exit;
-                                    if ((ret = calc_cookie_signature(tls, properties, negotiated_group,
-                                                                     ptls_iovec_init(sendbuf->base + tbs_start, tbs_len),
-                                                                     sendbuf->base + sendbuf->off)) != 0)
-                                        goto Exit;
+                                    key_schedule_extract_ch1hash(tls->key_schedule, sendbuf->base + sendbuf->off);
                                     sendbuf->off += sz;
                                 });
+                                /* second is if we have sent key_share extension */
+                                ptls_buffer_push(sendbuf, key_share.algorithm == NULL);
+                                /* we can add more data here */
+                            });
+                            size_t tbs_len = sendbuf->off - tbs_start;
+                            /* push the signature */
+                            ptls_buffer_push_block(sendbuf, 1, {
+                                size_t sz = tls->ctx->cipher_suites[0]->hash->digest_size;
+                                if ((ret = ptls_buffer_reserve(sendbuf, sz)) != 0)
+                                    goto Exit;
+                                if ((ret = calc_cookie_signature(tls, properties, negotiated_group,
+                                                                 ptls_iovec_init(sendbuf->base + tbs_start, tbs_len),
+                                                                 sendbuf->base + sendbuf->off)) != 0)
+                                    goto Exit;
+                                sendbuf->off += sz;
                             });
                         });
-                    }
+                    });
                 });
-            if (cookie_mode == PTLS_COOKIE_SEND_NEVER) {
+                ret = PTLS_ERROR_STATELESS_RETRY;
+            } else {
+                /* invoking stateful retry; roll the key schedule and emit HRR */
+                key_schedule_transform_post_ch1hash(tls->key_schedule);
+                key_schedule_extract(tls->key_schedule, ptls_iovec_init(NULL, 0));
+                EMIT_HELLO_RETRY_REQUEST(tls->key_schedule, key_share.algorithm != NULL ? NULL : negotiated_group, {});
                 tls->state = PTLS_STATE_SERVER_EXPECT_SECOND_CLIENT_HELLO;
                 if (ch.psk.early_data_indication)
                     tls->skip_early_data = 1;
                 ret = PTLS_ERROR_IN_PROGRESS;
-            } else {
-                ret = PTLS_ERROR_STATELESS_RETRY;
             }
             goto Exit;
         }

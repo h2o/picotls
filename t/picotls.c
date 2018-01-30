@@ -263,12 +263,12 @@ static int save_client_hello(ptls_on_client_hello_t *self, ptls_t *tls, ptls_iov
     return 0;
 }
 
-enum { TEST_HANDSHAKE_FULL, TEST_HANDSHAKE_HRR, TEST_HANDSHAKE_RESUME, TEST_HANDSHAKE_EARLY_DATA };
+enum { TEST_HANDSHAKE_FULL, TEST_HANDSHAKE_HRR, TEST_HANDSHAKE_HRR_STATELESS, TEST_HANDSHAKE_RESUME, TEST_HANDSHAKE_EARLY_DATA };
 
 static void test_handshake(ptls_iovec_t ticket, int mode, int check_ch)
 {
     ptls_t *client, *server;
-    ptls_handshake_properties_t client_hs_prop = {{{{NULL}, ticket}}};
+    ptls_handshake_properties_t client_hs_prop = {{{{NULL}, ticket}}}, server_hs_prop = {{{{NULL}}}};
     uint8_t cbuf_small[16384], sbuf_small[16384], decbuf_small[16384];
     ptls_buffer_t cbuf, sbuf, decbuf;
     size_t consumed, max_early_data_size = 0;
@@ -295,6 +295,11 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int check_ch)
     case TEST_HANDSHAKE_HRR:
         client_hs_prop.client.negotiate_before_key_exchange = 1;
         break;
+    case TEST_HANDSHAKE_HRR_STATELESS:
+        client_hs_prop.client.negotiate_before_key_exchange = 1;
+        server_hs_prop.server.cookie.key = "0123456789abcdef0123456789abcdef";
+        server_hs_prop.server.retry_uses_cookie = 1;
+        break;
     case TEST_HANDSHAKE_EARLY_DATA:
         assert(ctx_peer->max_early_data_size != 0);
         client_hs_prop.client.max_early_data_size = &max_early_data_size;
@@ -305,10 +310,18 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int check_ch)
     ok(ret == PTLS_ERROR_IN_PROGRESS);
     ok(cbuf.off != 0);
 
-    if (mode == TEST_HANDSHAKE_HRR) {
+    switch (mode) {
+    case TEST_HANDSHAKE_HRR:
+    case TEST_HANDSHAKE_HRR_STATELESS:
         consumed = cbuf.off;
-        ret = ptls_handshake(server, &sbuf, cbuf.base, &consumed, NULL);
-        ok(ret == PTLS_ERROR_IN_PROGRESS);
+        ret = ptls_handshake(server, &sbuf, cbuf.base, &consumed, &server_hs_prop);
+        if (mode == TEST_HANDSHAKE_HRR_STATELESS) {
+            ok(ret == PTLS_ERROR_STATELESS_RETRY);
+            ptls_free(server);
+            server = ptls_new(ctx_peer, 1);
+        } else {
+            ok(ret == PTLS_ERROR_IN_PROGRESS);
+        }
         ok(cbuf.off == consumed);
         ok(sbuf.off != 0);
         cbuf.off = 0;
@@ -318,16 +331,16 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int check_ch)
         ok(sbuf.off == consumed);
         ok(cbuf.off != 0);
         sbuf.off = 0;
-    }
-
-    if (mode == TEST_HANDSHAKE_EARLY_DATA) {
+        break;
+    case TEST_HANDSHAKE_EARLY_DATA:
         ok(max_early_data_size == ctx_peer->max_early_data_size);
         ret = ptls_send(client, &cbuf, req, strlen(req));
         ok(ret == 0);
+        break;
     }
 
     consumed = cbuf.off;
-    ret = ptls_handshake(server, &sbuf, cbuf.base, &consumed, NULL);
+    ret = ptls_handshake(server, &sbuf, cbuf.base, &consumed, &server_hs_prop);
     ok(ret == 0);
     ok(sbuf.off != 0);
     if (check_ch) {
@@ -458,6 +471,13 @@ static void test_hrr_handshake(void)
     ok(sc_callcnt == 1);
 }
 
+static void test_hrr_stateless_handshake(void)
+{
+    sc_callcnt = 0;
+    test_handshake(ptls_iovec_init(NULL, 0), TEST_HANDSHAKE_HRR_STATELESS, 0);
+    ok(sc_callcnt == 1);
+}
+
 static int copy_ticket(ptls_encrypt_ticket_t *self, ptls_t *tls, int is_encrypt, ptls_buffer_t *dst, ptls_iovec_t src)
 {
     int ret;
@@ -520,7 +540,7 @@ static void test_resumption(void)
     ctx->save_ticket = NULL;
 }
 
-static void test_stateless_hrr(void)
+static void test_enforce_retry(int use_cookie)
 {
     ptls_t *client, *server;
     ptls_handshake_properties_t server_hs_prop = {{{{NULL}}}};
@@ -530,7 +550,8 @@ static void test_stateless_hrr(void)
 
     server_hs_prop.server.cookie.key = "0123456789abcdef0123456789abcdef";
     server_hs_prop.server.cookie.additional_data = ptls_iovec_init("1.2.3.4:1234", 12);
-    server_hs_prop.server.cookie.send_mode = PTLS_COOKIE_SEND_ALWAYS;
+    server_hs_prop.server.enforce_retry = 1;
+    server_hs_prop.server.retry_uses_cookie = use_cookie;
 
     ptls_buffer_init(&cbuf, "", 0);
     ptls_buffer_init(&sbuf, "", 0);
@@ -546,11 +567,15 @@ static void test_stateless_hrr(void)
 
     consumed = cbuf.off;
     ret = ptls_handshake(server, &sbuf, cbuf.base, &consumed, &server_hs_prop);
-    ok(ret == PTLS_ERROR_STATELESS_RETRY);
     cbuf.off = 0;
 
-    ptls_free(server);
-    server = ptls_new(ctx, 1);
+    if (use_cookie) {
+        ok(ret == PTLS_ERROR_STATELESS_RETRY);
+        ptls_free(server);
+        server = ptls_new(ctx, 1);
+    } else {
+        ok(ret == PTLS_ERROR_IN_PROGRESS);
+    }
 
     consumed = sbuf.off;
     ret = ptls_handshake(client, &cbuf, sbuf.base, &consumed, NULL);
@@ -591,6 +616,16 @@ static void test_stateless_hrr(void)
     ptls_buffer_dispose(&decbuf);
 }
 
+static void test_enforce_retry_stateful(void)
+{
+    test_enforce_retry(0);
+}
+
+static void test_enforce_retry_stateless(void)
+{
+    test_enforce_retry(1);
+}
+
 static ptls_t *stateless_hrr_prepare(ptls_buffer_t *sbuf, ptls_handshake_properties_t *server_hs_prop)
 {
     ptls_t *client = ptls_new(ctx, 0), *server = ptls_new(ctx_peer, 1);
@@ -624,7 +659,8 @@ static void test_stateless_hrr_aad_change(void)
 
     server_hs_prop.server.cookie.key = "0123456789abcdef0123456789abcdef";
     server_hs_prop.server.cookie.additional_data = ptls_iovec_init("1.2.3.4:1234", 12);
-    server_hs_prop.server.cookie.send_mode = PTLS_COOKIE_SEND_ALWAYS;
+    server_hs_prop.server.enforce_retry = 1;
+    server_hs_prop.server.retry_uses_cookie = 1;
 
     client = stateless_hrr_prepare(&sbuf, &server_hs_prop);
     ptls_buffer_init(&cbuf, "", 0);
@@ -665,9 +701,12 @@ void test_picotls(void)
 
     subtest("full-handshake", test_full_handshake);
     subtest("hrr-handshake", test_hrr_handshake);
+    subtest("hrr-stateless-handshake", test_hrr_stateless_handshake);
     subtest("resumption", test_resumption);
 
-    subtest("stateless-hrr", test_stateless_hrr);
+    subtest("enforce-retry-stateful", test_enforce_retry_stateful);
+    subtest("enforce-retry-stateless", test_enforce_retry_stateless);
+
     subtest("stateless-hrr-aad-change", test_stateless_hrr_aad_change);
 
     ctx_peer->sign_certificate = sc_orig;
