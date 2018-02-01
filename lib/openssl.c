@@ -29,10 +29,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <openssl/bn.h>
+#include <openssl/crypto.h>
 #include <openssl/ec.h>
 #include <openssl/ecdh.h>
 #include <openssl/err.h>
-#include <openssl/crypto.h>
+#include <openssl/evp.h>
 #include <openssl/objects.h>
 #include <openssl/rand.h>
 #include <openssl/x509.h>
@@ -1003,14 +1004,23 @@ Exit:
 ptls_key_exchange_algorithm_t ptls_openssl_secp256r1 = {PTLS_GROUP_SECP256R1, secp256r1_create_key_exchange,
                                                         secp256r1_key_exchange};
 ptls_key_exchange_algorithm_t *ptls_openssl_key_exchanges[] = {&ptls_openssl_secp256r1, NULL};
-ptls_aead_algorithm_t ptls_openssl_aes128gcm = {
-    "AES128-GCM", 16, 12, 16, sizeof(struct aead_crypto_context_t), aead_aes128gcm_setup_crypto};
-ptls_hash_algorithm_t ptls_openssl_sha256 = {64, 32, sha256_create, PTLS_ZERO_DIGEST_SHA256};
+ptls_aead_algorithm_t ptls_openssl_aes128gcm = {"AES128-GCM",
+                                                PTLS_AES128_KEY_SIZE,
+                                                PTLS_AES128GCM_IV_SIZE,
+                                                PTLS_AES128GCM_TAG_SIZE,
+                                                sizeof(struct aead_crypto_context_t),
+                                                aead_aes128gcm_setup_crypto};
+ptls_hash_algorithm_t ptls_openssl_sha256 = {PTLS_SHA256_BLOCK_SIZE, PTLS_SHA256_DIGEST_SIZE, sha256_create,
+                                             PTLS_ZERO_DIGEST_SHA256};
 ptls_cipher_suite_t ptls_openssl_aes128gcmsha256 = {PTLS_CIPHER_SUITE_AES_128_GCM_SHA256, &ptls_openssl_aes128gcm,
                                                     &ptls_openssl_sha256};
 #if defined(PTLS_OPENSSL_HAVE_CHACHA20_POLY1305)
-ptls_aead_algorithm_t ptls_openssl_chacha20poly1305 = {
-    "CHACHA20-POLY1305", 32, 12, 16, sizeof(struct aead_crypto_context_t), aead_chacha20poly1305_setup_crypto};
+ptls_aead_algorithm_t ptls_openssl_chacha20poly1305 = {"CHACHA20-POLY1305",
+                                                       PTLS_CHACHA20_KEY_SIZE,
+                                                       PTLS_CHACHA20POLY1305_IV_SIZE,
+                                                       PTLS_CHACHA20POLY1305_TAG_SIZE,
+                                                       sizeof(struct aead_crypto_context_t),
+                                                       aead_chacha20poly1305_setup_crypto};
 ptls_cipher_suite_t ptls_openssl_chacha20poly1305sha256 = {PTLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256,
                                                            &ptls_openssl_chacha20poly1305, &ptls_openssl_sha256};
 #endif
