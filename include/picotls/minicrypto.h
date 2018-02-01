@@ -40,9 +40,9 @@ int ptls_minicrypto_init_secp256r1sha256_sign_certificate(ptls_minicrypto_secp25
 
 extern ptls_key_exchange_algorithm_t ptls_minicrypto_secp256r1, ptls_minicrypto_x25519;
 extern ptls_key_exchange_algorithm_t *ptls_minicrypto_key_exchanges[];
-extern ptls_aead_algorithm_t ptls_minicrypto_aes128gcm;
+extern ptls_aead_algorithm_t ptls_minicrypto_aes128gcm, ptls_minicrypto_chacha20poly1305;
 extern ptls_hash_algorithm_t ptls_minicrypto_sha256;
-extern ptls_cipher_suite_t ptls_minicrypto_aes128gcmsha256;
+extern ptls_cipher_suite_t ptls_minicrypto_aes128gcmsha256, ptls_minicrypto_chacha20poly1305sha256;
 extern ptls_cipher_suite_t *ptls_minicrypto_cipher_suites[];
 
 typedef struct st_ptls_asn1_pkcs8_private_key_t {
