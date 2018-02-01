@@ -152,6 +152,53 @@ static void test_aad_ciphersuite(ptls_cipher_suite_t *cs1, ptls_cipher_suite_t *
     ptls_aead_free(c);
 }
 
+static void test_keystream(ptls_cipher_suite_t *cs, const uint8_t *key, size_t key_len, const void *iv, size_t iv_len,
+                           const void *expected, size_t expected_len)
+{
+    if (cs == NULL)
+        return;
+
+    ptls_keystream_algorithm_t *algo = cs->aead->keystream;
+    uint8_t buf[algo->block_size];
+
+    ok(algo->key_size == key_len);
+    ok(algo->iv_size == iv_len);
+    ok(algo->block_size == expected_len);
+
+    ptls_keystream_context_t *ctx = ptls_keystream_new(algo, key);
+    assert(ctx != NULL);
+    ptls_keystream_calculate(ctx, iv, buf);
+    ptls_keystream_free(ctx);
+
+    ok(memcmp(buf, expected, expected_len) == 0);
+}
+
+static void test_aes128keystream(void)
+{
+    static const uint8_t key[] = {0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6, 0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c},
+                         iv[] = {0x6b, 0xc1, 0xbe, 0xe2, 0x2e, 0x40, 0x9f, 0x96, 0xe9, 0x3d, 0x7e, 0x11, 0x73, 0x93, 0x17, 0x2a},
+                         expected[] = {0x3a, 0xd7, 0x7b, 0xb4, 0x0d, 0x7a, 0x36, 0x60,
+                                       0xa8, 0x9e, 0xca, 0xf3, 0x24, 0x66, 0xef, 0x97};
+
+    test_keystream(find_cipher(ctx, PTLS_CIPHER_SUITE_AES_128_GCM_SHA256), key, sizeof(key), iv, sizeof(iv), expected,
+                   sizeof(expected));
+}
+
+static void test_chacha20(void)
+{
+    static const uint8_t key[] = {0,  1,  2,  3,  4,  5,  6,  7,  8,  9,  10, 11, 12, 13, 14, 15,
+                                  16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31},
+                         iv[] = {1, 0, 0, 0, 0, 0, 0, 9, 0, 0, 0, 0x4a, 0, 0, 0, 0},
+                         expected[] = {0x10, 0xf1, 0xe7, 0xe4, 0xd1, 0x3b, 0x59, 0x15, 0x50, 0x0f, 0xdd, 0x1f, 0xa3,
+                                       0x20, 0x71, 0xc4, 0xc7, 0xd1, 0xf4, 0xc7, 0x33, 0xc0, 0x68, 0x03, 0x04, 0x22,
+                                       0xaa, 0x9a, 0xc3, 0xd4, 0x6c, 0x4e, 0xd2, 0x82, 0x64, 0x46, 0x07, 0x9f, 0xaa,
+                                       0x09, 0x14, 0xc2, 0xd7, 0x05, 0xd9, 0x8b, 0x02, 0xa2, 0xb5, 0x12, 0x9c, 0xd1,
+                                       0xde, 0x16, 0x4e, 0xb9, 0xcb, 0xd0, 0x83, 0xe8, 0xa2, 0x50, 0x3c, 0x4e};
+
+    test_keystream(find_cipher(ctx, PTLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256), key, sizeof(key), iv, sizeof(iv), expected,
+                   sizeof(expected));
+}
+
 static void test_aes128gcm(void)
 {
     ptls_cipher_suite_t *cs = find_cipher(ctx, PTLS_CIPHER_SUITE_AES_128_GCM_SHA256),
@@ -692,6 +739,8 @@ void test_picotls(void)
     subtest("hkdf", test_hkdf);
     subtest("aes128gcm", test_aes128gcm);
     subtest("chacha20poly1305", test_chacha20poly1305);
+    subtest("aes128keystream", test_aes128keystream);
+    subtest("chacha20", test_chacha20);
 
     subtest("fragmented-message", test_fragmented_message);
 

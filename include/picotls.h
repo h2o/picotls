@@ -181,6 +181,28 @@ typedef const struct st_ptls_key_exchange_algorithm_t {
 } ptls_key_exchange_algorithm_t;
 
 /**
+ * Context of a key stream.
+ */
+typedef struct st_ptls_keystream_context_t {
+    const struct st_ptls_keystream_algorithm_t *algo;
+    /* field above this line must not be altered by the crypto binding */
+    void (*do_dispose)(struct st_ptls_keystream_context_t *ctx);
+    void (*do_calculate)(struct st_ptls_keystream_context_t *ctx, const void *iv, void *output);
+} ptls_keystream_context_t;
+
+/**
+ * A key stream (either a block cipher in CTR mode or a stream cipher)
+ */
+typedef const struct st_ptls_keystream_algorithm_t {
+    const char *name;
+    size_t key_size;
+    size_t iv_size;
+    size_t block_size;
+    size_t _context_size;
+    int (*_init)(ptls_keystream_context_t *ctx, const void *key);
+} ptls_keystream_algorithm_t;
+
+/**
  * AEAD context. AEAD implementations are allowed to stuff data at the end of the struct. The size of the memory allocated for the
  * struct is governed by ptls_aead_algorithm_t::context_size.
  */
@@ -221,6 +243,10 @@ typedef const struct st_ptls_aead_algorithm_t {
      * sizeof(ptls_aead_context_t) and stuff additional data at the bottom of the struct.
      */
     size_t context_size;
+    /**
+     * the underlying key stream
+     */
+    const ptls_keystream_algorithm_t *keystream;
     /**
      * callback that sets up the crypto
      */
@@ -746,6 +772,18 @@ int ptls_hkdf_expand(ptls_hash_algorithm_t *hash, void *output, size_t outlen, p
  */
 int ptls_hkdf_expand_label(ptls_hash_algorithm_t *algo, void *output, size_t outlen, ptls_iovec_t secret, const char *label,
                            ptls_iovec_t hash_value, const char *base_label);
+/**
+ * instantiates a key stream
+ */
+ptls_keystream_context_t *ptls_keystream_new(ptls_keystream_algorithm_t *algo, const void *key);
+/**
+ * destroys a key stream
+ */
+void ptls_keystream_free(ptls_keystream_context_t *ctx);
+/**
+ * calculates a new block of the key stream using specified iv (typically the concatenation of nonce and sequence)
+ */
+void ptls_keystream_calculate(ptls_keystream_context_t *ctx, const void *iv, void *output);
 /**
  * instantiates an AEAD cipher given a secret, which is expanded using hkdf to a set of key and iv
  * @param aead

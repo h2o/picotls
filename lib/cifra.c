@@ -194,6 +194,32 @@ Exit:
     return ret;
 }
 
+struct aes128keystream_context_t {
+    ptls_keystream_context_t super;
+    cf_aes_context aes;
+};
+
+static void aes128keystream_dispose(ptls_keystream_context_t *_ctx)
+{
+    struct aes128keystream_context_t *ctx = (struct aes128keystream_context_t *)_ctx;
+    ptls_clear_memory(&ctx->aes, sizeof(ctx->aes));
+}
+
+static void aes128keystream_calculate(ptls_keystream_context_t *_ctx, const void *iv, void *output)
+{
+    struct aes128keystream_context_t *ctx = (struct aes128keystream_context_t *)_ctx;
+    cf_aes_encrypt(&ctx->aes, iv, output);
+}
+
+static int aes128keystream_init(ptls_keystream_context_t *_ctx, const void *key)
+{
+    struct aes128keystream_context_t *ctx = (struct aes128keystream_context_t *)_ctx;
+    ctx->super.do_dispose = aes128keystream_dispose;
+    ctx->super.do_calculate = aes128keystream_calculate;
+    cf_aes_init(&ctx->aes, key, PTLS_AES128_KEY_SIZE);
+    return 0;
+}
+
 struct aes128gcm_context_t {
     ptls_aead_context_t super;
     cf_aes_context aes;
@@ -265,6 +291,32 @@ static int aead_aes128gcm_setup_crypto(ptls_aead_context_t *_ctx, int is_enc, co
     }
 
     cf_aes_init(&ctx->aes, key, PTLS_AES128_KEY_SIZE);
+    return 0;
+}
+
+struct chacha20_context_t {
+    ptls_keystream_context_t super;
+    cf_chacha20_ctx chacha;
+};
+
+static void chacha20_dispose(ptls_keystream_context_t *_ctx)
+{
+    struct chacha20_context_t *ctx = (struct chacha20_context_t *)_ctx;
+    ptls_clear_memory(&ctx->chacha, sizeof(ctx->chacha));
+}
+
+static void chacha20_calculate(ptls_keystream_context_t *_ctx, const void *iv, void *output)
+{
+    struct chacha20_context_t *ctx = (struct chacha20_context_t *)_ctx;
+    cf_chacha20_core(ctx->chacha.key0, ctx->chacha.key1, iv, ctx->chacha.constant, output);
+}
+
+static int chacha20_init(ptls_keystream_context_t *_ctx, const void *key)
+{
+    struct chacha20_context_t *ctx = (struct chacha20_context_t *)_ctx;
+    ctx->super.do_dispose = chacha20_dispose;
+    ctx->super.do_calculate = chacha20_calculate;
+    cf_chacha20_init(&ctx->chacha, key, PTLS_CHACHA20_KEY_SIZE, (const uint8_t *)"01234567" /* not used */);
     return 0;
 }
 
@@ -465,19 +517,30 @@ static ptls_hash_context_t *sha256_create(void)
 }
 
 ptls_key_exchange_algorithm_t ptls_minicrypto_x25519 = {PTLS_GROUP_X25519, x25519_create_key_exchange, x25519_key_exchange};
+ptls_keystream_algorithm_t ptls_minicrypto_aes128keystream = {"AES128",
+                                                              PTLS_AES128_KEY_SIZE,
+                                                              PTLS_AES128_BLOCK_SIZE,
+                                                              PTLS_AES128_BLOCK_SIZE,
+                                                              sizeof(struct aes128keystream_context_t),
+                                                              aes128keystream_init};
 ptls_aead_algorithm_t ptls_minicrypto_aes128gcm = {"AES128-GCM",
                                                    PTLS_AES128_KEY_SIZE,
                                                    PTLS_AES128GCM_IV_SIZE,
                                                    PTLS_AES128GCM_TAG_SIZE,
                                                    sizeof(struct aes128gcm_context_t),
+                                                   &ptls_minicrypto_aes128keystream,
                                                    aead_aes128gcm_setup_crypto};
 ptls_hash_algorithm_t ptls_minicrypto_sha256 = {PTLS_SHA256_BLOCK_SIZE, PTLS_SHA256_DIGEST_SIZE, sha256_create,
                                                 PTLS_ZERO_DIGEST_SHA256};
+ptls_keystream_algorithm_t ptls_minicrypto_chacha20 = {
+    "CHACHA20",   PTLS_CHACHA20_KEY_SIZE, PTLS_CHACHA20_IV_SIZE, PTLS_CHACHA20_BLOCK_SIZE, sizeof(struct chacha20_context_t),
+    chacha20_init};
 ptls_aead_algorithm_t ptls_minicrypto_chacha20poly1305 = {"CHACHA20-POLY1305",
                                                           PTLS_CHACHA20_KEY_SIZE,
                                                           PTLS_CHACHA20POLY1305_IV_SIZE,
                                                           PTLS_CHACHA20POLY1305_TAG_SIZE,
                                                           sizeof(struct chacha20poly1305_context_t),
+                                                          &ptls_minicrypto_chacha20,
                                                           aead_chacha20poly1305_setup_crypto};
 ptls_cipher_suite_t ptls_minicrypto_aes128gcmsha256 = {PTLS_CIPHER_SUITE_AES_128_GCM_SHA256, &ptls_minicrypto_aes128gcm,
                                                        &ptls_minicrypto_sha256};
