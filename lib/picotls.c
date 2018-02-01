@@ -3474,6 +3474,31 @@ Exit:
     return ret;
 }
 
+ptls_keystream_context_t *ptls_keystream_new(ptls_keystream_algorithm_t *algo, const void *key)
+{
+    ptls_keystream_context_t *ctx;
+
+    if ((ctx = (ptls_keystream_context_t *)malloc(algo->_context_size)) == NULL)
+        return NULL;
+    *ctx = (ptls_keystream_context_t){algo};
+    if (algo->_init(ctx, key) != 0) {
+        free(ctx);
+        ctx = NULL;
+    }
+    return ctx;
+}
+
+void ptls_keystream_free(ptls_keystream_context_t *ctx)
+{
+    ctx->do_dispose(ctx);
+    free(ctx);
+}
+
+void ptls_keystream_calculate(ptls_keystream_context_t *ctx, const void *iv, void *output)
+{
+    ctx->do_calculate(ctx, iv, output);
+}
+
 ptls_aead_context_t *ptls_aead_new(ptls_aead_algorithm_t *aead, ptls_hash_algorithm_t *hash, int is_enc, const void *secret,
                                    const char *base_label)
 {

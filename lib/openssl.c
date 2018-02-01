@@ -376,6 +376,69 @@ Exit:
     return ret;
 }
 
+struct keystream_context_t {
+    ptls_keystream_context_t super;
+    EVP_CIPHER_CTX *evp;
+};
+
+static void keystream_dispose(ptls_keystream_context_t *_ctx)
+{
+    struct keystream_context_t *ctx = (struct keystream_context_t *)_ctx;
+    EVP_CIPHER_CTX_free(ctx->evp);
+}
+
+static int keystream_init(ptls_keystream_context_t *_ctx, const void *key, const EVP_CIPHER *cipher,
+                          void (*do_calculate)(ptls_keystream_context_t *, const void *, void *))
+{
+    struct keystream_context_t *ctx = (struct keystream_context_t *)_ctx;
+
+    ctx->super.do_dispose = keystream_dispose;
+    ctx->super.do_calculate = do_calculate;
+
+    if ((ctx->evp = EVP_CIPHER_CTX_new()) == NULL)
+        return PTLS_ERROR_NO_MEMORY;
+    if (!EVP_EncryptInit_ex(ctx->evp, cipher, NULL, key, NULL)) {
+        EVP_CIPHER_CTX_free(ctx->evp);
+        return PTLS_ERROR_LIBRARY;
+    }
+
+    return 0;
+}
+
+static void keystream_ecb_calculate(ptls_keystream_context_t *_ctx, const void *iv, void *output)
+{
+    struct keystream_context_t *ctx = (struct keystream_context_t *)_ctx;
+    int ret, outlen = (int)ctx->super.algo->block_size;
+    ret = EVP_EncryptUpdate(ctx->evp, output, &outlen, iv, (int)ctx->super.algo->key_size);
+    assert(ret);
+}
+
+static int aes128keystream_init(ptls_keystream_context_t *ctx, const void *key)
+{
+    return keystream_init(ctx, key, EVP_aes_128_ecb(), keystream_ecb_calculate);
+}
+
+#if defined(PTLS_OPENSSL_HAVE_CHACHA20_POLY1305)
+
+static void chacha20_calculate(ptls_keystream_context_t *_ctx, const void *iv, void *output)
+{
+    static const uint8_t zeroes[64] = {0};
+    struct keystream_context_t *ctx = (struct keystream_context_t *)_ctx;
+    int ret, outlen = 64;
+
+    ret = EVP_EncryptInit_ex(ctx->evp, NULL, NULL, NULL, iv);
+    assert(ret);
+    ret = EVP_EncryptUpdate(ctx->evp, output, &outlen, zeroes, sizeof(zeroes));
+    assert(ret);
+}
+
+static int chacha20_init(ptls_keystream_context_t *ctx, const void *key)
+{
+    return keystream_init(ctx, key, EVP_chacha20(), chacha20_calculate);
+}
+
+#endif
+
 struct aead_crypto_context_t {
     ptls_aead_context_t super;
     EVP_CIPHER_CTX *evp_ctx;
@@ -1004,22 +1067,33 @@ Exit:
 ptls_key_exchange_algorithm_t ptls_openssl_secp256r1 = {PTLS_GROUP_SECP256R1, secp256r1_create_key_exchange,
                                                         secp256r1_key_exchange};
 ptls_key_exchange_algorithm_t *ptls_openssl_key_exchanges[] = {&ptls_openssl_secp256r1, NULL};
+ptls_keystream_algorithm_t ptls_openssl_aes128keystream = {"AES128",
+                                                           PTLS_AES128_KEY_SIZE,
+                                                           PTLS_AES128_BLOCK_SIZE,
+                                                           PTLS_AES128_BLOCK_SIZE,
+                                                           sizeof(struct keystream_context_t),
+                                                           aes128keystream_init};
 ptls_aead_algorithm_t ptls_openssl_aes128gcm = {"AES128-GCM",
                                                 PTLS_AES128_KEY_SIZE,
                                                 PTLS_AES128GCM_IV_SIZE,
                                                 PTLS_AES128GCM_TAG_SIZE,
                                                 sizeof(struct aead_crypto_context_t),
+                                                &ptls_openssl_aes128keystream,
                                                 aead_aes128gcm_setup_crypto};
 ptls_hash_algorithm_t ptls_openssl_sha256 = {PTLS_SHA256_BLOCK_SIZE, PTLS_SHA256_DIGEST_SIZE, sha256_create,
                                              PTLS_ZERO_DIGEST_SHA256};
 ptls_cipher_suite_t ptls_openssl_aes128gcmsha256 = {PTLS_CIPHER_SUITE_AES_128_GCM_SHA256, &ptls_openssl_aes128gcm,
                                                     &ptls_openssl_sha256};
 #if defined(PTLS_OPENSSL_HAVE_CHACHA20_POLY1305)
+ptls_keystream_algorithm_t ptls_openssl_chacha20 = {
+    "CHACHA20",   PTLS_CHACHA20_KEY_SIZE, PTLS_CHACHA20_IV_SIZE, PTLS_CHACHA20_BLOCK_SIZE, sizeof(struct keystream_context_t),
+    chacha20_init};
 ptls_aead_algorithm_t ptls_openssl_chacha20poly1305 = {"CHACHA20-POLY1305",
                                                        PTLS_CHACHA20_KEY_SIZE,
                                                        PTLS_CHACHA20POLY1305_IV_SIZE,
                                                        PTLS_CHACHA20POLY1305_TAG_SIZE,
                                                        sizeof(struct aead_crypto_context_t),
+                                                       &ptls_openssl_chacha20,
                                                        aead_chacha20poly1305_setup_crypto};
 ptls_cipher_suite_t ptls_openssl_chacha20poly1305sha256 = {PTLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256,
                                                            &ptls_openssl_chacha20poly1305, &ptls_openssl_sha256};
