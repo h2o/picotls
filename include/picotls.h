@@ -30,6 +30,19 @@ extern "C" {
 #include <inttypes.h>
 #include <sys/types.h>
 
+#define PTLS_AES128_KEY_SIZE 16
+#define PTLS_AES128_IV_SIZE 16
+#define PTLS_AES128GCM_IV_SIZE 12
+#define PTLS_AES128GCM_TAG_SIZE 16
+
+#define PTLS_CHACHA20_KEY_SIZE 32
+#define PTLS_CHACHA20_IV_SIZE 16
+#define PTLS_CHACHA20POLY1305_IV_SIZE 12
+#define PTLS_CHACHA20POLY1305_TAG_SIZE 16
+
+#define PTLS_SHA256_BLOCK_SIZE 64
+#define PTLS_SHA256_DIGEST_SIZE 32
+
 #define PTLS_MAX_SECRET_SIZE 32
 #define PTLS_MAX_IV_SIZE 16
 #define PTLS_MAX_DIGEST_SIZE 64
@@ -167,6 +180,28 @@ typedef const struct st_ptls_key_exchange_algorithm_t {
 } ptls_key_exchange_algorithm_t;
 
 /**
+ * context of a symmetric cipher
+ */
+typedef struct st_ptls_cipher_context_t {
+    const struct st_ptls_cipher_algorithm_t *algo;
+    /* field above this line must not be altered by the crypto binding */
+    void (*do_dispose)(struct st_ptls_cipher_context_t *ctx);
+    void (*do_init)(struct st_ptls_cipher_context_t *ctx, const void *iv);
+    void (*do_transform)(struct st_ptls_cipher_context_t *ctx, void *output, const void *input, size_t len);
+} ptls_cipher_context_t;
+
+/**
+ * a symmetric cipher
+ */
+typedef const struct st_ptls_cipher_algorithm_t {
+    const char *name;
+    size_t key_size;
+    size_t iv_size;
+    size_t context_size;
+    int (*setup_crypto)(ptls_cipher_context_t *ctx, int is_enc, const void *key);
+} ptls_cipher_algorithm_t;
+
+/**
  * AEAD context. AEAD implementations are allowed to stuff data at the end of the struct. The size of the memory allocated for the
  * struct is governed by ptls_aead_algorithm_t::context_size.
  */
@@ -190,6 +225,10 @@ typedef const struct st_ptls_aead_algorithm_t {
      * name (following the convention of `openssl ciphers -v ALL`)
      */
     const char *name;
+    /**
+     * the underlying key stream
+     */
+    const ptls_cipher_algorithm_t *ctr_cipher;
     /**
      * key size
      */
@@ -733,6 +772,22 @@ int ptls_hkdf_expand(ptls_hash_algorithm_t *hash, void *output, size_t outlen, p
 int ptls_hkdf_expand_label(ptls_hash_algorithm_t *algo, void *output, size_t outlen, ptls_iovec_t secret, const char *label,
                            ptls_iovec_t hash_value, const char *base_label);
 /**
+ * instantiates a symmetric cipher
+ */
+ptls_cipher_context_t *ptls_cipher_new(ptls_cipher_algorithm_t *algo, int is_enc, const void *key);
+/**
+ * destroys a symmetric cipher
+ */
+void ptls_cipher_free(ptls_cipher_context_t *ctx);
+/**
+ * initializes the IV; this function must be called prior to calling ptls_cipher_encrypt
+ */
+static void ptls_cipher_init(ptls_cipher_context_t *ctx, const void *iv);
+/**
+ * encrypts given text
+ */
+static void ptls_cipher_encrypt(ptls_cipher_context_t *ctx, void *output, const void *input, size_t len);
+/**
  * instantiates an AEAD cipher given a secret, which is expanded using hkdf to a set of key and iv
  * @param aead
  * @param hash
@@ -804,6 +859,16 @@ inline void ptls_buffer_dispose(ptls_buffer_t *buf)
 {
     ptls_buffer__release_memory(buf);
     *buf = (ptls_buffer_t){NULL};
+}
+
+inline void ptls_cipher_init(ptls_cipher_context_t *ctx, const void *iv)
+{
+    ctx->do_init(ctx, iv);
+}
+
+inline void ptls_cipher_encrypt(ptls_cipher_context_t *ctx, void *output, const void *input, size_t len)
+{
+    ctx->do_transform(ctx, output, input, len);
 }
 
 inline void ptls_aead_encrypt_init(ptls_aead_context_t *ctx, uint64_t seq, const void *aad, size_t aadlen)
