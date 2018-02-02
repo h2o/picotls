@@ -782,11 +782,11 @@ void ptls_cipher_free(ptls_cipher_context_t *ctx);
 /**
  * initializes the IV; this function must be called prior to calling ptls_cipher_encrypt
  */
-void ptls_cipher_init(ptls_cipher_context_t *ctx, const void *iv);
+static void ptls_cipher_init(ptls_cipher_context_t *ctx, const void *iv);
 /**
  * encrypts given text
  */
-void ptls_cipher_encrypt(ptls_cipher_context_t *ctx, void *output, const void *input, size_t len);
+static void ptls_cipher_encrypt(ptls_cipher_context_t *ctx, void *output, const void *input, size_t len);
 /**
  * instantiates an AEAD cipher given a secret, which is expanded using hkdf to a set of key and iv
  * @param aead
@@ -859,6 +859,16 @@ inline void ptls_buffer_dispose(ptls_buffer_t *buf)
 {
     ptls_buffer__release_memory(buf);
     *buf = (ptls_buffer_t){NULL};
+}
+
+inline void ptls_cipher_init(ptls_cipher_context_t *ctx, const void *iv)
+{
+    ctx->do_init(ctx, iv);
+}
+
+inline void ptls_cipher_encrypt(ptls_cipher_context_t *ctx, void *output, const void *input, size_t len)
+{
+    ctx->do_transform(ctx, output, input, len);
 }
 
 inline void ptls_aead_encrypt_init(ptls_aead_context_t *ctx, uint64_t seq, const void *aad, size_t aadlen)

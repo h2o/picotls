@@ -3494,16 +3494,6 @@ void ptls_cipher_free(ptls_cipher_context_t *ctx)
     free(ctx);
 }
 
-void ptls_cipher_init(ptls_cipher_context_t *ctx, const void *iv)
-{
-    ctx->do_init(ctx, iv);
-}
-
-void ptls_cipher_encrypt(ptls_cipher_context_t *ctx, void *output, const void *input, size_t len)
-{
-    ctx->do_transform(ctx, output, input, len);
-}
-
 ptls_aead_context_t *ptls_aead_new(ptls_aead_algorithm_t *aead, ptls_hash_algorithm_t *hash, int is_enc, const void *secret,
                                    const char *base_label)
 {
