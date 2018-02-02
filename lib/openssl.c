@@ -376,6 +376,65 @@ Exit:
     return ret;
 }
 
+struct cipher_context_t {
+    ptls_cipher_context_t super;
+    EVP_CIPHER_CTX *evp;
+};
+
+static void cipher_dispose(ptls_cipher_context_t *_ctx)
+{
+    struct cipher_context_t *ctx = (struct cipher_context_t *)_ctx;
+    EVP_CIPHER_CTX_free(ctx->evp);
+}
+
+static void cipher_do_init(ptls_cipher_context_t *_ctx, const void *iv)
+{
+    struct cipher_context_t *ctx = (struct cipher_context_t *)_ctx;
+    int ret;
+    ret = EVP_EncryptInit_ex(ctx->evp, NULL, NULL, NULL, iv);
+    assert(ret);
+}
+
+static int cipher_setup_crypto(ptls_cipher_context_t *_ctx, const void *key, const EVP_CIPHER *cipher,
+                               void (*do_transform)(ptls_cipher_context_t *, void *, const void *, size_t))
+{
+    struct cipher_context_t *ctx = (struct cipher_context_t *)_ctx;
+
+    ctx->super.do_dispose = cipher_dispose;
+    ctx->super.do_init = cipher_do_init;
+    ctx->super.do_transform = do_transform;
+
+    if ((ctx->evp = EVP_CIPHER_CTX_new()) == NULL)
+        return PTLS_ERROR_NO_MEMORY;
+    if (!EVP_EncryptInit_ex(ctx->evp, cipher, NULL, key, NULL)) {
+        EVP_CIPHER_CTX_free(ctx->evp);
+        return PTLS_ERROR_LIBRARY;
+    }
+
+    return 0;
+}
+
+static void cipher_encrypt(ptls_cipher_context_t *_ctx, void *output, const void *input, size_t _len)
+{
+    struct cipher_context_t *ctx = (struct cipher_context_t *)_ctx;
+    int len = (int)_len, ret = EVP_EncryptUpdate(ctx->evp, output, &len, input, len);
+    assert(ret);
+}
+
+static int aes128ctr_setup_crypto(ptls_cipher_context_t *ctx, int is_enc, const void *key)
+{
+    return cipher_setup_crypto(ctx, key, EVP_aes_128_ctr(), cipher_encrypt);
+}
+
+#if defined(PTLS_OPENSSL_HAVE_CHACHA20_POLY1305)
+
+static int chacha20_setup_crypto(ptls_cipher_context_t *ctx, int is_enc, const void *key)
+{
+    return cipher_setup_crypto(ctx, key, EVP_chacha20(), cipher_encrypt);
+}
+
+#endif
+
 struct aead_crypto_context_t {
     ptls_aead_context_t super;
     EVP_CIPHER_CTX *evp_ctx;
@@ -1004,7 +1063,10 @@ Exit:
 ptls_key_exchange_algorithm_t ptls_openssl_secp256r1 = {PTLS_GROUP_SECP256R1, secp256r1_create_key_exchange,
                                                         secp256r1_key_exchange};
 ptls_key_exchange_algorithm_t *ptls_openssl_key_exchanges[] = {&ptls_openssl_secp256r1, NULL};
+ptls_cipher_algorithm_t ptls_openssl_aes128ctr = {"AES128-CTR", PTLS_AES128_KEY_SIZE, PTLS_AES128_IV_SIZE,
+                                                  sizeof(struct cipher_context_t), aes128ctr_setup_crypto};
 ptls_aead_algorithm_t ptls_openssl_aes128gcm = {"AES128-GCM",
+                                                &ptls_openssl_aes128ctr,
                                                 PTLS_AES128_KEY_SIZE,
                                                 PTLS_AES128GCM_IV_SIZE,
                                                 PTLS_AES128GCM_TAG_SIZE,
@@ -1015,7 +1077,10 @@ ptls_hash_algorithm_t ptls_openssl_sha256 = {PTLS_SHA256_BLOCK_SIZE, PTLS_SHA256
 ptls_cipher_suite_t ptls_openssl_aes128gcmsha256 = {PTLS_CIPHER_SUITE_AES_128_GCM_SHA256, &ptls_openssl_aes128gcm,
                                                     &ptls_openssl_sha256};
 #if defined(PTLS_OPENSSL_HAVE_CHACHA20_POLY1305)
+ptls_cipher_algorithm_t ptls_openssl_chacha20 = {"CHACHA20", PTLS_CHACHA20_KEY_SIZE, PTLS_CHACHA20_IV_SIZE,
+                                                 sizeof(struct cipher_context_t), chacha20_setup_crypto};
 ptls_aead_algorithm_t ptls_openssl_chacha20poly1305 = {"CHACHA20-POLY1305",
+                                                       &ptls_openssl_chacha20,
                                                        PTLS_CHACHA20_KEY_SIZE,
                                                        PTLS_CHACHA20POLY1305_IV_SIZE,
                                                        PTLS_CHACHA20POLY1305_TAG_SIZE,
