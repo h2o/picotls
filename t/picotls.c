@@ -161,7 +161,7 @@ static void test_ctr(ptls_cipher_suite_t *cs, const uint8_t *key, size_t key_len
         return;
 
     ptls_cipher_algorithm_t *algo = cs->aead->ctr_cipher;
-    uint8_t buf[expected_len];
+    uint8_t buf[sizeof(zeroes)];
 
     assert(expected_len <= sizeof(zeroes));
     ok(algo->key_size == key_len);
