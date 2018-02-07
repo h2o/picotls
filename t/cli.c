@@ -290,6 +290,7 @@ static void usage(const char *cmd)
            "  -l log-file          file to log traffic secrets\n"
            "  -n                   negotiates the key exchange method (i.e. wait for HRR)\n"
            "  -s session-file      file to read/write the session ticket\n"
+           "  -S                   require public key exchange when resuming a session\n"
            "  -e                   when resuming a session, send first 8,192 bytes of input\n"
            "                       as early data\n"
            "  -v                   verify peer using the default certificates\n"
@@ -317,7 +318,7 @@ int main(int argc, char **argv)
     socklen_t salen;
     int family = 0;
 
-    while ((ch = getopt(argc, argv, "46c:i:k:nes:l:vh")) != -1) {
+    while ((ch = getopt(argc, argv, "46c:i:k:nes:Sl:vh")) != -1) {
         switch (ch) {
         case '4':
             family = AF_INET;
@@ -342,6 +343,9 @@ int main(int argc, char **argv)
             break;
         case 's':
             setup_session_file(&ctx, &hsprop, optarg);
+            break;
+        case 'S':
+            ctx.require_dhe_on_psk = 1;
             break;
         case 'l':
             setup_log_secret(&ctx, optarg);
