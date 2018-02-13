@@ -67,14 +67,14 @@
 #define PTLS_EXTENSION_TYPE_SUPPORTED_GROUPS 10
 #define PTLS_EXTENSION_TYPE_SIGNATURE_ALGORITHMS 13
 #define PTLS_EXTENSION_TYPE_ALPN 16
-#define PTLS_EXTENSION_TYPE_KEY_SHARE 40
 #define PTLS_EXTENSION_TYPE_PRE_SHARED_KEY 41
 #define PTLS_EXTENSION_TYPE_EARLY_DATA 42
 #define PTLS_EXTENSION_TYPE_SUPPORTED_VERSIONS 43
 #define PTLS_EXTENSION_TYPE_COOKIE 44
 #define PTLS_EXTENSION_TYPE_PSK_KEY_EXCHANGE_MODES 45
+#define PTLS_EXTENSION_TYPE_KEY_SHARE 51
 
-#define PTLS_PROTOCOL_VERSION_DRAFT22 0x7f16
+#define PTLS_PROTOCOL_VERSION_DRAFT23 0x7f17
 
 #define PTLS_SERVER_NAME_TYPE_HOSTNAME 0
 
@@ -1226,11 +1226,11 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_handshake
                 });
             }
             buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SUPPORTED_VERSIONS, {
-                ptls_buffer_push_block(sendbuf, 1, { ptls_buffer_push16(sendbuf, PTLS_PROTOCOL_VERSION_DRAFT22); });
+                ptls_buffer_push_block(sendbuf, 1, { ptls_buffer_push16(sendbuf, PTLS_PROTOCOL_VERSION_DRAFT23); });
             });
             buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SIGNATURE_ALGORITHMS, {
                 ptls_buffer_push_block(sendbuf, 2, {
-                    ptls_buffer_push16(sendbuf, PTLS_SIGNATURE_RSA_PSS_SHA256);
+                    ptls_buffer_push16(sendbuf, PTLS_SIGNATURE_RSA_PSS_RSAE_SHA256);
                     ptls_buffer_push16(sendbuf, PTLS_SIGNATURE_ECDSA_SECP256R1_SHA256);
                     ptls_buffer_push16(sendbuf, PTLS_SIGNATURE_RSA_PKCS1_SHA256);
                     ptls_buffer_push16(sendbuf, PTLS_SIGNATURE_RSA_PKCS1_SHA1);
@@ -1451,7 +1451,7 @@ static int decode_server_hello(ptls_t *tls, struct st_ptls_server_hello_t *sh, c
         }
     });
 
-    if (found_version != PTLS_PROTOCOL_VERSION_DRAFT22) {
+    if (found_version != PTLS_PROTOCOL_VERSION_DRAFT23) {
         ret = PTLS_ALERT_ILLEGAL_PARAMETER;
         goto Exit;
     }
@@ -1712,7 +1712,7 @@ static int client_handle_certificate_verify(ptls_t *tls, ptls_iovec_t message)
 
     /* validate */
     switch (algo) {
-    case PTLS_SIGNATURE_RSA_PSS_SHA256:
+    case PTLS_SIGNATURE_RSA_PSS_RSAE_SHA256:
     case PTLS_SIGNATURE_ECDSA_SECP256R1_SHA256:
         /* ok */
         break;
@@ -2031,7 +2031,7 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
                     uint16_t v;
                     if ((ret = ptls_decode16(&v, &src, end)) != 0)
                         goto Exit;
-                    if (ch->selected_version == 0 && v == PTLS_PROTOCOL_VERSION_DRAFT22)
+                    if (ch->selected_version == 0 && v == PTLS_PROTOCOL_VERSION_DRAFT23)
                         ch->selected_version = v;
                 } while (src != end);
             });
@@ -2132,7 +2132,7 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
 
     /* check if client hello make sense */
     switch (ch->selected_version) {
-    case PTLS_PROTOCOL_VERSION_DRAFT22:
+    case PTLS_PROTOCOL_VERSION_DRAFT23:
         if (!(ch->compression_methods.count == 1 && ch->compression_methods.ids[0] == 0)) {
             ret = PTLS_ALERT_ILLEGAL_PARAMETER;
             goto Exit;
@@ -2311,7 +2311,7 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
         ptls_buffer_push(sendbuf, 0);                                                                                              \
         ptls_buffer_push_block(sendbuf, 2, {                                                                                       \
             buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SUPPORTED_VERSIONS,                                                 \
-                                  { ptls_buffer_push16(sendbuf, PTLS_PROTOCOL_VERSION_DRAFT22); });                                \
+                                  { ptls_buffer_push16(sendbuf, PTLS_PROTOCOL_VERSION_DRAFT23); });                                \
             do {                                                                                                                   \
                 extensions                                                                                                         \
             } while (0);                                                                                                           \
