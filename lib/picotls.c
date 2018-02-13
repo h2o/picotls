@@ -1322,6 +1322,8 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_handshake
     if (tls->early_data != NULL) {
         if ((ret = setup_traffic_protection(tls, 1, "c e traffic", "CLIENT_EARLY_TRAFFIC_SECRET")) != 0)
             goto Exit;
+        if ((ret = push_change_cipher_spec(tls, sendbuf)) != 0)
+            goto Exit;
     }
     if (resumption_secret.base != NULL) {
         if ((ret = derive_exporter_secret(tls, 1)) != 0)
@@ -1783,6 +1785,8 @@ static int client_handle_finished(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iove
             goto Exit;
     }
 
+    if ((ret = push_change_cipher_spec(tls, sendbuf)) != 0)
+        goto Exit;
     ret = send_finished(tls, sendbuf);
 
     memcpy(tls->traffic_protection.enc.secret, send_secret, sizeof(send_secret));
