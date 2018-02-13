@@ -728,9 +728,9 @@ int ptls_openssl_init_sign_certificate(ptls_openssl_sign_certificate_t *self, EV
 
     switch (EVP_PKEY_id(key)) {
     case EVP_PKEY_RSA:
-        PUSH_SCHEME(PTLS_SIGNATURE_RSA_PSS_SHA256, EVP_sha256());
-        PUSH_SCHEME(PTLS_SIGNATURE_RSA_PSS_SHA384, EVP_sha384());
-        PUSH_SCHEME(PTLS_SIGNATURE_RSA_PSS_SHA512, EVP_sha512());
+        PUSH_SCHEME(PTLS_SIGNATURE_RSA_PSS_RSAE_SHA256, EVP_sha256());
+        PUSH_SCHEME(PTLS_SIGNATURE_RSA_PSS_RSAE_SHA384, EVP_sha384());
+        PUSH_SCHEME(PTLS_SIGNATURE_RSA_PSS_RSAE_SHA512, EVP_sha512());
         break;
     case EVP_PKEY_EC: {
         EC_KEY *eckey = EVP_PKEY_get1_EC_KEY(key);

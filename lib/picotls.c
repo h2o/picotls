@@ -1230,7 +1230,7 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_handshake
             });
             buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SIGNATURE_ALGORITHMS, {
                 ptls_buffer_push_block(sendbuf, 2, {
-                    ptls_buffer_push16(sendbuf, PTLS_SIGNATURE_RSA_PSS_SHA256);
+                    ptls_buffer_push16(sendbuf, PTLS_SIGNATURE_RSA_PSS_RSAE_SHA256);
                     ptls_buffer_push16(sendbuf, PTLS_SIGNATURE_ECDSA_SECP256R1_SHA256);
                     ptls_buffer_push16(sendbuf, PTLS_SIGNATURE_RSA_PKCS1_SHA256);
                     ptls_buffer_push16(sendbuf, PTLS_SIGNATURE_RSA_PKCS1_SHA1);
@@ -1712,7 +1712,7 @@ static int client_handle_certificate_verify(ptls_t *tls, ptls_iovec_t message)
 
     /* validate */
     switch (algo) {
-    case PTLS_SIGNATURE_RSA_PSS_SHA256:
+    case PTLS_SIGNATURE_RSA_PSS_RSAE_SHA256:
     case PTLS_SIGNATURE_ECDSA_SECP256R1_SHA256:
         /* ok */
         break;
