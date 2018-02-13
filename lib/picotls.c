@@ -172,6 +172,7 @@ struct st_ptls_t {
     unsigned is_server : 1;
     unsigned is_psk_handshake : 1;
     unsigned skip_early_data : 1; /* if early-data is not recognized by the server */
+    unsigned css_sent : 1;
     /**
      * exporter master secret (either 0rtt or 1rtt)
      */
@@ -1121,6 +1122,18 @@ Exit:
     tls->key_schedule->msghash->final(tls->key_schedule->msghash, NULL, PTLS_HASH_FINAL_MODE_FREE);
     tls->key_schedule->msghash = msghash_backup;
 
+    return ret;
+}
+
+static int push_change_cipher_spec(ptls_t *tls, ptls_buffer_t *sendbuf)
+{
+    int ret = 0;
+
+    if (tls->css_sent)
+        goto Exit;
+    buffer_push_record(sendbuf, PTLS_CONTENT_TYPE_CHANGE_CIPHER_SPEC, { ptls_buffer_push(sendbuf, 1); });
+    tls->css_sent = 1;
+Exit:
     return ret;
 }
 
@@ -2475,12 +2488,16 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
                         });
                     });
                 });
+                if ((ret = push_change_cipher_spec(tls, sendbuf)) != 0)
+                    goto Exit;
                 ret = PTLS_ERROR_STATELESS_RETRY;
             } else {
                 /* invoking stateful retry; roll the key schedule and emit HRR */
                 key_schedule_transform_post_ch1hash(tls->key_schedule);
                 key_schedule_extract(tls->key_schedule, ptls_iovec_init(NULL, 0));
                 EMIT_HELLO_RETRY_REQUEST(tls->key_schedule, key_share.algorithm != NULL ? NULL : negotiated_group, {});
+                if ((ret = push_change_cipher_spec(tls, sendbuf)) != 0)
+                    goto Exit;
                 tls->state = PTLS_STATE_SERVER_EXPECT_SECOND_CLIENT_HELLO;
                 if (ch.psk.early_data_indication)
                     tls->skip_early_data = 1;
@@ -2564,6 +2581,8 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
                                                     { ptls_buffer_push16(sendbuf, (uint16_t)psk_index); });
                           }
                       });
+    if ((ret = push_change_cipher_spec(tls, sendbuf)) != 0)
+        goto Exit;
 
     /* create protection contexts for the handshake */
     assert(tls->key_schedule->generation == 1);
