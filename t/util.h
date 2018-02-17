@@ -114,7 +114,7 @@ static inline void setup_session_file(ptls_context_t *ctx, ptls_handshake_proper
 
 static inline void setup_verify_certificate(ptls_context_t *ctx)
 {
-    ptls_openssl_verify_certificate_t vc;
+    static ptls_openssl_verify_certificate_t vc;
     ptls_openssl_init_verify_certificate(&vc, NULL);
     ctx->verify_certificate = &vc.super;
 }
