@@ -432,6 +432,10 @@ struct st_ptls_context_t {
      */
     unsigned use_exporter : 1;
     /**
+     * if ChangeCipherSpec message should be sent during handshake
+     */
+    unsigned send_change_cipher_spec : 1;
+    /**
      *
      */
     ptls_encrypt_ticket_t *encrypt_ticket;

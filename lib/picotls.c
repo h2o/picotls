@@ -172,7 +172,7 @@ struct st_ptls_t {
     unsigned is_server : 1;
     unsigned is_psk_handshake : 1;
     unsigned skip_early_data : 1; /* if early-data is not recognized by the server */
-    unsigned css_sent : 1;
+    unsigned send_change_cipher_spec : 1;
     /**
      * exporter master secret (either 0rtt or 1rtt)
      */
@@ -1129,10 +1129,10 @@ static int push_change_cipher_spec(ptls_t *tls, ptls_buffer_t *sendbuf)
 {
     int ret = 0;
 
-    if (tls->css_sent)
+    if (!tls->send_change_cipher_spec)
         goto Exit;
     buffer_push_record(sendbuf, PTLS_CONTENT_TYPE_CHANGE_CIPHER_SPEC, { ptls_buffer_push(sendbuf, 1); });
-    tls->css_sent = 1;
+    tls->send_change_cipher_spec = 0;
 Exit:
     return ret;
 }
@@ -2834,6 +2834,7 @@ ptls_t *ptls_new(ptls_context_t *ctx, int is_server)
     update_open_count(ctx, 1);
     *tls = (ptls_t){ctx};
     tls->is_server = is_server;
+    tls->send_change_cipher_spec = ctx->send_change_cipher_spec;
     if (!is_server) {
         tls->state = PTLS_STATE_CLIENT_HANDSHAKE_START;
         tls->ctx->random_bytes(tls->client_random, sizeof(tls->client_random));
