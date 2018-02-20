@@ -41,14 +41,23 @@ static ptls_cipher_suite_t *find_cipher(ptls_context_t *ctx, uint16_t id)
     return NULL;
 }
 
+static void test_hash(ptls_hash_algorithm_t *hash)
+{
+    ptls_hash_context_t *hctx = hash->create();
+    uint8_t digest[PTLS_MAX_DIGEST_SIZE];
+
+    hctx->final(hctx, digest, PTLS_HASH_FINAL_MODE_FREE);
+    ok(memcmp(digest, hash->empty_digest, hash->digest_size) == 0);
+}
+
 static void test_sha256(void)
 {
-    ptls_hash_algorithm_t *algo = find_cipher(ctx, PTLS_CIPHER_SUITE_AES_128_GCM_SHA256)->hash;
-    ptls_hash_context_t *hctx = find_cipher(ctx, PTLS_CIPHER_SUITE_AES_128_GCM_SHA256)->hash->create();
+    test_hash(find_cipher(ctx, PTLS_CIPHER_SUITE_AES_128_GCM_SHA256)->hash);
+}
 
-    uint8_t digest[PTLS_MAX_DIGEST_SIZE];
-    hctx->final(hctx, digest, PTLS_HASH_FINAL_MODE_FREE);
-    ok(memcmp(digest, algo->empty_digest, algo->digest_size) == 0);
+static void test_sha384(void)
+{
+    test_hash(find_cipher(ctx, PTLS_CIPHER_SUITE_AES_256_GCM_SHA384)->hash);
 }
 
 static void test_hmac_sha256(void)
@@ -203,6 +212,15 @@ static void test_aes128gcm(void)
 {
     ptls_cipher_suite_t *cs = find_cipher(ctx, PTLS_CIPHER_SUITE_AES_128_GCM_SHA256),
                         *cs_peer = find_cipher(ctx, PTLS_CIPHER_SUITE_AES_128_GCM_SHA256);
+
+    test_ciphersuite(cs, cs_peer);
+    test_aad_ciphersuite(cs, cs_peer);
+}
+
+static void test_aes256gcm(void)
+{
+    ptls_cipher_suite_t *cs = find_cipher(ctx, PTLS_CIPHER_SUITE_AES_256_GCM_SHA384),
+                        *cs_peer = find_cipher(ctx, PTLS_CIPHER_SUITE_AES_256_GCM_SHA384);
 
     test_ciphersuite(cs, cs_peer);
     test_aad_ciphersuite(cs, cs_peer);
@@ -735,9 +753,11 @@ static void test_stateless_hrr_aad_change(void)
 void test_picotls(void)
 {
     subtest("sha256", test_sha256);
+    subtest("sha384", test_sha384);
     subtest("hmac-sha256", test_hmac_sha256);
     subtest("hkdf", test_hkdf);
     subtest("aes128gcm", test_aes128gcm);
+    subtest("aes256gcm", test_aes256gcm);
     subtest("chacha20poly1305", test_chacha20poly1305);
     subtest("aes128ctr", test_aes128ctr);
     subtest("chacha20", test_chacha20);

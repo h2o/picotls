@@ -20,7 +20,8 @@ SET(MINICRYPTO_LIBRARY_FILES
     deps/cifra/src/gf128.c
     deps/cifra/src/modes.c
     deps/cifra/src/poly1305.c
-    deps/cifra/src/sha256.c)
+    deps/cifra/src/sha256.c
+    deps/cifra/src/sha512.c)
 
 ADD_LIBRARY(picotls-core lib/picotls.c lib/pembase64.c)
 ADD_LIBRARY(picotls-minicrypto ${MINICRYPTO_LIBRARY_FILES} lib/cifra.c lib/uecc.c lib/asn1.c)
