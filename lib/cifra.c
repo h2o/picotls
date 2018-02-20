@@ -51,7 +51,7 @@ static void read_entropy(uint8_t *entropy, size_t size)
     BOOL ret = FALSE;
 
     if (CryptAcquireContext(&hCryptProv, NULL, NULL, PROV_RSA_FULL, 0)) {
-        ret = CryptGenRandom(hCryptProv, (DWORD) size, entropy);
+        ret = CryptGenRandom(hCryptProv, (DWORD)size, entropy);
         (void)CryptReleaseContext(hCryptProv, 0);
     }
 
