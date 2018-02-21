@@ -51,7 +51,7 @@ static void read_entropy(uint8_t *entropy, size_t size)
     BOOL ret = FALSE;
 
     if (CryptAcquireContext(&hCryptProv, NULL, NULL, PROV_RSA_FULL, 0)) {
-        ret = CryptGenRandom(hCryptProv, (DWORD) size, entropy);
+        ret = CryptGenRandom(hCryptProv, (DWORD)size, entropy);
         (void)CryptReleaseContext(hCryptProv, 0);
     }
 
@@ -194,112 +194,132 @@ Exit:
     return ret;
 }
 
-struct aes128ctr_context_t {
+struct aesctr_context_t {
     ptls_cipher_context_t super;
     cf_aes_context aes;
     cf_ctr ctr;
 };
 
-static void aes128ctr_dispose(ptls_cipher_context_t *_ctx)
+static void aesctr_dispose(ptls_cipher_context_t *_ctx)
 {
-    struct aes128ctr_context_t *ctx = (struct aes128ctr_context_t *)_ctx;
+    struct aesctr_context_t *ctx = (struct aesctr_context_t *)_ctx;
     ptls_clear_memory(ctx, sizeof(*ctx));
 }
 
-static void aes128ctr_init(ptls_cipher_context_t *_ctx, const void *iv)
+static void aesctr_init(ptls_cipher_context_t *_ctx, const void *iv)
 {
-    struct aes128ctr_context_t *ctx = (struct aes128ctr_context_t *)_ctx;
+    struct aesctr_context_t *ctx = (struct aesctr_context_t *)_ctx;
     cf_ctr_init(&ctx->ctr, &cf_aes, &ctx->aes, iv);
 }
 
-static void aes128ctr_transform(ptls_cipher_context_t *_ctx, void *output, const void *input, size_t len)
+static void aesctr_transform(ptls_cipher_context_t *_ctx, void *output, const void *input, size_t len)
 {
-    struct aes128ctr_context_t *ctx = (struct aes128ctr_context_t *)_ctx;
+    struct aesctr_context_t *ctx = (struct aesctr_context_t *)_ctx;
     cf_ctr_cipher(&ctx->ctr, input, output, len);
 }
 
-static int aes128ctr_setup_crypto(ptls_cipher_context_t *_ctx, int is_enc, const void *key)
+static int aesctr_setup_crypto(ptls_cipher_context_t *_ctx, int is_enc, const void *key, size_t key_size)
 {
-    struct aes128ctr_context_t *ctx = (struct aes128ctr_context_t *)_ctx;
-    ctx->super.do_dispose = aes128ctr_dispose;
-    ctx->super.do_init = aes128ctr_init;
-    ctx->super.do_transform = aes128ctr_transform;
-    cf_aes_init(&ctx->aes, key, PTLS_AES128_KEY_SIZE);
+    struct aesctr_context_t *ctx = (struct aesctr_context_t *)_ctx;
+    ctx->super.do_dispose = aesctr_dispose;
+    ctx->super.do_init = aesctr_init;
+    ctx->super.do_transform = aesctr_transform;
+    cf_aes_init(&ctx->aes, key, key_size);
     return 0;
 }
 
-struct aes128gcm_context_t {
+static int aes128ctr_setup_crypto(ptls_cipher_context_t *ctx, int is_enc, const void *key)
+{
+    return aesctr_setup_crypto(ctx, is_enc, key, PTLS_AES128_KEY_SIZE);
+}
+
+static int aes256ctr_setup_crypto(ptls_cipher_context_t *ctx, int is_enc, const void *key)
+{
+    return aesctr_setup_crypto(ctx, is_enc, key, PTLS_AES256_KEY_SIZE);
+}
+
+struct aesgcm_context_t {
     ptls_aead_context_t super;
     cf_aes_context aes;
     cf_gcm_ctx gcm;
 };
 
-static void aes128gcm_dispose_crypto(ptls_aead_context_t *_ctx)
+static void aesgcm_dispose_crypto(ptls_aead_context_t *_ctx)
 {
-    struct aes128gcm_context_t *ctx = (struct aes128gcm_context_t *)_ctx;
+    struct aesgcm_context_t *ctx = (struct aesgcm_context_t *)_ctx;
 
     /* clear all memory except super */
     ptls_clear_memory((uint8_t *)ctx + sizeof(ctx->super), sizeof(*ctx) - sizeof(ctx->super));
 }
 
-static void aes128gcm_encrypt_init(ptls_aead_context_t *_ctx, const void *iv, const void *aad, size_t aadlen)
+static void aesgcm_encrypt_init(ptls_aead_context_t *_ctx, const void *iv, const void *aad, size_t aadlen)
 {
-    struct aes128gcm_context_t *ctx = (struct aes128gcm_context_t *)_ctx;
+    struct aesgcm_context_t *ctx = (struct aesgcm_context_t *)_ctx;
 
-    cf_gcm_encrypt_init(&cf_aes, &ctx->aes, &ctx->gcm, aad, aadlen, iv, PTLS_AES128GCM_IV_SIZE);
+    cf_gcm_encrypt_init(&cf_aes, &ctx->aes, &ctx->gcm, aad, aadlen, iv, PTLS_AESGCM_IV_SIZE);
 }
 
-static size_t aes128gcm_encrypt_update(ptls_aead_context_t *_ctx, void *output, const void *input, size_t inlen)
+static size_t aesgcm_encrypt_update(ptls_aead_context_t *_ctx, void *output, const void *input, size_t inlen)
 {
-    struct aes128gcm_context_t *ctx = (struct aes128gcm_context_t *)_ctx;
+    struct aesgcm_context_t *ctx = (struct aesgcm_context_t *)_ctx;
 
     cf_gcm_encrypt_update(&ctx->gcm, input, inlen, output);
     return inlen;
 }
 
-static size_t aes128gcm_encrypt_final(ptls_aead_context_t *_ctx, void *output)
+static size_t aesgcm_encrypt_final(ptls_aead_context_t *_ctx, void *output)
 {
-    struct aes128gcm_context_t *ctx = (struct aes128gcm_context_t *)_ctx;
+    struct aesgcm_context_t *ctx = (struct aesgcm_context_t *)_ctx;
 
-    cf_gcm_encrypt_final(&ctx->gcm, output, PTLS_AES128GCM_TAG_SIZE);
-    return PTLS_AES128GCM_TAG_SIZE;
+    cf_gcm_encrypt_final(&ctx->gcm, output, PTLS_AESGCM_TAG_SIZE);
+    return PTLS_AESGCM_TAG_SIZE;
 }
 
-static size_t aes128gcm_decrypt(ptls_aead_context_t *_ctx, void *output, const void *input, size_t inlen, const void *iv,
-                                const void *aad, size_t aadlen)
+static size_t aesgcm_decrypt(ptls_aead_context_t *_ctx, void *output, const void *input, size_t inlen, const void *iv,
+                             const void *aad, size_t aadlen)
 {
-    struct aes128gcm_context_t *ctx = (struct aes128gcm_context_t *)_ctx;
+    struct aesgcm_context_t *ctx = (struct aesgcm_context_t *)_ctx;
 
-    if (inlen < PTLS_AES128GCM_TAG_SIZE)
+    if (inlen < PTLS_AESGCM_TAG_SIZE)
         return SIZE_MAX;
-    size_t tag_offset = inlen - PTLS_AES128GCM_TAG_SIZE;
+    size_t tag_offset = inlen - PTLS_AESGCM_TAG_SIZE;
 
-    if (cf_gcm_decrypt(&cf_aes, &ctx->aes, input, tag_offset, aad, aadlen, iv, PTLS_AES128GCM_IV_SIZE,
-                       (uint8_t *)input + tag_offset, PTLS_AES128GCM_TAG_SIZE, output) != 0)
+    if (cf_gcm_decrypt(&cf_aes, &ctx->aes, input, tag_offset, aad, aadlen, iv, PTLS_AESGCM_IV_SIZE, (uint8_t *)input + tag_offset,
+                       PTLS_AESGCM_TAG_SIZE, output) != 0)
         return SIZE_MAX;
 
     return tag_offset;
 }
 
-static int aead_aes128gcm_setup_crypto(ptls_aead_context_t *_ctx, int is_enc, const void *key)
+static int aead_aesgcm_setup_crypto(ptls_aead_context_t *_ctx, int is_enc, const void *key, size_t key_size)
 {
-    struct aes128gcm_context_t *ctx = (struct aes128gcm_context_t *)_ctx;
+    struct aesgcm_context_t *ctx = (struct aesgcm_context_t *)_ctx;
 
-    ctx->super.dispose_crypto = aes128gcm_dispose_crypto;
+    ctx->super.dispose_crypto = aesgcm_dispose_crypto;
     if (is_enc) {
-        ctx->super.do_encrypt_init = aes128gcm_encrypt_init;
-        ctx->super.do_encrypt_update = aes128gcm_encrypt_update;
-        ctx->super.do_encrypt_final = aes128gcm_encrypt_final;
+        ctx->super.do_encrypt_init = aesgcm_encrypt_init;
+        ctx->super.do_encrypt_update = aesgcm_encrypt_update;
+        ctx->super.do_encrypt_final = aesgcm_encrypt_final;
         ctx->super.do_decrypt = NULL;
     } else {
         ctx->super.do_encrypt_init = NULL;
         ctx->super.do_encrypt_update = NULL;
         ctx->super.do_encrypt_final = NULL;
-        ctx->super.do_decrypt = aes128gcm_decrypt;
+        ctx->super.do_decrypt = aesgcm_decrypt;
     }
 
-    cf_aes_init(&ctx->aes, key, PTLS_AES128_KEY_SIZE);
+    cf_aes_init(&ctx->aes, key, key_size);
     return 0;
+}
+
+static int aead_aes128gcm_setup_crypto(ptls_aead_context_t *ctx, int is_enc, const void *key)
+{
+    return aead_aesgcm_setup_crypto(ctx, is_enc, key, PTLS_AES128_KEY_SIZE);
+}
+
+static int aead_aes256gcm_setup_crypto(ptls_aead_context_t *ctx, int is_enc, const void *key)
+{
+    return aead_aesgcm_setup_crypto(ctx, is_enc, key, PTLS_AES256_KEY_SIZE);
 }
 
 struct chacha20_context_t {
@@ -473,79 +493,24 @@ static int aead_chacha20poly1305_setup_crypto(ptls_aead_context_t *_ctx, int is_
     return 0;
 }
 
-struct sha256_context_t {
-    ptls_hash_context_t super;
-    cf_sha256_context ctx;
-};
-
-static void sha256_update(ptls_hash_context_t *_ctx, const void *src, size_t len)
-{
-    struct sha256_context_t *ctx = (struct sha256_context_t *)_ctx;
-
-    cf_sha256_update(&ctx->ctx, src, len);
-}
-
-static void sha256_final(ptls_hash_context_t *_ctx, void *md, ptls_hash_final_mode_t mode)
-{
-    struct sha256_context_t *ctx = (struct sha256_context_t *)_ctx;
-
-    if (mode == PTLS_HASH_FINAL_MODE_SNAPSHOT) {
-        cf_sha256_context copy = ctx->ctx;
-        cf_sha256_digest_final(&copy, md);
-        ptls_clear_memory(&copy, sizeof(copy));
-        return;
-    }
-
-    if (md != NULL)
-        cf_sha256_digest_final(&ctx->ctx, md);
-
-    switch (mode) {
-    case PTLS_HASH_FINAL_MODE_FREE:
-        ptls_clear_memory(&ctx->ctx, sizeof(ctx->ctx));
-        free(ctx);
-        break;
-    case PTLS_HASH_FINAL_MODE_RESET:
-        cf_sha256_init(&ctx->ctx);
-        break;
-    default:
-        assert(!"FIXME");
-        break;
-    }
-}
-
-static ptls_hash_context_t *sha256_clone(ptls_hash_context_t *_src)
-{
-    struct sha256_context_t *dst, *src = (struct sha256_context_t *)_src;
-
-    if ((dst = malloc(sizeof(*dst))) == NULL)
-        return NULL;
-    *dst = *src;
-    return &dst->super;
-}
-
-static ptls_hash_context_t *sha256_create(void)
-{
-    struct sha256_context_t *ctx;
-
-    if ((ctx = malloc(sizeof(*ctx))) == NULL)
-        return NULL;
-    ctx->super = (ptls_hash_context_t){sha256_update, sha256_final, sha256_clone};
-    cf_sha256_init(&ctx->ctx);
-    return &ctx->super;
-}
+ptls_define_hash(sha256, cf_sha256_context, cf_sha256_init, cf_sha256_update, cf_sha256_digest_final);
+ptls_define_hash(sha384, cf_sha512_context, cf_sha384_init, cf_sha384_update, cf_sha384_digest_final);
 
 ptls_key_exchange_algorithm_t ptls_minicrypto_x25519 = {PTLS_GROUP_X25519, x25519_create_key_exchange, x25519_key_exchange};
-ptls_cipher_algorithm_t ptls_minicrypto_aes128ctr = {"AES128-CTR", PTLS_AES128_KEY_SIZE, PTLS_AES128_IV_SIZE,
-                                                     sizeof(struct aes128ctr_context_t), aes128ctr_setup_crypto};
-ptls_aead_algorithm_t ptls_minicrypto_aes128gcm = {"AES128-GCM",
-                                                   &ptls_minicrypto_aes128ctr,
-                                                   PTLS_AES128_KEY_SIZE,
-                                                   PTLS_AES128GCM_IV_SIZE,
-                                                   PTLS_AES128GCM_TAG_SIZE,
-                                                   sizeof(struct aes128gcm_context_t),
-                                                   aead_aes128gcm_setup_crypto};
+ptls_cipher_algorithm_t ptls_minicrypto_aes128ctr = {"AES128-CTR", PTLS_AES128_KEY_SIZE, PTLS_AES_IV_SIZE,
+                                                     sizeof(struct aesctr_context_t), aes128ctr_setup_crypto};
+ptls_aead_algorithm_t ptls_minicrypto_aes128gcm = {
+    "AES128-GCM",         &ptls_minicrypto_aes128ctr,      PTLS_AES128_KEY_SIZE,       PTLS_AESGCM_IV_SIZE,
+    PTLS_AESGCM_TAG_SIZE, sizeof(struct aesgcm_context_t), aead_aes128gcm_setup_crypto};
+ptls_cipher_algorithm_t ptls_minicrypto_aes256ctr = {"AES256-CTR", PTLS_AES256_KEY_SIZE, PTLS_AES_IV_SIZE,
+                                                     sizeof(struct aesctr_context_t), aes256ctr_setup_crypto};
+ptls_aead_algorithm_t ptls_minicrypto_aes256gcm = {
+    "AES256-GCM",         &ptls_minicrypto_aes256ctr,      PTLS_AES256_KEY_SIZE,       PTLS_AESGCM_IV_SIZE,
+    PTLS_AESGCM_TAG_SIZE, sizeof(struct aesgcm_context_t), aead_aes256gcm_setup_crypto};
 ptls_hash_algorithm_t ptls_minicrypto_sha256 = {PTLS_SHA256_BLOCK_SIZE, PTLS_SHA256_DIGEST_SIZE, sha256_create,
                                                 PTLS_ZERO_DIGEST_SHA256};
+ptls_hash_algorithm_t ptls_minicrypto_sha384 = {PTLS_SHA384_BLOCK_SIZE, PTLS_SHA384_DIGEST_SIZE, sha384_create,
+                                                PTLS_ZERO_DIGEST_SHA384};
 ptls_cipher_algorithm_t ptls_minicrypto_chacha20 = {"CHACHA20", PTLS_CHACHA20_KEY_SIZE, PTLS_CHACHA20_IV_SIZE,
                                                     sizeof(struct chacha20_context_t), chacha20_setup_crypto};
 ptls_aead_algorithm_t ptls_minicrypto_chacha20poly1305 = {"CHACHA20-POLY1305",
@@ -557,7 +522,9 @@ ptls_aead_algorithm_t ptls_minicrypto_chacha20poly1305 = {"CHACHA20-POLY1305",
                                                           aead_chacha20poly1305_setup_crypto};
 ptls_cipher_suite_t ptls_minicrypto_aes128gcmsha256 = {PTLS_CIPHER_SUITE_AES_128_GCM_SHA256, &ptls_minicrypto_aes128gcm,
                                                        &ptls_minicrypto_sha256};
+ptls_cipher_suite_t ptls_minicrypto_aes256gcmsha384 = {PTLS_CIPHER_SUITE_AES_256_GCM_SHA384, &ptls_minicrypto_aes256gcm,
+                                                       &ptls_minicrypto_sha384};
 ptls_cipher_suite_t ptls_minicrypto_chacha20poly1305sha256 = {PTLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256,
                                                               &ptls_minicrypto_chacha20poly1305, &ptls_minicrypto_sha256};
-ptls_cipher_suite_t *ptls_minicrypto_cipher_suites[] = {&ptls_minicrypto_aes128gcmsha256, &ptls_minicrypto_chacha20poly1305sha256,
-                                                        NULL};
+ptls_cipher_suite_t *ptls_minicrypto_cipher_suites[] = {&ptls_minicrypto_aes256gcmsha384, &ptls_minicrypto_aes128gcmsha256,
+                                                        &ptls_minicrypto_chacha20poly1305sha256, NULL};

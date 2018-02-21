@@ -31,9 +31,10 @@ extern "C" {
 #include <sys/types.h>
 
 #define PTLS_AES128_KEY_SIZE 16
-#define PTLS_AES128_IV_SIZE 16
-#define PTLS_AES128GCM_IV_SIZE 12
-#define PTLS_AES128GCM_TAG_SIZE 16
+#define PTLS_AES256_KEY_SIZE 32
+#define PTLS_AES_IV_SIZE 16
+#define PTLS_AESGCM_IV_SIZE 12
+#define PTLS_AESGCM_TAG_SIZE 16
 
 #define PTLS_CHACHA20_KEY_SIZE 32
 #define PTLS_CHACHA20_IV_SIZE 16
@@ -42,6 +43,9 @@ extern "C" {
 
 #define PTLS_SHA256_BLOCK_SIZE 64
 #define PTLS_SHA256_DIGEST_SIZE 32
+
+#define PTLS_SHA384_BLOCK_SIZE 128
+#define PTLS_SHA384_DIGEST_SIZE 48
 
 #define PTLS_MAX_SECRET_SIZE 32
 #define PTLS_MAX_IV_SIZE 16
@@ -126,6 +130,13 @@ extern "C" {
     {                                                                                                                              \
         0xe3, 0xb0, 0xc4, 0x42, 0x98, 0xfc, 0x1c, 0x14, 0x9a, 0xfb, 0xf4, 0xc8, 0x99, 0x6f, 0xb9, 0x24, 0x27, 0xae, 0x41, 0xe4,    \
             0x64, 0x9b, 0x93, 0x4c, 0xa4, 0x95, 0x99, 0x1b, 0x78, 0x52, 0xb8, 0x55                                                 \
+    }
+
+#define PTLS_ZERO_DIGEST_SHA384                                                                                                    \
+    {                                                                                                                              \
+        0x38, 0xb0, 0x60, 0xa7, 0x51, 0xac, 0x96, 0x38, 0x4c, 0xd9, 0x32, 0x7e, 0xb1, 0xb1, 0xe3, 0x6a, 0x21, 0xfd, 0xb7, 0x11,    \
+            0x14, 0xbe, 0x07, 0x43, 0x4c, 0x0c, 0xc7, 0xbf, 0x63, 0xf6, 0xe1, 0xda, 0x27, 0x4e, 0xde, 0xbf, 0xe7, 0x6f, 0x65,      \
+            0xfb, 0xd5, 0x1a, 0xd2, 0xf1, 0x48, 0x98, 0xb9, 0x5b                                                                   \
     }
 
 typedef struct st_ptls_t ptls_t;
@@ -431,6 +442,10 @@ struct st_ptls_context_t {
      * if exporter master secrets should be recorded
      */
     unsigned use_exporter : 1;
+    /**
+     * if ChangeCipherSpec message should be sent during handshake
+     */
+    unsigned send_change_cipher_spec : 1;
     /**
      *
      */
@@ -901,6 +916,63 @@ inline size_t ptls_aead_decrypt(ptls_aead_context_t *ctx, void *output, const vo
 int ptls_load_certificates(ptls_context_t *ctx, char *cert_pem_file);
 
 extern ptls_get_time_t ptls_get_time;
+
+#define ptls_define_hash(name, ctx_type, init_func, update_func, final_func)                                                       \
+                                                                                                                                   \
+    struct name##_context_t {                                                                                                      \
+        ptls_hash_context_t super;                                                                                                 \
+        ctx_type ctx;                                                                                                              \
+    };                                                                                                                             \
+                                                                                                                                   \
+    static void name##_update(ptls_hash_context_t *_ctx, const void *src, size_t len)                                              \
+    {                                                                                                                              \
+        struct name##_context_t *ctx = (struct name##_context_t *)_ctx;                                                            \
+        update_func(&ctx->ctx, src, len);                                                                                          \
+    }                                                                                                                              \
+                                                                                                                                   \
+    static void name##_final(ptls_hash_context_t *_ctx, void *md, ptls_hash_final_mode_t mode)                                     \
+    {                                                                                                                              \
+        struct name##_context_t *ctx = (struct name##_context_t *)_ctx;                                                            \
+        if (mode == PTLS_HASH_FINAL_MODE_SNAPSHOT) {                                                                               \
+            ctx_type copy = ctx->ctx;                                                                                              \
+            final_func(&copy, md);                                                                                                 \
+            ptls_clear_memory(&copy, sizeof(copy));                                                                                \
+            return;                                                                                                                \
+        }                                                                                                                          \
+        if (md != NULL)                                                                                                            \
+            final_func(&ctx->ctx, md);                                                                                             \
+        switch (mode) {                                                                                                            \
+        case PTLS_HASH_FINAL_MODE_FREE:                                                                                            \
+            ptls_clear_memory(&ctx->ctx, sizeof(ctx->ctx));                                                                        \
+            free(ctx);                                                                                                             \
+            break;                                                                                                                 \
+        case PTLS_HASH_FINAL_MODE_RESET:                                                                                           \
+            init_func(&ctx->ctx);                                                                                                  \
+            break;                                                                                                                 \
+        default:                                                                                                                   \
+            assert(!"FIXME");                                                                                                      \
+            break;                                                                                                                 \
+        }                                                                                                                          \
+    }                                                                                                                              \
+                                                                                                                                   \
+    static ptls_hash_context_t *name##_clone(ptls_hash_context_t *_src)                                                            \
+    {                                                                                                                              \
+        struct name##_context_t *dst, *src = (struct name##_context_t *)_src;                                                      \
+        if ((dst = malloc(sizeof(*dst))) == NULL)                                                                                  \
+            return NULL;                                                                                                           \
+        *dst = *src;                                                                                                               \
+        return &dst->super;                                                                                                        \
+    }                                                                                                                              \
+                                                                                                                                   \
+    static ptls_hash_context_t *name##_create(void)                                                                                \
+    {                                                                                                                              \
+        struct name##_context_t *ctx;                                                                                              \
+        if ((ctx = malloc(sizeof(*ctx))) == NULL)                                                                                  \
+            return NULL;                                                                                                           \
+        ctx->super = (ptls_hash_context_t){name##_update, name##_final, name##_clone};                                             \
+        init_func(&ctx->ctx);                                                                                                      \
+        return &ctx->super;                                                                                                        \
+    }
 
 #ifdef __cplusplus
 }
