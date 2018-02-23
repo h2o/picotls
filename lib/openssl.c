@@ -782,7 +782,7 @@ Exit:
     return ret;
 }
 
-static int verify_certificate_chain(X509_STORE *store, X509 *cert, STACK_OF(X509) *chain)
+static int verify_certificate_chain(X509_STORE *store, X509 *cert, STACK_OF(X509) * chain)
 {
     X509_STORE_CTX *verify_ctx;
     int ret;
@@ -807,9 +807,19 @@ static int verify_certificate_chain(X509_STORE *store, X509 *cert, STACK_OF(X509
         case X509_V_ERR_CERT_REVOKED:
             ret = PTLS_ALERT_CERTIFICATE_REVOKED;
             goto Exit;
+        case X509_V_ERR_CERT_NOT_YET_VALID:
         case X509_V_ERR_CERT_HAS_EXPIRED:
             ret = PTLS_ALERT_CERTIFICATE_EXPIRED;
             goto Exit;
+        case X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT:
+        case X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT_LOCALLY:
+        case X509_V_ERR_CERT_UNTRUSTED:
+        case X509_V_ERR_CERT_REJECTED:
+            ret = PTLS_ALERT_UNKNOWN_CA;
+            break;
+        case X509_V_ERR_INVALID_CA:
+            ret = PTLS_ALERT_BAD_CERTIFICATE;
+            break;
         default:
             ret = PTLS_ALERT_CERTIFICATE_UNKNOWN;
             goto Exit;
