@@ -65,21 +65,23 @@
 
 #define RSA_CERTIFICATE                                                                                                            \
     "-----BEGIN CERTIFICATE-----\n"                                                                                                \
-    "MIICqDCCAZACCQDI5jeEvExN+TANBgkqhkiG9w0BAQUFADAWMRQwEgYDVQQDEwtl\n"                                                           \
-    "eGFtcGxlLmNvbTAeFw0xNjA5MzAwMzQ0NTFaFw0yNjA5MjgwMzQ0NTFaMBYxFDAS\n"                                                           \
-    "BgNVBAMTC2V4YW1wbGUuY29tMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKC\n"                                                           \
-    "AQEA5soWzSG7iyawQlHM1yaX2dUAATUkhpbg2WPFOEem7E3zYzc6A/Z+bViFlfEg\n"                                                           \
-    "L37cbDUb4pnOAHrrsjGgkyBYh5i9iCTVfCk+H6SOHZJORO1Tq8X9C7WcNcshpSdm\n"                                                           \
-    "2Pa8hmv9hsHbLSeoPNeg8NkTPwMVaMZ2GpdmiyAmhzSZ2H9mzNI7ntPW/XCchVf+\n"                                                           \
-    "ax2yt9haZ+mQE2NPYwHDjqCtdGkP5ZXXnYhJSBzSEhxfGckIiKDyOxiNkLFLvUdT\n"                                                           \
-    "4ERSFBjauP2cSI0XoOUsiBxJNwHH310AU8jZbveSTcXGYgEuu2MIuDo7Vhkq5+TC\n"                                                           \
-    "qXsIFNbjy0taOoPRvUbPsbqFlQIDAQABMA0GCSqGSIb3DQEBBQUAA4IBAQAwZQsG\n"                                                           \
-    "E/3DQFBOnmBITFsaIVJVXU0fbfIjy3p1r6O9z2zvrfB1i8AMxOORAVjE5wHstGnK\n"                                                           \
-    "3sLMjkMYXqu1XEfQbStQN+Bsi8m+nE/x9MmuLthpzJHXUmPYZ4TKs0KJmFPLTXYi\n"                                                           \
-    "j0OrP0a5BNcyGj/B4Z33aaU9N3z0TWBwx4OPjJoK3iInBx80sC1Ig2PE6mDBxLOg\n"                                                           \
-    "5Ohm/XU/43MrtH8SgYkxr3OyzXTm8J0RFMWhYlo1uqR+pWV3TgacixNnUq5w5h4m\n"                                                           \
-    "sqXcikh+j8ReNXsKnMOAfFo+HbRqyKWNE3DekCIiiQ5ds4A4SfT7pYyGAmBkAxht\n"                                                           \
-    "sS919x2o8l97kaYf\n"                                                                                                           \
+    "MIIDKzCCAhOgAwIBAgIBADANBgkqhkiG9w0BAQsFADAaMRgwFgYDVQQDEw9waWNv\n"                                                           \
+    "dGxzIHRlc3QgY2EwHhcNMTgwMjIzMDIzODEyWhcNMjgwMjIxMDIzODEyWjAbMRkw\n"                                                           \
+    "FwYDVQQDExB0ZXN0LmV4YW1wbGUuY29tMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8A\n"                                                           \
+    "MIIBCgKCAQEA5soWzSG7iyawQlHM1yaX2dUAATUkhpbg2WPFOEem7E3zYzc6A/Z+\n"                                                           \
+    "bViFlfEgL37cbDUb4pnOAHrrsjGgkyBYh5i9iCTVfCk+H6SOHZJORO1Tq8X9C7Wc\n"                                                           \
+    "NcshpSdm2Pa8hmv9hsHbLSeoPNeg8NkTPwMVaMZ2GpdmiyAmhzSZ2H9mzNI7ntPW\n"                                                           \
+    "/XCchVf+ax2yt9haZ+mQE2NPYwHDjqCtdGkP5ZXXnYhJSBzSEhxfGckIiKDyOxiN\n"                                                           \
+    "kLFLvUdT4ERSFBjauP2cSI0XoOUsiBxJNwHH310AU8jZbveSTcXGYgEuu2MIuDo7\n"                                                           \
+    "Vhkq5+TCqXsIFNbjy0taOoPRvUbPsbqFlQIDAQABo3sweTAJBgNVHRMEAjAAMCwG\n"                                                           \
+    "CWCGSAGG+EIBDQQfFh1PcGVuU1NMIEdlbmVyYXRlZCBDZXJ0aWZpY2F0ZTAdBgNV\n"                                                           \
+    "HQ4EFgQUE1vXDjBT8j2etP4brfHQ9DeKnpgwHwYDVR0jBBgwFoAUv3nKl7JgeCCW\n"                                                           \
+    "qkZXnN+nsiP1JWMwDQYJKoZIhvcNAQELBQADggEBAKwARsxOCiGPXU1xhvs+pq9I\n"                                                           \
+    "63mLi4rfnssOGzGnnAfuEaxggpozf3fOSgfyTaDbACdRPTZEStjQ5HMCcHvY7CH0\n"                                                           \
+    "8EYA+lkmFbuXXL8uHby1JBTzbTGf8pkRUsuF/Ie0SLChoDgt8oF3mY5pyU4HUaAw\n"                                                           \
+    "Zp6HBpIRMdmbwGcwm25bl9MQYTrTX3dBfp3XPzfXbVwjJ7bsiTwAGq+dKwzwOQeM\n"                                                           \
+    "2ZMZt4BQBoevsNopPrqG0S6kGUmJOIax0t13bKwDj21+Hp/O90HTFVCtAaDxRC56\n"                                                           \
+    "k0O8Q62ZxzjGJ7Zw6K3azXlH/BYE+CajxTUF+FKRRkkWL1GrFVUsYd9KLDAVry0=\n"                                                           \
     "-----END CERTIFICATE-----\n"
 
 static void test_ecdh_key_exchange(void)
@@ -128,12 +130,40 @@ static void test_ecdsa_sign(void)
     EVP_PKEY_free(pkey);
 }
 
-static void setup_certificate(ptls_iovec_t *dst)
+static X509 *x509_from_pem(const char *pem)
 {
-    BIO *bio = BIO_new_mem_buf(RSA_CERTIFICATE, strlen(RSA_CERTIFICATE));
+    BIO *bio = BIO_new_mem_buf(pem, (int)strlen(pem));
     X509 *cert = PEM_read_bio_X509(bio, NULL, NULL, NULL);
     assert(cert != NULL || !!"failed to load certificate");
     BIO_free(bio);
+    return cert;
+}
+
+static void test_cert_verify(void)
+{
+    X509 *cert = x509_from_pem(RSA_CERTIFICATE);
+    STACK_OF(X509) *chain = sk_X509_new_null();
+    X509_STORE *store = X509_STORE_new();
+    int ret;
+
+    /* expect fail when no CA is registered */
+    ret = verify_certificate_chain(store, cert, chain);
+    ok(ret == PTLS_ALERT_UNKNOWN_CA);
+
+    /* expect success after registering the CA */
+    X509_LOOKUP *lookup = X509_STORE_add_lookup(store, X509_LOOKUP_file());
+    X509_LOOKUP_load_file(lookup, "t/assets/test-ca.crt", X509_FILETYPE_PEM);
+    ret = verify_certificate_chain(store, cert, chain);
+    ok(ret == 0);
+
+    X509_free(cert);
+    sk_X509_free(chain);
+    X509_STORE_free(store);
+}
+
+static void setup_certificate(ptls_iovec_t *dst)
+{
+    X509 *cert = x509_from_pem(RSA_CERTIFICATE);
 
     dst->base = NULL;
     dst->len = i2d_X509(cert, &dst->base);
@@ -194,6 +224,7 @@ int main(int argc, char **argv)
     subtest("ecdh-key-exchange", test_ecdh_key_exchange);
     subtest("rsa-sign", test_rsa_sign);
     subtest("ecdsa-sign", test_ecdsa_sign);
+    subtest("cert-verify", test_cert_verify);
     subtest("picotls", test_picotls);
 
     ptls_minicrypto_secp256r1sha256_sign_certificate_t minicrypto_sign_certificate;
