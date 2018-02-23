@@ -787,7 +787,7 @@ static int verify_certificate(ptls_verify_certificate_t *_self, ptls_t *tls, int
 {
     ptls_openssl_verify_certificate_t *self = (ptls_openssl_verify_certificate_t *)_self;
     X509 *cert = NULL;
-    STACK_OF(X509) *chain = NULL;
+    STACK_OF(X509) *chain = sk_X509_new_null();
     X509_STORE_CTX *verify_ctx = NULL;
     size_t i;
     int ret = 0;
@@ -804,6 +804,7 @@ static int verify_certificate(ptls_verify_certificate_t *_self, ptls_t *tls, int
             ret = PTLS_ALERT_BAD_CERTIFICATE;
             goto Exit;
         }
+        sk_X509_push(chain, interm);
     }
 
     if ((verify_ctx = X509_STORE_CTX_new()) == NULL) {
