@@ -782,36 +782,16 @@ Exit:
     return ret;
 }
 
-static int verify_certificate(ptls_verify_certificate_t *_self, ptls_t *tls, int (**verifier)(void *, ptls_iovec_t, ptls_iovec_t),
-                              void **verify_data, ptls_iovec_t *certs, size_t num_certs)
+static int verify_certificate_chain(X509_STORE *store, X509 *cert, STACK_OF(X509) *chain)
 {
-    ptls_openssl_verify_certificate_t *self = (ptls_openssl_verify_certificate_t *)_self;
-    X509 *cert = NULL;
-    STACK_OF(X509) *chain = sk_X509_new_null();
-    X509_STORE_CTX *verify_ctx = NULL;
-    size_t i;
-    int ret = 0;
-
-    assert(num_certs != 0);
-
-    if ((cert = to_x509(certs[0])) == NULL) {
-        ret = PTLS_ALERT_BAD_CERTIFICATE;
-        goto Exit;
-    }
-    for (i = 1; i != num_certs; ++i) {
-        X509 *interm = to_x509(certs[i]);
-        if (interm == NULL) {
-            ret = PTLS_ALERT_BAD_CERTIFICATE;
-            goto Exit;
-        }
-        sk_X509_push(chain, interm);
-    }
+    X509_STORE_CTX *verify_ctx;
+    int ret;
 
     if ((verify_ctx = X509_STORE_CTX_new()) == NULL) {
         ret = PTLS_ERROR_NO_MEMORY;
         goto Exit;
     }
-    if (X509_STORE_CTX_init(verify_ctx, self->cert_store, cert, chain) != 1) {
+    if (X509_STORE_CTX_init(verify_ctx, store, cert, chain) != 1) {
         ret = PTLS_ERROR_LIBRARY;
         goto Exit;
     }
@@ -836,6 +816,43 @@ static int verify_certificate(ptls_verify_certificate_t *_self, ptls_t *tls, int
         }
     }
 
+Exit:
+    if (verify_ctx != NULL)
+        X509_STORE_CTX_free(verify_ctx);
+    return ret;
+}
+
+static int verify_certificate(ptls_verify_certificate_t *_self, ptls_t *tls, int (**verifier)(void *, ptls_iovec_t, ptls_iovec_t),
+                              void **verify_data, ptls_iovec_t *certs, size_t num_certs)
+{
+    ptls_openssl_verify_certificate_t *self = (ptls_openssl_verify_certificate_t *)_self;
+    X509 *cert = NULL;
+    STACK_OF(X509) *chain = sk_X509_new_null();
+    X509_STORE_CTX *verify_ctx = NULL;
+    size_t i;
+    int ret = 0;
+
+    assert(num_certs != 0);
+
+    /* convert certificates to OpenSSL representation */
+    if ((cert = to_x509(certs[0])) == NULL) {
+        ret = PTLS_ALERT_BAD_CERTIFICATE;
+        goto Exit;
+    }
+    for (i = 1; i != num_certs; ++i) {
+        X509 *interm = to_x509(certs[i]);
+        if (interm == NULL) {
+            ret = PTLS_ALERT_BAD_CERTIFICATE;
+            goto Exit;
+        }
+        sk_X509_push(chain, interm);
+    }
+
+    /* verify the chain */
+    if ((ret = verify_certificate_chain(self->cert_store, cert, chain)) != 0)
+        goto Exit;
+
+    /* extract public key for verifying the TLS handshake signature */
     if ((*verify_data = X509_get_pubkey(cert)) == NULL) {
         ret = PTLS_ALERT_BAD_CERTIFICATE;
         goto Exit;
@@ -843,8 +860,6 @@ static int verify_certificate(ptls_verify_certificate_t *_self, ptls_t *tls, int
     *verifier = verify_sign;
 
 Exit:
-    if (verify_ctx != NULL)
-        X509_STORE_CTX_free(verify_ctx);
     if (chain != NULL)
         sk_X509_free(chain);
     if (cert != NULL)
