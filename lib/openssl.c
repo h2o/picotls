@@ -41,6 +41,7 @@
 #include <openssl/x509_vfy.h>
 #include "picotls.h"
 #include "picotls/openssl.h"
+#include "openssl_hostname_validation.h"
 
 #if (OPENSSL_VERSION_NUMBER < 0x10100000L || defined(LIBRESSL_VERSION_NUMBER))
 #define OPENSSL_1_0_API 1
@@ -782,11 +783,14 @@ Exit:
     return ret;
 }
 
-static int verify_certificate_chain(X509_STORE *store, X509 *cert, STACK_OF(X509) * chain)
+static int verify_cert_chain(X509_STORE *store, X509 *cert, STACK_OF(X509) * chain, const char *server_name)
 {
     X509_STORE_CTX *verify_ctx;
     int ret;
 
+    assert(server_name != NULL && "ptls_set_server_name MUST be called");
+
+    /* verify certificate chain */
     if ((verify_ctx = X509_STORE_CTX_new()) == NULL) {
         ret = PTLS_ERROR_NO_MEMORY;
         goto Exit;
@@ -796,21 +800,19 @@ static int verify_certificate_chain(X509_STORE *store, X509 *cert, STACK_OF(X509
         goto Exit;
     }
     X509_STORE_CTX_set_purpose(verify_ctx, X509_PURPOSE_SSL_CLIENT);
-    if (X509_verify_cert(verify_ctx) == 1) {
-        ret = 0;
-    } else {
+    if (X509_verify_cert(verify_ctx) != 1) {
         int x509_err = X509_STORE_CTX_get_error(verify_ctx);
         switch (x509_err) {
         case X509_V_ERR_OUT_OF_MEM:
             ret = PTLS_ERROR_NO_MEMORY;
-            goto Exit;
+            break;
         case X509_V_ERR_CERT_REVOKED:
             ret = PTLS_ALERT_CERTIFICATE_REVOKED;
-            goto Exit;
+            break;
         case X509_V_ERR_CERT_NOT_YET_VALID:
         case X509_V_ERR_CERT_HAS_EXPIRED:
             ret = PTLS_ALERT_CERTIFICATE_EXPIRED;
-            goto Exit;
+            break;
         case X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT:
         case X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT_LOCALLY:
         case X509_V_ERR_CERT_UNTRUSTED:
@@ -822,9 +824,18 @@ static int verify_certificate_chain(X509_STORE *store, X509 *cert, STACK_OF(X509
             break;
         default:
             ret = PTLS_ALERT_CERTIFICATE_UNKNOWN;
-            goto Exit;
+            break;
         }
+        goto Exit;
     }
+
+    /* verify CN */
+    if (validate_hostname(server_name, cert) != MatchFound) {
+        ret = PTLS_ALERT_BAD_CERTIFICATE;
+        goto Exit;
+    }
+
+    ret = 0;
 
 Exit:
     if (verify_ctx != NULL)
@@ -832,8 +843,8 @@ Exit:
     return ret;
 }
 
-static int verify_certificate(ptls_verify_certificate_t *_self, ptls_t *tls, int (**verifier)(void *, ptls_iovec_t, ptls_iovec_t),
-                              void **verify_data, ptls_iovec_t *certs, size_t num_certs)
+static int verify_cert(ptls_verify_certificate_t *_self, ptls_t *tls, int (**verifier)(void *, ptls_iovec_t, ptls_iovec_t),
+                       void **verify_data, ptls_iovec_t *certs, size_t num_certs)
 {
     ptls_openssl_verify_certificate_t *self = (ptls_openssl_verify_certificate_t *)_self;
     X509 *cert = NULL;
@@ -858,7 +869,7 @@ static int verify_certificate(ptls_verify_certificate_t *_self, ptls_t *tls, int
     }
 
     /* verify the chain */
-    if ((ret = verify_certificate_chain(self->cert_store, cert, chain)) != 0)
+    if ((ret = verify_cert_chain(self->cert_store, cert, chain, ptls_get_server_name(tls))) != 0)
         goto Exit;
 
     /* extract public key for verifying the TLS handshake signature */
@@ -878,7 +889,7 @@ Exit:
 
 int ptls_openssl_init_verify_certificate(ptls_openssl_verify_certificate_t *self, X509_STORE *store)
 {
-    *self = (ptls_openssl_verify_certificate_t){{verify_certificate}};
+    *self = (ptls_openssl_verify_certificate_t){{verify_cert}};
 
     if (store != NULL) {
         X509_STORE_up_ref(store);

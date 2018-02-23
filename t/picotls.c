@@ -31,6 +31,7 @@
 #include "test.h"
 
 ptls_context_t *ctx, *ctx_peer;
+ptls_verify_certificate_t *verify_certificate;
 
 static ptls_cipher_suite_t *find_cipher(ptls_context_t *ctx, uint16_t id)
 {
@@ -341,6 +342,9 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int check_ch)
     const char *req = "GET / HTTP/1.0\r\n\r\n";
     const char *resp = "HTTP/1.0 200 OK\r\n\r\nhello world\n";
 
+    if (check_ch)
+        ctx->verify_certificate = verify_certificate;
+
     client = ptls_new(ctx, 0);
     server = ptls_new(ctx_peer, 1);
     ptls_buffer_init(&cbuf, cbuf_small, sizeof(cbuf_small));
@@ -353,7 +357,7 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int check_ch)
         static const ptls_iovec_t protocols[] = {{(uint8_t *)"h2", 2}, {(uint8_t *)"http/1.1", 8}};
         client_hs_prop.client.negotiated_protocols.list = protocols;
         client_hs_prop.client.negotiated_protocols.count = sizeof(protocols) / sizeof(protocols[0]);
-        ptls_set_server_name(client, "example.com", 0);
+        ptls_set_server_name(client, "test.example.com", 0);
     }
 
     switch (mode) {
@@ -410,7 +414,7 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int check_ch)
     ok(sbuf.off != 0);
     if (check_ch) {
         ok(ptls_get_server_name(server) != NULL);
-        ok(strcmp(ptls_get_server_name(server), "example.com") == 0);
+        ok(strcmp(ptls_get_server_name(server), "test.example.com") == 0);
         ok(ptls_get_negotiated_protocol(server) != NULL);
         ok(strcmp(ptls_get_negotiated_protocol(server), "h2") == 0);
     } else {
@@ -446,7 +450,7 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int check_ch)
     ok(cbuf.off != 0);
     if (check_ch) {
         ok(ptls_get_server_name(client) != NULL);
-        ok(strcmp(ptls_get_server_name(client), "example.com") == 0);
+        ok(strcmp(ptls_get_server_name(client), "test.example.com") == 0);
         ok(ptls_get_negotiated_protocol(client) != NULL);
         ok(strcmp(ptls_get_negotiated_protocol(client), "h2") == 0);
     } else {
@@ -506,6 +510,8 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int check_ch)
 
     if (check_ch)
         ctx_peer->on_client_hello = NULL;
+
+    ctx->verify_certificate = NULL;
 }
 
 static ptls_sign_certificate_t *sc_orig;

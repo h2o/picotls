@@ -147,14 +147,18 @@ static void test_cert_verify(void)
     int ret;
 
     /* expect fail when no CA is registered */
-    ret = verify_certificate_chain(store, cert, chain);
+    ret = verify_cert_chain(store, cert, chain, "test.example.com");
     ok(ret == PTLS_ALERT_UNKNOWN_CA);
 
     /* expect success after registering the CA */
     X509_LOOKUP *lookup = X509_STORE_add_lookup(store, X509_LOOKUP_file());
     X509_LOOKUP_load_file(lookup, "t/assets/test-ca.crt", X509_FILETYPE_PEM);
-    ret = verify_certificate_chain(store, cert, chain);
+    ret = verify_cert_chain(store, cert, chain, "test.example.com");
     ok(ret == 0);
+
+    /* different server_name */
+    ret = verify_cert_chain(store, cert, chain, "test2.example.com");
+    ok(ret == PTLS_ALERT_BAD_CERTIFICATE);
 
     X509_free(cert);
     sk_X509_free(chain);
@@ -217,9 +221,9 @@ int main(int argc, char **argv)
                                   {&cert, 1},
                                   NULL,
                                   NULL,
-                                  &openssl_sign_certificate.super,
-                                  &openssl_verify_certificate.super};
+                                  &openssl_sign_certificate.super};
     ctx = ctx_peer = &openssl_ctx;
+    verify_certificate = &openssl_verify_certificate.super;
 
     subtest("ecdh-key-exchange", test_ecdh_key_exchange);
     subtest("rsa-sign", test_rsa_sign);
