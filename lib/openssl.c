@@ -838,7 +838,6 @@ static int verify_certificate(ptls_verify_certificate_t *_self, ptls_t *tls, int
     ptls_openssl_verify_certificate_t *self = (ptls_openssl_verify_certificate_t *)_self;
     X509 *cert = NULL;
     STACK_OF(X509) *chain = sk_X509_new_null();
-    X509_STORE_CTX *verify_ctx = NULL;
     size_t i;
     int ret = 0;
 
