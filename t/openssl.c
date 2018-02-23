@@ -153,6 +153,12 @@ static void setup_sign_certificate(ptls_openssl_sign_certificate_t *sc)
     EVP_PKEY_free(pkey);
 }
 
+static int verify_cert_cb(int ok, X509_STORE_CTX *ctx)
+{
+    /* ignore certificate verification errors */
+    return 1;
+}
+
 int main(int argc, char **argv)
 {
     ptls_openssl_sign_certificate_t openssl_sign_certificate;
@@ -170,7 +176,10 @@ int main(int argc, char **argv)
     ptls_iovec_t cert;
     setup_certificate(&cert);
     setup_sign_certificate(&openssl_sign_certificate);
-    ptls_openssl_init_verify_certificate(&openssl_verify_certificate, NULL);
+    X509_STORE *cert_store = X509_STORE_new();
+    X509_STORE_set_verify_cb(cert_store, verify_cert_cb);
+    ptls_openssl_init_verify_certificate(&openssl_verify_certificate, cert_store);
+    X509_STORE_free(cert_store);
     ptls_context_t openssl_ctx = {ptls_openssl_random_bytes,
                                   &ptls_get_time,
                                   ptls_openssl_key_exchanges,

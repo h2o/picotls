@@ -789,6 +789,7 @@ static int verify_certificate(ptls_verify_certificate_t *_self, ptls_t *tls, int
     X509 *cert = NULL;
     STACK_OF(X509) *chain = NULL;
     X509_STORE_CTX *verify_ctx = NULL;
+    size_t i;
     int ret = 0;
 
     assert(num_certs != 0);
@@ -797,42 +798,40 @@ static int verify_certificate(ptls_verify_certificate_t *_self, ptls_t *tls, int
         ret = PTLS_ALERT_BAD_CERTIFICATE;
         goto Exit;
     }
-
-    if (self->cert_store != NULL) {
-        size_t i;
-        for (i = 1; i != num_certs; ++i) {
-            X509 *interm = to_x509(certs[i]);
-            if (interm == NULL) {
-                ret = PTLS_ALERT_BAD_CERTIFICATE;
-                goto Exit;
-            }
+    for (i = 1; i != num_certs; ++i) {
+        X509 *interm = to_x509(certs[i]);
+        if (interm == NULL) {
+            ret = PTLS_ALERT_BAD_CERTIFICATE;
+            goto Exit;
         }
-        if ((verify_ctx = X509_STORE_CTX_new()) == NULL) {
+    }
+
+    if ((verify_ctx = X509_STORE_CTX_new()) == NULL) {
+        ret = PTLS_ERROR_NO_MEMORY;
+        goto Exit;
+    }
+    if (X509_STORE_CTX_init(verify_ctx, self->cert_store, cert, chain) != 1) {
+        ret = PTLS_ERROR_LIBRARY;
+        goto Exit;
+    }
+    X509_STORE_CTX_set_purpose(verify_ctx, X509_PURPOSE_SSL_CLIENT);
+    if (X509_verify_cert(verify_ctx) == 1) {
+        ret = 0;
+    } else {
+        int x509_err = X509_STORE_CTX_get_error(verify_ctx);
+        switch (x509_err) {
+        case X509_V_ERR_OUT_OF_MEM:
             ret = PTLS_ERROR_NO_MEMORY;
             goto Exit;
-        }
-        if (X509_STORE_CTX_init(verify_ctx, self->cert_store, cert, chain) != 1) {
-            ret = PTLS_ERROR_LIBRARY;
+        case X509_V_ERR_CERT_REVOKED:
+            ret = PTLS_ALERT_CERTIFICATE_REVOKED;
             goto Exit;
-        }
-        X509_STORE_CTX_set_purpose(verify_ctx, X509_PURPOSE_SSL_CLIENT);
-        if (X509_verify_cert(verify_ctx) == 1) {
-            ret = 0;
-        } else {
-            switch (X509_STORE_CTX_get_error(verify_ctx)) {
-            case X509_V_ERR_OUT_OF_MEM:
-                ret = PTLS_ERROR_NO_MEMORY;
-                goto Exit;
-            case X509_V_ERR_CERT_REVOKED:
-                ret = PTLS_ALERT_CERTIFICATE_REVOKED;
-                goto Exit;
-            case X509_V_ERR_CERT_HAS_EXPIRED:
-                ret = PTLS_ALERT_CERTIFICATE_EXPIRED;
-                goto Exit;
-            default:
-                ret = PTLS_ALERT_CERTIFICATE_UNKNOWN;
-                goto Exit;
-            }
+        case X509_V_ERR_CERT_HAS_EXPIRED:
+            ret = PTLS_ALERT_CERTIFICATE_EXPIRED;
+            goto Exit;
+        default:
+            ret = PTLS_ALERT_CERTIFICATE_UNKNOWN;
+            goto Exit;
         }
     }
 
@@ -857,20 +856,12 @@ int ptls_openssl_init_verify_certificate(ptls_openssl_verify_certificate_t *self
     *self = (ptls_openssl_verify_certificate_t){{verify_certificate}};
 
     if (store != NULL) {
-        if (store != PTLS_OPENSSL_DEFAULT_CERTIFICATE_STORE) {
-            X509_STORE_up_ref(store);
-            self->cert_store = store;
-        } else {
-            X509_LOOKUP *lookup;
-            if ((self->cert_store = X509_STORE_new()) == NULL)
-                return -1;
-            if ((lookup = X509_STORE_add_lookup(self->cert_store, X509_LOOKUP_file())) == NULL)
-                return -1;
-            X509_LOOKUP_load_file(lookup, NULL, X509_FILETYPE_DEFAULT);
-            if ((lookup = X509_STORE_add_lookup(self->cert_store, X509_LOOKUP_hash_dir())) == NULL)
-                return -1;
-            X509_LOOKUP_add_dir(lookup, NULL, X509_FILETYPE_DEFAULT);
-        }
+        X509_STORE_up_ref(store);
+        self->cert_store = store;
+    } else {
+        /* use default store */
+        if ((self->cert_store = ptls_openssl_create_default_certificate_store()) == NULL)
+            return -1;
     }
 
     return 0;
@@ -880,6 +871,27 @@ void ptls_openssl_dispose_verify_certificate(ptls_openssl_verify_certificate_t *
 {
     X509_STORE_free(self->cert_store);
     free(self);
+}
+
+X509_STORE *ptls_openssl_create_default_certificate_store(void)
+{
+    X509_STORE *store;
+    X509_LOOKUP *lookup;
+
+    if ((store = X509_STORE_new()) == NULL)
+        goto Error;
+    if ((lookup = X509_STORE_add_lookup(store, X509_LOOKUP_file())) == NULL)
+        goto Error;
+    X509_LOOKUP_load_file(lookup, NULL, X509_FILETYPE_DEFAULT);
+    if ((lookup = X509_STORE_add_lookup(store, X509_LOOKUP_hash_dir())) == NULL)
+        goto Error;
+    X509_LOOKUP_add_dir(lookup, NULL, X509_FILETYPE_DEFAULT);
+
+    return store;
+Error:
+    if (store != NULL)
+        X509_STORE_free(store);
+    return NULL;
 }
 
 #define TICKET_LABEL_SIZE 16
