@@ -1057,7 +1057,7 @@ ptls_aead_algorithm_t ptls_openssl_chacha20poly1305 = {"CHACHA20-POLY1305",
 ptls_cipher_suite_t ptls_openssl_chacha20poly1305sha256 = {PTLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256,
                                                            &ptls_openssl_chacha20poly1305, &ptls_openssl_sha256};
 #endif
-ptls_cipher_suite_t *ptls_openssl_cipher_suites[] = {&ptls_openssl_aes256gcmsha384, &ptls_openssl_aes128gcmsha256,
+ptls_cipher_suite_t *ptls_openssl_cipher_suites[] = {&ptls_openssl_aes128gcmsha256,
 #if defined(PTLS_OPENSSL_HAVE_CHACHA20_POLY1305)
                                                      &ptls_openssl_chacha20poly1305sha256,
 #endif
