@@ -277,11 +277,11 @@ struct st_ptls_server_hello_t {
 
 struct st_ptls_key_schedule_t {
     unsigned generation; /* early secret (1), hanshake secret (2), master secret (3) */
+    uint8_t secret[PTLS_MAX_DIGEST_SIZE];
     size_t num_hashes;
     struct {
         ptls_hash_algorithm_t *algo;
         ptls_hash_context_t *ctx;
-        uint8_t secret[PTLS_MAX_DIGEST_SIZE];
     } hashes[1];
 };
 
@@ -640,17 +640,12 @@ int ptls_decode64(uint64_t *value, const uint8_t **src, const uint8_t *const end
     return 0;
 }
 
-static void key_schedule_clear_hash_entry(struct st_ptls_key_schedule_t *sched, size_t index)
-{
-    sched->hashes[index].ctx->final(sched->hashes[index].ctx, NULL, PTLS_HASH_FINAL_MODE_FREE);
-    ptls_clear_memory(sched->hashes[index].secret, sizeof(sched->hashes[index].secret));
-}
-
 static void key_schedule_free(struct st_ptls_key_schedule_t *sched)
 {
     size_t i;
+    ptls_clear_memory(sched->secret, sizeof(sched->secret));
     for (i = 0; i != sched->num_hashes; ++i)
-        key_schedule_clear_hash_entry(sched, i);
+        sched->hashes[i].ctx->final(sched->hashes[i].ctx, NULL, PTLS_HASH_FINAL_MODE_FREE);
     free(sched);
 }
 
@@ -684,8 +679,7 @@ static struct st_ptls_key_schedule_t *key_schedule_new(ptls_cipher_suite_t *pref
         FOREACH_HASH({ ++num_hashes; });
         if ((sched = malloc(offsetof(struct st_ptls_key_schedule_t, hashes) + sizeof(sched->hashes[0]) * num_hashes)) == NULL)
             return NULL;
-        sched->generation = 0;
-        sched->num_hashes = 0;
+        *sched = (struct st_ptls_key_schedule_t){0};
     }
 
     /* setup the hash algos and contexts */
@@ -693,7 +687,6 @@ static struct st_ptls_key_schedule_t *key_schedule_new(ptls_cipher_suite_t *pref
         sched->hashes[sched->num_hashes].algo = cs->hash;
         if ((sched->hashes[sched->num_hashes].ctx = cs->hash->create()) == NULL)
             goto Fail;
-        memset(sched->hashes[sched->num_hashes].secret, 0, sizeof(sched->hashes[sched->num_hashes].secret));
         ++sched->num_hashes;
     });
 
@@ -705,68 +698,60 @@ Fail:
 #undef FOREACH_HASH
 }
 
-static void key_schedule_select_one(struct st_ptls_key_schedule_t *sched, ptls_cipher_suite_t *cs)
-{
-    size_t i;
-
-    /* find the one, while freeing the previous */
-    for (i = 0;; ++i) {
-        assert(i < sched->num_hashes);
-        if (sched->hashes[i].algo == cs->hash)
-            break;
-        key_schedule_clear_hash_entry(sched, i);
-    }
-
-    /* move the one to slot 0 */
-    if (i != 0) {
-        memcpy(sched->hashes, sched->hashes + i, sizeof(sched->hashes[i]));
-        ptls_clear_memory(sched->hashes + i, sizeof(sched->hashes[i]));
-    }
-
-    /* free the following ones */
-    for (++i; i != sched->num_hashes; ++i)
-        key_schedule_clear_hash_entry(sched, i);
-
-    /* set the terminate at slot 1 */
-    sched->num_hashes = 1;
-}
-
 static int key_schedule_extract(struct st_ptls_key_schedule_t *sched, ptls_iovec_t ikm)
 {
-    size_t hash_index;
     int ret;
 
-    for (hash_index = 0; hash_index != sched->num_hashes; ++hash_index) {
-        if (sched->generation != 0 &&
-            (ret = ptls_hkdf_expand_label(
-                 sched->hashes[hash_index].algo, sched->hashes[hash_index].secret, sched->hashes[hash_index].algo->digest_size,
-                 ptls_iovec_init(sched->hashes[hash_index].secret, sched->hashes[hash_index].algo->digest_size), "derived",
-                 ptls_iovec_init(sched->hashes[hash_index].algo->empty_digest, sched->hashes[hash_index].algo->digest_size),
-                 NULL)) != 0)
-            return ret;
-        if ((ret = ptls_hkdf_extract(sched->hashes[hash_index].algo, sched->hashes[hash_index].secret,
-                                     ptls_iovec_init(sched->hashes[hash_index].secret, sched->hashes[hash_index].algo->digest_size),
-                                     ikm.base != NULL ? ikm : ptls_iovec_init(zeroes_of_max_digest_size,
-                                                                              sched->hashes[hash_index].algo->digest_size))) != 0)
-            return ret;
-        PTLS_DEBUGF("%s: %u, %02x%02x\n", __FUNCTION__, sched->generation + 1, (int)sched->hashes[hash_index].secret[0],
-                    (int)sched->hashes[hash_index].secret[1]);
-    }
+    if (ikm.base == NULL)
+        ikm = ptls_iovec_init(zeroes_of_max_digest_size, sched->hashes[0].algo->digest_size);
+
+    if (sched->generation != 0 &&
+        (ret = ptls_hkdf_expand_label(sched->hashes[0].algo, sched->secret, sched->hashes[0].algo->digest_size,
+                                      ptls_iovec_init(sched->secret, sched->hashes[0].algo->digest_size), "derived",
+                                      ptls_iovec_init(sched->hashes[0].algo->empty_digest, sched->hashes[0].algo->digest_size),
+                                      NULL)) != 0)
+        return ret;
 
     ++sched->generation;
-    return 0;
+    ret = ptls_hkdf_extract(sched->hashes[0].algo, sched->secret,
+                            ptls_iovec_init(sched->secret, sched->hashes[0].algo->digest_size), ikm);
+    PTLS_DEBUGF("%s: %u, %02x%02x\n", __FUNCTION__, sched->generation, (int)sched->secret[0], (int)sched->secret[1]);
+    return ret;
 }
 
-static int key_schedule_reset_psk(struct st_ptls_key_schedule_t *sched)
+static int key_schedule_select_one(struct st_ptls_key_schedule_t *sched, ptls_cipher_suite_t *cs, int reset)
 {
-    size_t i;
+    size_t found_slot = SIZE_MAX, i;
+    int ret;
 
     assert(sched->generation == 1);
-    --sched->generation;
 
-    for (i = 0; i != sched->num_hashes; ++i)
-        ptls_clear_memory(sched->hashes[i].secret, sizeof(sched->hashes[i].secret));
-    return key_schedule_extract(sched, ptls_iovec_init(NULL, 0));
+    /* find the one, while freeing others */
+    for (i = 0; i != sched->num_hashes; ++i) {
+        if (sched->hashes[i].algo == cs->hash) {
+            assert(found_slot == SIZE_MAX);
+            found_slot = i;
+        } else {
+            sched->hashes[i].ctx->final(sched->hashes[i].ctx, NULL, PTLS_HASH_FINAL_MODE_FREE);
+        }
+    }
+    if (found_slot != 0) {
+        sched->hashes[0] = sched->hashes[found_slot];
+        reset = 1;
+    }
+    sched->num_hashes = 1;
+
+    /* recalculate the hash if a different hash as been selected than the one we used for calculating the early secrets */
+    if (reset) {
+        --sched->generation;
+        memset(sched->secret, 0, sizeof(sched->secret));
+        if ((ret = key_schedule_extract(sched, ptls_iovec_init(NULL, 0))) != 0)
+            goto Exit;
+    }
+
+    ret = 0;
+Exit:
+    return ret;
 }
 
 static void key_schedule_update_hash(struct st_ptls_key_schedule_t *sched, const uint8_t *msg, size_t msglen)
@@ -806,7 +791,7 @@ static int derive_secret(struct st_ptls_key_schedule_t *sched, void *secret, con
     sched->hashes[0].ctx->final(sched->hashes[0].ctx, hash_value, PTLS_HASH_FINAL_MODE_SNAPSHOT);
 
     int ret = ptls_hkdf_expand_label(sched->hashes[0].algo, secret, sched->hashes[0].algo->digest_size,
-                                     ptls_iovec_init(sched->hashes[0].secret, sched->hashes[0].algo->digest_size), label,
+                                     ptls_iovec_init(sched->secret, sched->hashes[0].algo->digest_size), label,
                                      ptls_iovec_init(hash_value, sched->hashes[0].algo->digest_size), NULL);
 
     PTLS_DEBUGF("%s: (label=%s, hash=%02x%02x) => %02x%02x\n", __FUNCTION__, label, hash_value[0], hash_value[1],
@@ -1619,7 +1604,9 @@ static int client_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
         goto Exit;
     }
 
-    key_schedule_select_one(tls->key_schedule, tls->cipher_suite);
+    if ((ret = key_schedule_select_one(tls->key_schedule, tls->cipher_suite, tls->client.offered_psk && !tls->is_psk_handshake)) !=
+        0)
+        goto Exit;
 
     if (sh.is_retry_request)
         return handle_hello_retry_request(tls, sendbuf, &sh, message, properties);
@@ -1629,8 +1616,6 @@ static int client_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
             goto Exit;
     }
 
-    if (tls->client.offered_psk && !tls->is_psk_handshake)
-        key_schedule_reset_psk(tls->key_schedule);
     key_schedule_update_hash(tls->key_schedule, message.base, message.len);
 
     if ((ret = key_schedule_extract(tls->key_schedule, ecdh_secret)) != 0)
