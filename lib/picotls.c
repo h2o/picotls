@@ -2548,8 +2548,6 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
             memcpy(properties->server.selected_psk_binder.base, selected->base, selected->len);
             properties->server.selected_psk_binder.len = selected->len;
         }
-        if ((ret = derive_exporter_secret(tls, 1)) != 0)
-            goto Exit;
     }
 
     if (accept_early_data && tls->ctx->max_early_data_size != 0 && psk_index == 0) {
@@ -2557,6 +2555,8 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
             ret = PTLS_ERROR_NO_MEMORY;
             goto Exit;
         }
+        if ((ret = derive_exporter_secret(tls, 1)) != 0)
+            goto Exit;
         if ((ret = setup_traffic_protection(tls, 0, "c e traffic", "CLIENT_EARLY_TRAFFIC_SECRET")) != 0)
             goto Exit;
     }
