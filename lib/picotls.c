@@ -3334,8 +3334,22 @@ int ptls_export_secret(ptls_t *tls, void *output, size_t outlen, const char *lab
             derived_secret[PTLS_MAX_DIGEST_SIZE], context_value_hash[PTLS_MAX_DIGEST_SIZE];
     int ret;
 
-    if (master_secret == NULL)
-        return PTLS_ERROR_IN_PROGRESS;
+    if (master_secret == NULL) {
+        if (is_early) {
+            switch (tls->state) {
+            case PTLS_STATE_CLIENT_HANDSHAKE_START:
+            case PTLS_STATE_SERVER_EXPECT_CLIENT_HELLO:
+                ret = PTLS_ERROR_IN_PROGRESS;
+                break;
+            default:
+                ret = PTLS_ERROR_NOT_AVAILABLE;
+                break;
+            }
+        } else {
+            ret = PTLS_ERROR_IN_PROGRESS;
+        }
+        return ret;
+    }
 
     if ((hctx = algo->create()) == NULL)
         return PTLS_ERROR_NO_MEMORY;
