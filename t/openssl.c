@@ -180,11 +180,27 @@ int main(int argc, char **argv)
                                   NULL,
                                   &openssl_sign_certificate.super,
                                   &openssl_verify_certificate.super};
+    assert(openssl_ctx.cipher_suites[0]->hash->digest_size == 48); /* sha384 */
+    ptls_context_t openssl_ctx_sha256only = openssl_ctx;
+    ++openssl_ctx_sha256only.cipher_suites;
+    assert(openssl_ctx_sha256only.cipher_suites[0]->hash->digest_size == 32); /* sha256 */
+
     ctx = ctx_peer = &openssl_ctx;
 
     subtest("ecdh-key-exchange", test_ecdh_key_exchange);
     subtest("rsa-sign", test_rsa_sign);
     subtest("ecdsa-sign", test_ecdsa_sign);
+    subtest("picotls", test_picotls);
+
+    ctx = ctx_peer = &openssl_ctx_sha256only;
+    subtest("picotls", test_picotls);
+
+    ctx = &openssl_ctx_sha256only;
+    ctx_peer = &openssl_ctx;
+    subtest("picotls", test_picotls);
+
+    ctx = &openssl_ctx;
+    ctx_peer = &openssl_ctx_sha256only;
     subtest("picotls", test_picotls);
 
     ptls_minicrypto_secp256r1sha256_sign_certificate_t minicrypto_sign_certificate;
@@ -199,6 +215,7 @@ int main(int argc, char **argv)
                                      NULL,
                                      NULL,
                                      &minicrypto_sign_certificate.super};
+    ctx = &openssl_ctx;
     ctx_peer = &minicrypto_ctx;
     subtest("vs. minicrypto", test_picotls);
 
