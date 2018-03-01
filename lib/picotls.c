@@ -1240,7 +1240,7 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_handshake
                                              properties->client.session_ticket.base + properties->client.session_ticket.len) == 0) {
                 tls->client.offered_psk = 1;
                 tls->cipher_suite = cipher_suite;
-                if (max_early_data_size != 0 && properties->client.max_early_data_size != NULL) {
+                if (!is_second_flight && max_early_data_size != 0 && properties->client.max_early_data_size != NULL) {
                     *properties->client.max_early_data_size = max_early_data_size;
                     if ((tls->early_data = malloc(sizeof(*tls->early_data))) == NULL) {
                         ret = PTLS_ERROR_NO_MEMORY;
@@ -1389,7 +1389,7 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_handshake
         if ((ret = push_change_cipher_spec(tls, sendbuf)) != 0)
             goto Exit;
     }
-    if (resumption_secret.base != NULL) {
+    if (resumption_secret.base != NULL && !is_second_flight) {
         if ((ret = derive_exporter_secret(tls, 1)) != 0)
             goto Exit;
     }
