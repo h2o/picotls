@@ -526,5 +526,5 @@ ptls_cipher_suite_t ptls_minicrypto_aes256gcmsha384 = {PTLS_CIPHER_SUITE_AES_256
                                                        &ptls_minicrypto_sha384};
 ptls_cipher_suite_t ptls_minicrypto_chacha20poly1305sha256 = {PTLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256,
                                                               &ptls_minicrypto_chacha20poly1305, &ptls_minicrypto_sha256};
-ptls_cipher_suite_t *ptls_minicrypto_cipher_suites[] = {&ptls_minicrypto_aes128gcmsha256, &ptls_minicrypto_chacha20poly1305sha256,
-                                                        NULL};
+ptls_cipher_suite_t *ptls_minicrypto_cipher_suites[] = {&ptls_minicrypto_aes256gcmsha384, &ptls_minicrypto_aes128gcmsha256,
+                                                        &ptls_minicrypto_chacha20poly1305sha256, NULL};
