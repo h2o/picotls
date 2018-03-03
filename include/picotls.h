@@ -447,6 +447,11 @@ struct st_ptls_context_t {
      */
     unsigned send_change_cipher_spec : 1;
     /**
+     * if set, the server requests client certificates
+     * to authenticate the client.
+     */
+    unsigned require_client_authentication : 1;
+    /**
      *
      */
     ptls_encrypt_ticket_t *encrypt_ticket;
