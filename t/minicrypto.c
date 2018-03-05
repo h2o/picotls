@@ -74,8 +74,8 @@ static void test_hrr(void)
     assert(ctx_peer->key_exchanges[0] != NULL && ctx_peer->key_exchanges[0]->id == PTLS_GROUP_SECP256R1);
     assert(ctx_peer->key_exchanges[1] == NULL);
 
-    client = ptls_new(&client_ctx, 0);
-    server = ptls_new(ctx_peer, 1);
+    client = ptls_new(&client_ctx, 0, NULL);
+    server = ptls_new(ctx_peer, 1, NULL);
     ptls_buffer_init(&cbuf, cbuf_small, sizeof(cbuf_small));
     ptls_buffer_init(&sbuf, sbuf_small, sizeof(sbuf_small));
     ptls_buffer_init(&decbuf, decbuf_small, sizeof(decbuf_small));
@@ -131,8 +131,8 @@ static void test_hrr(void)
     ptls_buffer_dispose(&decbuf);
     ptls_buffer_dispose(&sbuf);
     ptls_buffer_dispose(&cbuf);
-    ptls_free(client);
-    ptls_free(server);
+    ptls_free(client, NULL);
+    ptls_free(server, NULL);
 }
 
 int main(int argc, char **argv)

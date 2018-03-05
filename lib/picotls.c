@@ -205,6 +205,12 @@ struct st_ptls_t {
      * END_OF_EARLY_DATA
      */
     struct st_ptls_early_data_t *early_data;
+
+    /**
+     * The context that will be given to the verify_certificate
+     * callback as second argument.
+     */
+    void *verify_certificate_ctx;
 };
 
 struct st_ptls_record_t {
@@ -1761,7 +1767,8 @@ static int client_handle_certificate(ptls_t *tls, ptls_iovec_t message)
     });
 
     if (tls->ctx->verify_certificate != NULL) {
-        if ((ret = tls->ctx->verify_certificate->cb(tls->ctx->verify_certificate, tls, &tls->client.certificate_verify.cb,
+        if ((ret = tls->ctx->verify_certificate->cb(tls->ctx->verify_certificate, tls->verify_certificate_ctx,
+                                                    tls, &tls->client.certificate_verify.cb,
                                                     &tls->client.certificate_verify.verify_ctx, certs, num_certs)) != 0)
             goto Exit;
     }
@@ -2888,7 +2895,7 @@ static void update_open_count(ptls_context_t *ctx, ssize_t delta)
         ctx->update_open_count->cb(ctx->update_open_count, delta);
 }
 
-ptls_t *ptls_new(ptls_context_t *ctx, int is_server)
+ptls_t *ptls_new(ptls_context_t *ctx, int is_server, void* verify_certificate_ctx)
 {
     ptls_t *tls;
 
@@ -2908,11 +2915,12 @@ ptls_t *ptls_new(ptls_context_t *ctx, int is_server)
     } else {
         tls->state = PTLS_STATE_SERVER_EXPECT_CLIENT_HELLO;
     }
+    tls->verify_certificate_ctx = verify_certificate_ctx;
 
     return tls;
 }
 
-void ptls_free(ptls_t *tls)
+void ptls_free(ptls_t *tls, void (*free_verify_certificate_ctx)(void *ctx))
 {
     ptls_buffer_dispose(&tls->recvbuf.rec);
     ptls_buffer_dispose(&tls->recvbuf.mess);
@@ -2939,6 +2947,11 @@ void ptls_free(ptls_t *tls)
         ptls_clear_memory(tls->early_data, sizeof(*tls->early_data));
         free(tls->early_data);
     }
+
+    if (free_verify_certificate_ctx != NULL && tls->verify_certificate_ctx != NULL) {
+        free_verify_certificate_ctx(tls->verify_certificate_ctx);
+    }
+
     update_open_count(tls->ctx, -1);
     ptls_clear_memory(tls, sizeof(*tls));
     free(tls);

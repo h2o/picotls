@@ -345,8 +345,8 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int check_ch)
     const char *req = "GET / HTTP/1.0\r\n\r\n";
     const char *resp = "HTTP/1.0 200 OK\r\n\r\nhello world\n";
 
-    client = ptls_new(ctx, 0);
-    server = ptls_new(ctx_peer, 1);
+    client = ptls_new(ctx, 0, NULL);
+    server = ptls_new(ctx_peer, 1, NULL);
     ptls_buffer_init(&cbuf, cbuf_small, sizeof(cbuf_small));
     ptls_buffer_init(&sbuf, sbuf_small, sizeof(sbuf_small));
     ptls_buffer_init(&decbuf, decbuf_small, sizeof(decbuf_small));
@@ -386,8 +386,8 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int check_ch)
         ret = ptls_handshake(server, &sbuf, cbuf.base, &consumed, &server_hs_prop);
         if (mode == TEST_HANDSHAKE_HRR_STATELESS) {
             ok(ret == PTLS_ERROR_STATELESS_RETRY);
-            ptls_free(server);
-            server = ptls_new(ctx_peer, 1);
+            ptls_free(server, NULL);
+            server = ptls_new(ctx_peer, 1, NULL);
         } else {
             ok(ret == PTLS_ERROR_IN_PROGRESS);
         }
@@ -505,8 +505,8 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int check_ch)
     ptls_buffer_dispose(&cbuf);
     ptls_buffer_dispose(&sbuf);
     ptls_buffer_dispose(&decbuf);
-    ptls_free(client);
-    ptls_free(server);
+    ptls_free(client, NULL);
+    ptls_free(server, NULL);
 
     if (check_ch)
         ctx_peer->on_client_hello = NULL;
@@ -626,13 +626,13 @@ static void test_enforce_retry(int use_cookie)
     ptls_buffer_init(&sbuf, "", 0);
     ptls_buffer_init(&decbuf, "", 0);
 
-    client = ptls_new(ctx, 0);
+    client = ptls_new(ctx, 0, NULL);
 
     ret = ptls_handshake(client, &cbuf, NULL, NULL, NULL);
     ok(ret == PTLS_ERROR_IN_PROGRESS);
     ok(cbuf.off != 0);
 
-    server = ptls_new(ctx, 1);
+    server = ptls_new(ctx, 1, NULL);
 
     consumed = cbuf.off;
     ret = ptls_handshake(server, &sbuf, cbuf.base, &consumed, &server_hs_prop);
@@ -640,8 +640,8 @@ static void test_enforce_retry(int use_cookie)
 
     if (use_cookie) {
         ok(ret == PTLS_ERROR_STATELESS_RETRY);
-        ptls_free(server);
-        server = ptls_new(ctx, 1);
+        ptls_free(server, NULL);
+        server = ptls_new(ctx, 1, NULL);
     } else {
         ok(ret == PTLS_ERROR_IN_PROGRESS);
     }
@@ -677,8 +677,8 @@ static void test_enforce_retry(int use_cookie)
     ok(memcmp(decbuf.base, "hello world", 11) == 0);
     decbuf.off = 0;
 
-    ptls_free(client);
-    ptls_free(server);
+    ptls_free(client, NULL);
+    ptls_free(server, NULL);
 
     ptls_buffer_dispose(&cbuf);
     ptls_buffer_dispose(&sbuf);
@@ -697,7 +697,7 @@ static void test_enforce_retry_stateless(void)
 
 static ptls_t *stateless_hrr_prepare(ptls_buffer_t *sbuf, ptls_handshake_properties_t *server_hs_prop)
 {
-    ptls_t *client = ptls_new(ctx, 0), *server = ptls_new(ctx_peer, 1);
+    ptls_t *client = ptls_new(ctx, 0, NULL), *server = ptls_new(ctx_peer, 1, NULL);
     ptls_buffer_t cbuf;
     size_t consumed;
     int ret;
@@ -713,7 +713,7 @@ static ptls_t *stateless_hrr_prepare(ptls_buffer_t *sbuf, ptls_handshake_propert
     ok(ret == PTLS_ERROR_STATELESS_RETRY);
 
     ptls_buffer_dispose(&cbuf);
-    ptls_free(server);
+    ptls_free(server, NULL);
 
     return client;
 }
@@ -740,15 +740,15 @@ static void test_stateless_hrr_aad_change(void)
     ok(sbuf.off == consumed);
     sbuf.off = 0;
 
-    server = ptls_new(ctx_peer, 1);
+    server = ptls_new(ctx_peer, 1, NULL);
     server_hs_prop.server.cookie.additional_data = ptls_iovec_init("1.2.3.4:4321", 12);
 
     consumed = cbuf.off;
     ret = ptls_handshake(server, &sbuf, cbuf.base, &consumed, &server_hs_prop);
     ok(ret == PTLS_ALERT_HANDSHAKE_FAILURE);
 
-    ptls_free(client);
-    ptls_free(server);
+    ptls_free(client, NULL);
+    ptls_free(server, NULL);
 
     ptls_buffer_dispose(&cbuf);
     ptls_buffer_dispose(&sbuf);

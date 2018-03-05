@@ -782,7 +782,7 @@ Exit:
     return ret;
 }
 
-static int verify_certificate(ptls_verify_certificate_t *_self, ptls_t *tls, int (**verifier)(void *, ptls_iovec_t, ptls_iovec_t),
+static int verify_certificate(ptls_verify_certificate_t *_self, void* _ctx, ptls_t *tls, int (**verifier)(void *, ptls_iovec_t, ptls_iovec_t),
                               void **verify_data, ptls_iovec_t *certs, size_t num_certs)
 {
     ptls_openssl_verify_certificate_t *self = (ptls_openssl_verify_certificate_t *)_self;
