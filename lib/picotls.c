@@ -3986,3 +3986,6 @@ static uint64_t get_time(ptls_get_time_t *self)
 
 ptls_get_time_t ptls_get_time = {get_time};
 
+int ptls_is_server(ptls_t *tls) {
+    return tls->is_server;
+}

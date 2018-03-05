@@ -775,6 +775,10 @@ int ptls_receive(ptls_t *tls, ptls_buffer_t *plaintextbuf, const void *input, si
  */
 int ptls_send(ptls_t *tls, ptls_buffer_t *sendbuf, const void *input, size_t inlen);
 /**
+ * Returns if the context is a server context.
+ */
+int ptls_is_server(ptls_t *tls);
+/**
  * returns per-record overhead
  */
 size_t ptls_get_record_overhead(ptls_t *tls);
