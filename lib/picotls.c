@@ -1604,12 +1604,15 @@ static int client_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
         goto Exit;
     }
 
+    if (sh.is_retry_request) {
+        if ((ret = key_schedule_select_one(tls->key_schedule, tls->cipher_suite, 0)) != 0)
+            goto Exit;
+        return handle_hello_retry_request(tls, sendbuf, &sh, message, properties);
+    }
+
     if ((ret = key_schedule_select_one(tls->key_schedule, tls->cipher_suite, tls->client.offered_psk && !tls->is_psk_handshake)) !=
         0)
         goto Exit;
-
-    if (sh.is_retry_request)
-        return handle_hello_retry_request(tls, sendbuf, &sh, message, properties);
 
     if (sh.peerkey.base != NULL) {
         if ((ret = tls->client.key_exchange.ctx->on_exchange(&tls->client.key_exchange.ctx, &ecdh_secret, sh.peerkey)) != 0)
