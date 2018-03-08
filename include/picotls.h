@@ -239,7 +239,15 @@ typedef const struct st_ptls_aead_algorithm_t {
     /**
      * the underlying key stream
      */
+#ifdef _WINDOWS
+    /*  suppress warning C4114: same type qualifier used more than once */
+#pragma warning( push )
+#pragma warning (disable : 4114 )
+#endif
     const ptls_cipher_algorithm_t *ctr_cipher;
+#ifdef _WINDOWS
+#pragma warning( pop )
+#endif
     /**
      * key size
      */
@@ -472,6 +480,11 @@ typedef struct st_ptls_raw_extension_t {
 /**
  * optional arguments to client-driven handshake
  */
+#ifdef _WINDOWS
+/* suppress warning C4201: nonstandard extension used: nameless struct/union */
+#pragma warning( push )
+#pragma warning (disable : 4201 )
+#endif
 typedef struct st_ptls_handshake_properties_t {
     union {
         struct {
@@ -544,6 +557,10 @@ typedef struct st_ptls_handshake_properties_t {
      */
     int (*collected_extensions)(ptls_t *tls, struct st_ptls_handshake_properties_t *properties, ptls_raw_extension_t *extensions);
 } ptls_handshake_properties_t;
+#ifdef _WINDOWS
+#pragma warning( pop )
+#endif
+
 
 /**
  * builds a new ptls_iovec_t instance using the supplied parameters
@@ -644,9 +661,9 @@ int ptls_buffer_push_asn1_ubigint(ptls_buffer_t *buf, const void *bignum, size_t
         ptls_buffer_push_asn1_block((buf), block);                                                                                 \
     } while (0)
 
-int ptls_decode16(uint16_t *value, const uint8_t **src, const uint8_t *end);
-int ptls_decode32(uint32_t *value, const uint8_t **src, const uint8_t *end);
-int ptls_decode64(uint64_t *value, const uint8_t **src, const uint8_t *end);
+int ptls_decode16(uint16_t *value, const uint8_t **src, const uint8_t *const end);
+int ptls_decode32(uint32_t *value, const uint8_t **src, const uint8_t *const end);
+int ptls_decode64(uint64_t *value, const uint8_t **src, const uint8_t *const end);
 
 #define ptls_decode_open_block(src, end, capacity, block)                                                                          \
     do {                                                                                                                           \
@@ -862,7 +879,15 @@ static ptls_iovec_t ptls_iovec_init(const void *p, size_t len);
 
 inline ptls_iovec_t ptls_iovec_init(const void *p, size_t len)
 {
+#ifdef _WINDOWS
+/* suppress warning C4204: nonstandard extension used: non-constant aggregate initializer */
+#pragma warning( push )
+#pragma warning (disable : 4204 )
+#endif
     return (ptls_iovec_t){(uint8_t *)p, len};
+#ifdef _WINDOWS
+#pragma warning( pop )
+#endif
 }
 
 inline void ptls_buffer_init(ptls_buffer_t *buf, void *smallbuf, size_t smallbuf_size)
