@@ -205,6 +205,10 @@ struct st_ptls_t {
      * END_OF_EARLY_DATA
      */
     struct st_ptls_early_data_t *early_data;
+    /**
+     * user data
+     */
+    void *data_ptr;
 };
 
 struct st_ptls_record_t {
@@ -3034,6 +3038,11 @@ int ptls_handshake_is_complete(ptls_t *tls)
 int ptls_is_psk_handshake(ptls_t *tls)
 {
     return tls->is_psk_handshake;
+}
+
+void **ptls_get_data_ptr(ptls_t *tls)
+{
+    return &tls->data_ptr;
 }
 
 static int handle_handshake_message(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t message, int is_end_of_record,
