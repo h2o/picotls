@@ -361,9 +361,9 @@ PTLS_CALLBACK_TYPE(int, sign_certificate, ptls_t *tls, uint16_t *selected_algori
  * callback that should be used for verifying CertificateVerify. If an error occurs between a successful return from this
  * callback to the invocation of the verify_sign callback, verify_sign is called with both data and sign set to an empty buffer.
  * The implementor of the callback should use that as the opportunity to free any temporary data allocated for the verify_sign
- * callback.
+ * callback. The ctx pointer argument equals the ctx argument given to the ptls_new function.
  */
-PTLS_CALLBACK_TYPE(int, verify_certificate, ptls_t *tls,
+PTLS_CALLBACK_TYPE(int, verify_certificate, void *ctx, ptls_t *tls,
                    int (**verify_sign)(void *verify_ctx, ptls_iovec_t data, ptls_iovec_t sign), void **verify_data,
                    ptls_iovec_t *certs, size_t num_certs);
 /**
@@ -691,13 +691,14 @@ int ptls_decode64(uint64_t *value, const uint8_t **src, const uint8_t *end);
 
 /**
  * create a object to handle new TLS connection. Client-side of a TLS connection is created if server_name is non-NULL. Otherwise,
- * a server-side connection is created.
+ * a server-side connection is created. The verify_certificate_ctx will be given to the verify_certificate callback (can be NULL).
  */
-ptls_t *ptls_new(ptls_context_t *ctx, int is_server);
+ptls_t *ptls_new(ptls_context_t *ctx, int is_server, void *verfify_certificate_ctx);
 /**
- * releases all resources associated to the object
+ * releases all resources associated to the object. The free_verify_certificate_ctx function will be used to free the
+ * verify_certificate_ctx (can be NULL).
  */
-void ptls_free(ptls_t *tls);
+void ptls_free(ptls_t *tls, void (*free_verify_certificate_ctx)(void *ctx));
 /**
  * returns address of the crypto callbacks that the connection is using
  */
