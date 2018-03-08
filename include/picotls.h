@@ -741,6 +741,10 @@ int ptls_handshake_is_complete(ptls_t *tls);
  */
 int ptls_is_psk_handshake(ptls_t *tls);
 /**
+ * returns a pointer to user data pointer (client is reponsible for freeing the associated data prior to calling ptls_free)
+ */
+void **ptls_get_data_ptr(ptls_t *tls);
+/**
  * proceeds with the handshake, optionally taking some input from peer. The function returns zero in case the handshake completed
  * successfully. PTLS_ERROR_IN_PROGRESS is returned in case the handshake is incomplete. Otherwise, an error value is returned. The
  * contents of sendbuf should be sent to the client, regardless of whether if an error is returned. inlen is an argument used for
