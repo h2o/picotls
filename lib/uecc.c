@@ -216,7 +216,7 @@ size_t ptls_minicrypto_asn1_decode_private_key(ptls_asn1_pkcs8_private_key_t *pk
     byte_index = ptls_asn1_get_expected_type_and_length(bytes, bytes_max, byte_index, 0x30, &seq0_length, NULL, &last_byte0,
                                                         decode_error, log_ctx);
 
-    if (decode_error == 0 && bytes_max != last_byte0) {
+    if (*decode_error == 0 && bytes_max != last_byte0) {
         byte_index = ptls_asn1_error_message("Length larger than message", bytes_max, byte_index, 0, log_ctx);
         *decode_error = PTLS_ERROR_BER_EXCESSIVE_LENGTH;
     }
