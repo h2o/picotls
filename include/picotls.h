@@ -239,7 +239,7 @@ typedef const struct st_ptls_aead_algorithm_t {
     /**
      * the underlying key stream
      */
-    const ptls_cipher_algorithm_t *ctr_cipher;
+    ptls_cipher_algorithm_t *ctr_cipher;
     /**
      * key size
      */
@@ -472,6 +472,11 @@ typedef struct st_ptls_raw_extension_t {
 /**
  * optional arguments to client-driven handshake
  */
+#ifdef _WINDOWS
+/* suppress warning C4201: nonstandard extension used: nameless struct/union */
+#pragma warning(push)
+#pragma warning(disable : 4201)
+#endif
 typedef struct st_ptls_handshake_properties_t {
     union {
         struct {
@@ -544,6 +549,9 @@ typedef struct st_ptls_handshake_properties_t {
      */
     int (*collected_extensions)(ptls_t *tls, struct st_ptls_handshake_properties_t *properties, ptls_raw_extension_t *extensions);
 } ptls_handshake_properties_t;
+#ifdef _WINDOWS
+#pragma warning(pop)
+#endif
 
 /**
  * builds a new ptls_iovec_t instance using the supplied parameters
@@ -859,10 +867,15 @@ extern void (*volatile ptls_clear_memory)(void *p, size_t len);
 static ptls_iovec_t ptls_iovec_init(const void *p, size_t len);
 
 /* inline functions */
-
 inline ptls_iovec_t ptls_iovec_init(const void *p, size_t len)
 {
-    return (ptls_iovec_t){(uint8_t *)p, len};
+    /* avoid the "return (ptls_iovec_t){(uint8_t *)p, len};" construct because it requires C99
+     * and triggers a warning "C4204: nonstandard extension used: non-constant aggregate initializer"
+     * in Visual Studio */
+    ptls_iovec_t r;
+    r.base = (uint8_t *)p;
+    r.len = len;
+    return r;
 }
 
 inline void ptls_buffer_init(ptls_buffer_t *buf, void *smallbuf, size_t smallbuf_size)
