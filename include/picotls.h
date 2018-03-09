@@ -474,8 +474,8 @@ typedef struct st_ptls_raw_extension_t {
  */
 #ifdef _WINDOWS
 /* suppress warning C4201: nonstandard extension used: nameless struct/union */
-#pragma warning( push )
-#pragma warning (disable : 4201 )
+#pragma warning(push)
+#pragma warning(disable : 4201)
 #endif
 typedef struct st_ptls_handshake_properties_t {
     union {
@@ -550,9 +550,8 @@ typedef struct st_ptls_handshake_properties_t {
     int (*collected_extensions)(ptls_t *tls, struct st_ptls_handshake_properties_t *properties, ptls_raw_extension_t *extensions);
 } ptls_handshake_properties_t;
 #ifdef _WINDOWS
-#pragma warning( pop )
+#pragma warning(pop)
 #endif
-
 
 /**
  * builds a new ptls_iovec_t instance using the supplied parameters
@@ -653,9 +652,9 @@ int ptls_buffer_push_asn1_ubigint(ptls_buffer_t *buf, const void *bignum, size_t
         ptls_buffer_push_asn1_block((buf), block);                                                                                 \
     } while (0)
 
-int ptls_decode16(uint16_t *value, const uint8_t **src, const uint8_t * end);
-int ptls_decode32(uint32_t *value, const uint8_t **src, const uint8_t * end);
-int ptls_decode64(uint64_t *value, const uint8_t **src, const uint8_t * end);
+int ptls_decode16(uint16_t *value, const uint8_t **src, const uint8_t *end);
+int ptls_decode32(uint32_t *value, const uint8_t **src, const uint8_t *end);
+int ptls_decode64(uint64_t *value, const uint8_t **src, const uint8_t *end);
 
 #define ptls_decode_open_block(src, end, capacity, block)                                                                          \
     do {                                                                                                                           \
