@@ -2894,14 +2894,20 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
     /* try psk handshake */
     if (!is_second_flight && ch.psk.hash_end != 0 &&
         (ch.psk.ke_modes & ((1u << PTLS_PSK_KE_MODE_PSK) | (1u << PTLS_PSK_KE_MODE_PSK_DHE))) != 0 &&
-        tls->ctx->encrypt_ticket != NULL) {
+        tls->ctx->encrypt_ticket != NULL && tls->ctx->require_client_authentication == 0) {
         if ((ret = try_psk_handshake(tls, &psk_index, &accept_early_data, &ch,
-                                     ptls_iovec_init(message.base, ch.psk.hash_end - message.base))) != 0)
+                                     ptls_iovec_init(message.base, ch.psk.hash_end - message.base))) != 0) {
             goto Exit;
+        }
     }
 
-    /* adjust key_schedule, determine handshake mode */
-    if (psk_index == SIZE_MAX) {
+    /* If client authentication is enabled, we always force a full handshake.
+     * TODO: Check for `post_handshake_auth` extension and if that is present, do not force full handshake!
+     *       Remove also the check `require_client_authentication == 0` above.
+     *
+     * adjust key_schedule, determine handshake mode
+     */
+    if (psk_index == SIZE_MAX || tls->ctx->require_client_authentication == 1) {
         key_schedule_update_hash(tls->key_schedule, message.base, message.len);
         if (!is_second_flight) {
             assert(tls->key_schedule->generation == 0);
