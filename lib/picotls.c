@@ -2121,7 +2121,18 @@ static int client_handle_finished(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iove
         }
         if ((ret = retire_early_data_secret(tls, 1)) != 0)
             goto Exit;
-    } else if (tls->client.received_certificate_request == 1) {
+    }
+
+    if (tls->client.received_certificate_request == 1) {
+        /* If this is a resumed session, the server must not send the certificate request in the handshake */
+        if (tls->is_psk_handshake == 1) {
+            ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+            /* reset the certificate request */
+            memset(&tls->client.certificate_request, 0, sizeof(ptls_certificate_request_t));
+
+            goto Exit;
+        }
+
         ret = send_certificate_and_certificate_verify(tls, sendbuf, &tls->client.certificate_request.signature_algorithms,
                                                       &tls->client.certificate_request.certificate_request_context,
                                                       PTLS_CLIENT_CERTIFICATE_VERIFY_CONTEXT_STRING, 0);
@@ -2130,7 +2141,7 @@ static int client_handle_finished(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iove
         memset(&tls->client.certificate_request, 0, sizeof(ptls_certificate_request_t));
 
         if (ret != 0) {
-          goto Exit;
+            goto Exit;
         }
     }
 
