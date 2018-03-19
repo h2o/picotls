@@ -26,6 +26,7 @@
 #include <string.h>
 #include <stdio.h>
 #include "picotls.h"
+#include "picotls/minicrypto.h"
 #include "../deps/picotest/picotest.h"
 #include "../lib/picotls.c"
 #include "test.h"
@@ -332,9 +333,9 @@ static int save_client_hello(ptls_on_client_hello_t *self, ptls_t *tls, ptls_iov
     return 0;
 }
 
-enum { TEST_HANDSHAKE_FULL, TEST_HANDSHAKE_HRR, TEST_HANDSHAKE_HRR_STATELESS, TEST_HANDSHAKE_RESUME, TEST_HANDSHAKE_EARLY_DATA };
+enum { TEST_HANDSHAKE_1RTT, TEST_HANDSHAKE_2RTT, TEST_HANDSHAKE_HRR, TEST_HANDSHAKE_HRR_STATELESS, TEST_HANDSHAKE_EARLY_DATA };
 
-static void test_handshake(ptls_iovec_t ticket, int mode, int check_ch)
+static void test_handshake(ptls_iovec_t ticket, int mode, int expect_ticket, int check_ch)
 {
     ptls_t *client, *server;
     ptls_handshake_properties_t client_hs_prop = {{{{NULL}, ticket}}}, server_hs_prop = {{{{NULL}}}};
@@ -380,6 +381,7 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int check_ch)
     ok(cbuf.off != 0);
 
     switch (mode) {
+    case TEST_HANDSHAKE_2RTT:
     case TEST_HANDSHAKE_HRR:
     case TEST_HANDSHAKE_HRR_STATELESS:
         consumed = cbuf.off;
@@ -458,7 +460,7 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int check_ch)
         ok(ptls_get_negotiated_protocol(server) == NULL);
     }
 
-    if (mode >= TEST_HANDSHAKE_RESUME) {
+    if (expect_ticket) {
         ok(consumed < sbuf.off);
         memmove(sbuf.base, sbuf.base + consumed, sbuf.off - consumed);
         sbuf.off -= consumed;
@@ -525,25 +527,25 @@ static int sign_certificate(ptls_sign_certificate_t *self, ptls_t *tls, uint16_t
 static void test_full_handshake(void)
 {
     sc_callcnt = 0;
-    test_handshake(ptls_iovec_init(NULL, 0), TEST_HANDSHAKE_FULL, 0);
+    test_handshake(ptls_iovec_init(NULL, 0), TEST_HANDSHAKE_1RTT, 0, 0);
     ok(sc_callcnt == 1);
-    test_handshake(ptls_iovec_init(NULL, 0), TEST_HANDSHAKE_FULL, 0);
+    test_handshake(ptls_iovec_init(NULL, 0), TEST_HANDSHAKE_1RTT, 0, 0);
     ok(sc_callcnt == 2);
-    test_handshake(ptls_iovec_init(NULL, 0), TEST_HANDSHAKE_FULL, 1);
+    test_handshake(ptls_iovec_init(NULL, 0), TEST_HANDSHAKE_1RTT, 0, 1);
     ok(sc_callcnt == 3);
 }
 
 static void test_hrr_handshake(void)
 {
     sc_callcnt = 0;
-    test_handshake(ptls_iovec_init(NULL, 0), TEST_HANDSHAKE_HRR, 0);
+    test_handshake(ptls_iovec_init(NULL, 0), TEST_HANDSHAKE_HRR, 0, 0);
     ok(sc_callcnt == 1);
 }
 
 static void test_hrr_stateless_handshake(void)
 {
     sc_callcnt = 0;
-    test_handshake(ptls_iovec_init(NULL, 0), TEST_HANDSHAKE_HRR_STATELESS, 0);
+    test_handshake(ptls_iovec_init(NULL, 0), TEST_HANDSHAKE_HRR_STATELESS, 0, 0);
     ok(sc_callcnt == 1);
 }
 
@@ -569,8 +571,18 @@ static int save_ticket(ptls_save_ticket_t *self, ptls_t *tls, ptls_iovec_t src)
     return 0;
 }
 
-static void test_resumption(void)
+static void do_test_resumption(int different_preferred_key_share)
 {
+    assert(ctx->key_exchanges[0]->id == ctx_peer->key_exchanges[0]->id);
+    assert(ctx->key_exchanges[1] == NULL);
+    assert(ctx_peer->key_exchanges[1] == NULL);
+    assert(ctx->key_exchanges[0]->id != ptls_minicrypto_x25519.id);
+    ptls_key_exchange_algorithm_t *different_key_exchanges[] = {&ptls_minicrypto_x25519, ctx->key_exchanges[0], NULL},
+                                  **key_exchanges_orig = ctx->key_exchanges;
+
+    if (different_preferred_key_share)
+        ctx->key_exchanges = different_key_exchanges;
+
     ptls_encrypt_ticket_t et = {copy_ticket};
     ptls_save_ticket_t st = {save_ticket};
 
@@ -586,26 +598,26 @@ static void test_resumption(void)
     ctx->save_ticket = &st;
 
     sc_callcnt = 0;
-    test_handshake(saved_ticket, TEST_HANDSHAKE_RESUME, 0);
+    test_handshake(saved_ticket, different_preferred_key_share ? TEST_HANDSHAKE_2RTT : TEST_HANDSHAKE_1RTT, 1, 0);
     ok(sc_callcnt == 1);
     ok(saved_ticket.base != NULL);
 
     /* psk using saved ticket */
-    test_handshake(saved_ticket, TEST_HANDSHAKE_RESUME, 0);
+    test_handshake(saved_ticket, TEST_HANDSHAKE_1RTT, 1, 0);
     ok(sc_callcnt == 1);
 
     /* 0-rtt psk using saved ticket */
-    test_handshake(saved_ticket, TEST_HANDSHAKE_EARLY_DATA, 0);
+    test_handshake(saved_ticket, TEST_HANDSHAKE_EARLY_DATA, 1, 0);
     ok(sc_callcnt == 1);
 
     ctx->require_dhe_on_psk = 1;
 
     /* psk-dhe using saved ticket */
-    test_handshake(saved_ticket, TEST_HANDSHAKE_RESUME, 0);
+    test_handshake(saved_ticket, TEST_HANDSHAKE_1RTT, 1, 0);
     ok(sc_callcnt == 1);
 
     /* 0-rtt psk-dhe using saved ticket */
-    test_handshake(saved_ticket, TEST_HANDSHAKE_EARLY_DATA, 0);
+    test_handshake(saved_ticket, TEST_HANDSHAKE_EARLY_DATA, 1, 0);
     ok(sc_callcnt == 1);
 
     ctx->require_dhe_on_psk = 0;
@@ -613,6 +625,19 @@ static void test_resumption(void)
     ctx_peer->max_early_data_size = 0;
     ctx_peer->encrypt_ticket = NULL;
     ctx->save_ticket = NULL;
+    ctx->key_exchanges = key_exchanges_orig;
+}
+
+static void test_resumption(void)
+{
+    do_test_resumption(0);
+}
+
+static void test_resumption_different_preferred_key_share(void)
+{
+    if (ctx == ctx_peer)
+        return;
+    do_test_resumption(1);
 }
 
 static void test_enforce_retry(int use_cookie)
@@ -782,6 +807,7 @@ void test_picotls(void)
     subtest("hrr-handshake", test_hrr_handshake);
     subtest("hrr-stateless-handshake", test_hrr_stateless_handshake);
     subtest("resumption", test_resumption);
+    subtest("resumption-different-preferred-key-share", test_resumption_different_preferred_key_share);
 
     subtest("enforce-retry-stateful", test_enforce_retry_stateful);
     subtest("enforce-retry-stateless", test_enforce_retry_stateless);
