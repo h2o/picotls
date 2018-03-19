@@ -472,7 +472,7 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int expect_ticket, int
         ok(ptls_get_negotiated_protocol(server) == NULL);
     }
 
-    if (mode >= TEST_HANDSHAKE_RESUME) {
+    if (expect_ticket) {
         ok(consumed < sbuf.off);
         memmove(sbuf.base, sbuf.base + consumed, sbuf.off - consumed);
         sbuf.off -= consumed;
@@ -488,15 +488,6 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int expect_ticket, int
         ok(ret == 0);
         ok(ptls_handshake_is_complete(server));
         cbuf.off = 0;
-    }
-
-    if (expect_ticket) {
-        ok(consumed < sbuf.off);
-        memmove(sbuf.base, sbuf.base + consumed, sbuf.off - consumed);
-        sbuf.off -= consumed;
-    } else if (require_client_authentication == 0) {
-        ok(consumed == sbuf.off);
-        sbuf.off = 0;
     }
 
     if (mode != TEST_HANDSHAKE_EARLY_DATA || require_client_authentication == 1) {
@@ -571,21 +562,21 @@ static void test_full_handshake_impl(int require_client_authentication)
 {
     sc_callcnt = 0;
 
-    test_handshake(ptls_iovec_init(NULL, 0), TEST_HANDSHAKE_FULL, 0, 0, require_client_authentication);
+    test_handshake(ptls_iovec_init(NULL, 0), TEST_HANDSHAKE_1RTT, 0, 0, require_client_authentication);
     if (require_client_authentication) {
         ok(sc_callcnt == 2);
     } else {
         ok(sc_callcnt == 1);
     }
 
-    test_handshake(ptls_iovec_init(NULL, 0), TEST_HANDSHAKE_FULL, 0, 0, require_client_authentication);
+    test_handshake(ptls_iovec_init(NULL, 0), TEST_HANDSHAKE_1RTT, 0, 0, require_client_authentication);
     if (require_client_authentication) {
         ok(sc_callcnt == 4);
     } else {
         ok(sc_callcnt == 2);
     }
 
-    test_handshake(ptls_iovec_init(NULL, 0), TEST_HANDSHAKE_FULL, 0, 1, require_client_authentication);
+    test_handshake(ptls_iovec_init(NULL, 0), TEST_HANDSHAKE_1RTT, 0, 1, require_client_authentication);
     if (require_client_authentication) {
         ok(sc_callcnt == 6);
     } else {
@@ -606,14 +597,14 @@ static void test_full_handshake_with_client_authentication(void)
 static void test_hrr_handshake(void)
 {
     sc_callcnt = 0;
-    test_handshake(ptls_iovec_init(NULL, 0), TEST_HANDSHAKE_HRR, 0, 0);
+    test_handshake(ptls_iovec_init(NULL, 0), TEST_HANDSHAKE_HRR, 0, 0, 0);
     ok(sc_callcnt == 1);
 }
 
 static void test_hrr_stateless_handshake(void)
 {
     sc_callcnt = 0;
-    test_handshake(ptls_iovec_init(NULL, 0), TEST_HANDSHAKE_HRR_STATELESS, 0, 0);
+    test_handshake(ptls_iovec_init(NULL, 0), TEST_HANDSHAKE_HRR_STATELESS, 0, 0, 0);
     ok(sc_callcnt == 1);
 }
 
@@ -715,22 +706,18 @@ static void test_resumption_impl(int different_preferred_key_share, int require_
 
 static void test_resumption(void)
 {
-    test_resumption_impl(0);
+    test_resumption_impl(0, 0);
 }
 
 static void test_resumption_different_preferred_key_share(void)
 {
     if (ctx == ctx_peer)
         return;
-    test_resumption_impl(1);
-}
-
-static void test_resumption(void) {
-    test_resumption_impl(0);
+    test_resumption_impl(1, 0);
 }
 
 static void test_resumption_with_client_authentication(void) {
-    test_resumption_impl(1);
+    test_resumption_impl(0, 1);
 }
 
 static void test_enforce_retry(int use_cookie)
