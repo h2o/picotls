@@ -594,15 +594,21 @@ static void test_resumption(void)
     test_handshake(saved_ticket, TEST_HANDSHAKE_RESUME, 0);
     ok(sc_callcnt == 1);
 
-    /* psk-dhe using saved ticket */
-    ctx->require_dhe_on_psk = 1;
-    test_handshake(saved_ticket, TEST_HANDSHAKE_RESUME, 0);
-    ok(sc_callcnt == 1);
-    ctx->require_dhe_on_psk = 0;
-
     /* 0-rtt psk using saved ticket */
     test_handshake(saved_ticket, TEST_HANDSHAKE_EARLY_DATA, 0);
+    ok(sc_callcnt == 1);
 
+    ctx->require_dhe_on_psk = 1;
+
+    /* psk-dhe using saved ticket */
+    test_handshake(saved_ticket, TEST_HANDSHAKE_RESUME, 0);
+    ok(sc_callcnt == 1);
+
+    /* 0-rtt psk-dhe using saved ticket */
+    test_handshake(saved_ticket, TEST_HANDSHAKE_EARLY_DATA, 0);
+    ok(sc_callcnt == 1);
+
+    ctx->require_dhe_on_psk = 0;
     ctx_peer->ticket_lifetime = 0;
     ctx_peer->max_early_data_size = 0;
     ctx_peer->encrypt_ticket = NULL;
