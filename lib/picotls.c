@@ -161,6 +161,10 @@ struct st_ptls_t {
      */
     char *negotiated_protocol;
     /**
+     * selected key-exchange
+     */
+    ptls_key_exchange_algorithm_t *key_share;
+    /**
      * selected cipher-suite
      */
     ptls_cipher_suite_t *cipher_suite;
@@ -186,10 +190,7 @@ struct st_ptls_t {
     union {
         struct {
             uint8_t legacy_session_id[16];
-            struct {
-                ptls_key_exchange_algorithm_t *algo;
-                ptls_key_exchange_context_t *ctx;
-            } key_exchange;
+            ptls_key_exchange_context_t *key_share_ctx;
             struct {
                 int (*cb)(void *verify_ctx, ptls_iovec_t data, ptls_iovec_t signature);
                 void *verify_ctx;
@@ -892,11 +893,11 @@ Exit:
     return ret;
 }
 
-static int decode_stored_session_ticket(ptls_context_t *ctx, ptls_cipher_suite_t **cs, ptls_iovec_t *secret,
-                                        uint32_t *obfuscated_ticket_age, ptls_iovec_t *ticket, uint32_t *max_early_data_size,
-                                        const uint8_t *src, const uint8_t *const end)
+static int decode_stored_session_ticket(ptls_context_t *ctx, ptls_key_exchange_algorithm_t **key_share, ptls_cipher_suite_t **cs,
+                                        ptls_iovec_t *secret, uint32_t *obfuscated_ticket_age, ptls_iovec_t *ticket,
+                                        uint32_t *max_early_data_size, const uint8_t *src, const uint8_t *const end)
 {
-    uint16_t csid;
+    uint16_t kxid, csid;
     uint32_t lifetime, age_add;
     uint64_t obtained_at, now;
     ptls_iovec_t nonce;
@@ -904,6 +905,8 @@ static int decode_stored_session_ticket(ptls_context_t *ctx, ptls_cipher_suite_t
 
     /* decode */
     if ((ret = ptls_decode64(&obtained_at, &src, end)) != 0)
+        goto Exit;
+    if ((ret = ptls_decode16(&kxid, &src, end)) != 0)
         goto Exit;
     if ((ret = ptls_decode16(&csid, &src, end)) != 0)
         goto Exit;
@@ -916,6 +919,18 @@ static int decode_stored_session_ticket(ptls_context_t *ctx, ptls_cipher_suite_t
         *secret = ptls_iovec_init(src, end - src);
         src = end;
     });
+
+    { /* determine the key-exchange */
+        ptls_key_exchange_algorithm_t **cand;
+        for (cand = ctx->key_exchanges; *cand != NULL; ++cand)
+            if ((*cand)->id == kxid)
+                break;
+        if (*cand == NULL) {
+            ret = PTLS_ERROR_LIBRARY;
+            goto Exit;
+        }
+        *key_share = *cand;
+    }
 
     { /* determine the cipher-suite */
         ptls_cipher_suite_t **cand;
@@ -986,12 +1001,12 @@ static int retire_early_data_secret(ptls_t *tls, int is_enc)
     return setup_traffic_protection(tls, is_enc, NULL, "CLIENT_HANDSHAKE_TRAFFIC_SECRET");
 }
 
-#define SESSION_IDENTIFIER_MAGIC "ptls0000" /* the number should be changed upon incompatible format change */
+#define SESSION_IDENTIFIER_MAGIC "ptls0001" /* the number should be changed upon incompatible format change */
 #define SESSION_IDENTIFIER_MAGIC_SIZE (sizeof(SESSION_IDENTIFIER_MAGIC) - 1)
 
 static int encode_session_identifier(ptls_context_t *ctx, ptls_buffer_t *buf, uint32_t ticket_age_add, ptls_iovec_t ticket_nonce,
-                                     struct st_ptls_key_schedule_t *sched, const char *server_name, uint16_t csid,
-                                     const char *negotiated_protocol)
+                                     struct st_ptls_key_schedule_t *sched, const char *server_name, uint16_t key_exchange_id,
+                                     uint16_t csid, const char *negotiated_protocol)
 {
     int ret = 0;
 
@@ -1008,6 +1023,8 @@ static int encode_session_identifier(ptls_context_t *ctx, ptls_buffer_t *buf, ui
                 goto Exit;
             buf->off += sched->hashes[0].algo->digest_size;
         });
+        /* key-exchange */
+        ptls_buffer_push16(buf, key_exchange_id);
         /* cipher-suite */
         ptls_buffer_push16(buf, csid);
         /* ticket_age_add */
@@ -1029,7 +1046,8 @@ Exit:
 }
 
 int decode_session_identifier(uint64_t *issued_at, ptls_iovec_t *psk, uint32_t *ticket_age_add, ptls_iovec_t *server_name,
-                              uint16_t *csid, ptls_iovec_t *negotiated_protocol, const uint8_t *src, const uint8_t *const end)
+                              uint16_t *key_exchange_id, uint16_t *csid, ptls_iovec_t *negotiated_protocol, const uint8_t *src,
+                              const uint8_t *const end)
 {
     int ret = 0;
 
@@ -1046,6 +1064,8 @@ int decode_session_identifier(uint64_t *issued_at, ptls_iovec_t *psk, uint32_t *
             *psk = ptls_iovec_init(src, end - src);
             src = end;
         });
+        if ((ret = ptls_decode16(key_exchange_id, &src, end)) != 0)
+            goto Exit;
         if ((ret = ptls_decode16(csid, &src, end)) != 0)
             goto Exit;
         if ((ret = ptls_decode32(ticket_age_add, &src, end)) != 0)
@@ -1176,7 +1196,7 @@ static int send_session_ticket(ptls_t *tls, ptls_buffer_t *sendbuf)
     /* build the raw nsk */
     ptls_buffer_init(&session_id, session_id_smallbuf, sizeof(session_id_smallbuf));
     ret = encode_session_identifier(tls->ctx, &session_id, ticket_age_add, ptls_iovec_init(NULL, 0), tls->key_schedule,
-                                    tls->server_name, tls->cipher_suite->id, tls->negotiated_protocol);
+                                    tls->server_name, tls->key_share->id, tls->cipher_suite->id, tls->negotiated_protocol);
     if (ret != 0)
         goto Exit;
 
@@ -1234,8 +1254,7 @@ Exit:
     return ret;
 }
 
-static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_handshake_properties_t *properties,
-                             ptls_key_exchange_algorithm_t *key_share, ptls_iovec_t *cookie)
+static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_handshake_properties_t *properties, ptls_iovec_t *cookie)
 {
     ptls_iovec_t resumption_secret = {NULL}, resumption_ticket;
     uint32_t obfuscated_ticket_age = 0;
@@ -1246,12 +1265,14 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_handshake
     if (properties != NULL) {
         /* setup resumption-related data. If successful, resumption_secret becomes a non-zero value. */
         if (properties->client.session_ticket.base != NULL) {
+            ptls_key_exchange_algorithm_t *key_share = NULL;
             ptls_cipher_suite_t *cipher_suite = NULL;
             uint32_t max_early_data_size;
-            if (decode_stored_session_ticket(tls->ctx, &cipher_suite, &resumption_secret, &obfuscated_ticket_age,
+            if (decode_stored_session_ticket(tls->ctx, &key_share, &cipher_suite, &resumption_secret, &obfuscated_ticket_age,
                                              &resumption_ticket, &max_early_data_size, properties->client.session_ticket.base,
                                              properties->client.session_ticket.base + properties->client.session_ticket.len) == 0) {
                 tls->client.offered_psk = 1;
+                tls->key_share = key_share;
                 tls->cipher_suite = cipher_suite;
                 if (!is_second_flight && max_early_data_size != 0 && properties->client.max_early_data_size != NULL) {
                     *properties->client.max_early_data_size = max_early_data_size;
@@ -1267,6 +1288,10 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_handshake
         if (properties->client.max_early_data_size != NULL && tls->early_data == NULL)
             *properties->client.max_early_data_size = 0;
     }
+
+    /* use the default key share if still not undetermined */
+    if (tls->key_share == NULL && !(properties != NULL && properties->client.negotiate_before_key_exchange))
+        tls->key_share = tls->ctx->key_exchanges[0];
 
     if (!is_second_flight) {
         tls->key_schedule = key_schedule_new(tls->cipher_suite, tls->ctx->cipher_suites);
@@ -1335,12 +1360,11 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_handshake
             });
             buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_KEY_SHARE, {
                 ptls_buffer_push_block(sendbuf, 2, {
-                    if (key_share != NULL) {
+                    if (tls->key_share != NULL) {
                         ptls_iovec_t pubkey;
-                        if ((ret = key_share->create(&tls->client.key_exchange.ctx, &pubkey)) != 0)
+                        if ((ret = tls->key_share->create(&tls->client.key_share_ctx, &pubkey)) != 0)
                             goto Exit;
-                        tls->client.key_exchange.algo = key_share;
-                        ptls_buffer_push16(sendbuf, tls->client.key_exchange.algo->id);
+                        ptls_buffer_push16(sendbuf, tls->key_share->id);
                         ptls_buffer_push_block(sendbuf, 2, { ptls_buffer_pushv(sendbuf, pubkey.base, pubkey.len); });
                     }
                 });
@@ -1507,7 +1531,7 @@ static int decode_server_hello(ptls_t *tls, struct st_ptls_server_hello_t *sh, c
                     ret = PTLS_ALERT_DECODE_ERROR;
                     goto Exit;
                 }
-                if (tls->client.key_exchange.algo == NULL || tls->client.key_exchange.algo->id != group) {
+                if (tls->key_share == NULL || tls->key_share->id != group) {
                     ret = PTLS_ALERT_ILLEGAL_PARAMETER;
                     goto Exit;
                 }
@@ -1573,31 +1597,34 @@ Exit:
 static int handle_hello_retry_request(ptls_t *tls, ptls_buffer_t *sendbuf, struct st_ptls_server_hello_t *sh, ptls_iovec_t message,
                                       ptls_handshake_properties_t *properties)
 {
-    ptls_key_exchange_algorithm_t **selected_group = NULL;
     int ret;
 
-    if (tls->client.key_exchange.ctx != NULL) {
-        tls->client.key_exchange.ctx->on_exchange(&tls->client.key_exchange.ctx, NULL, ptls_iovec_init(NULL, 0));
-        tls->client.key_exchange.ctx = NULL;
+    if (tls->client.key_share_ctx != NULL) {
+        tls->client.key_share_ctx->on_exchange(&tls->client.key_share_ctx, NULL, ptls_iovec_init(NULL, 0));
+        tls->client.key_share_ctx = NULL;
     }
 
     if (sh->retry_request.selected_group != UINT16_MAX) {
         /* we offer the first key_exchanges[0] as KEY_SHARE unless client.negotiate_before_key_exchange is set */
-        for (selected_group = tls->ctx->key_exchanges; *selected_group != NULL; ++selected_group)
-            if ((*selected_group)->id == sh->retry_request.selected_group)
+        ptls_key_exchange_algorithm_t **cand;
+        for (cand = tls->ctx->key_exchanges; *cand != NULL; ++cand)
+            if ((*cand)->id == sh->retry_request.selected_group)
                 break;
-        if (*selected_group == NULL) {
+        if (*cand == NULL) {
             ret = PTLS_ALERT_ILLEGAL_PARAMETER;
             goto Exit;
         }
+        tls->key_share = *cand;
+    } else if (tls->key_share != NULL) {
+        /* retain the key-share using in first CH, if server does not specify one */
     } else {
-        /* This will happen when there was no Key Share extension in the HRR */
-        selected_group = &tls->ctx->key_exchanges[0];
+        ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+        goto Exit;
     }
 
     key_schedule_transform_post_ch1hash(tls->key_schedule);
     key_schedule_update_hash(tls->key_schedule, message.base, message.len);
-    ret = send_client_hello(tls, sendbuf, properties, *selected_group, &sh->retry_request.cookie);
+    ret = send_client_hello(tls, sendbuf, properties, &sh->retry_request.cookie);
 
 Exit:
     return ret;
@@ -1628,7 +1655,7 @@ static int client_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
         goto Exit;
 
     if (sh.peerkey.base != NULL) {
-        if ((ret = tls->client.key_exchange.ctx->on_exchange(&tls->client.key_exchange.ctx, &ecdh_secret, sh.peerkey)) != 0)
+        if ((ret = tls->client.key_share_ctx->on_exchange(&tls->client.key_share_ctx, &ecdh_secret, sh.peerkey)) != 0)
             goto Exit;
     }
 
@@ -1905,6 +1932,7 @@ static int client_handle_new_session_ticket(ptls_t *tls, ptls_iovec_t message)
     uint8_t ticket_buf_small[512];
     ptls_buffer_init(&ticket_buf, ticket_buf_small, sizeof(ticket_buf_small));
     ptls_buffer_push64(&ticket_buf, tls->ctx->get_time->cb(tls->ctx->get_time));
+    ptls_buffer_push16(&ticket_buf, tls->key_share->id);
     ptls_buffer_push16(&ticket_buf, tls->cipher_suite->id);
     ptls_buffer_push_block(&ticket_buf, 3, { ptls_buffer_pushv(&ticket_buf, src, end - src); });
     ptls_buffer_push_block(&ticket_buf, 2, {
@@ -2272,7 +2300,7 @@ static int try_psk_handshake(ptls_t *tls, size_t *psk_index, int *accept_early_d
     ptls_iovec_t ticket_psk, ticket_server_name, ticket_negotiated_protocol;
     uint64_t issue_at, now = tls->ctx->get_time->cb(tls->ctx->get_time);
     uint32_t age_add;
-    uint16_t ticket_csid;
+    uint16_t ticket_key_exchange_id, ticket_csid;
     uint8_t decbuf_small[256], binder_key[PTLS_MAX_DIGEST_SIZE], verify_data[PTLS_MAX_DIGEST_SIZE];
     int ret;
 
@@ -2284,7 +2312,7 @@ static int try_psk_handshake(ptls_t *tls, size_t *psk_index, int *accept_early_d
         decbuf.off = 0;
         if ((tls->ctx->encrypt_ticket->cb(tls->ctx->encrypt_ticket, tls, 0, &decbuf, identity->identity)) != 0)
             continue;
-        if (decode_session_identifier(&issue_at, &ticket_psk, &age_add, &ticket_server_name, &ticket_csid,
+        if (decode_session_identifier(&issue_at, &ticket_psk, &age_add, &ticket_server_name, &ticket_key_exchange_id, &ticket_csid,
                                       &ticket_negotiated_protocol, decbuf.base, decbuf.base + decbuf.off) != 0)
             continue;
         /* check age */
@@ -2307,6 +2335,14 @@ static int try_psk_handshake(ptls_t *tls, size_t *psk_index, int *accept_early_d
         } else {
             if (tls->server_name != NULL)
                 continue;
+        }
+        { /* check key-exchange */
+            ptls_key_exchange_algorithm_t **a;
+            for (a = tls->ctx->key_exchanges; *a != NULL && (*a)->id != ticket_key_exchange_id; ++a)
+                ;
+            if (*a == NULL)
+                continue;
+            tls->key_share = *a;
         }
         /* check cipher-suite */
         if (ticket_csid != tls->cipher_suite->id)
@@ -2331,6 +2367,7 @@ static int try_psk_handshake(ptls_t *tls, size_t *psk_index, int *accept_early_d
     /* not found */
     *psk_index = SIZE_MAX;
     *accept_early_data = 0;
+    tls->key_share = NULL;
     ret = 0;
     goto Exit;
 
@@ -2651,6 +2688,7 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
         }
         if ((ret = key_share.algorithm->exchange(&pubkey, &ecdh_secret, key_share.peer_key)) != 0)
             goto Exit;
+        tls->key_share = key_share.algorithm;
     }
 
     /* send ServerHello */
@@ -2945,8 +2983,8 @@ void ptls_free(ptls_t *tls)
     if (tls->is_server) {
         /* nothing to do */
     } else {
-        if (tls->client.key_exchange.ctx != NULL)
-            tls->client.key_exchange.ctx->on_exchange(&tls->client.key_exchange.ctx, NULL, ptls_iovec_init(NULL, 0));
+        if (tls->client.key_share_ctx != NULL)
+            tls->client.key_share_ctx->on_exchange(&tls->client.key_share_ctx, NULL, ptls_iovec_init(NULL, 0));
         if (tls->client.certificate_verify.cb != NULL)
             tls->client.certificate_verify.cb(tls->client.certificate_verify.verify_ctx, ptls_iovec_init(NULL, 0),
                                               ptls_iovec_init(NULL, 0));
@@ -3305,9 +3343,7 @@ int ptls_handshake(ptls_t *tls, ptls_buffer_t *sendbuf, const void *input, size_
     case PTLS_STATE_CLIENT_HANDSHAKE_START:
         assert(input == NULL || *inlen == 0);
         assert(tls->ctx->key_exchanges[0] != NULL);
-        return send_client_hello(
-            tls, sendbuf, properties,
-            properties != NULL && properties->client.negotiate_before_key_exchange ? NULL : tls->ctx->key_exchanges[0], NULL);
+        return send_client_hello(tls, sendbuf, properties, NULL);
     default:
         break;
     }
