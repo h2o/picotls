@@ -27,6 +27,7 @@ extern "C" {
 #endif
 
 #include <assert.h>
+#include <stdlib.h>
 #include <inttypes.h>
 #include <sys/types.h>
 
@@ -874,6 +875,10 @@ extern void (*volatile ptls_clear_memory)(void *p, size_t len);
  *
  */
 static ptls_iovec_t ptls_iovec_init(const void *p, size_t len);
+/**
+ * Clears and frees the stored memory.
+ */
+static void ptls_iovec_free(ptls_iovec_t *vec);
 
 /* inline functions */
 inline ptls_iovec_t ptls_iovec_init(const void *p, size_t len)
@@ -885,6 +890,18 @@ inline ptls_iovec_t ptls_iovec_init(const void *p, size_t len)
     r.base = (uint8_t *)p;
     r.len = len;
     return r;
+}
+
+inline void ptls_iovec_free(ptls_iovec_t *vec)
+{
+    if (vec == NULL || vec->base == NULL || vec->len == 0) {
+        return;
+    }
+
+    ptls_clear_memory(vec->base, vec->len);
+    free(vec->base);
+    vec->base = NULL;
+    vec->len = 0;
 }
 
 inline void ptls_buffer_init(ptls_buffer_t *buf, void *smallbuf, size_t smallbuf_size)
