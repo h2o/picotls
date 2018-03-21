@@ -22,7 +22,6 @@
 #include <assert.h>
 #include <stddef.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #ifdef _WINDOWS
 #include "wincompat.h"
@@ -1836,12 +1835,23 @@ static int decode_certificate_request(ptls_certificate_request_t *cr, const uint
 
     /* certificate request context */
     ptls_decode_open_block(src, end, 1, {
-            if (end - src > 255) {
+            size_t length = end - src;
+            if (length > 255) {
                 ret = PTLS_ALERT_DECODE_ERROR;
                 goto Exit;
             }
 
-            cr->certificate_request_context = ptls_iovec_init(src, end - src);
+            if (length > 0) {
+                unsigned char *buf = malloc(length);
+
+                if (buf == NULL) {
+                    ret = PTLS_ERROR_NO_MEMORY;
+                    goto Exit;
+                }
+
+                memcpy(buf, src, length);
+                cr->certificate_request_context = ptls_iovec_init(buf, length);
+            }
             src = end;
     });
 
@@ -2127,6 +2137,7 @@ static int client_handle_finished(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iove
         /* If this is a resumed session, the server must not send the certificate request in the handshake */
         if (tls->is_psk_handshake == 1) {
             ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+            ptls_iovec_free(&tls->client.certificate_request.certificate_request_context);
             /* reset the certificate request */
             memset(&tls->client.certificate_request, 0, sizeof(ptls_certificate_request_t));
 
@@ -2137,6 +2148,7 @@ static int client_handle_finished(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iove
                                                       &tls->client.certificate_request.certificate_request_context,
                                                       PTLS_CLIENT_CERTIFICATE_VERIFY_CONTEXT_STRING, 0);
 
+        ptls_iovec_free(&tls->client.certificate_request.certificate_request_context);
         /* reset the certificate request */
         memset(&tls->client.certificate_request, 0, sizeof(ptls_certificate_request_t));
 
@@ -3241,6 +3253,8 @@ void ptls_free(ptls_t *tls)
     } else {
         if (tls->client.key_share_ctx != NULL)
             tls->client.key_share_ctx->on_exchange(&tls->client.key_share_ctx, NULL, ptls_iovec_init(NULL, 0));
+
+        ptls_iovec_free(&tls->client.certificate_request.certificate_request_context);
     }
     if (tls->certificate_verify.cb != NULL) {
         tls->certificate_verify.cb(tls->certificate_verify.verify_ctx, ptls_iovec_init(NULL, 0),
