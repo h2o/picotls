@@ -475,12 +475,23 @@ Exit:
     return ret;
 }
 
+static void build_aad(uint8_t aad[5], size_t reclen)
+{
+    aad[0] = PTLS_CONTENT_TYPE_APPDATA;
+    aad[1] = 0x03;
+    aad[2] = 0x03;
+    aad[3] = (uint8_t)(reclen >> 8);
+    aad[4] = (uint8_t)reclen;
+}
+
 static size_t aead_encrypt(struct st_ptls_traffic_protection_t *ctx, void *output, const void *input, size_t inlen,
                            uint8_t content_type)
 {
+    uint8_t aad[5];
     size_t off = 0;
 
-    ptls_aead_encrypt_init(ctx->aead, ctx->seq++, NULL, 0);
+    build_aad(aad, inlen + 1 + ctx->aead->algo->tag_size);
+    ptls_aead_encrypt_init(ctx->aead, ctx->seq++, aad, sizeof(aad));
     off += ptls_aead_encrypt_update(ctx->aead, ((uint8_t *)output) + off, input, inlen);
     off += ptls_aead_encrypt_update(ctx->aead, ((uint8_t *)output) + off, &content_type, 1);
     off += ptls_aead_encrypt_final(ctx->aead, ((uint8_t *)output) + off);
@@ -490,7 +501,10 @@ static size_t aead_encrypt(struct st_ptls_traffic_protection_t *ctx, void *outpu
 
 static int aead_decrypt(struct st_ptls_traffic_protection_t *ctx, void *output, size_t *outlen, const void *input, size_t inlen)
 {
-    if ((*outlen = ptls_aead_decrypt(ctx->aead, output, input, inlen, ctx->seq, NULL, 0)) == SIZE_MAX)
+    uint8_t aad[5];
+
+    build_aad(aad, inlen);
+    if ((*outlen = ptls_aead_decrypt(ctx->aead, output, input, inlen, ctx->seq, aad, sizeof(aad))) == SIZE_MAX)
         return PTLS_ALERT_BAD_RECORD_MAC;
     ++ctx->seq;
     return 0;
