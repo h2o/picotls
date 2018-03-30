@@ -74,7 +74,7 @@
 #define PTLS_EXTENSION_TYPE_PSK_KEY_EXCHANGE_MODES 45
 #define PTLS_EXTENSION_TYPE_KEY_SHARE 51
 
-#define PTLS_PROTOCOL_VERSION_DRAFT23 0x7f17
+#define PTLS_PROTOCOL_VERSION_DRAFT26 0x7f1a
 
 #define PTLS_SERVER_NAME_TYPE_HOSTNAME 0
 
@@ -1355,7 +1355,7 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_handshake
                 });
             }
             buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SUPPORTED_VERSIONS, {
-                ptls_buffer_push_block(sendbuf, 1, { ptls_buffer_push16(sendbuf, PTLS_PROTOCOL_VERSION_DRAFT23); });
+                ptls_buffer_push_block(sendbuf, 1, { ptls_buffer_push16(sendbuf, PTLS_PROTOCOL_VERSION_DRAFT26); });
             });
             buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SIGNATURE_ALGORITHMS, {
                 ptls_buffer_push_block(sendbuf, 2, {
@@ -1581,7 +1581,7 @@ static int decode_server_hello(ptls_t *tls, struct st_ptls_server_hello_t *sh, c
         }
     });
 
-    if (found_version != PTLS_PROTOCOL_VERSION_DRAFT23) {
+    if (found_version != PTLS_PROTOCOL_VERSION_DRAFT26) {
         ret = PTLS_ALERT_ILLEGAL_PARAMETER;
         goto Exit;
     }
@@ -2172,7 +2172,7 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
                     uint16_t v;
                     if ((ret = ptls_decode16(&v, &src, end)) != 0)
                         goto Exit;
-                    if (ch->selected_version == 0 && v == PTLS_PROTOCOL_VERSION_DRAFT23)
+                    if (ch->selected_version == 0 && v == PTLS_PROTOCOL_VERSION_DRAFT26)
                         ch->selected_version = v;
                 } while (src != end);
             });
@@ -2273,7 +2273,7 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
 
     /* check if client hello make sense */
     switch (ch->selected_version) {
-    case PTLS_PROTOCOL_VERSION_DRAFT23:
+    case PTLS_PROTOCOL_VERSION_DRAFT26:
         if (!(ch->compression_methods.count == 1 && ch->compression_methods.ids[0] == 0)) {
             ret = PTLS_ALERT_ILLEGAL_PARAMETER;
             goto Exit;
@@ -2461,7 +2461,7 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
         ptls_buffer_push(sendbuf, 0);                                                                                              \
         ptls_buffer_push_block(sendbuf, 2, {                                                                                       \
             buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SUPPORTED_VERSIONS,                                                 \
-                                  { ptls_buffer_push16(sendbuf, PTLS_PROTOCOL_VERSION_DRAFT23); });                                \
+                                  { ptls_buffer_push16(sendbuf, PTLS_PROTOCOL_VERSION_DRAFT26); });                                \
             do {                                                                                                                   \
                 extensions                                                                                                         \
             } while (0);                                                                                                           \
