@@ -42,13 +42,15 @@
 #include "picotls.h"
 #include "picotls/openssl.h"
 
-#if (OPENSSL_VERSION_NUMBER < 0x10100000L || defined(LIBRESSL_VERSION_NUMBER))
-#define OPENSSL_1_0_API 1
+#if !defined(LIBRESSL_VERSION_NUMBER) && OPENSSL_VERSION_NUMBER >= 0x10100000L
+#define OPENSSL_1_1_API 1
+#elif defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER >= 0x2070000fL
+#define OPENSSL_1_1_API 1
 #else
-#define OPENSSL_1_0_API 0
+#define OPENSSL_1_1_API 0
 #endif
 
-#if OPENSSL_1_0_API
+#if !OPENSSL_1_1_API
 
 #define EVP_PKEY_up_ref(p) CRYPTO_add(&(p)->references, 1, CRYPTO_LOCK_EVP_PKEY)
 #define X509_STORE_up_ref(p) CRYPTO_add(&(p)->references, 1, CRYPTO_LOCK_X509_STORE)
