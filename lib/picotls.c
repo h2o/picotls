@@ -478,8 +478,8 @@ Exit:
 static void build_aad(uint8_t aad[5], size_t reclen)
 {
     aad[0] = PTLS_CONTENT_TYPE_APPDATA;
-    aad[1] = 0x03;
-    aad[2] = 0x03;
+    aad[1] = PTLS_RECORD_VERSION_MAJOR;
+    aad[2] = PTLS_RECORD_VERSION_MINOR;
     aad[3] = (uint8_t)(reclen >> 8);
     aad[4] = (uint8_t)reclen;
 }
