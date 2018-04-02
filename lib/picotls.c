@@ -74,7 +74,7 @@
 #define PTLS_EXTENSION_TYPE_PSK_KEY_EXCHANGE_MODES 45
 #define PTLS_EXTENSION_TYPE_KEY_SHARE 51
 
-#define PTLS_PROTOCOL_VERSION_DRAFT23 0x7f17
+#define PTLS_PROTOCOL_VERSION_DRAFT26 0x7f1a
 
 #define PTLS_SERVER_NAME_TYPE_HOSTNAME 0
 
@@ -475,12 +475,23 @@ Exit:
     return ret;
 }
 
+static void build_aad(uint8_t aad[5], size_t reclen)
+{
+    aad[0] = PTLS_CONTENT_TYPE_APPDATA;
+    aad[1] = PTLS_RECORD_VERSION_MAJOR;
+    aad[2] = PTLS_RECORD_VERSION_MINOR;
+    aad[3] = (uint8_t)(reclen >> 8);
+    aad[4] = (uint8_t)reclen;
+}
+
 static size_t aead_encrypt(struct st_ptls_traffic_protection_t *ctx, void *output, const void *input, size_t inlen,
                            uint8_t content_type)
 {
+    uint8_t aad[5];
     size_t off = 0;
 
-    ptls_aead_encrypt_init(ctx->aead, ctx->seq++, NULL, 0);
+    build_aad(aad, inlen + 1 + ctx->aead->algo->tag_size);
+    ptls_aead_encrypt_init(ctx->aead, ctx->seq++, aad, sizeof(aad));
     off += ptls_aead_encrypt_update(ctx->aead, ((uint8_t *)output) + off, input, inlen);
     off += ptls_aead_encrypt_update(ctx->aead, ((uint8_t *)output) + off, &content_type, 1);
     off += ptls_aead_encrypt_final(ctx->aead, ((uint8_t *)output) + off);
@@ -490,7 +501,10 @@ static size_t aead_encrypt(struct st_ptls_traffic_protection_t *ctx, void *outpu
 
 static int aead_decrypt(struct st_ptls_traffic_protection_t *ctx, void *output, size_t *outlen, const void *input, size_t inlen)
 {
-    if ((*outlen = ptls_aead_decrypt(ctx->aead, output, input, inlen, ctx->seq, NULL, 0)) == SIZE_MAX)
+    uint8_t aad[5];
+
+    build_aad(aad, inlen);
+    if ((*outlen = ptls_aead_decrypt(ctx->aead, output, input, inlen, ctx->seq, aad, sizeof(aad))) == SIZE_MAX)
         return PTLS_ALERT_BAD_RECORD_MAC;
     ++ctx->seq;
     return 0;
@@ -1341,7 +1355,7 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_handshake
                 });
             }
             buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SUPPORTED_VERSIONS, {
-                ptls_buffer_push_block(sendbuf, 1, { ptls_buffer_push16(sendbuf, PTLS_PROTOCOL_VERSION_DRAFT23); });
+                ptls_buffer_push_block(sendbuf, 1, { ptls_buffer_push16(sendbuf, PTLS_PROTOCOL_VERSION_DRAFT26); });
             });
             buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SIGNATURE_ALGORITHMS, {
                 ptls_buffer_push_block(sendbuf, 2, {
@@ -1567,7 +1581,7 @@ static int decode_server_hello(ptls_t *tls, struct st_ptls_server_hello_t *sh, c
         }
     });
 
-    if (found_version != PTLS_PROTOCOL_VERSION_DRAFT23) {
+    if (found_version != PTLS_PROTOCOL_VERSION_DRAFT26) {
         ret = PTLS_ALERT_ILLEGAL_PARAMETER;
         goto Exit;
     }
@@ -2158,7 +2172,7 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
                     uint16_t v;
                     if ((ret = ptls_decode16(&v, &src, end)) != 0)
                         goto Exit;
-                    if (ch->selected_version == 0 && v == PTLS_PROTOCOL_VERSION_DRAFT23)
+                    if (ch->selected_version == 0 && v == PTLS_PROTOCOL_VERSION_DRAFT26)
                         ch->selected_version = v;
                 } while (src != end);
             });
@@ -2259,7 +2273,7 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
 
     /* check if client hello make sense */
     switch (ch->selected_version) {
-    case PTLS_PROTOCOL_VERSION_DRAFT23:
+    case PTLS_PROTOCOL_VERSION_DRAFT26:
         if (!(ch->compression_methods.count == 1 && ch->compression_methods.ids[0] == 0)) {
             ret = PTLS_ALERT_ILLEGAL_PARAMETER;
             goto Exit;
@@ -2447,7 +2461,7 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
         ptls_buffer_push(sendbuf, 0);                                                                                              \
         ptls_buffer_push_block(sendbuf, 2, {                                                                                       \
             buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SUPPORTED_VERSIONS,                                                 \
-                                  { ptls_buffer_push16(sendbuf, PTLS_PROTOCOL_VERSION_DRAFT23); });                                \
+                                  { ptls_buffer_push16(sendbuf, PTLS_PROTOCOL_VERSION_DRAFT26); });                                \
             do {                                                                                                                   \
                 extensions                                                                                                         \
             } while (0);                                                                                                           \
