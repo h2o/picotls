@@ -27,6 +27,7 @@ extern "C" {
 #endif
 
 #include <assert.h>
+#include <stdlib.h>
 #include <inttypes.h>
 #include <sys/types.h>
 
@@ -447,6 +448,11 @@ struct st_ptls_context_t {
      */
     unsigned send_change_cipher_spec : 1;
     /**
+     * if set, the server requests client certificates
+     * to authenticate the client.
+     */
+    unsigned require_client_authentication : 1;
+    /**
      *
      */
     ptls_encrypt_ticket_t *encrypt_ticket;
@@ -770,6 +776,10 @@ int ptls_receive(ptls_t *tls, ptls_buffer_t *plaintextbuf, const void *input, si
  */
 int ptls_send(ptls_t *tls, ptls_buffer_t *sendbuf, const void *input, size_t inlen);
 /**
+ * Returns if the context is a server context.
+ */
+int ptls_is_server(ptls_t *tls);
+/**
  * returns per-record overhead
  */
 size_t ptls_get_record_overhead(ptls_t *tls);
@@ -865,6 +875,10 @@ extern void (*volatile ptls_clear_memory)(void *p, size_t len);
  *
  */
 static ptls_iovec_t ptls_iovec_init(const void *p, size_t len);
+/**
+ * Clears and frees the stored memory.
+ */
+static void ptls_iovec_free(ptls_iovec_t *vec);
 
 /* inline functions */
 inline ptls_iovec_t ptls_iovec_init(const void *p, size_t len)
@@ -876,6 +890,18 @@ inline ptls_iovec_t ptls_iovec_init(const void *p, size_t len)
     r.base = (uint8_t *)p;
     r.len = len;
     return r;
+}
+
+inline void ptls_iovec_free(ptls_iovec_t *vec)
+{
+    if (vec == NULL || vec->base == NULL || vec->len == 0) {
+        return;
+    }
+
+    ptls_clear_memory(vec->base, vec->len);
+    free(vec->base);
+    vec->base = NULL;
+    vec->len = 0;
 }
 
 inline void ptls_buffer_init(ptls_buffer_t *buf, void *smallbuf, size_t smallbuf_size)

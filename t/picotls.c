@@ -335,7 +335,8 @@ static int save_client_hello(ptls_on_client_hello_t *self, ptls_t *tls, ptls_iov
 
 enum { TEST_HANDSHAKE_1RTT, TEST_HANDSHAKE_2RTT, TEST_HANDSHAKE_HRR, TEST_HANDSHAKE_HRR_STATELESS, TEST_HANDSHAKE_EARLY_DATA };
 
-static void test_handshake(ptls_iovec_t ticket, int mode, int expect_ticket, int check_ch)
+
+static void test_handshake(ptls_iovec_t ticket, int mode, int expect_ticket, int check_ch, int require_client_authentication)
 {
     ptls_t *client, *server;
     ptls_handshake_properties_t client_hs_prop = {{{{NULL}, ticket}}}, server_hs_prop = {{{{NULL}}}};
@@ -359,6 +360,10 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int expect_ticket, int
         client_hs_prop.client.negotiated_protocols.list = protocols;
         client_hs_prop.client.negotiated_protocols.count = sizeof(protocols) / sizeof(protocols[0]);
         ptls_set_server_name(client, "example.com", 0);
+    }
+
+    if (require_client_authentication) {
+        ctx_peer->require_client_authentication = 1;
     }
 
     switch (mode) {
@@ -412,7 +417,14 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int expect_ticket, int
 
     consumed = cbuf.off;
     ret = ptls_handshake(server, &sbuf, cbuf.base, &consumed, &server_hs_prop);
-    ok(ret == 0);
+
+    if (require_client_authentication == 1) {
+        ok(ptls_is_psk_handshake(server) == 0);
+        ok(ret == PTLS_ERROR_IN_PROGRESS);
+    } else {
+        ok(ret == 0);
+    }
+
     ok(sbuf.off != 0);
     if (check_ch) {
         ok(ptls_get_server_name(server) != NULL);
@@ -424,7 +436,7 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int expect_ticket, int
         ok(ptls_get_negotiated_protocol(server) == NULL);
     }
 
-    if (mode == TEST_HANDSHAKE_EARLY_DATA) {
+    if (mode == TEST_HANDSHAKE_EARLY_DATA && require_client_authentication == 0) {
         ok(consumed < cbuf.off);
         memmove(cbuf.base, cbuf.base + consumed, cbuf.off - consumed);
         cbuf.off -= consumed;
@@ -469,7 +481,16 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int expect_ticket, int
         sbuf.off = 0;
     }
 
-    if (mode != TEST_HANDSHAKE_EARLY_DATA) {
+    if (require_client_authentication == 1) {
+        ok(!ptls_handshake_is_complete(server));
+        consumed = cbuf.off;
+        ret = ptls_handshake(server, &sbuf, cbuf.base, &consumed, &server_hs_prop);
+        ok(ret == 0);
+        ok(ptls_handshake_is_complete(server));
+        cbuf.off = 0;
+    }
+
+    if (mode != TEST_HANDSHAKE_EARLY_DATA || require_client_authentication == 1) {
         ret = ptls_send(client, &cbuf, req, strlen(req));
         ok(ret == 0);
 
@@ -512,6 +533,10 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int expect_ticket, int
 
     if (check_ch)
         ctx_peer->on_client_hello = NULL;
+
+    if (require_client_authentication) {
+        ctx_peer->require_client_authentication = 0;
+    }
 }
 
 static ptls_sign_certificate_t *sc_orig;
@@ -524,28 +549,62 @@ static int sign_certificate(ptls_sign_certificate_t *self, ptls_t *tls, uint16_t
     return sc_orig->cb(sc_orig, tls, selected_algorithm, output, input, algorithms, num_algorithms);
 }
 
-static void test_full_handshake(void)
+static ptls_sign_certificate_t *second_sc_orig;
+
+static int second_sign_certificate(ptls_sign_certificate_t *self, ptls_t *tls, uint16_t *selected_algorithm, ptls_buffer_t *output,
+                            ptls_iovec_t input, const uint16_t *algorithms, size_t num_algorithms)
+{
+    ++sc_callcnt;
+    return second_sc_orig->cb(second_sc_orig, tls, selected_algorithm, output, input, algorithms, num_algorithms);
+}
+
+static void test_full_handshake_impl(int require_client_authentication)
 {
     sc_callcnt = 0;
-    test_handshake(ptls_iovec_init(NULL, 0), TEST_HANDSHAKE_1RTT, 0, 0);
-    ok(sc_callcnt == 1);
-    test_handshake(ptls_iovec_init(NULL, 0), TEST_HANDSHAKE_1RTT, 0, 0);
-    ok(sc_callcnt == 2);
-    test_handshake(ptls_iovec_init(NULL, 0), TEST_HANDSHAKE_1RTT, 0, 1);
-    ok(sc_callcnt == 3);
+
+    test_handshake(ptls_iovec_init(NULL, 0), TEST_HANDSHAKE_1RTT, 0, 0, require_client_authentication);
+    if (require_client_authentication) {
+        ok(sc_callcnt == 2);
+    } else {
+        ok(sc_callcnt == 1);
+    }
+
+    test_handshake(ptls_iovec_init(NULL, 0), TEST_HANDSHAKE_1RTT, 0, 0, require_client_authentication);
+    if (require_client_authentication) {
+        ok(sc_callcnt == 4);
+    } else {
+        ok(sc_callcnt == 2);
+    }
+
+    test_handshake(ptls_iovec_init(NULL, 0), TEST_HANDSHAKE_1RTT, 0, 1, require_client_authentication);
+    if (require_client_authentication) {
+        ok(sc_callcnt == 6);
+    } else {
+        ok(sc_callcnt == 3);
+    }
+}
+
+static void test_full_handshake(void)
+{
+    test_full_handshake_impl(0);
+}
+
+static void test_full_handshake_with_client_authentication(void)
+{
+    test_full_handshake_impl(1);
 }
 
 static void test_hrr_handshake(void)
 {
     sc_callcnt = 0;
-    test_handshake(ptls_iovec_init(NULL, 0), TEST_HANDSHAKE_HRR, 0, 0);
+    test_handshake(ptls_iovec_init(NULL, 0), TEST_HANDSHAKE_HRR, 0, 0, 0);
     ok(sc_callcnt == 1);
 }
 
 static void test_hrr_stateless_handshake(void)
 {
     sc_callcnt = 0;
-    test_handshake(ptls_iovec_init(NULL, 0), TEST_HANDSHAKE_HRR_STATELESS, 0, 0);
+    test_handshake(ptls_iovec_init(NULL, 0), TEST_HANDSHAKE_HRR_STATELESS, 0, 0, 0);
     ok(sc_callcnt == 1);
 }
 
@@ -571,7 +630,7 @@ static int save_ticket(ptls_save_ticket_t *self, ptls_t *tls, ptls_iovec_t src)
     return 0;
 }
 
-static void do_test_resumption(int different_preferred_key_share)
+static void test_resumption_impl(int different_preferred_key_share, int require_client_authentication)
 {
     assert(ctx->key_exchanges[0]->id == ctx_peer->key_exchanges[0]->id);
     assert(ctx->key_exchanges[1] == NULL);
@@ -598,27 +657,44 @@ static void do_test_resumption(int different_preferred_key_share)
     ctx->save_ticket = &st;
 
     sc_callcnt = 0;
-    test_handshake(saved_ticket, different_preferred_key_share ? TEST_HANDSHAKE_2RTT : TEST_HANDSHAKE_1RTT, 1, 0);
+    test_handshake(saved_ticket, different_preferred_key_share ? TEST_HANDSHAKE_2RTT : TEST_HANDSHAKE_1RTT, 1, 0, 0);
     ok(sc_callcnt == 1);
     ok(saved_ticket.base != NULL);
 
     /* psk using saved ticket */
-    test_handshake(saved_ticket, TEST_HANDSHAKE_1RTT, 1, 0);
-    ok(sc_callcnt == 1);
+    test_handshake(saved_ticket, TEST_HANDSHAKE_1RTT, 1, 0, require_client_authentication);
+    if (require_client_authentication == 1) {
+        ok(sc_callcnt == 3);
+    } else {
+        ok(sc_callcnt == 1);
+    }
 
     /* 0-rtt psk using saved ticket */
-    test_handshake(saved_ticket, TEST_HANDSHAKE_EARLY_DATA, 1, 0);
-    ok(sc_callcnt == 1);
+    test_handshake(saved_ticket, TEST_HANDSHAKE_EARLY_DATA, 1, 0, require_client_authentication);
+    if (require_client_authentication == 1) {
+        ok(sc_callcnt == 5);
+    } else {
+        ok(sc_callcnt == 1);
+    }
 
     ctx->require_dhe_on_psk = 1;
 
     /* psk-dhe using saved ticket */
-    test_handshake(saved_ticket, TEST_HANDSHAKE_1RTT, 1, 0);
-    ok(sc_callcnt == 1);
+    test_handshake(saved_ticket, TEST_HANDSHAKE_1RTT, 1, 0, require_client_authentication);
+    if (require_client_authentication == 1) {
+        ok(sc_callcnt == 7);
+    } else {
+        ok(sc_callcnt == 1);
+    }
+
 
     /* 0-rtt psk-dhe using saved ticket */
-    test_handshake(saved_ticket, TEST_HANDSHAKE_EARLY_DATA, 1, 0);
-    ok(sc_callcnt == 1);
+    test_handshake(saved_ticket, TEST_HANDSHAKE_EARLY_DATA, 1, 0, require_client_authentication);
+    if (require_client_authentication == 1) {
+      ok(sc_callcnt == 9);
+    } else {
+      ok(sc_callcnt == 1);
+    }
 
     ctx->require_dhe_on_psk = 0;
     ctx_peer->ticket_lifetime = 0;
@@ -630,14 +706,18 @@ static void do_test_resumption(int different_preferred_key_share)
 
 static void test_resumption(void)
 {
-    do_test_resumption(0);
+    test_resumption_impl(0, 0);
 }
 
 static void test_resumption_different_preferred_key_share(void)
 {
     if (ctx == ctx_peer)
         return;
-    do_test_resumption(1);
+    test_resumption_impl(1, 0);
+}
+
+static void test_resumption_with_client_authentication(void) {
+    test_resumption_impl(0, 1);
 }
 
 static void test_enforce_retry(int use_cookie)
@@ -799,15 +879,23 @@ void test_picotls(void)
 
     subtest("fragmented-message", test_fragmented_message);
 
-    ptls_sign_certificate_t sc = {sign_certificate};
+    ptls_sign_certificate_t server_sc = {sign_certificate};
     sc_orig = ctx_peer->sign_certificate;
-    ctx_peer->sign_certificate = &sc;
+    ctx_peer->sign_certificate = &server_sc;
+
+    ptls_sign_certificate_t client_sc = {second_sign_certificate};
+    if (ctx_peer != ctx) {
+        second_sc_orig = ctx->sign_certificate;
+        ctx->sign_certificate = &client_sc;
+    }
 
     subtest("full-handshake", test_full_handshake);
+    subtest("full-handshake-with-client-authentication", test_full_handshake_with_client_authentication);
     subtest("hrr-handshake", test_hrr_handshake);
     subtest("hrr-stateless-handshake", test_hrr_stateless_handshake);
     subtest("resumption", test_resumption);
     subtest("resumption-different-preferred-key-share", test_resumption_different_preferred_key_share);
+    subtest("resumption-with-client-authentication", test_resumption_with_client_authentication);
 
     subtest("enforce-retry-stateful", test_enforce_retry_stateful);
     subtest("enforce-retry-stateless", test_enforce_retry_stateless);
@@ -815,6 +903,10 @@ void test_picotls(void)
     subtest("stateless-hrr-aad-change", test_stateless_hrr_aad_change);
 
     ctx_peer->sign_certificate = sc_orig;
+
+    if (ctx_peer != ctx) {
+        ctx->sign_certificate = second_sc_orig;
+    }
 }
 
 void test_key_exchange(ptls_key_exchange_algorithm_t *algo)
