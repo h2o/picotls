@@ -220,7 +220,7 @@ struct st_ptls_t {
     };
     /**
      * certificate verify
-     * will be used by the client and the server (if require_client_authentication == 1).
+     * will be used by the client and the server (if require_client_authentication is set).
      */
     struct {
         int (*cb)(void *verify_ctx, ptls_iovec_t data, ptls_iovec_t signature);
@@ -2136,28 +2136,23 @@ static int client_handle_finished(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iove
             goto Exit;
     }
 
-    if (tls->client.received_certificate_request == 1) {
+    if (tls->client.received_certificate_request) {
         /* If this is a resumed session, the server must not send the certificate request in the handshake */
-        if (tls->is_psk_handshake == 1) {
+        if (tls->is_psk_handshake) {
             ret = PTLS_ALERT_ILLEGAL_PARAMETER;
             ptls_iovec_free(&tls->client.certificate_request.certificate_request_context);
             /* reset the certificate request */
             memset(&tls->client.certificate_request, 0, sizeof(ptls_certificate_request_t));
-
             goto Exit;
         }
-
         ret = send_certificate_and_certificate_verify(tls, sendbuf, &tls->client.certificate_request.signature_algorithms,
                                                       &tls->client.certificate_request.certificate_request_context,
                                                       PTLS_CLIENT_CERTIFICATE_VERIFY_CONTEXT_STRING, 0);
-
         ptls_iovec_free(&tls->client.certificate_request.certificate_request_context);
         /* reset the certificate request */
         memset(&tls->client.certificate_request, 0, sizeof(ptls_certificate_request_t));
-
-        if (ret != 0) {
+        if (ret != 0)
             goto Exit;
-        }
     }
 
     if ((ret = push_change_cipher_spec(tls, sendbuf)) != 0)
@@ -2909,7 +2904,7 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
     /* try psk handshake */
     if (!is_second_flight && ch.psk.hash_end != 0 &&
         (ch.psk.ke_modes & ((1u << PTLS_PSK_KE_MODE_PSK) | (1u << PTLS_PSK_KE_MODE_PSK_DHE))) != 0 &&
-        tls->ctx->encrypt_ticket != NULL && tls->ctx->require_client_authentication == 0) {
+        tls->ctx->encrypt_ticket != NULL && !tls->ctx->require_client_authentication) {
         if ((ret = try_psk_handshake(tls, &psk_index, &accept_early_data, &ch,
                                      ptls_iovec_init(message.base, ch.psk.hash_end - message.base))) != 0) {
             goto Exit;
@@ -2918,11 +2913,11 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
 
     /* If client authentication is enabled, we always force a full handshake.
      * TODO: Check for `post_handshake_auth` extension and if that is present, do not force full handshake!
-     *       Remove also the check `require_client_authentication == 0` above.
+     *       Remove also the check `!require_client_authentication` above.
      *
      * adjust key_schedule, determine handshake mode
      */
-    if (psk_index == SIZE_MAX || tls->ctx->require_client_authentication == 1) {
+    if (psk_index == SIZE_MAX || tls->ctx->require_client_authentication) {
         key_schedule_update_hash(tls->key_schedule, message.base, message.len);
         if (!is_second_flight) {
             assert(tls->key_schedule->generation == 0);
@@ -3027,7 +3022,7 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
 
     if (mode == HANDSHAKE_MODE_FULL) {
         /* send certificate request if client authentication is activated */
-        if (tls->ctx->require_client_authentication == 1) {
+        if (tls->ctx->require_client_authentication) {
             buffer_push_handshake(sendbuf, tls->key_schedule, &tls->traffic_protection.enc, PTLS_HANDSHAKE_TYPE_CERTIFICATE_REQUEST,
                                   {
                                       /* certificate_request_context, this field SHALL be zero length, unless the certificate
@@ -3075,7 +3070,7 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
 
     if (tls->early_data != NULL) {
         tls->state = PTLS_STATE_SERVER_EXPECT_END_OF_EARLY_DATA;
-    } else if (tls->ctx->require_client_authentication == 1) {
+    } else if (tls->ctx->require_client_authentication) {
         tls->state = PTLS_STATE_SERVER_EXPECT_CERTIFICATE;
     } else {
         tls->state = PTLS_STATE_SERVER_EXPECT_FINISHED;
@@ -3087,7 +3082,7 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
             goto Exit;
     }
 
-    if (tls->ctx->require_client_authentication == 1) {
+    if (tls->ctx->require_client_authentication) {
         ret = PTLS_ERROR_IN_PROGRESS;
     } else {
         ret = 0;
