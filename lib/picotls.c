@@ -1897,7 +1897,7 @@ Exit:
 }
 
 static int send_certificate_and_certificate_verify(ptls_t *tls, ptls_buffer_t *sendbuf,
-                                                   signature_algorithms_t *signature_algorithms, ptls_iovec_t *context,
+                                                   signature_algorithms_t *signature_algorithms, ptls_iovec_t context,
                                                    char *verify_context_string, uint8_t push_status_request)
 {
     int ret;
@@ -1909,13 +1909,7 @@ static int send_certificate_and_certificate_verify(ptls_t *tls, ptls_buffer_t *s
 
     /* send Certificate */
     buffer_push_handshake(sendbuf, tls->key_schedule, &tls->traffic_protection.enc, PTLS_HANDSHAKE_TYPE_CERTIFICATE, {
-        ptls_buffer_push_block(<#buf#>, <#_capacity#>, <#block#>)
-        if (context == NULL) {
-            ptls_buffer_push(sendbuf, 0);
-        } else {
-            ptls_buffer_pushv(sendbuf, context->base, context->len);
-        }
-
+        ptls_buffer_push_block(sendbuf, 1, { ptls_buffer_pushv(sendbuf, context.base, context.len); });
         ptls_buffer_push_block(sendbuf, 3, {
             size_t i;
             for (i = 0; i != tls->ctx->certificates.count; ++i) {
@@ -2150,7 +2144,7 @@ static int client_handle_finished(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iove
             goto Exit;
         }
         ret = send_certificate_and_certificate_verify(tls, sendbuf, &tls->client.certificate_request.signature_algorithms,
-                                                      &tls->client.certificate_request.context,
+                                                      tls->client.certificate_request.context,
                                                       PTLS_CLIENT_CERTIFICATE_VERIFY_CONTEXT_STRING, 0);
         free(tls->client.certificate_request.context.base);
         tls->client.certificate_request.context = ptls_iovec_init(NULL, 0);
@@ -3049,7 +3043,7 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
             }
         }
 
-        ret = send_certificate_and_certificate_verify(tls, sendbuf, &ch.signature_algorithms, NULL,
+        ret = send_certificate_and_certificate_verify(tls, sendbuf, &ch.signature_algorithms, ptls_iovec_init(NULL, 0),
                                                       PTLS_SERVER_CERTIFICATE_VERIFY_CONTEXT_STRING, ch.status_request);
 
         if (ret != 0) {
