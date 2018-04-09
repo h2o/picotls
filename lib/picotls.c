@@ -1894,6 +1894,7 @@ static int decode_certificate_request(ptls_certificate_request_t *cr, const uint
         goto Exit;
     }
 
+    ret = 0;
 Exit:
     return ret;
 }
