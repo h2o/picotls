@@ -22,6 +22,7 @@
 #include <assert.h>
 #include <stddef.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #ifdef _WINDOWS
 #include "wincompat.h"
@@ -121,7 +122,10 @@ typedef struct st_signature_algorithms_t {
 } signature_algorithms_t;
 
 typedef struct st_ptls_certificate_request_t {
-    ptls_iovec_t certificate_request_context;
+    /**
+     * context.base becomes non-NULL in case the client receives a CertificateRequest
+     */
+    ptls_iovec_t context;
     signature_algorithms_t signature_algorithms;
 } ptls_certificate_request_t;
 
@@ -211,7 +215,6 @@ struct st_ptls_t {
             uint8_t legacy_session_id[16];
             ptls_key_exchange_context_t *key_share_ctx;
             unsigned offered_psk : 1;
-            unsigned received_certificate_request : 1;
             ptls_certificate_request_t certificate_request;
         } client;
         struct {
@@ -1848,23 +1851,17 @@ static int decode_certificate_request(ptls_certificate_request_t *cr, const uint
 
     /* certificate request context */
     ptls_decode_open_block(src, end, 1, {
-        size_t length = end - src;
-        if (length > 255) {
+        size_t len = end - src;
+        if (len > 255) {
             ret = PTLS_ALERT_DECODE_ERROR;
             goto Exit;
         }
-
-        if (length > 0) {
-            unsigned char *buf = malloc(length);
-
-            if (buf == NULL) {
-                ret = PTLS_ERROR_NO_MEMORY;
-                goto Exit;
-            }
-
-            memcpy(buf, src, length);
-            cr->certificate_request_context = ptls_iovec_init(buf, length);
+        if ((cr->context.base = malloc(len != 0 ? len : 1)) == NULL) {
+            ret = PTLS_ERROR_NO_MEMORY;
+            goto Exit;
         }
+        cr->context.len = len;
+        memcpy(cr->context.base, src, len);
         src = end;
     });
 
@@ -1900,9 +1897,8 @@ Exit:
 }
 
 static int send_certificate_and_certificate_verify(ptls_t *tls, ptls_buffer_t *sendbuf,
-                                                   signature_algorithms_t *signature_algorithms,
-                                                   ptls_iovec_t *certificate_request_context, char *verify_context_string,
-                                                   uint8_t push_status_request)
+                                                   signature_algorithms_t *signature_algorithms, ptls_iovec_t *context,
+                                                   char *verify_context_string, uint8_t push_status_request)
 {
     int ret;
 
@@ -1913,10 +1909,11 @@ static int send_certificate_and_certificate_verify(ptls_t *tls, ptls_buffer_t *s
 
     /* send Certificate */
     buffer_push_handshake(sendbuf, tls->key_schedule, &tls->traffic_protection.enc, PTLS_HANDSHAKE_TYPE_CERTIFICATE, {
-        if (certificate_request_context == NULL || certificate_request_context->len == 0) {
+        ptls_buffer_push_block(<#buf#>, <#_capacity#>, <#block#>)
+        if (context == NULL) {
             ptls_buffer_push(sendbuf, 0);
         } else {
-            ptls_buffer_pushv(sendbuf, certificate_request_context->base, certificate_request_context->len);
+            ptls_buffer_pushv(sendbuf, context->base, context->len);
         }
 
         ptls_buffer_push_block(sendbuf, 3, {
@@ -1974,16 +1971,13 @@ static int client_handle_certificate_request(ptls_t *tls, ptls_buffer_t *sendbuf
     const uint8_t *src = message.base + PTLS_HANDSHAKE_HEADER_SIZE, *const end = message.base + message.len;
     int ret = 0;
 
-    ret = decode_certificate_request(&tls->client.certificate_request, src, end);
+    if ((ret = decode_certificate_request(&tls->client.certificate_request, src, end)) != 0)
+        return ret;
 
-    if (ret == 0) {
-        tls->client.received_certificate_request = 1;
-        ret = PTLS_ERROR_IN_PROGRESS;
-        tls->state = PTLS_STATE_CLIENT_EXPECT_CERTIFICATE;
-        key_schedule_update_hash(tls->key_schedule, message.base, message.len);
-    }
+    tls->state = PTLS_STATE_CLIENT_EXPECT_CERTIFICATE;
+    key_schedule_update_hash(tls->key_schedule, message.base, message.len);
 
-    return ret;
+    return PTLS_ERROR_IN_PROGRESS;
 }
 
 static int handle_certificate(ptls_t *tls, ptls_iovec_t message)
@@ -2149,21 +2143,17 @@ static int client_handle_finished(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iove
             goto Exit;
     }
 
-    if (tls->client.received_certificate_request) {
+    if (tls->client.certificate_request.context.base != NULL) {
         /* If this is a resumed session, the server must not send the certificate request in the handshake */
         if (tls->is_psk_handshake) {
             ret = PTLS_ALERT_ILLEGAL_PARAMETER;
-            ptls_iovec_free(&tls->client.certificate_request.certificate_request_context);
-            /* reset the certificate request */
-            memset(&tls->client.certificate_request, 0, sizeof(ptls_certificate_request_t));
             goto Exit;
         }
         ret = send_certificate_and_certificate_verify(tls, sendbuf, &tls->client.certificate_request.signature_algorithms,
-                                                      &tls->client.certificate_request.certificate_request_context,
+                                                      &tls->client.certificate_request.context,
                                                       PTLS_CLIENT_CERTIFICATE_VERIFY_CONTEXT_STRING, 0);
-        ptls_iovec_free(&tls->client.certificate_request.certificate_request_context);
-        /* reset the certificate request */
-        memset(&tls->client.certificate_request, 0, sizeof(ptls_certificate_request_t));
+        free(tls->client.certificate_request.context.base);
+        tls->client.certificate_request.context = ptls_iovec_init(NULL, 0);
         if (ret != 0)
             goto Exit;
     }
@@ -3264,8 +3254,8 @@ void ptls_free(ptls_t *tls)
     } else {
         if (tls->client.key_share_ctx != NULL)
             tls->client.key_share_ctx->on_exchange(&tls->client.key_share_ctx, NULL, ptls_iovec_init(NULL, 0));
-
-        ptls_iovec_free(&tls->client.certificate_request.certificate_request_context);
+        if (tls->client.certificate_request.context.base != NULL)
+            free(tls->client.certificate_request.context.base);
     }
     if (tls->certificate_verify.cb != NULL) {
         tls->certificate_verify.cb(tls->certificate_verify.verify_ctx, ptls_iovec_init(NULL, 0), ptls_iovec_init(NULL, 0));
