@@ -335,7 +335,6 @@ static int save_client_hello(ptls_on_client_hello_t *self, ptls_t *tls, ptls_iov
 
 enum { TEST_HANDSHAKE_1RTT, TEST_HANDSHAKE_2RTT, TEST_HANDSHAKE_HRR, TEST_HANDSHAKE_HRR_STATELESS, TEST_HANDSHAKE_EARLY_DATA };
 
-
 static void test_handshake(ptls_iovec_t ticket, int mode, int expect_ticket, int check_ch, int require_client_authentication)
 {
     ptls_t *client, *server;
@@ -552,7 +551,7 @@ static int sign_certificate(ptls_sign_certificate_t *self, ptls_t *tls, uint16_t
 static ptls_sign_certificate_t *second_sc_orig;
 
 static int second_sign_certificate(ptls_sign_certificate_t *self, ptls_t *tls, uint16_t *selected_algorithm, ptls_buffer_t *output,
-                            ptls_iovec_t input, const uint16_t *algorithms, size_t num_algorithms)
+                                   ptls_iovec_t input, const uint16_t *algorithms, size_t num_algorithms)
 {
     ++sc_callcnt;
     return second_sc_orig->cb(second_sc_orig, tls, selected_algorithm, output, input, algorithms, num_algorithms);
@@ -687,13 +686,12 @@ static void test_resumption_impl(int different_preferred_key_share, int require_
         ok(sc_callcnt == 1);
     }
 
-
     /* 0-rtt psk-dhe using saved ticket */
     test_handshake(saved_ticket, TEST_HANDSHAKE_EARLY_DATA, 1, 0, require_client_authentication);
     if (require_client_authentication == 1) {
-      ok(sc_callcnt == 9);
+        ok(sc_callcnt == 9);
     } else {
-      ok(sc_callcnt == 1);
+        ok(sc_callcnt == 1);
     }
 
     ctx->require_dhe_on_psk = 0;
@@ -716,7 +714,8 @@ static void test_resumption_different_preferred_key_share(void)
     test_resumption_impl(1, 0);
 }
 
-static void test_resumption_with_client_authentication(void) {
+static void test_resumption_with_client_authentication(void)
+{
     test_resumption_impl(0, 1);
 }
 
