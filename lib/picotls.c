@@ -2046,7 +2046,7 @@ static int server_handle_certificate(ptls_t *tls, ptls_iovec_t message)
     return ret;
 }
 
-static int handle_certificate_verify(ptls_t *tls, ptls_iovec_t message, char *verify_context_string)
+static int handle_certificate_verify(ptls_t *tls, ptls_iovec_t message, const char *context_string)
 {
     const uint8_t *src = message.base + PTLS_HANDSHAKE_HEADER_SIZE, *const end = message.base + message.len;
     uint16_t algo;
@@ -2073,8 +2073,7 @@ static int handle_certificate_verify(ptls_t *tls, ptls_iovec_t message, char *ve
         ret = PTLS_ALERT_ILLEGAL_PARAMETER;
         goto Exit;
     }
-
-    signdata_size = build_certificate_verify_signdata(signdata, tls->key_schedule, verify_context_string);
+    signdata_size = build_certificate_verify_signdata(signdata, tls->key_schedule, context_string);
     if (tls->certificate_verify.cb != NULL) {
         ret = tls->certificate_verify.cb(tls->certificate_verify.verify_ctx, ptls_iovec_init(signdata, signdata_size), signature);
     } else {
