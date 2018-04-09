@@ -123,7 +123,7 @@ typedef struct st_signature_algorithms_t {
 
 typedef struct st_ptls_certificate_request_t {
     /**
-     * context.base becomes non-NULL in case the client receives a CertificateRequest
+     * context.base becomes non-NULL when a CertificateRequest is pending for processing
      */
     ptls_iovec_t context;
     signature_algorithms_t signature_algorithms;
