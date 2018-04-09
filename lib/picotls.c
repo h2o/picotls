@@ -1309,10 +1309,31 @@ static int push_signature_algorithms(ptls_buffer_t *sendbuf)
 {
     int ret;
 
-    ptls_buffer_push16(sendbuf, PTLS_SIGNATURE_RSA_PSS_RSAE_SHA256);
-    ptls_buffer_push16(sendbuf, PTLS_SIGNATURE_ECDSA_SECP256R1_SHA256);
-    ptls_buffer_push16(sendbuf, PTLS_SIGNATURE_RSA_PKCS1_SHA256);
-    ptls_buffer_push16(sendbuf, PTLS_SIGNATURE_RSA_PKCS1_SHA1);
+    ptls_buffer_push_block(sendbuf, 2, {
+        ptls_buffer_push16(sendbuf, PTLS_SIGNATURE_RSA_PSS_RSAE_SHA256);
+        ptls_buffer_push16(sendbuf, PTLS_SIGNATURE_ECDSA_SECP256R1_SHA256);
+        ptls_buffer_push16(sendbuf, PTLS_SIGNATURE_RSA_PKCS1_SHA256);
+        ptls_buffer_push16(sendbuf, PTLS_SIGNATURE_RSA_PKCS1_SHA1);
+    });
+
+    ret = 0;
+Exit:
+    return ret;
+}
+
+static int decode_signature_algorithms(signature_algorithms_t *sa, const uint8_t **src, const uint8_t *end)
+{
+    int ret;
+
+    ptls_decode_block(*src, end, 2, {
+        do {
+            uint16_t id;
+            if ((ret = ptls_decode16(&id, src, end)) != 0)
+                goto Exit;
+            if (sa->count < sizeof(sa->list) / sizeof(sa->list[0]))
+                sa->list[sa->count++] = id;
+        } while (*src != end);
+    });
 
     ret = 0;
 Exit:
@@ -1413,10 +1434,8 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_handshake
                 });
             });
             buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SIGNATURE_ALGORITHMS, {
-                ptls_buffer_push_block(sendbuf, 2, {
-                    if ((ret = push_signature_algorithms(sendbuf)) != 0)
-                        goto Exit;
-                });
+                if ((ret = push_signature_algorithms(sendbuf)) != 0)
+                    goto Exit;
             });
             buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SUPPORTED_GROUPS, {
                 ptls_key_exchange_algorithm_t **algo = tls->ctx->key_exchanges;
@@ -1869,18 +1888,8 @@ static int decode_certificate_request(ptls_certificate_request_t *cr, const uint
     decode_extensions(src, end, PTLS_HANDSHAKE_TYPE_CERTIFICATE_REQUEST, &exttype, {
         switch (exttype) {
         case PTLS_EXTENSION_TYPE_SIGNATURE_ALGORITHMS:
-            ptls_decode_block(src, end, 2, {
-                do {
-                    uint16_t id;
-                    if ((ret = ptls_decode16(&id, &src, end)) != 0) {
-                        goto Exit;
-                    }
-                    if (cr->signature_algorithms.count <
-                        sizeof(cr->signature_algorithms.list) / sizeof(cr->signature_algorithms.list[0])) {
-                        cr->signature_algorithms.list[cr->signature_algorithms.count++] = id;
-                    }
-                } while (src != end);
-            });
+            if ((ret = decode_signature_algorithms(&cr->signature_algorithms, &src, end)) != 0)
+                goto Exit;
             break;
         }
         src = end;
@@ -2396,16 +2405,8 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
             ch->negotiated_groups = ptls_iovec_init(src, end - src);
             break;
         case PTLS_EXTENSION_TYPE_SIGNATURE_ALGORITHMS:
-            ptls_decode_block(src, end, 2, {
-                do {
-                    uint16_t id;
-                    if ((ret = ptls_decode16(&id, &src, end)) != 0)
-                        goto Exit;
-                    if (ch->signature_algorithms.count <
-                        sizeof(ch->signature_algorithms.list) / sizeof(ch->signature_algorithms.list[0]))
-                        ch->signature_algorithms.list[ch->signature_algorithms.count++] = id;
-                } while (src != end);
-            });
+            if ((ret = decode_signature_algorithms(&ch->signature_algorithms, &src, end)) != 0)
+                goto Exit;
             break;
         case PTLS_EXTENSION_TYPE_KEY_SHARE:
             ch->key_shares = ptls_iovec_init(src, end - src);
@@ -3030,10 +3031,8 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
                                       /* extensions */
                                       ptls_buffer_push_block(sendbuf, 2, {
                                           buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SIGNATURE_ALGORITHMS, {
-                                              ptls_buffer_push_block(sendbuf, 2, {
-                                                  if ((ret = push_signature_algorithms(sendbuf)) != 0)
-                                                      goto Exit;
-                                              });
+                                              if ((ret = push_signature_algorithms(sendbuf)) != 0)
+                                                  goto Exit;
                                           });
                                       });
                                   });
