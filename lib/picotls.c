@@ -116,18 +116,18 @@ struct st_ptls_early_data_t {
     uint8_t next_secret[PTLS_MAX_DIGEST_SIZE];
 };
 
-typedef struct st_signature_algorithms_t {
+struct st_ptls_signature_algorithms_t {
     uint16_t list[16]; /* expand? */
     size_t count;
-} signature_algorithms_t;
+};
 
-typedef struct st_ptls_certificate_request_t {
+struct st_ptls_certificate_request_t {
     /**
      * context.base becomes non-NULL when a CertificateRequest is pending for processing
      */
     ptls_iovec_t context;
-    signature_algorithms_t signature_algorithms;
-} ptls_certificate_request_t;
+    struct st_ptls_signature_algorithms_t signature_algorithms;
+};
 
 struct st_ptls_t {
     /**
@@ -215,7 +215,7 @@ struct st_ptls_t {
             uint8_t legacy_session_id[16];
             ptls_key_exchange_context_t *key_share_ctx;
             unsigned offered_psk : 1;
-            ptls_certificate_request_t certificate_request;
+            struct st_ptls_certificate_request_t certificate_request;
         } client;
         struct {
             uint8_t pending_traffic_secret[PTLS_MAX_DIGEST_SIZE];
@@ -266,7 +266,7 @@ struct st_ptls_client_hello_t {
     ptls_iovec_t cipher_suites;
     ptls_iovec_t negotiated_groups;
     ptls_iovec_t key_shares;
-    signature_algorithms_t signature_algorithms;
+    struct st_ptls_signature_algorithms_t signature_algorithms;
     ptls_iovec_t server_name;
     struct {
         ptls_iovec_t list[16];
@@ -1321,7 +1321,7 @@ Exit:
     return ret;
 }
 
-static int decode_signature_algorithms(signature_algorithms_t *sa, const uint8_t **src, const uint8_t *end)
+static int decode_signature_algorithms(struct st_ptls_signature_algorithms_t *sa, const uint8_t **src, const uint8_t *end)
 {
     int ret;
 
@@ -1863,7 +1863,7 @@ Exit:
     return ret;
 }
 
-static int decode_certificate_request(ptls_certificate_request_t *cr, const uint8_t *src, const uint8_t *const end)
+static int decode_certificate_request(struct st_ptls_certificate_request_t *cr, const uint8_t *src, const uint8_t *const end)
 {
     int ret;
     uint16_t exttype = 0;
@@ -1906,8 +1906,8 @@ Exit:
 }
 
 static int send_certificate_and_certificate_verify(ptls_t *tls, ptls_buffer_t *sendbuf,
-                                                   signature_algorithms_t *signature_algorithms, ptls_iovec_t context,
-                                                   char *verify_context_string, uint8_t push_status_request)
+                                                   struct st_ptls_signature_algorithms_t *signature_algorithms,
+                                                   ptls_iovec_t context, char *verify_context_string, uint8_t push_status_request)
 {
     int ret;
 
