@@ -1907,7 +1907,7 @@ Exit:
 
 static int send_certificate_and_certificate_verify(ptls_t *tls, ptls_buffer_t *sendbuf,
                                                    struct st_ptls_signature_algorithms_t *signature_algorithms,
-                                                   ptls_iovec_t context, char *verify_context_string, uint8_t push_status_request)
+                                                   ptls_iovec_t context, const char *context_string, uint8_t push_status_request)
 {
     int ret;
 
@@ -1953,7 +1953,7 @@ static int send_certificate_and_certificate_verify(ptls_t *tls, ptls_buffer_t *s
         ptls_buffer_push_block(sendbuf, 2, {
             uint16_t algo;
             uint8_t data[PTLS_MAX_CERTIFICATE_VERIFY_SIGNDATA_SIZE];
-            size_t datalen = build_certificate_verify_signdata(data, tls->key_schedule, verify_context_string);
+            size_t datalen = build_certificate_verify_signdata(data, tls->key_schedule, context_string);
             if ((ret =
                      tls->ctx->sign_certificate->cb(tls->ctx->sign_certificate, tls, &algo, sendbuf, ptls_iovec_init(data, datalen),
                                                     signature_algorithms->list, signature_algorithms->count)) != 0) {
