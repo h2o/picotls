@@ -1989,7 +1989,7 @@ static int client_handle_certificate_request(ptls_t *tls, ptls_buffer_t *sendbuf
     return PTLS_ERROR_IN_PROGRESS;
 }
 
-static int handle_certificate(ptls_t *tls, ptls_iovec_t message)
+static int handle_certificate(ptls_t *tls, ptls_iovec_t message, int *got_certs)
 {
     const uint8_t *src = message.base + PTLS_HANDSHAKE_HEADER_SIZE, *const end = message.base + message.len;
     ptls_iovec_t certs[16];
@@ -2005,7 +2005,7 @@ static int handle_certificate(ptls_t *tls, ptls_iovec_t message)
     });
     /* certificate_list */
     ptls_decode_block(src, end, 3, {
-        do {
+        while (src != end) {
             ptls_decode_open_block(src, end, 3, {
                 if (num_certs < sizeof(certs) / sizeof(certs[0]))
                     certs[num_certs++] = ptls_iovec_init(src, end - src);
@@ -2013,16 +2013,17 @@ static int handle_certificate(ptls_t *tls, ptls_iovec_t message)
             });
             uint16_t type;
             decode_open_extensions(src, end, PTLS_HANDSHAKE_TYPE_CERTIFICATE, &type, { src = end; });
-        } while (src != end);
+        }
     });
 
-    if (tls->ctx->verify_certificate != NULL) {
+    if (num_certs != 0 && tls->ctx->verify_certificate != NULL) {
         if ((ret = tls->ctx->verify_certificate->cb(tls->ctx->verify_certificate, tls, &tls->certificate_verify.cb,
                                                     &tls->certificate_verify.verify_ctx, certs, num_certs)) != 0)
             goto Exit;
     }
 
     key_schedule_update_hash(tls->key_schedule, message.base, message.len);
+    *got_certs = num_certs != 0;
 
 Exit:
     return ret;
@@ -2030,26 +2031,28 @@ Exit:
 
 static int client_handle_certificate(ptls_t *tls, ptls_iovec_t message)
 {
-    int ret = handle_certificate(tls, message);
+    int got_certs, ret;
 
-    if (ret == 0) {
-        tls->state = PTLS_STATE_CLIENT_EXPECT_CERTIFICATE_VERIFY;
-        ret = PTLS_ERROR_IN_PROGRESS;
-    }
+    if ((ret = handle_certificate(tls, message, &got_certs)) != 0)
+        return ret;
+    if (!got_certs)
+        return PTLS_ALERT_ILLEGAL_PARAMETER;
 
-    return ret;
+    tls->state = PTLS_STATE_CLIENT_EXPECT_CERTIFICATE_VERIFY;
+    return PTLS_ERROR_IN_PROGRESS;
 }
 
 static int server_handle_certificate(ptls_t *tls, ptls_iovec_t message)
 {
-    int ret = handle_certificate(tls, message);
+    int got_certs, ret;
 
-    if (ret == 0) {
-        tls->state = PTLS_STATE_SERVER_EXPECT_CERTIFICATE_VERIFY;
-        ret = PTLS_ERROR_IN_PROGRESS;
-    }
+    if ((ret = handle_certificate(tls, message, &got_certs)) != 0)
+        return ret;
+    if (!got_certs)
+        return PTLS_ALERT_CERTIFICATE_REQUIRED;
 
-    return ret;
+    tls->state = PTLS_STATE_SERVER_EXPECT_CERTIFICATE_VERIFY;
+    return PTLS_ERROR_IN_PROGRESS;
 }
 
 static int handle_certificate_verify(ptls_t *tls, ptls_iovec_t message, const char *context_string)
