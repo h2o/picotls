@@ -1947,22 +1947,24 @@ static int send_certificate_and_certificate_verify(ptls_t *tls, ptls_buffer_t *s
     });
 
     /* build and send CertificateVerify */
-    buffer_push_handshake(sendbuf, tls->key_schedule, &tls->traffic_protection.enc, PTLS_HANDSHAKE_TYPE_CERTIFICATE_VERIFY, {
-        size_t algo_off = sendbuf->off;
-        ptls_buffer_push16(sendbuf, 0); /* filled in later */
-        ptls_buffer_push_block(sendbuf, 2, {
-            uint16_t algo;
-            uint8_t data[PTLS_MAX_CERTIFICATE_VERIFY_SIGNDATA_SIZE];
-            size_t datalen = build_certificate_verify_signdata(data, tls->key_schedule, context_string);
-            if ((ret =
-                     tls->ctx->sign_certificate->cb(tls->ctx->sign_certificate, tls, &algo, sendbuf, ptls_iovec_init(data, datalen),
-                                                    signature_algorithms->list, signature_algorithms->count)) != 0) {
-                goto Exit;
-            }
-            sendbuf->base[algo_off] = (uint8_t)(algo >> 8);
-            sendbuf->base[algo_off + 1] = (uint8_t)algo;
+    if (tls->ctx->sign_certificate != NULL) {
+        buffer_push_handshake(sendbuf, tls->key_schedule, &tls->traffic_protection.enc, PTLS_HANDSHAKE_TYPE_CERTIFICATE_VERIFY, {
+            size_t algo_off = sendbuf->off;
+            ptls_buffer_push16(sendbuf, 0); /* filled in later */
+            ptls_buffer_push_block(sendbuf, 2, {
+                uint16_t algo;
+                uint8_t data[PTLS_MAX_CERTIFICATE_VERIFY_SIGNDATA_SIZE];
+                size_t datalen = build_certificate_verify_signdata(data, tls->key_schedule, context_string);
+                if ((ret = tls->ctx->sign_certificate->cb(tls->ctx->sign_certificate, tls, &algo, sendbuf,
+                                                          ptls_iovec_init(data, datalen), signature_algorithms->list,
+                                                          signature_algorithms->count)) != 0) {
+                    goto Exit;
+                }
+                sendbuf->base[algo_off] = (uint8_t)(algo >> 8);
+                sendbuf->base[algo_off + 1] = (uint8_t)algo;
+            });
         });
-    });
+    }
 
 Exit:
     return ret;
