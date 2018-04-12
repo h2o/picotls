@@ -1977,6 +1977,10 @@ static int client_handle_certificate_request(ptls_t *tls, ptls_buffer_t *sendbuf
     if ((ret = decode_certificate_request(&tls->client.certificate_request, src, end)) != 0)
         return ret;
 
+    /* This field SHALL be zero length unless used for the post-handshake authentication exchanges (section 4.3.2) */
+    if (tls->client.certificate_request.context.len != 0)
+        return PTLS_ALERT_ILLEGAL_PARAMETER;
+
     tls->state = PTLS_STATE_CLIENT_EXPECT_CERTIFICATE;
     key_schedule_update_hash(tls->key_schedule, message.base, message.len);
 
@@ -3023,8 +3027,7 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
             buffer_push_handshake(sendbuf, tls->key_schedule, &tls->traffic_protection.enc, PTLS_HANDSHAKE_TYPE_CERTIFICATE_REQUEST,
                                   {
                                       /* certificate_request_context, this field SHALL be zero length, unless the certificate
-                                       * request is used for
-                                       * post-handshake authentication.
+                                       * request is used for post-handshake authentication.
                                        */
                                       ptls_buffer_push(sendbuf, 0);
                                       /* extensions */
