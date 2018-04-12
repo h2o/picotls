@@ -283,10 +283,11 @@ static void usage(const char *cmd)
            "Options:\n"
            "  -4                   force IPv4\n"
            "  -6                   force IPv6\n"
-           "  -c certificate-file\n"
+           "  -a                   require client authentication\n"
+           "  -C certificate-file  certificate chain used for client authentication\n"
+           "  -c certificate-file  certificate chain used for server authentication\n"
            "  -i file              a file to read from and send to the peer (default: stdin)\n"
-           "  -k key-file          specifies the credentials to be used for running the\n"
-           "                       server. If omitted, the command runs as a client.\n"
+           "  -k key-file          specifies the credentials for signing the certificate\n"
            "  -l log-file          file to log traffic secrets\n"
            "  -n                   negotiates the key exchange method (i.e. wait for HRR)\n"
            "  -s session-file      file to read/write the session ticket\n"
@@ -313,12 +314,12 @@ int main(int argc, char **argv)
     ptls_context_t ctx = {ptls_openssl_random_bytes, &ptls_get_time, ptls_openssl_key_exchanges, ptls_openssl_cipher_suites};
     ptls_handshake_properties_t hsprop = {{{{NULL}}}};
     const char *host, *port, *file = NULL;
-    int use_early_data = 0, ch;
+    int is_server = 0, use_early_data = 0, ch;
     struct sockaddr_storage sa;
     socklen_t salen;
     int family = 0;
 
-    while ((ch = getopt(argc, argv, "46c:i:k:nes:Sl:vh")) != -1) {
+    while ((ch = getopt(argc, argv, "46aC:c:i:k:nes:Sl:vh")) != -1) {
         switch (ch) {
         case '4':
             family = AF_INET;
@@ -326,8 +327,17 @@ int main(int argc, char **argv)
         case '6':
             family = AF_INET6;
             break;
+        case 'a':
+            ctx.require_client_authentication = 1;
+            break;
+        case 'C':
         case 'c':
+            if (ctx.certificates.count != 0) {
+                fprintf(stderr, "-C/-c can only be specified once\n");
+                return 1;
+            }
             load_certificate_chain(&ctx, optarg);
+            is_server = ch == 'c';
             break;
         case 'i':
             file = optarg;
@@ -360,10 +370,13 @@ int main(int argc, char **argv)
     }
     argc -= optind;
     argv += optind;
-    if (ctx.certificates.count != 0 || ctx.sign_certificate != NULL) {
-        /* server */
-        if (ctx.certificates.count == 0 || ctx.sign_certificate == NULL) {
-            fprintf(stderr, "-c and -k options must be used together\n");
+    if ((ctx.certificates.count == 0) != (ctx.sign_certificate == NULL)) {
+        fprintf(stderr, "-C/-c and -k options must be used together\n");
+        return 1;
+    }
+    if (is_server) {
+        if (ctx.certificates.count == 0) {
+            fprintf(stderr, "-c and -k options must be set\n");
             return 1;
         }
         setup_session_cache(&ctx);
@@ -384,7 +397,7 @@ int main(int argc, char **argv)
     if (resolve_address((struct sockaddr *)&sa, &salen, host, port, family, SOCK_STREAM, IPPROTO_TCP) != 0)
         exit(1);
 
-    if (ctx.certificates.count != 0) {
+    if (is_server) {
         return run_server((struct sockaddr *)&sa, salen, &ctx, file, &hsprop);
     } else {
         return run_client((struct sockaddr *)&sa, salen, &ctx, host, file, &hsprop);
