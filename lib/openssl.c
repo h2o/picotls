@@ -817,7 +817,11 @@ static int verify_certificate(ptls_verify_certificate_t *_self, ptls_t *tls, int
             ret = PTLS_ERROR_LIBRARY;
             goto Exit;
         }
-        X509_STORE_CTX_set_purpose(verify_ctx, X509_PURPOSE_SSL_CLIENT);
+        if (ptls_is_server(tls)) {
+            X509_STORE_CTX_set_purpose(verify_ctx, X509_PURPOSE_SSL_SERVER);
+        } else {
+            X509_STORE_CTX_set_purpose(verify_ctx, X509_PURPOSE_SSL_CLIENT);
+        }
         if (X509_verify_cert(verify_ctx) == 1) {
             ret = 0;
         } else {

@@ -100,6 +100,7 @@ extern "C" {
 #define PTLS_ALERT_USER_CANCELED 90
 #define PTLS_ALERT_MISSING_EXTENSION 109
 #define PTLS_ALERT_UNRECOGNIZED_NAME 112
+#define PTLS_ALERT_CERTIFICATE_REQUIRED 116
 #define PTLS_ALERT_NO_APPLICATION_PROTOCOL 120
 
 /* internal errors */
@@ -447,6 +448,11 @@ struct st_ptls_context_t {
      */
     unsigned send_change_cipher_spec : 1;
     /**
+     * if set, the server requests client certificates
+     * to authenticate the client.
+     */
+    unsigned require_client_authentication : 1;
+    /**
      *
      */
     ptls_encrypt_ticket_t *encrypt_ticket;
@@ -769,6 +775,10 @@ int ptls_receive(ptls_t *tls, ptls_buffer_t *plaintextbuf, const void *input, si
  * encrypts given buffer into multiple TLS records
  */
 int ptls_send(ptls_t *tls, ptls_buffer_t *sendbuf, const void *input, size_t inlen);
+/**
+ * Returns if the context is a server context.
+ */
+int ptls_is_server(ptls_t *tls);
 /**
  * returns per-record overhead
  */
