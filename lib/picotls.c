@@ -116,6 +116,19 @@ struct st_ptls_early_data_t {
     uint8_t next_secret[PTLS_MAX_DIGEST_SIZE];
 };
 
+struct st_ptls_signature_algorithms_t {
+    uint16_t list[16]; /* expand? */
+    size_t count;
+};
+
+struct st_ptls_certificate_request_t {
+    /**
+     * context.base becomes non-NULL when a CertificateRequest is pending for processing
+     */
+    ptls_iovec_t context;
+    struct st_ptls_signature_algorithms_t signature_algorithms;
+};
+
 struct st_ptls_t {
     /**
      * the context
@@ -129,11 +142,14 @@ struct st_ptls_t {
         PTLS_STATE_CLIENT_EXPECT_SERVER_HELLO,
         PTLS_STATE_CLIENT_EXPECT_SECOND_SERVER_HELLO,
         PTLS_STATE_CLIENT_EXPECT_ENCRYPTED_EXTENSIONS,
+        PTLS_STATE_CLIENT_EXPECT_CERTIFICATE_REQUEST_OR_CERTIFICATE,
         PTLS_STATE_CLIENT_EXPECT_CERTIFICATE,
         PTLS_STATE_CLIENT_EXPECT_CERTIFICATE_VERIFY,
         PTLS_STATE_CLIENT_EXPECT_FINISHED,
         PTLS_STATE_SERVER_EXPECT_CLIENT_HELLO,
         PTLS_STATE_SERVER_EXPECT_SECOND_CLIENT_HELLO,
+        PTLS_STATE_SERVER_EXPECT_CERTIFICATE,
+        PTLS_STATE_SERVER_EXPECT_CERTIFICATE_VERIFY,
         /* ptls_send can be called if the state is below here */
         PTLS_STATE_SERVER_EXPECT_END_OF_EARLY_DATA,
         PTLS_STATE_SERVER_EXPECT_FINISHED,
@@ -198,16 +214,21 @@ struct st_ptls_t {
         struct {
             uint8_t legacy_session_id[16];
             ptls_key_exchange_context_t *key_share_ctx;
-            struct {
-                int (*cb)(void *verify_ctx, ptls_iovec_t data, ptls_iovec_t signature);
-                void *verify_ctx;
-            } certificate_verify;
             unsigned offered_psk : 1;
+            struct st_ptls_certificate_request_t certificate_request;
         } client;
         struct {
             uint8_t pending_traffic_secret[PTLS_MAX_DIGEST_SIZE];
         } server;
     };
+    /**
+     * certificate verify
+     * will be used by the client and the server (if require_client_authentication is set).
+     */
+    struct {
+        int (*cb)(void *verify_ctx, ptls_iovec_t data, ptls_iovec_t signature);
+        void *verify_ctx;
+    } certificate_verify;
     /**
      * the value contains the traffic secret to be commisioned after END_OF_EARLY_DATA
      * END_OF_EARLY_DATA
@@ -245,10 +266,7 @@ struct st_ptls_client_hello_t {
     ptls_iovec_t cipher_suites;
     ptls_iovec_t negotiated_groups;
     ptls_iovec_t key_shares;
-    struct {
-        uint16_t list[16]; /* expand? */
-        size_t count;
-    } signature_algorithms;
+    struct st_ptls_signature_algorithms_t signature_algorithms;
     ptls_iovec_t server_name;
     struct {
         ptls_iovec_t list[16];
@@ -360,7 +378,10 @@ static inline void init_extension_bitmap(struct st_ptls_extension_bitmap_t *bitm
         ALLOW(CLIENT_HELLO);
         ALLOW(ENCRYPTED_EXTENSIONS);
     });
-    EXT(SIGNATURE_ALGORITHMS, { ALLOW(CLIENT_HELLO); });
+    EXT(SIGNATURE_ALGORITHMS, {
+        ALLOW(CLIENT_HELLO);
+        ALLOW(CERTIFICATE_REQUEST);
+    });
     EXT(ALPN, {
         ALLOW(CLIENT_HELLO);
         ALLOW(ENCRYPTED_EXTENSIONS);
@@ -1284,6 +1305,41 @@ Exit:
     return ret;
 }
 
+static int push_signature_algorithms(ptls_buffer_t *sendbuf)
+{
+    int ret;
+
+    ptls_buffer_push_block(sendbuf, 2, {
+        ptls_buffer_push16(sendbuf, PTLS_SIGNATURE_RSA_PSS_RSAE_SHA256);
+        ptls_buffer_push16(sendbuf, PTLS_SIGNATURE_ECDSA_SECP256R1_SHA256);
+        ptls_buffer_push16(sendbuf, PTLS_SIGNATURE_RSA_PKCS1_SHA256);
+        ptls_buffer_push16(sendbuf, PTLS_SIGNATURE_RSA_PKCS1_SHA1);
+    });
+
+    ret = 0;
+Exit:
+    return ret;
+}
+
+static int decode_signature_algorithms(struct st_ptls_signature_algorithms_t *sa, const uint8_t **src, const uint8_t *end)
+{
+    int ret;
+
+    ptls_decode_block(*src, end, 2, {
+        do {
+            uint16_t id;
+            if ((ret = ptls_decode16(&id, src, end)) != 0)
+                goto Exit;
+            if (sa->count < sizeof(sa->list) / sizeof(sa->list[0]))
+                sa->list[sa->count++] = id;
+        } while (*src != end);
+    });
+
+    ret = 0;
+Exit:
+    return ret;
+}
+
 static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_handshake_properties_t *properties, ptls_iovec_t *cookie)
 {
     ptls_iovec_t resumption_secret = {NULL}, resumption_ticket;
@@ -1378,12 +1434,8 @@ static int send_client_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_handshake
                 });
             });
             buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SIGNATURE_ALGORITHMS, {
-                ptls_buffer_push_block(sendbuf, 2, {
-                    ptls_buffer_push16(sendbuf, PTLS_SIGNATURE_RSA_PSS_RSAE_SHA256);
-                    ptls_buffer_push16(sendbuf, PTLS_SIGNATURE_ECDSA_SECP256R1_SHA256);
-                    ptls_buffer_push16(sendbuf, PTLS_SIGNATURE_RSA_PKCS1_SHA256);
-                    ptls_buffer_push16(sendbuf, PTLS_SIGNATURE_RSA_PKCS1_SHA1);
-                });
+                if ((ret = push_signature_algorithms(sendbuf)) != 0)
+                    goto Exit;
             });
             buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SUPPORTED_GROUPS, {
                 ptls_key_exchange_algorithm_t **algo = tls->ctx->key_exchanges;
@@ -1803,19 +1855,146 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
         goto Exit;
 
     key_schedule_update_hash(tls->key_schedule, message.base, message.len);
-    tls->state = tls->is_psk_handshake ? PTLS_STATE_CLIENT_EXPECT_FINISHED : PTLS_STATE_CLIENT_EXPECT_CERTIFICATE;
+    tls->state =
+        tls->is_psk_handshake ? PTLS_STATE_CLIENT_EXPECT_FINISHED : PTLS_STATE_CLIENT_EXPECT_CERTIFICATE_REQUEST_OR_CERTIFICATE;
     ret = PTLS_ERROR_IN_PROGRESS;
 
 Exit:
     return ret;
 }
 
-static int client_handle_certificate(ptls_t *tls, ptls_iovec_t message)
+static int decode_certificate_request(struct st_ptls_certificate_request_t *cr, const uint8_t *src, const uint8_t *const end)
+{
+    int ret;
+    uint16_t exttype = 0;
+
+    /* certificate request context */
+    ptls_decode_open_block(src, end, 1, {
+        size_t len = end - src;
+        if (len > 255) {
+            ret = PTLS_ALERT_DECODE_ERROR;
+            goto Exit;
+        }
+        if ((cr->context.base = malloc(len != 0 ? len : 1)) == NULL) {
+            ret = PTLS_ERROR_NO_MEMORY;
+            goto Exit;
+        }
+        cr->context.len = len;
+        memcpy(cr->context.base, src, len);
+        src = end;
+    });
+
+    /* decode extensions */
+    decode_extensions(src, end, PTLS_HANDSHAKE_TYPE_CERTIFICATE_REQUEST, &exttype, {
+        switch (exttype) {
+        case PTLS_EXTENSION_TYPE_SIGNATURE_ALGORITHMS:
+            if ((ret = decode_signature_algorithms(&cr->signature_algorithms, &src, end)) != 0)
+                goto Exit;
+            break;
+        }
+        src = end;
+    });
+
+    if (cr->signature_algorithms.count == 0) {
+        ret = PTLS_ALERT_MISSING_EXTENSION;
+        goto Exit;
+    }
+
+    ret = 0;
+Exit:
+    return ret;
+}
+
+static int send_certificate_and_certificate_verify(ptls_t *tls, ptls_buffer_t *sendbuf,
+                                                   struct st_ptls_signature_algorithms_t *signature_algorithms,
+                                                   ptls_iovec_t context, const char *context_string, uint8_t push_status_request)
+{
+    int ret;
+
+    if (signature_algorithms->count == 0) {
+        ret = PTLS_ALERT_MISSING_EXTENSION;
+        goto Exit;
+    }
+
+    /* send Certificate */
+    buffer_push_handshake(sendbuf, tls->key_schedule, &tls->traffic_protection.enc, PTLS_HANDSHAKE_TYPE_CERTIFICATE, {
+        ptls_buffer_push_block(sendbuf, 1, { ptls_buffer_pushv(sendbuf, context.base, context.len); });
+        ptls_buffer_push_block(sendbuf, 3, {
+            size_t i;
+            for (i = 0; i != tls->ctx->certificates.count; ++i) {
+                ptls_buffer_push_block(sendbuf, 3, {
+                    ptls_buffer_pushv(sendbuf, tls->ctx->certificates.list[i].base, tls->ctx->certificates.list[i].len);
+                });
+                ptls_buffer_push_block(sendbuf, 2, {
+                    /* emit OCSP stapling only when requested and when the callback successfully returns one */
+                    if (push_status_request && i == 0 && tls->ctx->staple_ocsp != NULL) {
+                        size_t reset_off_to = sendbuf->off;
+                        buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_STATUS_REQUEST, {
+                            ptls_buffer_push(sendbuf, 1); /* status_type == ocsp */
+                            ptls_buffer_push_block(sendbuf, 3, {
+                                if ((ret = tls->ctx->staple_ocsp->cb(tls->ctx->staple_ocsp, tls, sendbuf, i)) == 0) {
+                                    reset_off_to = 0;
+                                }
+                            });
+                        });
+                        if (reset_off_to != 0) {
+                            sendbuf->off = reset_off_to;
+                        }
+                    }
+                });
+            }
+        });
+    });
+
+    /* build and send CertificateVerify */
+    if (tls->ctx->sign_certificate != NULL) {
+        buffer_push_handshake(sendbuf, tls->key_schedule, &tls->traffic_protection.enc, PTLS_HANDSHAKE_TYPE_CERTIFICATE_VERIFY, {
+            size_t algo_off = sendbuf->off;
+            ptls_buffer_push16(sendbuf, 0); /* filled in later */
+            ptls_buffer_push_block(sendbuf, 2, {
+                uint16_t algo;
+                uint8_t data[PTLS_MAX_CERTIFICATE_VERIFY_SIGNDATA_SIZE];
+                size_t datalen = build_certificate_verify_signdata(data, tls->key_schedule, context_string);
+                if ((ret = tls->ctx->sign_certificate->cb(tls->ctx->sign_certificate, tls, &algo, sendbuf,
+                                                          ptls_iovec_init(data, datalen), signature_algorithms->list,
+                                                          signature_algorithms->count)) != 0) {
+                    goto Exit;
+                }
+                sendbuf->base[algo_off] = (uint8_t)(algo >> 8);
+                sendbuf->base[algo_off + 1] = (uint8_t)algo;
+            });
+        });
+    }
+
+Exit:
+    return ret;
+}
+
+static int client_handle_certificate_request(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t message,
+                                             ptls_handshake_properties_t *properties)
+{
+    const uint8_t *src = message.base + PTLS_HANDSHAKE_HEADER_SIZE, *const end = message.base + message.len;
+    int ret = 0;
+
+    if ((ret = decode_certificate_request(&tls->client.certificate_request, src, end)) != 0)
+        return ret;
+
+    /* This field SHALL be zero length unless used for the post-handshake authentication exchanges (section 4.3.2) */
+    if (tls->client.certificate_request.context.len != 0)
+        return PTLS_ALERT_ILLEGAL_PARAMETER;
+
+    tls->state = PTLS_STATE_CLIENT_EXPECT_CERTIFICATE;
+    key_schedule_update_hash(tls->key_schedule, message.base, message.len);
+
+    return PTLS_ERROR_IN_PROGRESS;
+}
+
+static int handle_certificate(ptls_t *tls, ptls_iovec_t message, int *got_certs)
 {
     const uint8_t *src = message.base + PTLS_HANDSHAKE_HEADER_SIZE, *const end = message.base + message.len;
     ptls_iovec_t certs[16];
     size_t num_certs = 0;
-    int ret;
+    int ret = 0;
 
     /* certificate request context */
     ptls_decode_open_block(src, end, 1, {
@@ -1826,7 +2005,7 @@ static int client_handle_certificate(ptls_t *tls, ptls_iovec_t message)
     });
     /* certificate_list */
     ptls_decode_block(src, end, 3, {
-        do {
+        while (src != end) {
             ptls_decode_open_block(src, end, 3, {
                 if (num_certs < sizeof(certs) / sizeof(certs[0]))
                     certs[num_certs++] = ptls_iovec_init(src, end - src);
@@ -1834,24 +2013,49 @@ static int client_handle_certificate(ptls_t *tls, ptls_iovec_t message)
             });
             uint16_t type;
             decode_open_extensions(src, end, PTLS_HANDSHAKE_TYPE_CERTIFICATE, &type, { src = end; });
-        } while (src != end);
+        }
     });
 
-    if (tls->ctx->verify_certificate != NULL) {
-        if ((ret = tls->ctx->verify_certificate->cb(tls->ctx->verify_certificate, tls, &tls->client.certificate_verify.cb,
-                                                    &tls->client.certificate_verify.verify_ctx, certs, num_certs)) != 0)
+    if (num_certs != 0 && tls->ctx->verify_certificate != NULL) {
+        if ((ret = tls->ctx->verify_certificate->cb(tls->ctx->verify_certificate, tls, &tls->certificate_verify.cb,
+                                                    &tls->certificate_verify.verify_ctx, certs, num_certs)) != 0)
             goto Exit;
     }
 
     key_schedule_update_hash(tls->key_schedule, message.base, message.len);
-    tls->state = PTLS_STATE_CLIENT_EXPECT_CERTIFICATE_VERIFY;
-    ret = PTLS_ERROR_IN_PROGRESS;
+    *got_certs = num_certs != 0;
 
 Exit:
     return ret;
 }
 
-static int client_handle_certificate_verify(ptls_t *tls, ptls_iovec_t message)
+static int client_handle_certificate(ptls_t *tls, ptls_iovec_t message)
+{
+    int got_certs, ret;
+
+    if ((ret = handle_certificate(tls, message, &got_certs)) != 0)
+        return ret;
+    if (!got_certs)
+        return PTLS_ALERT_ILLEGAL_PARAMETER;
+
+    tls->state = PTLS_STATE_CLIENT_EXPECT_CERTIFICATE_VERIFY;
+    return PTLS_ERROR_IN_PROGRESS;
+}
+
+static int server_handle_certificate(ptls_t *tls, ptls_iovec_t message)
+{
+    int got_certs, ret;
+
+    if ((ret = handle_certificate(tls, message, &got_certs)) != 0)
+        return ret;
+    if (!got_certs)
+        return PTLS_ALERT_CERTIFICATE_REQUIRED;
+
+    tls->state = PTLS_STATE_SERVER_EXPECT_CERTIFICATE_VERIFY;
+    return PTLS_ERROR_IN_PROGRESS;
+}
+
+static int handle_certificate_verify(ptls_t *tls, ptls_iovec_t message, const char *context_string)
 {
     const uint8_t *src = message.base + PTLS_HANDSHAKE_HEADER_SIZE, *const end = message.base + message.len;
     uint16_t algo;
@@ -1878,23 +2082,45 @@ static int client_handle_certificate_verify(ptls_t *tls, ptls_iovec_t message)
         ret = PTLS_ALERT_ILLEGAL_PARAMETER;
         goto Exit;
     }
-    signdata_size = build_certificate_verify_signdata(signdata, tls->key_schedule, PTLS_SERVER_CERTIFICATE_VERIFY_CONTEXT_STRING);
-    if (tls->client.certificate_verify.cb != NULL) {
-        ret = tls->client.certificate_verify.cb(tls->client.certificate_verify.verify_ctx, ptls_iovec_init(signdata, signdata_size),
-                                                signature);
+    signdata_size = build_certificate_verify_signdata(signdata, tls->key_schedule, context_string);
+    if (tls->certificate_verify.cb != NULL) {
+        ret = tls->certificate_verify.cb(tls->certificate_verify.verify_ctx, ptls_iovec_init(signdata, signdata_size), signature);
     } else {
         ret = 0;
     }
     ptls_clear_memory(signdata, signdata_size);
-    tls->client.certificate_verify.cb = NULL;
-    if (ret != 0)
+    tls->certificate_verify.cb = NULL;
+    if (ret != 0) {
         goto Exit;
+    }
 
     key_schedule_update_hash(tls->key_schedule, message.base, message.len);
-    tls->state = PTLS_STATE_CLIENT_EXPECT_FINISHED;
-    ret = PTLS_ERROR_IN_PROGRESS;
 
 Exit:
+    return ret;
+}
+
+static int client_handle_certificate_verify(ptls_t *tls, ptls_iovec_t message)
+{
+    int ret = handle_certificate_verify(tls, message, PTLS_SERVER_CERTIFICATE_VERIFY_CONTEXT_STRING);
+
+    if (ret == 0) {
+        tls->state = PTLS_STATE_CLIENT_EXPECT_FINISHED;
+        ret = PTLS_ERROR_IN_PROGRESS;
+    }
+
+    return ret;
+}
+
+static int server_handle_certificate_verify(ptls_t *tls, ptls_iovec_t message)
+{
+    int ret = handle_certificate_verify(tls, message, PTLS_CLIENT_CERTIFICATE_VERIFY_CONTEXT_STRING);
+
+    if (ret == 0) {
+        tls->state = PTLS_STATE_SERVER_EXPECT_FINISHED;
+        ret = PTLS_ERROR_IN_PROGRESS;
+    }
+
     return ret;
 }
 
@@ -1925,6 +2151,21 @@ static int client_handle_finished(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iove
                                   {});
         }
         if ((ret = retire_early_data_secret(tls, 1)) != 0)
+            goto Exit;
+    }
+
+    if (tls->client.certificate_request.context.base != NULL) {
+        /* If this is a resumed session, the server must not send the certificate request in the handshake */
+        if (tls->is_psk_handshake) {
+            ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+            goto Exit;
+        }
+        ret = send_certificate_and_certificate_verify(tls, sendbuf, &tls->client.certificate_request.signature_algorithms,
+                                                      tls->client.certificate_request.context,
+                                                      PTLS_CLIENT_CERTIFICATE_VERIFY_CONTEXT_STRING, 0);
+        free(tls->client.certificate_request.context.base);
+        tls->client.certificate_request.context = ptls_iovec_init(NULL, 0);
+        if (ret != 0)
             goto Exit;
     }
 
@@ -2172,16 +2413,8 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
             ch->negotiated_groups = ptls_iovec_init(src, end - src);
             break;
         case PTLS_EXTENSION_TYPE_SIGNATURE_ALGORITHMS:
-            ptls_decode_block(src, end, 2, {
-                do {
-                    uint16_t id;
-                    if ((ret = ptls_decode16(&id, &src, end)) != 0)
-                        goto Exit;
-                    if (ch->signature_algorithms.count <
-                        sizeof(ch->signature_algorithms.list) / sizeof(ch->signature_algorithms.list[0]))
-                        ch->signature_algorithms.list[ch->signature_algorithms.count++] = id;
-                } while (src != end);
-            });
+            if ((ret = decode_signature_algorithms(&ch->signature_algorithms, &src, end)) != 0)
+                goto Exit;
             break;
         case PTLS_EXTENSION_TYPE_KEY_SHARE:
             ch->key_shares = ptls_iovec_init(src, end - src);
@@ -2677,14 +2910,20 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
     /* try psk handshake */
     if (!is_second_flight && ch.psk.hash_end != 0 &&
         (ch.psk.ke_modes & ((1u << PTLS_PSK_KE_MODE_PSK) | (1u << PTLS_PSK_KE_MODE_PSK_DHE))) != 0 &&
-        tls->ctx->encrypt_ticket != NULL) {
+        tls->ctx->encrypt_ticket != NULL && !tls->ctx->require_client_authentication) {
         if ((ret = try_psk_handshake(tls, &psk_index, &accept_early_data, &ch,
-                                     ptls_iovec_init(message.base, ch.psk.hash_end - message.base))) != 0)
+                                     ptls_iovec_init(message.base, ch.psk.hash_end - message.base))) != 0) {
             goto Exit;
+        }
     }
 
-    /* adjust key_schedule, determine handshake mode */
-    if (psk_index == SIZE_MAX) {
+    /* If client authentication is enabled, we always force a full handshake.
+     * TODO: Check for `post_handshake_auth` extension and if that is present, do not force full handshake!
+     *       Remove also the check `!require_client_authentication` above.
+     *
+     * adjust key_schedule, determine handshake mode
+     */
+    if (psk_index == SIZE_MAX || tls->ctx->require_client_authentication) {
         key_schedule_update_hash(tls->key_schedule, message.base, message.len);
         if (!is_second_flight) {
             assert(tls->key_schedule->generation == 0);
@@ -2788,54 +3027,34 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
     });
 
     if (mode == HANDSHAKE_MODE_FULL) {
-        if (ch.signature_algorithms.count == 0) {
-            ret = PTLS_ALERT_MISSING_EXTENSION;
+        /* send certificate request if client authentication is activated */
+        if (tls->ctx->require_client_authentication) {
+            buffer_push_handshake(sendbuf, tls->key_schedule, &tls->traffic_protection.enc, PTLS_HANDSHAKE_TYPE_CERTIFICATE_REQUEST,
+                                  {
+                                      /* certificate_request_context, this field SHALL be zero length, unless the certificate
+                                       * request is used for post-handshake authentication.
+                                       */
+                                      ptls_buffer_push(sendbuf, 0);
+                                      /* extensions */
+                                      ptls_buffer_push_block(sendbuf, 2, {
+                                          buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SIGNATURE_ALGORITHMS, {
+                                              if ((ret = push_signature_algorithms(sendbuf)) != 0)
+                                                  goto Exit;
+                                          });
+                                      });
+                                  });
+
+            if (ret != 0) {
+                goto Exit;
+            }
+        }
+
+        ret = send_certificate_and_certificate_verify(tls, sendbuf, &ch.signature_algorithms, ptls_iovec_init(NULL, 0),
+                                                      PTLS_SERVER_CERTIFICATE_VERIFY_CONTEXT_STRING, ch.status_request);
+
+        if (ret != 0) {
             goto Exit;
         }
-        /* send Certificate */
-        buffer_push_handshake(sendbuf, tls->key_schedule, &tls->traffic_protection.enc, PTLS_HANDSHAKE_TYPE_CERTIFICATE, {
-            ptls_buffer_push(sendbuf, 0);
-            ptls_buffer_push_block(sendbuf, 3, {
-                size_t i;
-                for (i = 0; i != tls->ctx->certificates.count; ++i) {
-                    ptls_buffer_push_block(sendbuf, 3, {
-                        ptls_buffer_pushv(sendbuf, tls->ctx->certificates.list[i].base, tls->ctx->certificates.list[i].len);
-                    });
-                    ptls_buffer_push_block(sendbuf, 2, {
-                        /* emit OCSP stapling only when requested and when the callback successfully returns one */
-                        if (ch.status_request && i == 0 && tls->ctx->staple_ocsp != NULL) {
-                            size_t reset_off_to = sendbuf->off;
-                            buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_STATUS_REQUEST, {
-                                ptls_buffer_push(sendbuf, 1); /* status_type == ocsp */
-                                ptls_buffer_push_block(sendbuf, 3, {
-                                    if ((ret = tls->ctx->staple_ocsp->cb(tls->ctx->staple_ocsp, tls, sendbuf, i)) == 0)
-                                        reset_off_to = 0;
-                                });
-                            });
-                            if (reset_off_to != 0)
-                                sendbuf->off = reset_off_to;
-                        }
-                    });
-                }
-            });
-        });
-        /* build and send CertificateVerify */
-        buffer_push_handshake(sendbuf, tls->key_schedule, &tls->traffic_protection.enc, PTLS_HANDSHAKE_TYPE_CERTIFICATE_VERIFY, {
-            size_t algo_off = sendbuf->off;
-            ptls_buffer_push16(sendbuf, 0); /* filled in later */
-            ptls_buffer_push_block(sendbuf, 2, {
-                uint16_t algo;
-                uint8_t data[PTLS_MAX_CERTIFICATE_VERIFY_SIGNDATA_SIZE];
-                size_t datalen =
-                    build_certificate_verify_signdata(data, tls->key_schedule, PTLS_SERVER_CERTIFICATE_VERIFY_CONTEXT_STRING);
-                if ((ret = tls->ctx->sign_certificate->cb(tls->ctx->sign_certificate, tls, &algo, sendbuf,
-                                                          ptls_iovec_init(data, datalen), ch.signature_algorithms.list,
-                                                          ch.signature_algorithms.count)) != 0)
-                    goto Exit;
-                sendbuf->base[algo_off] = (uint8_t)(algo >> 8);
-                sendbuf->base[algo_off + 1] = (uint8_t)algo;
-            });
-        });
     }
 
     send_finished(tls, sendbuf);
@@ -2850,7 +3069,13 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
     if ((ret = derive_exporter_secret(tls, 0)) != 0)
         goto Exit;
 
-    tls->state = tls->early_data != NULL ? PTLS_STATE_SERVER_EXPECT_END_OF_EARLY_DATA : PTLS_STATE_SERVER_EXPECT_FINISHED;
+    if (tls->early_data != NULL) {
+        tls->state = PTLS_STATE_SERVER_EXPECT_END_OF_EARLY_DATA;
+    } else if (tls->ctx->require_client_authentication) {
+        tls->state = PTLS_STATE_SERVER_EXPECT_CERTIFICATE;
+    } else {
+        tls->state = PTLS_STATE_SERVER_EXPECT_FINISHED;
+    }
 
     /* send session ticket if necessary */
     if (ch.psk.ke_modes != 0 && tls->ctx->ticket_lifetime != 0) {
@@ -2858,7 +3083,11 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
             goto Exit;
     }
 
-    ret = 0;
+    if (tls->ctx->require_client_authentication) {
+        ret = PTLS_ERROR_IN_PROGRESS;
+    } else {
+        ret = 0;
+    }
 
 Exit:
     free(pubkey.base);
@@ -3025,9 +3254,11 @@ void ptls_free(ptls_t *tls)
     } else {
         if (tls->client.key_share_ctx != NULL)
             tls->client.key_share_ctx->on_exchange(&tls->client.key_share_ctx, NULL, ptls_iovec_init(NULL, 0));
-        if (tls->client.certificate_verify.cb != NULL)
-            tls->client.certificate_verify.cb(tls->client.certificate_verify.verify_ctx, ptls_iovec_init(NULL, 0),
-                                              ptls_iovec_init(NULL, 0));
+        if (tls->client.certificate_request.context.base != NULL)
+            free(tls->client.certificate_request.context.base);
+    }
+    if (tls->certificate_verify.cb != NULL) {
+        tls->certificate_verify.cb(tls->certificate_verify.verify_ctx, ptls_iovec_init(NULL, 0), ptls_iovec_init(NULL, 0));
     }
     if (tls->early_data != NULL) {
         ptls_clear_memory(tls->early_data, sizeof(*tls->early_data));
@@ -3145,6 +3376,19 @@ static int handle_handshake_message(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_io
             ret = PTLS_ALERT_UNEXPECTED_MESSAGE;
         }
         break;
+    case PTLS_STATE_CLIENT_EXPECT_CERTIFICATE_REQUEST_OR_CERTIFICATE:
+        switch (type) {
+        case PTLS_HANDSHAKE_TYPE_CERTIFICATE_REQUEST:
+            ret = client_handle_certificate_request(tls, sendbuf, message, properties);
+            break;
+        case PTLS_HANDSHAKE_TYPE_CERTIFICATE:
+            ret = client_handle_certificate(tls, message);
+            break;
+        default:
+            ret = PTLS_ALERT_UNEXPECTED_MESSAGE;
+            break;
+        }
+        break;
     case PTLS_STATE_CLIENT_EXPECT_CERTIFICATE:
         if (type == PTLS_HANDSHAKE_TYPE_CERTIFICATE) {
             ret = client_handle_certificate(tls, message);
@@ -3172,6 +3416,20 @@ static int handle_handshake_message(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_io
             ret = server_handle_hello(tls, sendbuf, message, properties);
         } else {
             ret = PTLS_ALERT_HANDSHAKE_FAILURE;
+        }
+        break;
+    case PTLS_STATE_SERVER_EXPECT_CERTIFICATE:
+        if (type == PTLS_HANDSHAKE_TYPE_CERTIFICATE) {
+            ret = server_handle_certificate(tls, message);
+        } else {
+            ret = PTLS_ALERT_UNEXPECTED_MESSAGE;
+        }
+        break;
+    case PTLS_STATE_SERVER_EXPECT_CERTIFICATE_VERIFY:
+        if (type == PTLS_HANDSHAKE_TYPE_CERTIFICATE_VERIFY) {
+            ret = server_handle_certificate_verify(tls, message);
+        } else {
+            ret = PTLS_ALERT_UNEXPECTED_MESSAGE;
         }
         break;
     case PTLS_STATE_SERVER_EXPECT_END_OF_EARLY_DATA:
@@ -3759,3 +4017,7 @@ static uint64_t get_time(ptls_get_time_t *self)
 
 ptls_get_time_t ptls_get_time = {get_time};
 
+int ptls_is_server(ptls_t *tls)
+{
+    return tls->is_server;
+}
