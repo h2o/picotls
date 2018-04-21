@@ -867,6 +867,8 @@ static int derive_secret_with_empty_digest(struct st_ptls_key_schedule_t *sched,
 
 static int derive_exporter_secret(ptls_t *tls, int is_early)
 {
+    int ret;
+
     if (tls->ctx->use_exporter)
         return 0;
 
@@ -874,7 +876,17 @@ static int derive_exporter_secret(ptls_t *tls, int is_early)
     assert(*slot == NULL);
     if ((*slot = malloc(tls->key_schedule->hashes[0].algo->digest_size)) == NULL)
         return PTLS_ERROR_NO_MEMORY;
-    return derive_secret(tls->key_schedule, *slot, is_early ? "e exp master" : "exp master");
+
+    if ((ret = derive_secret(tls->key_schedule, *slot, is_early ? "e exp master" : "exp master")) != 0)
+        return ret;
+
+    if (tls->ctx->log_secret != NULL) {
+        const char *log_label = is_early ? "EARLY_EXPORTER_SECRET" : "EXPORTER_SECRET";
+        tls->ctx->log_secret->cb(tls->ctx->log_secret, tls, log_label,
+                                 ptls_iovec_init(*slot, tls->key_schedule->hashes[0].algo->digest_size));
+    }
+
+    return 0;
 }
 
 static void free_exporter_master_secret(ptls_t *tls, int is_early)
