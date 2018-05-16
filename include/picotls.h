@@ -857,6 +857,21 @@ static size_t ptls_aead_encrypt_final(ptls_aead_context_t *ctx, void *output);
 static size_t ptls_aead_decrypt(ptls_aead_context_t *ctx, void *output, const void *input, size_t inlen, uint64_t seq,
                                 const void *aad, size_t aadlen);
 /**
+ * runs the handshake by dealing directly with handshake messages
+ * @param tls            the TLS context
+ * @param epoch          epoch of the input
+ * @param input          input bytes (must be NULL when starting the handshake on the client side)
+ * @param inlen          length of the input
+ * @param sendbuf        buffer to which the output will be written
+ * @param epoch_offsets  start offset of the messages in each epoch. For example, when the server emits ServerHello between offset
+ *                       0 and 38 and the following messages between offset 39 and 348, epoch_offsets will be {0,39,39,0} and the
+ *                       length of the sendbuf will be 348.
+ * @param properties     properties specific to the running handshake
+ * @return same as `ptls_handshake`
+ */
+int ptls_handle_message(ptls_t *tls, int epoch, const void *input, size_t inlen, ptls_buffer_t *sendbuf,
+                        size_t epoch_end_offsets[4], ptls_handshake_properties_t *properties);
+/**
  * internal
  */
 void ptls_aead__build_iv(ptls_aead_context_t *ctx, uint8_t *iv, uint64_t seq);

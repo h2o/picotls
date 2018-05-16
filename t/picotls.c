@@ -251,8 +251,8 @@ static struct {
     size_t count;
 } test_fragmented_message_queue = {{{{0}}}};
 
-static int test_fragmented_message_record(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t message, int is_end_of_record,
-                                          ptls_handshake_properties_t *properties)
+static int test_fragmented_message_record(ptls_t *tls, struct st_ptls_message_emitter_t *emitter, ptls_iovec_t message,
+                                          int is_end_of_record, ptls_handshake_properties_t *properties)
 {
     memcpy(test_fragmented_message_queue.vec[test_fragmented_message_queue.count].buf, message.base, message.len);
     test_fragmented_message_queue.vec[test_fragmented_message_queue.count].len = message.len;
