@@ -865,7 +865,7 @@ static size_t ptls_aead_decrypt(ptls_aead_context_t *ctx, void *output, const vo
  * @param sendbuf        buffer to which the output will be written
  * @param epoch_offsets  start offset of the messages in each epoch. For example, when the server emits ServerHello between offset
  *                       0 and 38 and the following messages between offset 39 and 348, epoch_offsets will be {0,39,39,0} and the
- *                       length of the sendbuf will be 348.
+ *                       length of the sendbuf will be 349.
  * @param properties     properties specific to the running handshake
  * @return same as `ptls_handshake`
  */
