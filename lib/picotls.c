@@ -4184,10 +4184,10 @@ static int validate_epoch(enum en_ptls_state_t state, size_t epoch)
     return 0;
 }
 
-int ptls_handle_message(ptls_t *tls, size_t epoch, const void *input, size_t inlen, ptls_buffer_t *sendbuf, size_t epoch_offsets[4],
-                        ptls_handshake_properties_t *properties)
+int ptls_handle_message(ptls_t *tls, ptls_buffer_t *sendbuf, size_t epoch_offsets[4], size_t in_epoch, const void *input,
+                        size_t inlen, ptls_handshake_properties_t *properties)
 {
-    if (!validate_epoch(tls->state, epoch))
+    if (!validate_epoch(tls->state, in_epoch))
         return PTLS_ALERT_UNEXPECTED_MESSAGE;
 
     struct st_ptls_raw_message_emitter_t emitter = {{sendbuf, &tls->traffic_protection.enc, begin_raw_message, commit_raw_message},
