@@ -110,6 +110,7 @@ extern "C" {
 #define PTLS_ERROR_INCOMPATIBLE_KEY (PTLS_ERROR_CLASS_INTERNAL + 4)
 #define PTLS_ERROR_SESSION_NOT_FOUND (PTLS_ERROR_CLASS_INTERNAL + 5)
 #define PTLS_ERROR_STATELESS_RETRY (PTLS_ERROR_CLASS_INTERNAL + 6)
+#define PTLS_ERROR_NOT_AVAILABLE (PTLS_ERROR_CLASS_INTERNAL + 7)
 
 #define PTLS_ERROR_INCORRECT_BASE64 (PTLS_ERROR_CLASS_INTERNAL + 50)
 #define PTLS_ERROR_PEM_LABEL_NOT_FOUND (PTLS_ERROR_CLASS_INTERNAL + 51)
@@ -957,7 +958,7 @@ inline size_t ptls_aead_decrypt(ptls_aead_context_t *ctx, void *output, const vo
     return ctx->do_decrypt(ctx, output, input, inlen, iv, aad, aadlen);
 }
 
-int ptls_load_certificates(ptls_context_t *ctx, char *cert_pem_file);
+int ptls_load_certificates(ptls_context_t *ctx, char const *cert_pem_file);
 
 extern ptls_get_time_t ptls_get_time;
 

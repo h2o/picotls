@@ -121,7 +121,7 @@ int get_certificates(char * pem_fname, ptls_iovec_t ** list, int * nb_certs)
     return ret;
 }
 
-void SetSignCertificate(char * keypem, ptls_context_t * ctx)
+void SetSignCertificate(char const * keypem, ptls_context_t * ctx)
 {
     static ptls_openssl_sign_certificate_t signer;
 
@@ -266,7 +266,7 @@ int openssl_init_test_client(ptls_context_t *ctx_client)
 	return ret;
 }
 
-int openssl_init_test_server(ptls_context_t *ctx_server, char * key_file, char * cert_file)
+int openssl_init_test_server(ptls_context_t *ctx_server, char const * key_file, char const * cert_file)
 {
 	int ret = 0;
 	/* Initialize the server context */
@@ -306,7 +306,7 @@ int minicrypto_init_test_client(ptls_context_t *ctx_client)
 	return ret;
 }
 
-int minicrypto_init_test_server(ptls_context_t *ctx_server, char * key_file, char * cert_file)
+int minicrypto_init_test_server(ptls_context_t *ctx_server, char const * key_file, char const * cert_file)
 {
 	int ret = 0;
 
@@ -456,7 +456,7 @@ int verify_handshake_extension(struct st_picotls_vs_test_context_t * app_ctx_cli
 	return ret;
 }
 
-int ptls_memory_loopback_test(int openssl_client, int openssl_server, char * key_file, char * cert_file)
+int ptls_memory_loopback_test(int openssl_client, int openssl_server, char const * key_file, char const * cert_file)
 {
 	ptls_context_t ctx_client, ctx_server;
 	ptls_t *tls_client = NULL, *tls_server = NULL;

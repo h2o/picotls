@@ -933,6 +933,8 @@ static int derive_secret_with_empty_digest(struct st_ptls_key_schedule_t *sched,
 
 static int derive_exporter_secret(ptls_t *tls, int is_early)
 {
+    int ret;
+
     if (tls->ctx->use_exporter)
         return 0;
 
@@ -940,7 +942,17 @@ static int derive_exporter_secret(ptls_t *tls, int is_early)
     assert(*slot == NULL);
     if ((*slot = malloc(tls->key_schedule->hashes[0].algo->digest_size)) == NULL)
         return PTLS_ERROR_NO_MEMORY;
-    return derive_secret(tls->key_schedule, *slot, is_early ? "e exp master" : "exp master");
+
+    if ((ret = derive_secret(tls->key_schedule, *slot, is_early ? "e exp master" : "exp master")) != 0)
+        return ret;
+
+    if (tls->ctx->log_secret != NULL) {
+        const char *log_label = is_early ? "EARLY_EXPORTER_SECRET" : "EXPORTER_SECRET";
+        tls->ctx->log_secret->cb(tls->ctx->log_secret, tls, log_label,
+                                 ptls_iovec_init(*slot, tls->key_schedule->hashes[0].algo->digest_size));
+    }
+
+    return 0;
 }
 
 static void free_exporter_master_secret(ptls_t *tls, int is_early)
@@ -3052,8 +3064,6 @@ static int server_handle_hello(ptls_t *tls, struct st_ptls_message_emitter_t *em
             memcpy(properties->server.selected_psk_binder.base, selected->base, selected->len);
             properties->server.selected_psk_binder.len = selected->len;
         }
-        if ((ret = derive_exporter_secret(tls, 1)) != 0)
-            goto Exit;
     }
 
     if (accept_early_data && tls->ctx->max_early_data_size != 0 && psk_index == 0) {
@@ -3061,6 +3071,8 @@ static int server_handle_hello(ptls_t *tls, struct st_ptls_message_emitter_t *em
             ret = PTLS_ERROR_NO_MEMORY;
             goto Exit;
         }
+        if ((ret = derive_exporter_secret(tls, 1)) != 0)
+            goto Exit;
         if ((ret = setup_traffic_protection(tls, 0, "c e traffic", 0, 1)) != 0)
             goto Exit;
     }
@@ -3869,8 +3881,22 @@ int ptls_export_secret(ptls_t *tls, void *output, size_t outlen, const char *lab
             derived_secret[PTLS_MAX_DIGEST_SIZE], context_value_hash[PTLS_MAX_DIGEST_SIZE];
     int ret;
 
-    if (master_secret == NULL)
-        return PTLS_ERROR_IN_PROGRESS;
+    if (master_secret == NULL) {
+        if (is_early) {
+            switch (tls->state) {
+            case PTLS_STATE_CLIENT_HANDSHAKE_START:
+            case PTLS_STATE_SERVER_EXPECT_CLIENT_HELLO:
+                ret = PTLS_ERROR_IN_PROGRESS;
+                break;
+            default:
+                ret = PTLS_ERROR_NOT_AVAILABLE;
+                break;
+            }
+        } else {
+            ret = PTLS_ERROR_IN_PROGRESS;
+        }
+        return ret;
+    }
 
     if ((hctx = algo->create()) == NULL)
         return PTLS_ERROR_NO_MEMORY;
