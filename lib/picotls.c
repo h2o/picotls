@@ -110,7 +110,7 @@ struct st_ptls_traffic_protection_t {
     uint8_t secret[PTLS_MAX_DIGEST_SIZE];
     ptls_aead_context_t *aead;
     uint64_t seq;
-    int epoch;
+    size_t epoch;
 };
 
 struct st_ptls_message_emitter_t {
@@ -150,7 +150,7 @@ struct st_ptls_t {
     /**
      * the state
      */
-    enum {
+    enum en_ptls_state_t {
         PTLS_STATE_CLIENT_HANDSHAKE_START,
         PTLS_STATE_CLIENT_EXPECT_SERVER_HELLO,
         PTLS_STATE_CLIENT_EXPECT_SECOND_SERVER_HELLO,
@@ -1104,7 +1104,7 @@ Exit:
     return ctx;
 }
 
-static int setup_traffic_protection(ptls_t *tls, int is_enc, const char *secret_label, int is_server, int epoch)
+static int setup_traffic_protection(ptls_t *tls, int is_enc, const char *secret_label, int is_server, size_t epoch)
 {
     static const char *log_labels[2][4] = {
         {NULL, "CLIENT_EARLY_TRAFFIC_SECRET", "CLIENT_HANDSHAKE_TRAFFIC_SECRET", "CLIENT_TRAFFIC_SECRET_0"},
@@ -4116,10 +4116,57 @@ static int commit_raw_message(struct st_ptls_message_emitter_t *_self)
     return 0;
 }
 
-int ptls_handle_message(ptls_t *tls, int epoch, const void *input, size_t inlen, ptls_buffer_t *sendbuf, size_t epoch_offsets[4],
+static int validate_epoch(enum en_ptls_state_t state, size_t epoch)
+{
+    switch (epoch) {
+    case 0: /* plaintext */
+        switch (state) {
+        case PTLS_STATE_CLIENT_EXPECT_SERVER_HELLO:
+        case PTLS_STATE_CLIENT_EXPECT_SECOND_SERVER_HELLO:
+        case PTLS_STATE_SERVER_EXPECT_CLIENT_HELLO:
+        case PTLS_STATE_SERVER_EXPECT_SECOND_CLIENT_HELLO:
+            return 1;
+        default:
+            break;
+        }
+        break;
+    case 2: /* handshake */
+        switch (state) {
+        case PTLS_STATE_CLIENT_EXPECT_ENCRYPTED_EXTENSIONS:
+        case PTLS_STATE_CLIENT_EXPECT_CERTIFICATE_REQUEST_OR_CERTIFICATE:
+        case PTLS_STATE_CLIENT_EXPECT_CERTIFICATE:
+        case PTLS_STATE_CLIENT_EXPECT_CERTIFICATE_VERIFY:
+        case PTLS_STATE_CLIENT_EXPECT_FINISHED:
+        case PTLS_STATE_SERVER_EXPECT_CERTIFICATE:
+        case PTLS_STATE_SERVER_EXPECT_CERTIFICATE_VERIFY:
+        case PTLS_STATE_SERVER_EXPECT_END_OF_EARLY_DATA:
+        case PTLS_STATE_SERVER_EXPECT_FINISHED:
+            return 1;
+        default:
+            break;
+        }
+        break;
+    case 3: /* 1-rtt */
+        switch (state) {
+        case PTLS_STATE_CLIENT_POST_HANDSHAKE:
+        case PTLS_STATE_SERVER_POST_HANDSHAKE:
+            return 1;
+        default:
+            break;
+        }
+        break;
+    default:
+        break;
+    }
+
+    return 0;
+}
+
+int ptls_handle_message(ptls_t *tls, size_t epoch, const void *input, size_t inlen, ptls_buffer_t *sendbuf, size_t epoch_offsets[4],
                         ptls_handshake_properties_t *properties)
 {
-    /* FIXME check if the epoch is correct by consulting tls->state */
+    if (!validate_epoch(tls->state, epoch))
+        return PTLS_ALERT_UNEXPECTED_MESSAGE;
 
     struct st_ptls_raw_message_emitter_t emitter = {{sendbuf, &tls->traffic_protection.enc, begin_raw_message, commit_raw_message},
                                                     epoch_offsets};

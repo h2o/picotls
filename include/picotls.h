@@ -869,7 +869,7 @@ static size_t ptls_aead_decrypt(ptls_aead_context_t *ctx, void *output, const vo
  * @param properties     properties specific to the running handshake
  * @return same as `ptls_handshake`
  */
-int ptls_handle_message(ptls_t *tls, int epoch, const void *input, size_t inlen, ptls_buffer_t *sendbuf,
+int ptls_handle_message(ptls_t *tls, size_t epoch, const void *input, size_t inlen, ptls_buffer_t *sendbuf,
                         size_t epoch_end_offsets[4], ptls_handshake_properties_t *properties);
 /**
  * internal
