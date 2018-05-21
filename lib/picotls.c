@@ -3005,8 +3005,6 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
             memcpy(properties->server.selected_psk_binder.base, selected->base, selected->len);
             properties->server.selected_psk_binder.len = selected->len;
         }
-        if ((ret = derive_exporter_secret(tls, 1)) != 0)
-            goto Exit;
     }
 
     if (accept_early_data && tls->ctx->max_early_data_size != 0 && psk_index == 0) {
@@ -3014,6 +3012,8 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
             ret = PTLS_ERROR_NO_MEMORY;
             goto Exit;
         }
+        if ((ret = derive_exporter_secret(tls, 1)) != 0)
+            goto Exit;
         if ((ret = setup_traffic_protection(tls, 0, "c e traffic", "CLIENT_EARLY_TRAFFIC_SECRET")) != 0)
             goto Exit;
     }
@@ -3814,8 +3814,22 @@ int ptls_export_secret(ptls_t *tls, void *output, size_t outlen, const char *lab
             derived_secret[PTLS_MAX_DIGEST_SIZE], context_value_hash[PTLS_MAX_DIGEST_SIZE];
     int ret;
 
-    if (master_secret == NULL)
-        return PTLS_ERROR_IN_PROGRESS;
+    if (master_secret == NULL) {
+        if (is_early) {
+            switch (tls->state) {
+            case PTLS_STATE_CLIENT_HANDSHAKE_START:
+            case PTLS_STATE_SERVER_EXPECT_CLIENT_HELLO:
+                ret = PTLS_ERROR_IN_PROGRESS;
+                break;
+            default:
+                ret = PTLS_ERROR_NOT_AVAILABLE;
+                break;
+            }
+        } else {
+            ret = PTLS_ERROR_IN_PROGRESS;
+        }
+        return ret;
+    }
 
     if ((hctx = algo->create()) == NULL)
         return PTLS_ERROR_NO_MEMORY;
