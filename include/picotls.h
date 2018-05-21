@@ -814,6 +814,11 @@ int ptls_hkdf_extract(ptls_hash_algorithm_t *hash, void *output, ptls_iovec_t sa
  */
 int ptls_hkdf_expand(ptls_hash_algorithm_t *hash, void *output, size_t outlen, ptls_iovec_t prk, ptls_iovec_t info);
 /**
+ *
+ */
+int ptls_hkdf_expand_label(ptls_hash_algorithm_t *algo, void *output, size_t outlen, ptls_iovec_t secret, const char *label,
+                           ptls_iovec_t hash_value, const char *base_label);
+/**
  * instantiates a symmetric cipher
  */
 ptls_cipher_context_t *ptls_cipher_new(ptls_cipher_algorithm_t *algo, int is_enc, const void *key);
@@ -830,13 +835,15 @@ static void ptls_cipher_init(ptls_cipher_context_t *ctx, const void *iv);
  */
 static void ptls_cipher_encrypt(ptls_cipher_context_t *ctx, void *output, const void *input, size_t len);
 /**
- * instantiates an AEAD cipher given a key. `static_iv` field must be set up after calling this function.
- * @param aead AEAD algorithm
+ * instantiates an AEAD cipher given a secret, which is expanded using hkdf to a set of key and iv
+ * @param aead
+ * @param hash
  * @param is_enc 1 if creating a context for encryption, 0 if creating a context for decryption
- * @param key encryption key
+ * @param secret the secret. The size must be the digest length of the hash algorithm
  * @return pointer to an AEAD context if successful, otherwise NULL
  */
-ptls_aead_context_t *ptls_aead_new(ptls_aead_algorithm_t *aead, int is_enc, const void *key);
+ptls_aead_context_t *ptls_aead_new(ptls_aead_algorithm_t *aead, ptls_hash_algorithm_t *hash, int is_enc, const void *secret,
+                                   const char *base_label);
 /**
  * destroys an AEAD cipher context
  */

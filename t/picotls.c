@@ -107,7 +107,7 @@ static void test_ciphersuite(ptls_cipher_suite_t *cs1, ptls_cipher_suite_t *cs2)
     size_t enc1len, enc2len, dec1len, dec2len;
 
     /* encrypt */
-    c = new_aead(cs1->aead, cs1->hash, 1, traffic_secret);
+    c = ptls_aead_new(cs1->aead, cs1->hash, 1, traffic_secret, NULL);
     assert(c != NULL);
     ptls_aead_encrypt_init(c, 0, NULL, 0);
     enc1len = ptls_aead_encrypt_update(c, enc1, src1, strlen(src1));
@@ -117,7 +117,7 @@ static void test_ciphersuite(ptls_cipher_suite_t *cs1, ptls_cipher_suite_t *cs2)
     enc2len += ptls_aead_encrypt_final(c, enc2 + enc2len);
     ptls_aead_free(c);
 
-    c = new_aead(cs2->aead, cs2->hash, 0, traffic_secret);
+    c = ptls_aead_new(cs2->aead, cs2->hash, 0, traffic_secret, NULL);
     assert(c != NULL);
 
     /* decrypt and compare */
@@ -146,7 +146,7 @@ static void test_aad_ciphersuite(ptls_cipher_suite_t *cs1, ptls_cipher_suite_t *
     size_t enclen, declen;
 
     /* encrypt */
-    c = new_aead(cs1->aead, cs1->hash, 1, traffic_secret);
+    c = ptls_aead_new(cs1->aead, cs1->hash, 1, traffic_secret, NULL);
     assert(c != NULL);
     ptls_aead_encrypt_init(c, 123, aad, strlen(aad));
     enclen = ptls_aead_encrypt_update(c, enc, src, strlen(src));
@@ -154,7 +154,7 @@ static void test_aad_ciphersuite(ptls_cipher_suite_t *cs1, ptls_cipher_suite_t *
     ptls_aead_free(c);
 
     /* decrypt */
-    c = new_aead(cs2->aead, cs2->hash, 0, traffic_secret);
+    c = ptls_aead_new(cs2->aead, cs2->hash, 0, traffic_secret, NULL);
     assert(c != NULL);
     declen = ptls_aead_decrypt(c, dec, enc, enclen, 123, aad, strlen(aad));
     ok(declen == strlen(src));
