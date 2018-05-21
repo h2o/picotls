@@ -383,6 +383,11 @@ PTLS_CALLBACK_TYPE(void, log_secret, ptls_t *tls, const char *label, ptls_iovec_
  * reference counting
  */
 PTLS_CALLBACK_TYPE(void, update_open_count, ssize_t delta);
+/**
+ * applications that have their own record layer can set this function to derive their own traffic keys from the traffic secret.
+ * The cipher-suite that is being associated to the connection can be obtained by calling the ptls_get_cipher function.
+ */
+PTLS_CALLBACK_TYPE(int, update_traffic_key, ptls_t *tls, int is_enc, size_t epoch, const void *secret);
 
 /**
  * the configuration
@@ -468,6 +473,10 @@ struct st_ptls_context_t {
      *
      */
     ptls_update_open_count_t *update_open_count;
+    /**
+     *
+     */
+    ptls_update_traffic_key_t *update_traffic_key;
 };
 
 typedef struct st_ptls_raw_extension_t {
@@ -869,8 +878,8 @@ static size_t ptls_aead_decrypt(ptls_aead_context_t *ctx, void *output, const vo
  * @param properties     properties specific to the running handshake
  * @return same as `ptls_handshake`
  */
-int ptls_handle_message(ptls_t *tls, size_t epoch, const void *input, size_t inlen, ptls_buffer_t *sendbuf,
-                        size_t epoch_end_offsets[4], ptls_handshake_properties_t *properties);
+int ptls_handle_message(ptls_t *tls, size_t epoch, const void *input, size_t inlen, ptls_buffer_t *sendbuf, size_t epoch_offsets[4],
+                        ptls_handshake_properties_t *properties);
 /**
  * internal
  */

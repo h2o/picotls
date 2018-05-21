@@ -108,9 +108,10 @@ static const uint8_t hello_retry_random[PTLS_HELLO_RANDOM_SIZE] = {0xCF, 0x21, 0
 
 struct st_ptls_traffic_protection_t {
     uint8_t secret[PTLS_MAX_DIGEST_SIZE];
+    size_t epoch;
+    /* the following fields are not used if the key_change callback is set */
     ptls_aead_context_t *aead;
     uint64_t seq;
-    size_t epoch;
 };
 
 struct st_ptls_message_emitter_t {
@@ -1117,12 +1118,17 @@ static int setup_traffic_protection(ptls_t *tls, int is_enc, const char *secret_
             return ret;
     }
 
+    ctx->epoch = epoch;
+
+    /* special path for applications having their own record layer */
+    if (tls->ctx->update_traffic_key != NULL)
+        return tls->ctx->update_traffic_key->cb(tls->ctx->update_traffic_key, tls, is_enc, epoch, ctx->secret);
+
     if (ctx->aead != NULL)
         ptls_aead_free(ctx->aead);
     if ((ctx->aead = new_aead(tls->cipher_suite->aead, tls->cipher_suite->hash, is_enc, ctx->secret)) == NULL)
         return PTLS_ERROR_NO_MEMORY; /* TODO obtain error from ptls_aead_new */
     ctx->seq = 0;
-    ctx->epoch = epoch;
 
     if (tls->ctx->log_secret != NULL)
         tls->ctx->log_secret->cb(tls->ctx->log_secret, tls, log_labels[is_server][epoch],
