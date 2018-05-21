@@ -933,7 +933,7 @@ inline size_t ptls_aead_decrypt(ptls_aead_context_t *ctx, void *output, const vo
     return ctx->do_decrypt(ctx, output, input, inlen, iv, aad, aadlen);
 }
 
-int ptls_load_certificates(ptls_context_t *ctx, char *cert_pem_file);
+int ptls_load_certificates(ptls_context_t *ctx, char const *cert_pem_file);
 
 extern ptls_get_time_t ptls_get_time;
 
