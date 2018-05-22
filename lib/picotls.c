@@ -4135,6 +4135,12 @@ static int begin_raw_message(struct st_ptls_message_emitter_t *_self)
 
 static int commit_raw_message(struct st_ptls_message_emitter_t *_self)
 {
+    struct st_ptls_raw_message_emitter_t *self = (void *)_self;
+    size_t i;
+
+    for (i = self->super.enc->epoch + 1; i < 5; ++i)
+        self->epoch_offsets[i] = self->super.buf->off;
+
     return 0;
 }
 
@@ -4184,7 +4190,7 @@ static int validate_epoch(enum en_ptls_state_t state, size_t epoch)
     return 0;
 }
 
-int ptls_handle_message(ptls_t *tls, ptls_buffer_t *sendbuf, size_t epoch_offsets[4], size_t in_epoch, const void *input,
+int ptls_handle_message(ptls_t *tls, ptls_buffer_t *sendbuf, size_t epoch_offsets[5], size_t in_epoch, const void *input,
                         size_t inlen, ptls_handshake_properties_t *properties)
 {
     if (!validate_epoch(tls->state, in_epoch))
