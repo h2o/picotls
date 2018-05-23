@@ -117,6 +117,7 @@ struct st_ptls_traffic_protection_t {
 struct st_ptls_message_emitter_t {
     ptls_buffer_t *buf;
     struct st_ptls_traffic_protection_t *enc;
+    size_t record_header_length;
     int (*begin_message)(struct st_ptls_message_emitter_t *self);
     int (*commit_message)(struct st_ptls_message_emitter_t *self);
 };
@@ -1098,7 +1099,7 @@ static int setup_traffic_protection(ptls_t *tls, int is_enc, const char *secret_
     if (tls->ctx->log_secret != NULL)
         tls->ctx->log_secret->cb(tls->ctx->log_secret, tls, log_labels[is_server][epoch],
                                  ptls_iovec_init(ctx->secret, tls->key_schedule->hashes[0].algo->digest_size));
-    PTLS_DEBUGF("[%s] %02x%02x,%02x%02x\n", log_label, (unsigned)ctx->secret[0], (unsigned)ctx->secret[1],
+    PTLS_DEBUGF("[%s] %02x%02x,%02x%02x\n", log_labels[is_server][epoch], (unsigned)ctx->secret[0], (unsigned)ctx->secret[1],
                 (unsigned)ctx->aead->static_iv[0], (unsigned)ctx->aead->static_iv[1]);
 
     return 0;
@@ -1451,7 +1452,7 @@ static int send_client_hello(ptls_t *tls, struct st_ptls_message_emitter_t *emit
             goto Exit;
     }
 
-    msghash_off = emitter->buf->off + 5;
+    msghash_off = emitter->buf->off + emitter->record_header_length;
     push_message(emitter, NULL, PTLS_HANDSHAKE_TYPE_CLIENT_HELLO, {
         ptls_buffer_t *sendbuf = emitter->buf;
         /* legacy_version */
@@ -3708,7 +3709,7 @@ NextRecord:
 int ptls_handshake(ptls_t *tls, ptls_buffer_t *_sendbuf, const void *input, size_t *inlen, ptls_handshake_properties_t *properties)
 {
     struct st_ptls_record_message_emitter_t emitter = {
-        {_sendbuf, &tls->traffic_protection.enc, begin_record_message, commit_record_message}};
+        {_sendbuf, &tls->traffic_protection.enc, 5, begin_record_message, commit_record_message}};
     size_t sendbuf_orig_off = emitter.super.buf->off;
     int ret;
 
@@ -4122,14 +4123,6 @@ struct st_ptls_raw_message_emitter_t {
 
 static int begin_raw_message(struct st_ptls_message_emitter_t *_self)
 {
-    struct st_ptls_raw_message_emitter_t *self = (void *)_self;
-    size_t i;
-
-    for (i = 0; i <= self->super.enc->epoch; ++i) {
-        if (self->epoch_offsets[i] == 0)
-            self->epoch_offsets[i] = self->super.buf->off;
-    }
-
     return 0;
 }
 
@@ -4193,15 +4186,15 @@ static int validate_epoch(enum en_ptls_state_t state, size_t epoch)
 int ptls_handle_message(ptls_t *tls, ptls_buffer_t *sendbuf, size_t epoch_offsets[5], size_t in_epoch, const void *input,
                         size_t inlen, ptls_handshake_properties_t *properties)
 {
-    if (!validate_epoch(tls->state, in_epoch))
-        return PTLS_ALERT_UNEXPECTED_MESSAGE;
-
-    struct st_ptls_raw_message_emitter_t emitter = {{sendbuf, &tls->traffic_protection.enc, begin_raw_message, commit_raw_message},
-                                                    epoch_offsets};
+    struct st_ptls_raw_message_emitter_t emitter = {
+        {sendbuf, &tls->traffic_protection.enc, 0, begin_raw_message, commit_raw_message}, epoch_offsets};
     struct st_ptls_record_t rec = {PTLS_CONTENT_TYPE_HANDSHAKE, 0, inlen, input};
 
     if (input == NULL)
         return send_client_hello(tls, &emitter.super, properties, NULL);
+
+    if (!validate_epoch(tls->state, in_epoch))
+        return PTLS_ALERT_UNEXPECTED_MESSAGE;
 
     return handle_handshake_record(tls, handle_handshake_message, &emitter.super, &rec, properties);
 }
