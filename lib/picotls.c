@@ -2215,7 +2215,7 @@ static int client_handle_finished(ptls_t *tls, struct st_ptls_message_emitter_t 
 
     /* if sending early data, emit EOED and commision the client handshake traffic secret */
     if (tls->early_data != NULL) {
-        assert(tls->traffic_protection.enc.aead != NULL);
+        assert(tls->traffic_protection.enc.aead != NULL || tls->ctx->update_traffic_key != NULL);
         if (!tls->skip_early_data) {
             push_message(emitter, tls->key_schedule, PTLS_HANDSHAKE_TYPE_END_OF_EARLY_DATA, {});
         }
