@@ -3094,7 +3094,7 @@ static int server_handle_hello(ptls_t *tls, struct st_ptls_message_emitter_t *em
                     });
                 });
             }
-            if (tls->early_data != NULL && tls->traffic_protection.dec.aead != NULL)
+            if (tls->early_data != NULL)
                 buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_EARLY_DATA, {});
             if ((ret = push_additional_extensions(properties, sendbuf)) != 0)
                 goto Exit;
