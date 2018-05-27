@@ -4151,6 +4151,14 @@ static int validate_epoch(enum en_ptls_state_t state, size_t epoch)
             break;
         }
         break;
+    case 1: /* 0-rtt */
+        switch (state) {
+        case PTLS_STATE_SERVER_EXPECT_END_OF_EARLY_DATA:
+            return 1;
+        default:
+            break;
+        }
+        break;
     case 2: /* handshake */
         switch (state) {
         case PTLS_STATE_CLIENT_EXPECT_ENCRYPTED_EXTENSIONS:
@@ -4160,7 +4168,6 @@ static int validate_epoch(enum en_ptls_state_t state, size_t epoch)
         case PTLS_STATE_CLIENT_EXPECT_FINISHED:
         case PTLS_STATE_SERVER_EXPECT_CERTIFICATE:
         case PTLS_STATE_SERVER_EXPECT_CERTIFICATE_VERIFY:
-        case PTLS_STATE_SERVER_EXPECT_END_OF_EARLY_DATA:
         case PTLS_STATE_SERVER_EXPECT_FINISHED:
             return 1;
         default:
