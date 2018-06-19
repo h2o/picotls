@@ -522,7 +522,7 @@ Exit:
     if (ctx != NULL)
         evp_keyex_on_exchange(&ctx, NULL, ptls_iovec_init(NULL, 0));
     if (ret != 0)
-        free(outpubkey);
+        free(outpubkey->base);
     return ret;
 }
 
