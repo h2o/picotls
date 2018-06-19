@@ -536,19 +536,6 @@ static int x25519_key_exchange(ptls_iovec_t *pubkey, ptls_iovec_t *secret, ptls_
     return evp_keyex_exchange(pubkey, secret, peerkey, NID_X25519);
 }
 
-#ifdef NID_X448
-
-static int x448_create_key_exchange(ptls_key_exchange_context_t **ctx, ptls_iovec_t *pubkey)
-{
-    return evp_keyex_create(ctx, pubkey, NID_X448);
-}
-
-static int x448_key_exchange(ptls_iovec_t *pubkey, ptls_iovec_t *secret, ptls_iovec_t peerkey)
-{
-    return evp_keyex_exchange(pubkey, secret, peerkey, NID_X448);
-}
-
-#endif
 #endif
 
 static int do_sign(EVP_PKEY *key, ptls_buffer_t *outbuf, ptls_iovec_t input, const EVP_MD *md)
@@ -1258,9 +1245,6 @@ ptls_key_exchange_algorithm_t ptls_openssl_secp521r1 = {PTLS_GROUP_SECP521R1, se
 #endif
 #ifdef NID_X25519
 ptls_key_exchange_algorithm_t ptls_openssl_x25519 = {PTLS_GROUP_X25519, x25519_create_key_exchange, x25519_key_exchange};
-#endif
-#ifdef NID_X448
-ptls_key_exchange_algorithm_t ptls_openssl_x448 = {PTLS_GROUP_X25519, x448_create_key_exchange, x448_key_exchange};
 #endif
 ptls_key_exchange_algorithm_t *ptls_openssl_key_exchanges[] = {&ptls_openssl_secp256r1, NULL};
 ptls_cipher_algorithm_t ptls_openssl_aes128ctr = {"AES128-CTR", PTLS_AES128_KEY_SIZE, PTLS_AES_IV_SIZE,
