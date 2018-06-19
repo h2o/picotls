@@ -908,20 +908,20 @@ void test_picotls(void)
     }
 }
 
-void test_key_exchange(ptls_key_exchange_algorithm_t *algo)
+void test_key_exchange(ptls_key_exchange_algorithm_t *client, ptls_key_exchange_algorithm_t *server)
 {
     ptls_key_exchange_context_t *ctx;
     ptls_iovec_t client_pubkey, client_secret, server_pubkey, server_secret;
     int ret;
 
     /* fail */
-    ret = algo->exchange(&server_pubkey, &server_secret, (ptls_iovec_t){NULL});
+    ret = server->exchange(&server_pubkey, &server_secret, (ptls_iovec_t){NULL});
     ok(ret != 0);
 
     /* perform ecdh */
-    ret = algo->create(&ctx, &client_pubkey);
+    ret = client->create(&ctx, &client_pubkey);
     ok(ret == 0);
-    ret = algo->exchange(&server_pubkey, &server_secret, client_pubkey);
+    ret = server->exchange(&server_pubkey, &server_secret, client_pubkey);
     ok(ret == 0);
     ret = ctx->on_exchange(&ctx, &client_secret, server_pubkey);
     ok(ret == 0);
