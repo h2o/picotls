@@ -82,9 +82,11 @@
     "sS919x2o8l97kaYf\n"                                                                                                           \
     "-----END CERTIFICATE-----\n"
 
-static void test_ecdh_key_exchange(void)
+static void test_key_exchanges(void)
 {
-    test_key_exchange(&ptls_openssl_secp256r1);
+    test_key_exchange(&ptls_openssl_secp256r1, &ptls_openssl_secp256r1);
+    test_key_exchange(&ptls_openssl_secp256r1, &ptls_minicrypto_secp256r1);
+    test_key_exchange(&ptls_minicrypto_secp256r1, &ptls_openssl_secp256r1);
 }
 
 static void test_rsa_sign(void)
@@ -167,6 +169,8 @@ int main(int argc, char **argv)
     ENGINE_register_all_digests();
 #endif
 
+    subtest("key-exchange", test_key_exchanges);
+
     ptls_iovec_t cert;
     setup_certificate(&cert);
     setup_sign_certificate(&openssl_sign_certificate);
@@ -187,7 +191,6 @@ int main(int argc, char **argv)
 
     ctx = ctx_peer = &openssl_ctx;
 
-    subtest("ecdh-key-exchange", test_ecdh_key_exchange);
     subtest("rsa-sign", test_rsa_sign);
     subtest("ecdsa-sign", test_ecdsa_sign);
     subtest("picotls", test_picotls);
