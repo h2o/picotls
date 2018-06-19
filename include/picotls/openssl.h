@@ -34,12 +34,15 @@
 
 extern ptls_key_exchange_algorithm_t ptls_openssl_secp256r1;
 #ifdef NID_secp384r1
+#define PTLS_OPENSSL_HAS_SECP384R1 1
 extern ptls_key_exchange_algorithm_t ptls_openssl_secp384r1;
 #endif
 #ifdef NID_secp521r1
+#define PTLS_OPENSSL_HAS_SECP521R1 1
 extern ptls_key_exchange_algorithm_t ptls_openssl_secp521r1;
 #endif
 #ifdef NID_X25519
+#define PTLS_OPENSSL_HAS_X25519 1
 extern ptls_key_exchange_algorithm_t ptls_openssl_x25519;
 #endif
 
