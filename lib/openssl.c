@@ -235,11 +235,6 @@ Exit:
     return ret;
 }
 
-static int secp256r1_create_key_exchange(ptls_key_exchange_context_t **ctx, ptls_iovec_t *pubkey)
-{
-    return x9_62_create_key_exchange(ctx, pubkey, NID_X9_62_prime256v1);
-}
-
 static int x9_62_key_exchange(EC_GROUP *group, ptls_iovec_t *pubkey, ptls_iovec_t *secret, ptls_iovec_t peerkey, BN_CTX *bn_ctx)
 {
     EC_POINT *peer_point = NULL;
@@ -296,7 +291,7 @@ Exit:
     return ret;
 }
 
-static int secp_key_exchange(int nid, ptls_iovec_t *pubkey, ptls_iovec_t *secret, ptls_iovec_t peerkey)
+static int secp_key_exchange(ptls_iovec_t *pubkey, ptls_iovec_t *secret, ptls_iovec_t peerkey, int nid)
 {
     EC_GROUP *group = NULL;
     BN_CTX *bn_ctx = NULL;
@@ -321,10 +316,208 @@ Exit:
     return ret;
 }
 
+static int secp256r1_create_key_exchange(ptls_key_exchange_context_t **ctx, ptls_iovec_t *pubkey)
+{
+    return x9_62_create_key_exchange(ctx, pubkey, NID_X9_62_prime256v1);
+}
+
 static int secp256r1_key_exchange(ptls_iovec_t *pubkey, ptls_iovec_t *secret, ptls_iovec_t peerkey)
 {
-    return secp_key_exchange(NID_X9_62_prime256v1, pubkey, secret, peerkey);
+    return secp_key_exchange(pubkey, secret, peerkey, NID_X9_62_prime256v1);
 }
+
+#ifdef NID_X25519
+
+struct st_evp_keyex_context_t {
+    ptls_key_exchange_context_t super;
+    EVP_PKEY *privkey;
+    /**
+     * allocated by EVP_PKEY_get1_tls_encodedpoint, freed by OPENSSL_free
+     */
+    unsigned char *pubkey;
+    size_t pubkeylen;
+};
+
+static void evp_keyex_free(struct st_evp_keyex_context_t *ctx)
+{
+    if (ctx->privkey != NULL)
+        EVP_PKEY_free(ctx->privkey);
+    if (ctx->pubkey != NULL)
+        OPENSSL_free(ctx->pubkey);
+    free(ctx);
+}
+
+static int evp_keyex_on_exchange(ptls_key_exchange_context_t **_ctx, ptls_iovec_t *secret, ptls_iovec_t peerkey)
+{
+    struct st_evp_keyex_context_t *ctx = (void *)*_ctx;
+    EVP_PKEY *evppeer = NULL;
+    EVP_PKEY_CTX *evpctx = NULL;
+    int ret;
+
+    if (secret == NULL) {
+        ret = 0;
+        goto Exit;
+    }
+
+    secret->base = NULL;
+
+    if (peerkey.len != ctx->pubkeylen) {
+        ret = PTLS_ALERT_DECRYPT_ERROR;
+        goto Exit;
+    }
+
+    if ((evppeer = EVP_PKEY_new()) == NULL) {
+        ret = PTLS_ERROR_NO_MEMORY;
+        goto Exit;
+    }
+    if (EVP_PKEY_copy_parameters(evppeer, ctx->privkey) <= 0) {
+        ret = PTLS_ERROR_LIBRARY;
+        goto Exit;
+    }
+    if (EVP_PKEY_set1_tls_encodedpoint(evppeer, peerkey.base, peerkey.len) <= 0) {
+        ret = PTLS_ERROR_LIBRARY;
+        goto Exit;
+    }
+    if ((evpctx = EVP_PKEY_CTX_new(ctx->privkey, NULL)) == NULL) {
+        ret = PTLS_ERROR_LIBRARY;
+        goto Exit;
+    }
+    if (EVP_PKEY_derive_init(evpctx) <= 0) {
+        ret = PTLS_ERROR_LIBRARY;
+        goto Exit;
+    }
+    if (EVP_PKEY_derive_set_peer(evpctx, evppeer) <= 0) {
+        ERR_print_errors_fp(stderr);
+        ret = PTLS_ERROR_LIBRARY;
+        goto Exit;
+    }
+    if (EVP_PKEY_derive(evpctx, NULL, &secret->len) <= 0) {
+        ret = PTLS_ERROR_LIBRARY;
+        goto Exit;
+    }
+    if ((secret->base = malloc(secret->len)) == NULL) {
+        ret = PTLS_ERROR_NO_MEMORY;
+        goto Exit;
+    }
+    if (EVP_PKEY_derive(evpctx, secret->base, &secret->len) <= 0) {
+        ret = PTLS_ERROR_LIBRARY;
+        goto Exit;
+    }
+
+    ret = 0;
+Exit:
+    if (evpctx != NULL)
+        EVP_PKEY_CTX_free(evpctx);
+    if (evppeer != NULL)
+        EVP_PKEY_free(evppeer);
+    if (ret != 0)
+        free(secret->base);
+    evp_keyex_free(ctx);
+    *_ctx = NULL;
+    return ret;
+}
+
+static int evp_keyex_create(ptls_key_exchange_context_t **_ctx, ptls_iovec_t *_pubkey, int nid)
+{
+    struct st_evp_keyex_context_t *ctx = NULL;
+    EVP_PKEY_CTX *evpctx = NULL;
+    EVP_PKEY *evpkey = NULL;
+    unsigned char *pubkey = NULL;
+    size_t pubkeylen;
+    int ret;
+
+    if ((evpctx = EVP_PKEY_CTX_new_id(nid, NULL)) == NULL) {
+        ret = PTLS_ERROR_LIBRARY;
+        goto Exit;
+    }
+    if (EVP_PKEY_keygen_init(evpctx) <= 0) {
+        ret = PTLS_ERROR_LIBRARY;
+        goto Exit;
+    }
+    if (EVP_PKEY_keygen(evpctx, &evpkey) <= 0) {
+        ret = PTLS_ERROR_LIBRARY;
+        goto Exit;
+    }
+    if ((pubkeylen = EVP_PKEY_get1_tls_encodedpoint(evpkey, &pubkey)) == 0) {
+        pubkey = NULL;
+        ret = PTLS_ERROR_NO_MEMORY;
+        goto Exit;
+    }
+    if ((ctx = malloc(offsetof(struct st_evp_keyex_context_t, pubkey) + pubkeylen)) == NULL) {
+        ret = PTLS_ERROR_NO_MEMORY;
+        goto Exit;
+    }
+    *ctx = (struct st_evp_keyex_context_t){{evp_keyex_on_exchange}, evpkey, pubkey, pubkeylen};
+    evpkey = NULL;
+    pubkey = NULL;
+
+    *_ctx = &ctx->super;
+    *_pubkey = ptls_iovec_init(ctx->pubkey, ctx->pubkeylen);
+    ret = 0;
+
+Exit:
+    if (pubkey != NULL)
+        OPENSSL_free(pubkey);
+    if (evpkey != NULL)
+        EVP_PKEY_free(evpkey);
+    if (evpctx != NULL)
+        EVP_PKEY_CTX_free(evpctx);
+    if (ret != 0 && ctx != NULL)
+        evp_keyex_free(ctx);
+    return ret;
+}
+
+static int evp_keyex_exchange(ptls_iovec_t *outpubkey, ptls_iovec_t *secret, ptls_iovec_t peerkey, int nid)
+{
+    ptls_key_exchange_context_t *ctx = NULL;
+    ptls_iovec_t pubkey;
+    int ret;
+
+    outpubkey->base = NULL;
+
+    if ((ret = evp_keyex_create(&ctx, &pubkey, nid)) != 0)
+        goto Exit;
+    if ((outpubkey->base = malloc(pubkey.len)) == NULL) {
+        ret = PTLS_ERROR_NO_MEMORY;
+        goto Exit;
+    }
+    memcpy(outpubkey->base, pubkey.base, pubkey.len);
+    outpubkey->len = pubkey.len;
+    ret = evp_keyex_on_exchange(&ctx, secret, peerkey);
+    assert(ctx == NULL);
+
+Exit:
+    if (ctx != NULL)
+        evp_keyex_on_exchange(&ctx, NULL, ptls_iovec_init(NULL, 0));
+    if (ret != 0)
+        free(outpubkey);
+    return ret;
+}
+
+static int x25519_create_key_exchange(ptls_key_exchange_context_t **ctx, ptls_iovec_t *pubkey)
+{
+    return evp_keyex_create(ctx, pubkey, NID_X25519);
+}
+
+static int x25519_key_exchange(ptls_iovec_t *pubkey, ptls_iovec_t *secret, ptls_iovec_t peerkey)
+{
+    return evp_keyex_exchange(pubkey, secret, peerkey, NID_X25519);
+}
+
+#ifdef NID_X448
+
+static int x448_create_key_exchange(ptls_key_exchange_context_t **ctx, ptls_iovec_t *pubkey)
+{
+    return evp_keyex_create(ctx, pubkey, NID_X448);
+}
+
+static int x448_key_exchange(ptls_iovec_t *pubkey, ptls_iovec_t *secret, ptls_iovec_t peerkey)
+{
+    return evp_keyex_exchange(pubkey, secret, peerkey, NID_X448);
+}
+
+#endif
+#endif
 
 static int do_sign(EVP_PKEY *key, ptls_buffer_t *outbuf, ptls_iovec_t input, const EVP_MD *md)
 {
@@ -1023,6 +1216,12 @@ Exit:
 
 ptls_key_exchange_algorithm_t ptls_openssl_secp256r1 = {PTLS_GROUP_SECP256R1, secp256r1_create_key_exchange,
                                                         secp256r1_key_exchange};
+#ifdef NID_X25519
+ptls_key_exchange_algorithm_t ptls_openssl_x25519 = {PTLS_GROUP_X25519, x25519_create_key_exchange, x25519_key_exchange};
+#endif
+#ifdef NID_X448
+ptls_key_exchange_algorithm_t ptls_openssl_x448 = {PTLS_GROUP_X25519, x448_create_key_exchange, x448_key_exchange};
+#endif
 ptls_key_exchange_algorithm_t *ptls_openssl_key_exchanges[] = {&ptls_openssl_secp256r1, NULL};
 ptls_cipher_algorithm_t ptls_openssl_aes128ctr = {"AES128-CTR", PTLS_AES128_KEY_SIZE, PTLS_AES_IV_SIZE,
                                                   sizeof(struct cipher_context_t), aes128ctr_setup_crypto};
