@@ -931,4 +931,11 @@ void test_key_exchange(ptls_key_exchange_algorithm_t *client, ptls_key_exchange_
     free(client_secret.base);
     free(server_pubkey.base);
     free(server_secret.base);
+
+    /* client abort */
+    ret = client->create(&ctx, &client_pubkey);
+    ok(ret == 0);
+    ret = ctx->on_exchange(&ctx, NULL, ptls_iovec_init(NULL, 0));
+    ok(ret == 0);
+    ok(ctx == NULL);
 }
