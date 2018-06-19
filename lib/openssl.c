@@ -326,6 +326,34 @@ static int secp256r1_key_exchange(ptls_iovec_t *pubkey, ptls_iovec_t *secret, pt
     return secp_key_exchange(pubkey, secret, peerkey, NID_X9_62_prime256v1);
 }
 
+#ifdef NID_secp384r1
+
+static int secp384r1_create_key_exchange(ptls_key_exchange_context_t **ctx, ptls_iovec_t *pubkey)
+{
+    return x9_62_create_key_exchange(ctx, pubkey, NID_secp384r1);
+}
+
+static int secp384r1_key_exchange(ptls_iovec_t *pubkey, ptls_iovec_t *secret, ptls_iovec_t peerkey)
+{
+    return secp_key_exchange(pubkey, secret, peerkey, NID_secp384r1);
+}
+
+#endif
+
+#ifdef NID_secp521r1
+
+static int secp521r1_create_key_exchange(ptls_key_exchange_context_t **ctx, ptls_iovec_t *pubkey)
+{
+    return x9_62_create_key_exchange(ctx, pubkey, NID_secp521r1);
+}
+
+static int secp521r1_key_exchange(ptls_iovec_t *pubkey, ptls_iovec_t *secret, ptls_iovec_t peerkey)
+{
+    return secp_key_exchange(pubkey, secret, peerkey, NID_secp521r1);
+}
+
+#endif
+
 #ifdef NID_X25519
 
 struct st_evp_keyex_context_t {
@@ -1216,6 +1244,14 @@ Exit:
 
 ptls_key_exchange_algorithm_t ptls_openssl_secp256r1 = {PTLS_GROUP_SECP256R1, secp256r1_create_key_exchange,
                                                         secp256r1_key_exchange};
+#ifdef NID_secp384r1
+ptls_key_exchange_algorithm_t ptls_openssl_secp384r1 = {PTLS_GROUP_SECP384R1, secp384r1_create_key_exchange,
+                                                        secp384r1_key_exchange};
+#endif
+#ifdef NID_secp521r1
+ptls_key_exchange_algorithm_t ptls_openssl_secp521r1 = {PTLS_GROUP_SECP521R1, secp521r1_create_key_exchange,
+                                                        secp521r1_key_exchange};
+#endif
 #ifdef NID_X25519
 ptls_key_exchange_algorithm_t ptls_openssl_x25519 = {PTLS_GROUP_X25519, x25519_create_key_exchange, x25519_key_exchange};
 #endif
