@@ -41,7 +41,6 @@
 #include <openssl/x509_vfy.h>
 #include "picotls.h"
 #include "picotls/openssl.h"
-#include "openssl_hostname_validation.h"
 
 #if (OPENSSL_VERSION_NUMBER < 0x10100000L || defined(LIBRESSL_VERSION_NUMBER))
 #define OPENSSL_1_0_API 1
@@ -830,8 +829,15 @@ static int verify_cert_chain(X509_STORE *store, X509 *cert, STACK_OF(X509) * cha
     }
 
     /* verify CN */
-    if (validate_hostname(server_name, cert) != MatchFound) {
+    switch (X509_check_host(cert, server_name, 0, X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS, NULL)) {
+    case 1: /* success */
+        ret = 0;
+        break;
+    case 0: /* failed match */
         ret = PTLS_ALERT_BAD_CERTIFICATE;
+        goto Exit;
+    default:
+        ret = PTLS_ERROR_LIBRARY;
         goto Exit;
     }
 

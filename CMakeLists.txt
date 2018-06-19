@@ -6,7 +6,7 @@ PROJECT(picotls)
 FIND_PACKAGE(PkgConfig REQUIRED)
 
 SET(CMAKE_C_FLAGS "-std=c99 -Wall -O2 -g ${CC_WARNING_FLAGS} ${CMAKE_C_FLAGS}")
-INCLUDE_DIRECTORIES(${OPENSSL_INCLUDE_DIR} deps/cifra/src/ext deps/cifra/src deps/micro-ecc deps/ssl-conservatory/openssl deps/picotest include)
+INCLUDE_DIRECTORIES(${OPENSSL_INCLUDE_DIR} deps/cifra/src/ext deps/cifra/src deps/micro-ecc deps/picotest include)
 SET(MINICRYPTO_LIBRARY_FILES
     deps/micro-ecc/uECC.c
     deps/cifra/src/aes.c
@@ -33,10 +33,10 @@ FIND_PACKAGE(OpenSSL)
 IF (OPENSSL_FOUND AND NOT (OPENSSL_VERSION VERSION_LESS "1.0.1"))
     MESSAGE(WARNING "Enabling OpenSSL support")
     INCLUDE_DIRECTORIES(${OPENSSL_INCLUDE_DIR})
-    ADD_LIBRARY(picotls-openssl lib/openssl.c deps/ssl-conservatory/openssl/openssl_hostname_validation.c)
+    ADD_LIBRARY(picotls-openssl lib/openssl.c)
     ADD_EXECUTABLE(cli t/cli.c lib/pembase64.c)
     TARGET_LINK_LIBRARIES(cli picotls-openssl picotls-core ${OPENSSL_LIBRARIES} ${CMAKE_DL_LIBS})
-    ADD_EXECUTABLE(test-openssl.t ${MINICRYPTO_LIBRARY_FILES} lib/cifra.c lib/uecc.c lib/asn1.c lib/pembase64.c deps/picotest/picotest.c t/picotls.c t/openssl.c deps/ssl-conservatory/openssl/openssl_hostname_validation.c)
+    ADD_EXECUTABLE(test-openssl.t ${MINICRYPTO_LIBRARY_FILES} lib/cifra.c lib/uecc.c lib/asn1.c lib/pembase64.c deps/picotest/picotest.c t/picotls.c t/openssl.c)
     SET_TARGET_PROPERTIES(test-openssl.t PROPERTIES COMPILE_FLAGS "-DPTLS_MEMORY_DEBUG=1")
     TARGET_LINK_LIBRARIES(test-openssl.t ${OPENSSL_LIBRARIES} ${CMAKE_DL_LIBS})
     SET(TEST_EXES ${TEST_EXES} test-openssl.t)

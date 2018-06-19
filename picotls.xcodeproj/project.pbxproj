@@ -107,9 +107,6 @@
 		E9E865EB203BD46600E2FFCD /* sha512.c in Sources */ = {isa = PBXBuildFile; fileRef = E9E865E9203BD45600E2FFCD /* sha512.c */; };
 		E9E865EC203BD46600E2FFCD /* sha512.c in Sources */ = {isa = PBXBuildFile; fileRef = E9E865E9203BD45600E2FFCD /* sha512.c */; };
 		E9E865ED203BD46700E2FFCD /* sha512.c in Sources */ = {isa = PBXBuildFile; fileRef = E9E865E9203BD45600E2FFCD /* sha512.c */; };
-		E9E865F4203FDA0D00E2FFCD /* openssl_hostname_validation.h in Headers */ = {isa = PBXBuildFile; fileRef = E9E865F1203FD90E00E2FFCD /* openssl_hostname_validation.h */; };
-		E9E865F5203FDA1100E2FFCD /* openssl_hostname_validation.c in Sources */ = {isa = PBXBuildFile; fileRef = E9E865F0203FD90E00E2FFCD /* openssl_hostname_validation.c */; };
-		E9E865F6203FDA2100E2FFCD /* openssl_hostname_validation.c in Sources */ = {isa = PBXBuildFile; fileRef = E9E865F0203FD90E00E2FFCD /* openssl_hostname_validation.c */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -216,8 +213,6 @@
 		E9BC76D71EF3C1C200EB7A09 /* poly1305.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = poly1305.h; path = src/poly1305.h; sourceTree = "<group>"; };
 		E9E3849C1F0748DD00D50990 /* util.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = util.h; sourceTree = "<group>"; };
 		E9E865E9203BD45600E2FFCD /* sha512.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = sha512.c; path = src/sha512.c; sourceTree = "<group>"; };
-		E9E865F0203FD90E00E2FFCD /* openssl_hostname_validation.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = openssl_hostname_validation.c; path = openssl/openssl_hostname_validation.c; sourceTree = "<group>"; };
-		E9E865F1203FD90E00E2FFCD /* openssl_hostname_validation.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = openssl_hostname_validation.h; path = openssl/openssl_hostname_validation.h; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -379,7 +374,6 @@
 			children = (
 				105900B91DC96A1B00FB4085 /* micro-ecc */,
 				105900231DC8D34400FB4085 /* cifra */,
-				E9E865EF203FD8F500E2FFCD /* ssl-conservatory */,
 				106530E21D9B4005005B2C60 /* picotest */,
 			);
 			path = deps;
@@ -403,15 +397,6 @@
 			path = picotls;
 			sourceTree = "<group>";
 		};
-		E9E865EF203FD8F500E2FFCD /* ssl-conservatory */ = {
-			isa = PBXGroup;
-			children = (
-				E9E865F0203FD90E00E2FFCD /* openssl_hostname_validation.c */,
-				E9E865F1203FD90E00E2FFCD /* openssl_hostname_validation.h */,
-			);
-			path = "ssl-conservatory";
-			sourceTree = "<group>";
-		};
 /* End PBXGroup section */
 
 /* Begin PBXHeadersBuildPhase section */
@@ -420,7 +405,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				105900A21DC8E20D00FB4085 /* openssl.h in Headers */,
-				E9E865F4203FDA0D00E2FFCD /* openssl_hostname_validation.h in Headers */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -651,7 +635,6 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				E9E865F5203FDA1100E2FFCD /* openssl_hostname_validation.c in Sources */,
 				105900761DC8E1A300FB4085 /* openssl.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -672,7 +655,6 @@
 				105900C81DCBECDD00FB4085 /* blockwise.c in Sources */,
 				105900D31DCBED1D00FB4085 /* uECC.c in Sources */,
 				105900C91DCBECE100FB4085 /* chash.c in Sources */,
-				E9E865F6203FDA2100E2FFCD /* openssl_hostname_validation.c in Sources */,
 				106530E51D9B4021005B2C60 /* picotest.c in Sources */,
 				105900C71DCBECD800FB4085 /* aes.c in Sources */,
 				105900D11DCBED0600FB4085 /* cifra.c in Sources */,
