@@ -58,7 +58,10 @@ extern "C" {
 
 /* negotiated_groups */
 #define PTLS_GROUP_SECP256R1 23
+#define PTLS_GROUP_SECP384R1 24
+#define PTLS_GROUP_SECP521R1 25
 #define PTLS_GROUP_X25519 29
+#define PTLS_GROUP_X448 30
 
 /* signature algorithms */
 #define PTLS_SIGNATURE_RSA_PKCS1_SHA1 0x0201

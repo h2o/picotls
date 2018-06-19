@@ -31,6 +31,7 @@
 #include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -290,13 +291,25 @@ static void usage(const char *cmd)
            "  -k key-file          specifies the credentials for signing the certificate\n"
            "  -l log-file          file to log traffic secrets\n"
            "  -n                   negotiates the key exchange method (i.e. wait for HRR)\n"
+           "  -N named-group       named group to be used (default: secp256r1)\n"
            "  -s session-file      file to read/write the session ticket\n"
            "  -S                   require public key exchange when resuming a session\n"
            "  -e                   when resuming a session, send first 8,192 bytes of input\n"
            "                       as early data\n"
            "  -v                   verify peer using the default certificates\n"
            "  -h                   print this help\n"
-           "\n",
+           "\n"
+           "Supported named groups: secp256r1"
+#ifdef NID_secp384r1
+    ", secp384r1"
+#endif
+#ifdef NID_secp521r1
+            ", secp521r1"
+#endif
+#ifdef NID_X25519
+            ", X25519"
+#endif
+           "\n\n",
            cmd);
 }
 
@@ -311,7 +324,8 @@ int main(int argc, char **argv)
     ENGINE_register_all_digests();
 #endif
 
-    ptls_context_t ctx = {ptls_openssl_random_bytes, &ptls_get_time, ptls_openssl_key_exchanges, ptls_openssl_cipher_suites};
+    ptls_key_exchange_algorithm_t *key_exchanges[128] = {NULL};
+    ptls_context_t ctx = {ptls_openssl_random_bytes, &ptls_get_time, key_exchanges, ptls_openssl_cipher_suites};
     ptls_handshake_properties_t hsprop = {{{{NULL}}}};
     const char *host, *port, *file = NULL;
     int is_server = 0, use_early_data = 0, ch;
@@ -319,7 +333,7 @@ int main(int argc, char **argv)
     socklen_t salen;
     int family = 0;
 
-    while ((ch = getopt(argc, argv, "46aC:c:i:k:nes:Sl:vh")) != -1) {
+    while ((ch = getopt(argc, argv, "46aC:c:i:k:nN:es:Sl:vh")) != -1) {
         switch (ch) {
         case '4':
             family = AF_INET;
@@ -363,6 +377,29 @@ int main(int argc, char **argv)
         case 'v':
             setup_verify_certificate(&ctx);
             break;
+        case 'N': {
+            ptls_key_exchange_algorithm_t *algo = NULL;
+#define MATCH(name) if (algo == NULL && strcasecmp(optarg, #name) == 0) algo = (&ptls_openssl_##name)
+            MATCH(secp256r1);
+#ifdef NID_secp384r1
+            MATCH(secp384r1);
+#endif
+#ifdef NID_secp521r1
+            MATCH(secp521r1);
+#endif
+#ifdef NID_X25519
+            MATCH(x25519);
+#endif
+#undef MATCH
+            if (algo == NULL) {
+                fprintf(stderr, "could not find key exchange: %s\n", optarg);
+                return 1;
+            }
+            size_t i;
+            for (i = 0; key_exchanges[i] != NULL; ++i)
+                ;
+            key_exchanges[i++] = algo;
+        } break;
         default:
             usage(argv[0]);
             exit(1);
@@ -387,6 +424,8 @@ int main(int argc, char **argv)
             hsprop.client.max_early_data_size = &max_early_data_size;
         }
     }
+    if (key_exchanges[0] == NULL)
+        key_exchanges[0] = &ptls_openssl_secp256r1;
     if (argc != 2) {
         fprintf(stderr, "missing host and port\n");
         return 1;
