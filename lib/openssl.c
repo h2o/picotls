@@ -176,6 +176,11 @@ static int x9_62_on_exchange(ptls_key_exchange_context_t **_ctx, ptls_iovec_t *s
 
     *_ctx = NULL;
 
+    if (secret == NULL) {
+        ret = 0;
+        goto Exit;
+    }
+
     if ((peer_point = x9_62_decode_point(ctx->group, peerkey, ctx->bn_ctx)) == NULL) {
         ret = PTLS_ALERT_DECODE_ERROR;
         goto Exit;
