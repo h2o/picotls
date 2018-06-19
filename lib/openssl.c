@@ -420,7 +420,6 @@ static int evp_keyex_on_exchange(ptls_key_exchange_context_t **_ctx, ptls_iovec_
         goto Exit;
     }
     if (EVP_PKEY_derive_set_peer(evpctx, evppeer) <= 0) {
-        ERR_print_errors_fp(stderr);
         ret = PTLS_ERROR_LIBRARY;
         goto Exit;
     }
