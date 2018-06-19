@@ -53,7 +53,7 @@
 extern ptls_context_t *ctx, *ctx_peer;
 extern ptls_verify_certificate_t *verify_certificate;
 
-void test_key_exchange(ptls_key_exchange_algorithm_t *algo);
+void test_key_exchange(ptls_key_exchange_algorithm_t *client, ptls_key_exchange_algorithm_t *server);
 void test_picotls(void);
 
 #endif

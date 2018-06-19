@@ -58,7 +58,10 @@ extern "C" {
 
 /* negotiated_groups */
 #define PTLS_GROUP_SECP256R1 23
+#define PTLS_GROUP_SECP384R1 24
+#define PTLS_GROUP_SECP521R1 25
 #define PTLS_GROUP_X25519 29
+#define PTLS_GROUP_X448 30
 
 /* signature algorithms */
 #define PTLS_SIGNATURE_RSA_PKCS1_SHA1 0x0201
@@ -101,6 +104,7 @@ extern "C" {
 #define PTLS_ALERT_USER_CANCELED 90
 #define PTLS_ALERT_MISSING_EXTENSION 109
 #define PTLS_ALERT_UNRECOGNIZED_NAME 112
+#define PTLS_ALERT_CERTIFICATE_REQUIRED 116
 #define PTLS_ALERT_NO_APPLICATION_PROTOCOL 120
 
 /* internal errors */
@@ -110,6 +114,7 @@ extern "C" {
 #define PTLS_ERROR_INCOMPATIBLE_KEY (PTLS_ERROR_CLASS_INTERNAL + 4)
 #define PTLS_ERROR_SESSION_NOT_FOUND (PTLS_ERROR_CLASS_INTERNAL + 5)
 #define PTLS_ERROR_STATELESS_RETRY (PTLS_ERROR_CLASS_INTERNAL + 6)
+#define PTLS_ERROR_NOT_AVAILABLE (PTLS_ERROR_CLASS_INTERNAL + 7)
 
 #define PTLS_ERROR_INCORRECT_BASE64 (PTLS_ERROR_CLASS_INTERNAL + 50)
 #define PTLS_ERROR_PEM_LABEL_NOT_FOUND (PTLS_ERROR_CLASS_INTERNAL + 51)
@@ -240,7 +245,7 @@ typedef const struct st_ptls_aead_algorithm_t {
     /**
      * the underlying key stream
      */
-    const ptls_cipher_algorithm_t *ctr_cipher;
+    ptls_cipher_algorithm_t *ctr_cipher;
     /**
      * key size
      */
@@ -448,6 +453,11 @@ struct st_ptls_context_t {
      */
     unsigned send_change_cipher_spec : 1;
     /**
+     * if set, the server requests client certificates
+     * to authenticate the client.
+     */
+    unsigned require_client_authentication : 1;
+    /**
      *
      */
     ptls_encrypt_ticket_t *encrypt_ticket;
@@ -473,6 +483,11 @@ typedef struct st_ptls_raw_extension_t {
 /**
  * optional arguments to client-driven handshake
  */
+#ifdef _WINDOWS
+/* suppress warning C4201: nonstandard extension used: nameless struct/union */
+#pragma warning(push)
+#pragma warning(disable : 4201)
+#endif
 typedef struct st_ptls_handshake_properties_t {
     union {
         struct {
@@ -545,6 +560,9 @@ typedef struct st_ptls_handshake_properties_t {
      */
     int (*collected_extensions)(ptls_t *tls, struct st_ptls_handshake_properties_t *properties, ptls_raw_extension_t *extensions);
 } ptls_handshake_properties_t;
+#ifdef _WINDOWS
+#pragma warning(pop)
+#endif
 
 /**
  * builds a new ptls_iovec_t instance using the supplied parameters
@@ -742,6 +760,10 @@ int ptls_handshake_is_complete(ptls_t *tls);
  */
 int ptls_is_psk_handshake(ptls_t *tls);
 /**
+ * returns a pointer to user data pointer (client is reponsible for freeing the associated data prior to calling ptls_free)
+ */
+void **ptls_get_data_ptr(ptls_t *tls);
+/**
  * proceeds with the handshake, optionally taking some input from peer. The function returns zero in case the handshake completed
  * successfully. PTLS_ERROR_IN_PROGRESS is returned in case the handshake is incomplete. Otherwise, an error value is returned. The
  * contents of sendbuf should be sent to the client, regardless of whether if an error is returned. inlen is an argument used for
@@ -758,6 +780,10 @@ int ptls_receive(ptls_t *tls, ptls_buffer_t *plaintextbuf, const void *input, si
  * encrypts given buffer into multiple TLS records
  */
 int ptls_send(ptls_t *tls, ptls_buffer_t *sendbuf, const void *input, size_t inlen);
+/**
+ * Returns if the context is a server context.
+ */
+int ptls_is_server(ptls_t *tls);
 /**
  * returns per-record overhead
  */
@@ -783,11 +809,6 @@ int ptls_hkdf_extract(ptls_hash_algorithm_t *hash, void *output, ptls_iovec_t sa
  */
 int ptls_hkdf_expand(ptls_hash_algorithm_t *hash, void *output, size_t outlen, ptls_iovec_t prk, ptls_iovec_t info);
 /**
- *
- */
-int ptls_hkdf_expand_label(ptls_hash_algorithm_t *algo, void *output, size_t outlen, ptls_iovec_t secret, const char *label,
-                           ptls_iovec_t hash_value, const char *base_label);
-/**
  * instantiates a symmetric cipher
  */
 ptls_cipher_context_t *ptls_cipher_new(ptls_cipher_algorithm_t *algo, int is_enc, const void *key);
@@ -804,15 +825,13 @@ static void ptls_cipher_init(ptls_cipher_context_t *ctx, const void *iv);
  */
 static void ptls_cipher_encrypt(ptls_cipher_context_t *ctx, void *output, const void *input, size_t len);
 /**
- * instantiates an AEAD cipher given a secret, which is expanded using hkdf to a set of key and iv
- * @param aead
- * @param hash
+ * instantiates an AEAD cipher given a key. `static_iv` field must be set up after calling this function.
+ * @param aead AEAD algorithm
  * @param is_enc 1 if creating a context for encryption, 0 if creating a context for decryption
- * @param secret the secret. The size must be the digest length of the hash algorithm
+ * @param key encryption key
  * @return pointer to an AEAD context if successful, otherwise NULL
  */
-ptls_aead_context_t *ptls_aead_new(ptls_aead_algorithm_t *aead, ptls_hash_algorithm_t *hash, int is_enc, const void *secret,
-                                   const char *base_label);
+ptls_aead_context_t *ptls_aead_new(ptls_aead_algorithm_t *aead, int is_enc, const void *key);
 /**
  * destroys an AEAD cipher context
  */
@@ -856,10 +875,15 @@ extern void (*volatile ptls_clear_memory)(void *p, size_t len);
 static ptls_iovec_t ptls_iovec_init(const void *p, size_t len);
 
 /* inline functions */
-
 inline ptls_iovec_t ptls_iovec_init(const void *p, size_t len)
 {
-    return (ptls_iovec_t){(uint8_t *)p, len};
+    /* avoid the "return (ptls_iovec_t){(uint8_t *)p, len};" construct because it requires C99
+     * and triggers a warning "C4204: nonstandard extension used: non-constant aggregate initializer"
+     * in Visual Studio */
+    ptls_iovec_t r;
+    r.base = (uint8_t *)p;
+    r.len = len;
+    return r;
 }
 
 inline void ptls_buffer_init(ptls_buffer_t *buf, void *smallbuf, size_t smallbuf_size)
@@ -914,7 +938,7 @@ inline size_t ptls_aead_decrypt(ptls_aead_context_t *ctx, void *output, const vo
     return ctx->do_decrypt(ctx, output, input, inlen, iv, aad, aadlen);
 }
 
-int ptls_load_certificates(ptls_context_t *ctx, char *cert_pem_file);
+int ptls_load_certificates(ptls_context_t *ctx, char const *cert_pem_file);
 
 extern ptls_get_time_t ptls_get_time;
 

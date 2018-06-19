@@ -84,9 +84,25 @@
     "k0O8Q62ZxzjGJ7Zw6K3azXlH/BYE+CajxTUF+FKRRkkWL1GrFVUsYd9KLDAVry0=\n"                                                           \
     "-----END CERTIFICATE-----\n"
 
-static void test_ecdh_key_exchange(void)
+static void test_key_exchanges(void)
 {
-    test_key_exchange(&ptls_openssl_secp256r1);
+    test_key_exchange(&ptls_openssl_secp256r1, &ptls_openssl_secp256r1);
+    test_key_exchange(&ptls_openssl_secp256r1, &ptls_minicrypto_secp256r1);
+    test_key_exchange(&ptls_minicrypto_secp256r1, &ptls_openssl_secp256r1);
+
+#ifdef NID_secp384r1
+    test_key_exchange(&ptls_openssl_secp384r1, &ptls_openssl_secp384r1);
+#endif
+
+#ifdef NID_secp521r1
+    test_key_exchange(&ptls_openssl_secp521r1, &ptls_openssl_secp521r1);
+#endif
+
+#ifdef NID_X25519
+    test_key_exchange(&ptls_openssl_x25519, &ptls_openssl_x25519);
+    test_key_exchange(&ptls_openssl_x25519, &ptls_minicrypto_x25519);
+    test_key_exchange(&ptls_minicrypto_x25519, &ptls_openssl_x25519);
+#endif
 }
 
 static void test_rsa_sign(void)
@@ -147,17 +163,17 @@ static void test_cert_verify(void)
     int ret;
 
     /* expect fail when no CA is registered */
-    ret = verify_cert_chain(store, cert, chain, "test.example.com");
+    ret = verify_cert_chain(store, cert, chain, 0, "test.example.com");
     ok(ret == PTLS_ALERT_UNKNOWN_CA);
 
     /* expect success after registering the CA */
     X509_LOOKUP *lookup = X509_STORE_add_lookup(store, X509_LOOKUP_file());
     X509_LOOKUP_load_file(lookup, "t/assets/test-ca.crt", X509_FILETYPE_PEM);
-    ret = verify_cert_chain(store, cert, chain, "test.example.com");
+    ret = verify_cert_chain(store, cert, chain, 0, "test.example.com");
     ok(ret == 0);
 
     /* different server_name */
-    ret = verify_cert_chain(store, cert, chain, "test2.example.com");
+    ret = verify_cert_chain(store, cert, chain, 0, "test2.example.com");
     ok(ret == PTLS_ALERT_BAD_CERTIFICATE);
 
     X509_free(cert);
@@ -207,6 +223,8 @@ int main(int argc, char **argv)
     ENGINE_register_all_digests();
 #endif
 
+    subtest("key-exchange", test_key_exchanges);
+
     ptls_iovec_t cert;
     setup_certificate(&cert);
     setup_sign_certificate(&openssl_sign_certificate);
@@ -222,13 +240,28 @@ int main(int argc, char **argv)
                                   NULL,
                                   NULL,
                                   &openssl_sign_certificate.super};
+    assert(openssl_ctx.cipher_suites[0]->hash->digest_size == 48); /* sha384 */
+    ptls_context_t openssl_ctx_sha256only = openssl_ctx;
+    ++openssl_ctx_sha256only.cipher_suites;
+    assert(openssl_ctx_sha256only.cipher_suites[0]->hash->digest_size == 32); /* sha256 */
+
     ctx = ctx_peer = &openssl_ctx;
     verify_certificate = &openssl_verify_certificate.super;
 
-    subtest("ecdh-key-exchange", test_ecdh_key_exchange);
     subtest("rsa-sign", test_rsa_sign);
     subtest("ecdsa-sign", test_ecdsa_sign);
     subtest("cert-verify", test_cert_verify);
+    subtest("picotls", test_picotls);
+
+    ctx = ctx_peer = &openssl_ctx_sha256only;
+    subtest("picotls", test_picotls);
+
+    ctx = &openssl_ctx_sha256only;
+    ctx_peer = &openssl_ctx;
+    subtest("picotls", test_picotls);
+
+    ctx = &openssl_ctx;
+    ctx_peer = &openssl_ctx_sha256only;
     subtest("picotls", test_picotls);
 
     ptls_minicrypto_secp256r1sha256_sign_certificate_t minicrypto_sign_certificate;
@@ -243,6 +276,7 @@ int main(int argc, char **argv)
                                      NULL,
                                      NULL,
                                      &minicrypto_sign_certificate.super};
+    ctx = &openssl_ctx;
     ctx_peer = &minicrypto_ctx;
     subtest("vs. minicrypto", test_picotls);
 
