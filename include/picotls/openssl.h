@@ -33,7 +33,18 @@
 #endif
 
 extern ptls_key_exchange_algorithm_t ptls_openssl_secp256r1;
+#ifdef NID_secp384r1
+ptls_key_exchange_algorithm_t ptls_openssl_secp384r1;
+#endif
+#ifdef NID_secp521r1
+ptls_key_exchange_algorithm_t ptls_openssl_secp521r1;
+#endif
+#ifdef NID_X25519
+ptls_key_exchange_algorithm_t ptls_openssl_x25519;
+#endif
+
 extern ptls_key_exchange_algorithm_t *ptls_openssl_key_exchanges[];
+
 extern ptls_cipher_algorithm_t ptls_openssl_aes128ctr;
 extern ptls_aead_algorithm_t ptls_openssl_aes128gcm;
 extern ptls_cipher_algorithm_t ptls_openssl_aes256ctr;
