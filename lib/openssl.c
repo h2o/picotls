@@ -331,7 +331,7 @@ static int secp256r1_key_exchange(ptls_iovec_t *pubkey, ptls_iovec_t *secret, pt
     return secp_key_exchange(pubkey, secret, peerkey, NID_X9_62_prime256v1);
 }
 
-#ifdef NID_secp384r1
+#ifdef PTLS_OPENSSL_HAS_SECP384R1
 
 static int secp384r1_create_key_exchange(ptls_key_exchange_context_t **ctx, ptls_iovec_t *pubkey)
 {
@@ -345,7 +345,7 @@ static int secp384r1_key_exchange(ptls_iovec_t *pubkey, ptls_iovec_t *secret, pt
 
 #endif
 
-#ifdef NID_secp521r1
+#ifdef PTLS_OPENSSL_HAS_SECP521R1
 
 static int secp521r1_create_key_exchange(ptls_key_exchange_context_t **ctx, ptls_iovec_t *pubkey)
 {
@@ -359,7 +359,7 @@ static int secp521r1_key_exchange(ptls_iovec_t *pubkey, ptls_iovec_t *secret, pt
 
 #endif
 
-#ifdef NID_X25519
+#ifdef PTLS_OPENSSL_HAS_X25519
 
 struct st_evp_keyex_context_t {
     ptls_key_exchange_context_t super;
@@ -996,64 +996,106 @@ Exit:
     return ret;
 }
 
-static int verify_certificate(ptls_verify_certificate_t *_self, ptls_t *tls, int (**verifier)(void *, ptls_iovec_t, ptls_iovec_t),
-                              void **verify_data, ptls_iovec_t *certs, size_t num_certs)
+static int verify_cert_chain(X509_STORE *store, X509 *cert, STACK_OF(X509) * chain, int is_server, const char *server_name)
+{
+    X509_STORE_CTX *verify_ctx;
+    int ret;
+
+    assert(server_name != NULL && "ptls_set_server_name MUST be called");
+
+    /* verify certificate chain */
+    if ((verify_ctx = X509_STORE_CTX_new()) == NULL) {
+        ret = PTLS_ERROR_NO_MEMORY;
+        goto Exit;
+    }
+    if (X509_STORE_CTX_init(verify_ctx, store, cert, chain) != 1) {
+        ret = PTLS_ERROR_LIBRARY;
+        goto Exit;
+    }
+    X509_STORE_CTX_set_purpose(verify_ctx, is_server ? X509_PURPOSE_SSL_SERVER : X509_PURPOSE_SSL_CLIENT);
+    if (X509_verify_cert(verify_ctx) != 1) {
+        int x509_err = X509_STORE_CTX_get_error(verify_ctx);
+        switch (x509_err) {
+        case X509_V_ERR_OUT_OF_MEM:
+            ret = PTLS_ERROR_NO_MEMORY;
+            break;
+        case X509_V_ERR_CERT_REVOKED:
+            ret = PTLS_ALERT_CERTIFICATE_REVOKED;
+            break;
+        case X509_V_ERR_CERT_NOT_YET_VALID:
+        case X509_V_ERR_CERT_HAS_EXPIRED:
+            ret = PTLS_ALERT_CERTIFICATE_EXPIRED;
+            break;
+        case X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT:
+        case X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT_LOCALLY:
+        case X509_V_ERR_CERT_UNTRUSTED:
+        case X509_V_ERR_CERT_REJECTED:
+            ret = PTLS_ALERT_UNKNOWN_CA;
+            break;
+        case X509_V_ERR_INVALID_CA:
+            ret = PTLS_ALERT_BAD_CERTIFICATE;
+            break;
+        default:
+            ret = PTLS_ALERT_CERTIFICATE_UNKNOWN;
+            break;
+        }
+        goto Exit;
+    }
+
+#ifdef X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS
+    /* verify CN */
+    if (server_name != NULL) {
+        if ((ret = X509_check_host(cert, server_name, strlen(server_name), X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS, NULL)) != 1) {
+            if (ret == 0) { /* failed match */
+                ret = PTLS_ALERT_BAD_CERTIFICATE;
+            } else {
+                ret = PTLS_ERROR_LIBRARY;
+            }
+            goto Exit;
+        }
+    }
+#else
+#warning "hostname validation is disabled; OpenSSL >= 1.0.2 or LibreSSL >= 2.5.0 is required"
+#endif
+
+    ret = 0;
+
+Exit:
+    if (verify_ctx != NULL)
+        X509_STORE_CTX_free(verify_ctx);
+    return ret;
+}
+
+static int verify_cert(ptls_verify_certificate_t *_self, ptls_t *tls, int (**verifier)(void *, ptls_iovec_t, ptls_iovec_t),
+                       void **verify_data, ptls_iovec_t *certs, size_t num_certs)
 {
     ptls_openssl_verify_certificate_t *self = (ptls_openssl_verify_certificate_t *)_self;
     X509 *cert = NULL;
-    STACK_OF(X509) *chain = NULL;
-    X509_STORE_CTX *verify_ctx = NULL;
+    STACK_OF(X509) *chain = sk_X509_new_null();
+    size_t i;
     int ret = 0;
 
     assert(num_certs != 0);
 
+    /* convert certificates to OpenSSL representation */
     if ((cert = to_x509(certs[0])) == NULL) {
         ret = PTLS_ALERT_BAD_CERTIFICATE;
         goto Exit;
     }
-
-    if (self->cert_store != NULL) {
-        size_t i;
-        for (i = 1; i != num_certs; ++i) {
-            X509 *interm = to_x509(certs[i]);
-            if (interm == NULL) {
-                ret = PTLS_ALERT_BAD_CERTIFICATE;
-                goto Exit;
-            }
-        }
-        if ((verify_ctx = X509_STORE_CTX_new()) == NULL) {
-            ret = PTLS_ERROR_NO_MEMORY;
+    for (i = 1; i != num_certs; ++i) {
+        X509 *interm = to_x509(certs[i]);
+        if (interm == NULL) {
+            ret = PTLS_ALERT_BAD_CERTIFICATE;
             goto Exit;
         }
-        if (X509_STORE_CTX_init(verify_ctx, self->cert_store, cert, chain) != 1) {
-            ret = PTLS_ERROR_LIBRARY;
-            goto Exit;
-        }
-        if (ptls_is_server(tls)) {
-            X509_STORE_CTX_set_purpose(verify_ctx, X509_PURPOSE_SSL_SERVER);
-        } else {
-            X509_STORE_CTX_set_purpose(verify_ctx, X509_PURPOSE_SSL_CLIENT);
-        }
-        if (X509_verify_cert(verify_ctx) == 1) {
-            ret = 0;
-        } else {
-            switch (X509_STORE_CTX_get_error(verify_ctx)) {
-            case X509_V_ERR_OUT_OF_MEM:
-                ret = PTLS_ERROR_NO_MEMORY;
-                goto Exit;
-            case X509_V_ERR_CERT_REVOKED:
-                ret = PTLS_ALERT_CERTIFICATE_REVOKED;
-                goto Exit;
-            case X509_V_ERR_CERT_HAS_EXPIRED:
-                ret = PTLS_ALERT_CERTIFICATE_EXPIRED;
-                goto Exit;
-            default:
-                ret = PTLS_ALERT_CERTIFICATE_UNKNOWN;
-                goto Exit;
-            }
-        }
+        sk_X509_push(chain, interm);
     }
 
+    /* verify the chain */
+    if ((ret = verify_cert_chain(self->cert_store, cert, chain, ptls_is_server(tls), ptls_get_server_name(tls))) != 0)
+        goto Exit;
+
+    /* extract public key for verifying the TLS handshake signature */
     if ((*verify_data = X509_get_pubkey(cert)) == NULL) {
         ret = PTLS_ALERT_BAD_CERTIFICATE;
         goto Exit;
@@ -1061,8 +1103,6 @@ static int verify_certificate(ptls_verify_certificate_t *_self, ptls_t *tls, int
     *verifier = verify_sign;
 
 Exit:
-    if (verify_ctx != NULL)
-        X509_STORE_CTX_free(verify_ctx);
     if (chain != NULL)
         sk_X509_free(chain);
     if (cert != NULL)
@@ -1072,23 +1112,15 @@ Exit:
 
 int ptls_openssl_init_verify_certificate(ptls_openssl_verify_certificate_t *self, X509_STORE *store)
 {
-    *self = (ptls_openssl_verify_certificate_t){{verify_certificate}};
+    *self = (ptls_openssl_verify_certificate_t){{verify_cert}};
 
     if (store != NULL) {
-        if (store != PTLS_OPENSSL_DEFAULT_CERTIFICATE_STORE) {
-            X509_STORE_up_ref(store);
-            self->cert_store = store;
-        } else {
-            X509_LOOKUP *lookup;
-            if ((self->cert_store = X509_STORE_new()) == NULL)
-                return -1;
-            if ((lookup = X509_STORE_add_lookup(self->cert_store, X509_LOOKUP_file())) == NULL)
-                return -1;
-            X509_LOOKUP_load_file(lookup, NULL, X509_FILETYPE_DEFAULT);
-            if ((lookup = X509_STORE_add_lookup(self->cert_store, X509_LOOKUP_hash_dir())) == NULL)
-                return -1;
-            X509_LOOKUP_add_dir(lookup, NULL, X509_FILETYPE_DEFAULT);
-        }
+        X509_STORE_up_ref(store);
+        self->cert_store = store;
+    } else {
+        /* use default store */
+        if ((self->cert_store = ptls_openssl_create_default_certificate_store()) == NULL)
+            return -1;
     }
 
     return 0;
@@ -1098,6 +1130,27 @@ void ptls_openssl_dispose_verify_certificate(ptls_openssl_verify_certificate_t *
 {
     X509_STORE_free(self->cert_store);
     free(self);
+}
+
+X509_STORE *ptls_openssl_create_default_certificate_store(void)
+{
+    X509_STORE *store;
+    X509_LOOKUP *lookup;
+
+    if ((store = X509_STORE_new()) == NULL)
+        goto Error;
+    if ((lookup = X509_STORE_add_lookup(store, X509_LOOKUP_file())) == NULL)
+        goto Error;
+    X509_LOOKUP_load_file(lookup, NULL, X509_FILETYPE_DEFAULT);
+    if ((lookup = X509_STORE_add_lookup(store, X509_LOOKUP_hash_dir())) == NULL)
+        goto Error;
+    X509_LOOKUP_add_dir(lookup, NULL, X509_FILETYPE_DEFAULT);
+
+    return store;
+Error:
+    if (store != NULL)
+        X509_STORE_free(store);
+    return NULL;
 }
 
 #define TICKET_LABEL_SIZE 16
@@ -1235,15 +1288,15 @@ Exit:
 
 ptls_key_exchange_algorithm_t ptls_openssl_secp256r1 = {PTLS_GROUP_SECP256R1, secp256r1_create_key_exchange,
                                                         secp256r1_key_exchange};
-#ifdef NID_secp384r1
+#ifdef PTLS_OPENSSL_HAS_SECP384R1
 ptls_key_exchange_algorithm_t ptls_openssl_secp384r1 = {PTLS_GROUP_SECP384R1, secp384r1_create_key_exchange,
                                                         secp384r1_key_exchange};
 #endif
-#ifdef NID_secp521r1
+#ifdef PTLS_OPENSSL_HAS_SECP521R1
 ptls_key_exchange_algorithm_t ptls_openssl_secp521r1 = {PTLS_GROUP_SECP521R1, secp521r1_create_key_exchange,
                                                         secp521r1_key_exchange};
 #endif
-#ifdef NID_X25519
+#ifdef PTLS_OPENSSL_HAS_X25519
 ptls_key_exchange_algorithm_t ptls_openssl_x25519 = {PTLS_GROUP_X25519, x25519_create_key_exchange, x25519_key_exchange};
 #endif
 ptls_key_exchange_algorithm_t *ptls_openssl_key_exchanges[] = {&ptls_openssl_secp256r1, NULL};
