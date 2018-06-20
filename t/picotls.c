@@ -868,6 +868,60 @@ static void test_stateless_hrr_aad_change(void)
     ptls_buffer_dispose(&sbuf);
 }
 
+static int feed_messages(ptls_t *tls, ptls_buffer_t *outbuf, size_t *out_epoch_offsets, const uint8_t *input,
+                         const size_t *in_epoch_offsets)
+{
+    size_t i;
+    int ret = PTLS_ERROR_IN_PROGRESS;
+
+    outbuf->off = 0;
+    memset(out_epoch_offsets, 0, sizeof(*out_epoch_offsets) * 5);
+
+    for (i = 0; i != 4; ++i) {
+        size_t len = in_epoch_offsets[i + 1] - in_epoch_offsets[i];
+        if (len != 0) {
+            ret = ptls_handle_message(tls, outbuf, out_epoch_offsets, i, input + in_epoch_offsets[i], len, NULL);
+            if (!(ret == 0 || ret == PTLS_ERROR_IN_PROGRESS))
+                break;
+        }
+    }
+
+    return ret;
+}
+
+static void test_handshake_api(void)
+{
+    ptls_t *client = ptls_new(ctx, 0), *server = ptls_new(ctx_peer, 1);
+    ptls_buffer_t cbuf, sbuf;
+    size_t coffs[5] = {0}, soffs[5];
+    int ret;
+
+    ptls_buffer_init(&cbuf, "", 0);
+    ptls_buffer_init(&sbuf, "", 0);
+
+    ret = ptls_handle_message(client, &cbuf, coffs, 0, NULL, 0, NULL);
+    ok(ret == PTLS_ERROR_IN_PROGRESS);
+    ret = feed_messages(server, &sbuf, soffs, cbuf.base, coffs);
+    ok(ret == 0);
+    ok(sbuf.off != 0);
+    ok(!ptls_handshake_is_complete(client));
+    ok(!ptls_handshake_is_complete(server));
+    ret = feed_messages(client, &cbuf, coffs, sbuf.base, soffs);
+    ok(ret == 0);
+    ok(cbuf.off != 0);
+    ok(ptls_handshake_is_complete(client));
+    ok(!ptls_handshake_is_complete(server));
+    ret = feed_messages(server, &sbuf, soffs, cbuf.base, coffs);
+    ok(ret == 0);
+    ok(sbuf.off == 0);
+    ok(ptls_handshake_is_complete(server));
+
+    ptls_buffer_dispose(&cbuf);
+    ptls_buffer_dispose(&sbuf);
+    ptls_free(client);
+    ptls_free(server);
+}
+
 void test_picotls(void)
 {
     subtest("sha256", test_sha256);
@@ -904,6 +958,8 @@ void test_picotls(void)
     subtest("enforce-retry-stateless", test_enforce_retry_stateless);
 
     subtest("stateless-hrr-aad-change", test_stateless_hrr_aad_change);
+
+    subtest("handshake-api", test_handshake_api);
 
     ctx_peer->sign_certificate = sc_orig;
 
