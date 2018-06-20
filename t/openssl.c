@@ -88,15 +88,15 @@ static void test_key_exchanges(void)
     test_key_exchange(&ptls_openssl_secp256r1, &ptls_minicrypto_secp256r1);
     test_key_exchange(&ptls_minicrypto_secp256r1, &ptls_openssl_secp256r1);
 
-#ifdef NID_secp384r1
+#ifdef PTLS_OPENSSL_HAS_SECP384R1
     test_key_exchange(&ptls_openssl_secp384r1, &ptls_openssl_secp384r1);
 #endif
 
-#ifdef NID_secp521r1
+#ifdef PTLS_OPENSSL_HAS_SECP521R1
     test_key_exchange(&ptls_openssl_secp521r1, &ptls_openssl_secp521r1);
 #endif
 
-#ifdef NID_X25519
+#ifdef PTLS_OPENSSL_HAS_X25519
     test_key_exchange(&ptls_openssl_x25519, &ptls_openssl_x25519);
     test_key_exchange(&ptls_openssl_x25519, &ptls_minicrypto_x25519);
     test_key_exchange(&ptls_minicrypto_x25519, &ptls_openssl_x25519);
