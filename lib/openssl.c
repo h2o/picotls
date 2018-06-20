@@ -1255,7 +1255,7 @@ int ptls_openssl_decrypt_ticket(ptls_buffer_t *buf, ptls_iovec_t src,
         ret = PTLS_ERROR_LIBRARY;
         goto Exit;
     }
-    if (memcmp(src.base + src.len, hmac, hmac_size) != 0) {
+    if (!ptls_mem_equal(src.base + src.len, hmac, hmac_size)) {
         ret = PTLS_ALERT_HANDSHAKE_FAILURE;
         goto Exit;
     }

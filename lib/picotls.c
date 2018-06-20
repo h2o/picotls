@@ -1245,7 +1245,7 @@ static int verify_finished(ptls_t *tls, ptls_iovec_t message)
 
     if ((ret = calc_verify_data(verify_data, tls->key_schedule, tls->traffic_protection.dec.secret)) != 0)
         goto Exit;
-    if (memcmp(message.base + PTLS_HANDSHAKE_HEADER_SIZE, verify_data, tls->key_schedule->hashes[0].algo->digest_size) != 0) {
+    if (!ptls_mem_equal(message.base + PTLS_HANDSHAKE_HEADER_SIZE, verify_data, tls->key_schedule->hashes[0].algo->digest_size)) {
         ret = PTLS_ALERT_HANDSHAKE_FAILURE;
         goto Exit;
     }
@@ -1784,7 +1784,7 @@ static int client_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
     if ((ret = decode_server_hello(tls, &sh, message.base + PTLS_HANDSHAKE_HEADER_SIZE, message.base + message.len)) != 0)
         goto Exit;
     if (!(sh.legacy_session_id.len == sizeof(tls->client.legacy_session_id) &&
-          memcmp(sh.legacy_session_id.base, tls->client.legacy_session_id, sizeof(tls->client.legacy_session_id)) == 0)) {
+          ptls_mem_equal(sh.legacy_session_id.base, tls->client.legacy_session_id, sizeof(tls->client.legacy_session_id)))) {
         ret = PTLS_ALERT_ILLEGAL_PARAMETER;
         goto Exit;
     }
@@ -2711,7 +2711,8 @@ Found:
     key_schedule_update_hash(tls->key_schedule, ch_trunc.base, ch_trunc.len);
     if ((ret = calc_verify_data(verify_data, tls->key_schedule, binder_key)) != 0)
         goto Exit;
-    if (memcmp(ch->psk.identities.list[*psk_index].binder.base, verify_data, tls->key_schedule->hashes[0].algo->digest_size) != 0) {
+    if (!ptls_mem_equal(ch->psk.identities.list[*psk_index].binder.base, verify_data,
+                        tls->key_schedule->hashes[0].algo->digest_size)) {
         ret = PTLS_ALERT_DECRYPT_ERROR;
         goto Exit;
     }
@@ -2838,7 +2839,7 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
             ret = PTLS_ALERT_DECODE_ERROR;
             goto Exit;
         }
-        if (memcmp(tls->client_random, ch.random_bytes, sizeof(tls->client_random)) != 0 ||
+        if (!ptls_mem_equal(tls->client_random, ch.random_bytes, sizeof(tls->client_random)) ||
             (tls->server_name != NULL) != (ch.server_name.base != NULL) ||
             (tls->server_name != NULL &&
              !(strncmp(tls->server_name, (char *)ch.server_name.base, ch.server_name.len) == 0 &&
@@ -2878,7 +2879,7 @@ static int server_handle_hello(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t
             size_t sigsize = tls->ctx->cipher_suites[0]->hash->digest_size;
             if ((ret = calc_cookie_signature(tls, properties, key_share.algorithm, ch.cookie.tbs, sig)) != 0)
                 goto Exit;
-            if (!(ch.cookie.signature.len == sigsize && memcmp(ch.cookie.signature.base, sig, sigsize) == 0)) {
+            if (!(ch.cookie.signature.len == sigsize && ptls_mem_equal(ch.cookie.signature.base, sig, sigsize))) {
                 ret = PTLS_ALERT_HANDSHAKE_FAILURE;
                 goto Exit;
             }
@@ -4043,6 +4044,19 @@ static void clear_memory(void *p, size_t len)
 }
 
 void (*volatile ptls_clear_memory)(void *p, size_t len) = clear_memory;
+
+static int mem_equal(const void *_x, const void *_y, size_t len)
+{
+    const volatile uint8_t *x = _x, *y = _y;
+    uint8_t t = 0;
+
+    for (; len != 0; --len)
+        t |= *x++ ^ *y++;
+
+    return t == 0;
+}
+
+int (*volatile ptls_mem_equal)(const void *x, const void *y, size_t len) = mem_equal;
 
 static uint64_t get_time(ptls_get_time_t *self)
 {
