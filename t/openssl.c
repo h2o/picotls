@@ -168,7 +168,8 @@ static void test_cert_verify(void)
 
     /* expect success after registering the CA */
     X509_LOOKUP *lookup = X509_STORE_add_lookup(store, X509_LOOKUP_file());
-    X509_LOOKUP_load_file(lookup, "t/assets/test-ca.crt", X509_FILETYPE_PEM);
+    ret = X509_LOOKUP_load_file(lookup, "t/assets/test-ca.crt", X509_FILETYPE_PEM);
+    ok(ret);
     ret = verify_cert_chain(store, cert, chain, 0, "test.example.com");
     ok(ret == 0);
 
