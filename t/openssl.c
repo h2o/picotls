@@ -148,7 +148,7 @@ static void test_ecdsa_sign(void)
 
 static X509 *x509_from_pem(const char *pem)
 {
-    BIO *bio = BIO_new_mem_buf(pem, (int)strlen(pem));
+    BIO *bio = BIO_new_mem_buf((void *)pem, (int)strlen(pem));
     X509 *cert = PEM_read_bio_X509(bio, NULL, NULL, NULL);
     assert(cert != NULL || !!"failed to load certificate");
     BIO_free(bio);
