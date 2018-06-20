@@ -1042,6 +1042,7 @@ static int verify_cert_chain(X509_STORE *store, X509 *cert, STACK_OF(X509) * cha
         goto Exit;
     }
 
+#ifdef X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS
     /* verify CN */
     if (server_name != NULL) {
         if ((ret = X509_check_host(cert, server_name, strlen(server_name), X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS, NULL)) != 1) {
@@ -1053,6 +1054,9 @@ static int verify_cert_chain(X509_STORE *store, X509 *cert, STACK_OF(X509) * cha
             goto Exit;
         }
     }
+#else
+#warning "hostname validation is disabled; OpenSSL >= 1.0.2 or LibreSSL >= 2.5.0 is required"
+#endif
 
     ret = 0;
 

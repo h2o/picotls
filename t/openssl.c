@@ -173,9 +173,13 @@ static void test_cert_verify(void)
     ret = verify_cert_chain(store, cert, chain, 0, "test.example.com");
     ok(ret == 0);
 
+#ifdef X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS
     /* different server_name */
     ret = verify_cert_chain(store, cert, chain, 0, "test2.example.com");
     ok(ret == PTLS_ALERT_BAD_CERTIFICATE);
+#else
+    fprintf(stderr, "**** skipping test for hostname validation failure ***\n");
+#endif
 
     X509_free(cert);
     sk_X509_free(chain);
