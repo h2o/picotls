@@ -1071,7 +1071,7 @@ static int get_traffic_key(ptls_hash_algorithm_t *algo, void *key, size_t key_si
                                   ptls_iovec_init(NULL, 0), base_label);
 }
 
-static int setup_traffic_protection(ptls_t *tls, int is_enc, const char *secret_label, int is_server, size_t epoch)
+static int setup_traffic_protection(ptls_t *tls, int is_enc, const char *secret_label, size_t epoch)
 {
     static const char *log_labels[2][4] = {
         {NULL, "CLIENT_EARLY_TRAFFIC_SECRET", "CLIENT_HANDSHAKE_TRAFFIC_SECRET", "CLIENT_TRAFFIC_SECRET_0"},
@@ -1097,7 +1097,7 @@ static int setup_traffic_protection(ptls_t *tls, int is_enc, const char *secret_
     ctx->seq = 0;
 
     if (tls->ctx->log_secret != NULL)
-        tls->ctx->log_secret->cb(tls->ctx->log_secret, tls, log_labels[is_server][epoch],
+        tls->ctx->log_secret->cb(tls->ctx->log_secret, tls, log_labels[ptls_is_server(tls) == is_enc][epoch],
                                  ptls_iovec_init(ctx->secret, tls->key_schedule->hashes[0].algo->digest_size));
     PTLS_DEBUGF("[%s] %02x%02x,%02x%02x\n", log_labels[is_server][epoch], (unsigned)ctx->secret[0], (unsigned)ctx->secret[1],
                 (unsigned)ctx->aead->static_iv[0], (unsigned)ctx->aead->static_iv[1]);
@@ -1114,7 +1114,7 @@ static int retire_early_data_secret(ptls_t *tls, int is_enc)
     free(tls->early_data);
     tls->early_data = NULL;
 
-    return setup_traffic_protection(tls, is_enc, NULL, 0, 2);
+    return setup_traffic_protection(tls, is_enc, NULL, 2);
 }
 
 #define SESSION_IDENTIFIER_MAGIC "ptls0001" /* the number should be changed upon incompatible format change */
@@ -1575,7 +1575,7 @@ static int send_client_hello(ptls_t *tls, struct st_ptls_message_emitter_t *emit
     key_schedule_update_hash(tls->key_schedule, emitter->buf->base + msghash_off, emitter->buf->off - msghash_off);
 
     if (tls->early_data != NULL) {
-        if ((ret = setup_traffic_protection(tls, 1, "c e traffic", 0, 1)) != 0)
+        if ((ret = setup_traffic_protection(tls, 1, "c e traffic", 1)) != 0)
             goto Exit;
         if ((ret = push_change_cipher_spec(tls, emitter->buf)) != 0)
             goto Exit;
@@ -1818,7 +1818,7 @@ static int client_handle_hello(ptls_t *tls, struct st_ptls_message_emitter_t *em
 
     if ((ret = key_schedule_extract(tls->key_schedule, ecdh_secret)) != 0)
         goto Exit;
-    if ((ret = setup_traffic_protection(tls, 0, "s hs traffic", 1, 2)) != 0)
+    if ((ret = setup_traffic_protection(tls, 0, "s hs traffic", 2)) != 0)
         goto Exit;
 
     tls->state = PTLS_STATE_CLIENT_EXPECT_ENCRYPTED_EXTENSIONS;
@@ -1917,7 +1917,7 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
         if ((ret = derive_secret(tls->key_schedule, tls->early_data->next_secret, "c hs traffic")) != 0)
             goto Exit;
     } else {
-        if ((ret = setup_traffic_protection(tls, 1, "c hs traffic", 0, 2)) != 0)
+        if ((ret = setup_traffic_protection(tls, 1, "c hs traffic", 2)) != 0)
             goto Exit;
     }
     if ((ret = report_unknown_extensions(tls, properties, unknown_extensions)) != 0)
@@ -2206,7 +2206,7 @@ static int client_handle_finished(ptls_t *tls, struct st_ptls_message_emitter_t 
     /* update traffic keys by using messages upto ServerFinished, but commission them after sending ClientFinished */
     if ((ret = key_schedule_extract(tls->key_schedule, ptls_iovec_init(NULL, 0))) != 0)
         goto Exit;
-    if ((ret = setup_traffic_protection(tls, 0, "s ap traffic", 1, 3)) != 0)
+    if ((ret = setup_traffic_protection(tls, 0, "s ap traffic", 3)) != 0)
         goto Exit;
     if ((ret = derive_secret(tls->key_schedule, send_secret, "c ap traffic")) != 0)
         goto Exit;
@@ -2243,7 +2243,7 @@ static int client_handle_finished(ptls_t *tls, struct st_ptls_message_emitter_t 
     ret = send_finished(tls, emitter);
 
     memcpy(tls->traffic_protection.enc.secret, send_secret, sizeof(send_secret));
-    if ((ret = setup_traffic_protection(tls, 1, NULL, 0, 3)) != 0)
+    if ((ret = setup_traffic_protection(tls, 1, NULL, 3)) != 0)
         goto Exit;
 
     tls->state = PTLS_STATE_CLIENT_POST_HANDSHAKE;
@@ -3027,7 +3027,7 @@ static int server_handle_hello(ptls_t *tls, struct st_ptls_message_emitter_t *em
         }
         if ((ret = derive_exporter_secret(tls, 1)) != 0)
             goto Exit;
-        if ((ret = setup_traffic_protection(tls, 0, "c e traffic", 0, 1)) != 0)
+        if ((ret = setup_traffic_protection(tls, 0, "c e traffic", 1)) != 0)
             goto Exit;
     }
 
@@ -3064,13 +3064,13 @@ static int server_handle_hello(ptls_t *tls, struct st_ptls_message_emitter_t *em
     /* create protection contexts for the handshake */
     assert(tls->key_schedule->generation == 1);
     key_schedule_extract(tls->key_schedule, ecdh_secret);
-    if ((ret = setup_traffic_protection(tls, 1, "s hs traffic", 1, 2)) != 0)
+    if ((ret = setup_traffic_protection(tls, 1, "s hs traffic", 2)) != 0)
         goto Exit;
     if (tls->early_data != NULL) {
         if ((ret = derive_secret(tls->key_schedule, tls->early_data->next_secret, "c hs traffic")) != 0)
             goto Exit;
     } else {
-        if ((ret = setup_traffic_protection(tls, 0, "c hs traffic", 0, 2)) != 0)
+        if ((ret = setup_traffic_protection(tls, 0, "c hs traffic", 2)) != 0)
             goto Exit;
         if (ch.psk.early_data_indication)
             tls->skip_early_data = 1;
@@ -3137,7 +3137,7 @@ static int server_handle_hello(ptls_t *tls, struct st_ptls_message_emitter_t *em
     assert(tls->key_schedule->generation == 2);
     if ((ret = key_schedule_extract(tls->key_schedule, ptls_iovec_init(NULL, 0))) != 0)
         goto Exit;
-    if ((ret = setup_traffic_protection(tls, 1, "s ap traffic", 1, 3)) != 0)
+    if ((ret = setup_traffic_protection(tls, 1, "s ap traffic", 3)) != 0)
         goto Exit;
     if ((ret = derive_secret(tls->key_schedule, tls->server.pending_traffic_secret, "c ap traffic")) != 0)
         goto Exit;
@@ -3198,7 +3198,7 @@ static int server_handle_finished(ptls_t *tls, ptls_iovec_t message)
 
     memcpy(tls->traffic_protection.dec.secret, tls->server.pending_traffic_secret, sizeof(tls->server.pending_traffic_secret));
     ptls_clear_memory(tls->server.pending_traffic_secret, sizeof(tls->server.pending_traffic_secret));
-    if ((ret = setup_traffic_protection(tls, 0, NULL, 0, 3)) != 0)
+    if ((ret = setup_traffic_protection(tls, 0, NULL, 3)) != 0)
         return ret;
 
     key_schedule_update_hash(tls->key_schedule, message.base, message.len);
