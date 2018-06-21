@@ -108,7 +108,7 @@ static void test_ciphersuite(ptls_cipher_suite_t *cs1, ptls_cipher_suite_t *cs2)
     size_t enc1len, enc2len, dec1len, dec2len;
 
     /* encrypt */
-    c = new_aead(cs1->aead, cs1->hash, 1, traffic_secret);
+    c = ptls_aead_new(cs1->aead, cs1->hash, 1, traffic_secret, NULL);
     assert(c != NULL);
     ptls_aead_encrypt_init(c, 0, NULL, 0);
     enc1len = ptls_aead_encrypt_update(c, enc1, src1, strlen(src1));
@@ -118,7 +118,7 @@ static void test_ciphersuite(ptls_cipher_suite_t *cs1, ptls_cipher_suite_t *cs2)
     enc2len += ptls_aead_encrypt_final(c, enc2 + enc2len);
     ptls_aead_free(c);
 
-    c = new_aead(cs2->aead, cs2->hash, 0, traffic_secret);
+    c = ptls_aead_new(cs2->aead, cs2->hash, 0, traffic_secret, NULL);
     assert(c != NULL);
 
     /* decrypt and compare */
@@ -147,7 +147,7 @@ static void test_aad_ciphersuite(ptls_cipher_suite_t *cs1, ptls_cipher_suite_t *
     size_t enclen, declen;
 
     /* encrypt */
-    c = new_aead(cs1->aead, cs1->hash, 1, traffic_secret);
+    c = ptls_aead_new(cs1->aead, cs1->hash, 1, traffic_secret, NULL);
     assert(c != NULL);
     ptls_aead_encrypt_init(c, 123, aad, strlen(aad));
     enclen = ptls_aead_encrypt_update(c, enc, src, strlen(src));
@@ -155,7 +155,7 @@ static void test_aad_ciphersuite(ptls_cipher_suite_t *cs1, ptls_cipher_suite_t *
     ptls_aead_free(c);
 
     /* decrypt */
-    c = new_aead(cs2->aead, cs2->hash, 0, traffic_secret);
+    c = ptls_aead_new(cs2->aead, cs2->hash, 0, traffic_secret, NULL);
     assert(c != NULL);
     declen = ptls_aead_decrypt(c, dec, enc, enclen, 123, aad, strlen(aad));
     ok(declen == strlen(src));
@@ -252,8 +252,8 @@ static struct {
     size_t count;
 } test_fragmented_message_queue = {{{{0}}}};
 
-static int test_fragmented_message_record(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_iovec_t message, int is_end_of_record,
-                                          ptls_handshake_properties_t *properties)
+static int test_fragmented_message_record(ptls_t *tls, struct st_ptls_message_emitter_t *emitter, ptls_iovec_t message,
+                                          int is_end_of_record, ptls_handshake_properties_t *properties)
 {
     memcpy(test_fragmented_message_queue.vec[test_fragmented_message_queue.count].buf, message.base, message.len);
     test_fragmented_message_queue.vec[test_fragmented_message_queue.count].len = message.len;
@@ -611,7 +611,7 @@ static void test_hrr_stateless_handshake(void)
     ok(sc_callcnt == 1);
 }
 
-static int copy_ticket(ptls_encrypt_ticket_t *self, ptls_t *tls, int is_encrypt, ptls_buffer_t *dst, ptls_iovec_t src)
+static int on_copy_ticket(ptls_encrypt_ticket_t *self, ptls_t *tls, int is_encrypt, ptls_buffer_t *dst, ptls_iovec_t src)
 {
     int ret;
 
@@ -625,7 +625,7 @@ static int copy_ticket(ptls_encrypt_ticket_t *self, ptls_t *tls, int is_encrypt,
 
 static ptls_iovec_t saved_ticket = {NULL};
 
-static int save_ticket(ptls_save_ticket_t *self, ptls_t *tls, ptls_iovec_t src)
+static int on_save_ticket(ptls_save_ticket_t *self, ptls_t *tls, ptls_iovec_t src)
 {
     saved_ticket.base = malloc(src.len);
     memcpy(saved_ticket.base, src.base, src.len);
@@ -645,8 +645,8 @@ static void test_resumption_impl(int different_preferred_key_share, int require_
     if (different_preferred_key_share)
         ctx->key_exchanges = different_key_exchanges;
 
-    ptls_encrypt_ticket_t et = {copy_ticket};
-    ptls_save_ticket_t st = {save_ticket};
+    ptls_encrypt_ticket_t et = {on_copy_ticket};
+    ptls_save_ticket_t st = {on_save_ticket};
 
     assert(ctx_peer->ticket_lifetime == 0);
     assert(ctx_peer->max_early_data_size == 0);
@@ -868,6 +868,149 @@ static void test_stateless_hrr_aad_change(void)
     ptls_buffer_dispose(&sbuf);
 }
 
+typedef uint8_t traffic_secrets_t[2 /* is_enc */][4 /* epoch */][PTLS_MAX_DIGEST_SIZE /* octets */];
+
+static int on_update_traffic_key(ptls_update_traffic_key_t *self, ptls_t *tls, int is_enc, size_t epoch, const void *secret)
+{
+    traffic_secrets_t *secrets = *ptls_get_data_ptr(tls);
+    ok(memcmp((*secrets)[is_enc][epoch], zeroes_of_max_digest_size, PTLS_MAX_DIGEST_SIZE) == 0);
+
+    size_t size = ptls_get_cipher(tls)->hash->digest_size;
+    memcpy((*secrets)[is_enc][epoch], secret, size);
+    return 0;
+}
+
+static int feed_messages(ptls_t *tls, ptls_buffer_t *outbuf, size_t *out_epoch_offsets, const uint8_t *input,
+                         const size_t *in_epoch_offsets, ptls_handshake_properties_t *props)
+{
+    size_t i;
+    int ret = PTLS_ERROR_IN_PROGRESS;
+
+    outbuf->off = 0;
+    memset(out_epoch_offsets, 0, sizeof(*out_epoch_offsets) * 5);
+
+    for (i = 0; i != 4; ++i) {
+        size_t len = in_epoch_offsets[i + 1] - in_epoch_offsets[i];
+        if (len != 0) {
+            ret = ptls_handle_message(tls, outbuf, out_epoch_offsets, i, input + in_epoch_offsets[i], len, props);
+            if (!(ret == 0 || ret == PTLS_ERROR_IN_PROGRESS))
+                break;
+        }
+    }
+
+    return ret;
+}
+
+static void test_handshake_api(void)
+{
+    ptls_t *client, *server;
+    traffic_secrets_t client_secrets = {{{0}}}, server_secrets = {{{0}}};
+    ptls_buffer_t cbuf, sbuf;
+    size_t coffs[5] = {0}, soffs[5];
+    ptls_update_traffic_key_t update_traffic_key = {on_update_traffic_key};
+    ptls_encrypt_ticket_t encrypt_ticket = {on_copy_ticket};
+    ptls_save_ticket_t save_ticket = {on_save_ticket};
+    int ret;
+
+    ctx->update_traffic_key = &update_traffic_key;
+    ctx->save_ticket = &save_ticket;
+    ctx_peer->update_traffic_key = &update_traffic_key;
+    ctx_peer->encrypt_ticket = &encrypt_ticket;
+    ctx_peer->ticket_lifetime = 86400;
+    ctx_peer->max_early_data_size = 8192;
+
+    saved_ticket = ptls_iovec_init(NULL, 0);
+
+    ptls_buffer_init(&cbuf, "", 0);
+    ptls_buffer_init(&sbuf, "", 0);
+
+    client = ptls_new(ctx, 0);
+    *ptls_get_data_ptr(client) = &client_secrets;
+    server = ptls_new(ctx_peer, 1);
+    *ptls_get_data_ptr(server) = &server_secrets;
+
+    /* full handshake */
+    ret = ptls_handle_message(client, &cbuf, coffs, 0, NULL, 0, NULL);
+    ok(ret == PTLS_ERROR_IN_PROGRESS);
+    ret = feed_messages(server, &sbuf, soffs, cbuf.base, coffs, NULL);
+    ok(ret == 0);
+    ok(sbuf.off != 0);
+    ok(!ptls_handshake_is_complete(server));
+    ok(memcmp(server_secrets[1][2], zeroes_of_max_digest_size, PTLS_MAX_DIGEST_SIZE) != 0);
+    ok(memcmp(server_secrets[1][3], zeroes_of_max_digest_size, PTLS_MAX_DIGEST_SIZE) != 0);
+    ok(memcmp(server_secrets[0][2], zeroes_of_max_digest_size, PTLS_MAX_DIGEST_SIZE) != 0);
+    ok(memcmp(server_secrets[0][3], zeroes_of_max_digest_size, PTLS_MAX_DIGEST_SIZE) == 0);
+    ret = feed_messages(client, &cbuf, coffs, sbuf.base, soffs, NULL);
+    ok(ret == 0);
+    ok(cbuf.off != 0);
+    ok(ptls_handshake_is_complete(client));
+    ok(memcmp(client_secrets[0][2], server_secrets[1][2], PTLS_MAX_DIGEST_SIZE) == 0);
+    ok(memcmp(client_secrets[1][2], server_secrets[0][2], PTLS_MAX_DIGEST_SIZE) == 0);
+    ok(memcmp(client_secrets[0][3], server_secrets[1][3], PTLS_MAX_DIGEST_SIZE) == 0);
+    ok(memcmp(client_secrets[1][3], zeroes_of_max_digest_size, PTLS_MAX_DIGEST_SIZE) != 0);
+    ret = feed_messages(server, &sbuf, soffs, cbuf.base, coffs, NULL);
+    ok(ret == 0);
+    ok(sbuf.off == 0);
+    ok(ptls_handshake_is_complete(server));
+    ok(memcmp(client_secrets[1][3], server_secrets[0][3], PTLS_MAX_DIGEST_SIZE) == 0);
+
+    ptls_free(client);
+    ptls_free(server);
+
+    cbuf.off = 0;
+    sbuf.off = 0;
+    memset(client_secrets, 0, sizeof(client_secrets));
+    memset(server_secrets, 0, sizeof(server_secrets));
+    memset(coffs, 0, sizeof(coffs));
+    memset(soffs, 0, sizeof(soffs));
+
+    size_t max_early_data_size = 0;
+    ptls_handshake_properties_t client_hs_prop = {{{{NULL}, saved_ticket, &max_early_data_size}}};
+    client = ptls_new(ctx, 0);
+    *ptls_get_data_ptr(client) = &client_secrets;
+    server = ptls_new(ctx_peer, 1);
+    *ptls_get_data_ptr(server) = &server_secrets;
+
+    /* 0-RTT resumption */
+    ret = ptls_handle_message(client, &cbuf, coffs, 0, NULL, 0, &client_hs_prop);
+    ok(ret == PTLS_ERROR_IN_PROGRESS);
+    ok(max_early_data_size != 0);
+    ok(memcmp(client_secrets[1][1], zeroes_of_max_digest_size, PTLS_MAX_DIGEST_SIZE) != 0);
+    ret = feed_messages(server, &sbuf, soffs, cbuf.base, coffs, NULL);
+    ok(ret == 0);
+    ok(sbuf.off != 0);
+    ok(!ptls_handshake_is_complete(server));
+    ok(memcmp(client_secrets[1][1], server_secrets[0][1], PTLS_MAX_DIGEST_SIZE) == 0);
+    ok(memcmp(server_secrets[0][2], zeroes_of_max_digest_size, PTLS_MAX_DIGEST_SIZE) != 0); /* !!!overlap!!! */
+    ok(memcmp(server_secrets[1][2], zeroes_of_max_digest_size, PTLS_MAX_DIGEST_SIZE) != 0);
+    ok(memcmp(server_secrets[1][3], zeroes_of_max_digest_size, PTLS_MAX_DIGEST_SIZE) != 0);
+    ok(memcmp(server_secrets[0][3], zeroes_of_max_digest_size, PTLS_MAX_DIGEST_SIZE) == 0);
+    ret = feed_messages(client, &cbuf, coffs, sbuf.base, soffs, &client_hs_prop);
+    ok(ret == 0);
+    ok(cbuf.off != 0);
+    ok(ptls_handshake_is_complete(client));
+    ok(memcmp(client_secrets[0][3], server_secrets[1][3], PTLS_MAX_DIGEST_SIZE) == 0);
+    ok(memcmp(client_secrets[1][3], zeroes_of_max_digest_size, PTLS_MAX_DIGEST_SIZE) != 0);
+    ret = feed_messages(server, &sbuf, soffs, cbuf.base, coffs, NULL);
+    ok(ret == 0);
+    ok(ptls_handshake_is_complete(server));
+    ok(memcmp(client_secrets[1][3], server_secrets[0][3], PTLS_MAX_DIGEST_SIZE) == 0);
+
+    ptls_free(client);
+    ptls_free(server);
+
+    ptls_buffer_dispose(&cbuf);
+    ptls_buffer_dispose(&sbuf);
+
+    ctx->update_traffic_key = NULL;
+    ctx->save_ticket = NULL;
+    ctx_peer->update_traffic_key = NULL;
+    ctx_peer->encrypt_ticket = NULL;
+    ctx_peer->save_ticket = NULL;
+    ctx_peer->ticket_lifetime = 0;
+    ctx_peer->max_early_data_size = 0;
+}
+
 void test_picotls(void)
 {
     subtest("sha256", test_sha256);
@@ -904,6 +1047,8 @@ void test_picotls(void)
     subtest("enforce-retry-stateless", test_enforce_retry_stateless);
 
     subtest("stateless-hrr-aad-change", test_stateless_hrr_aad_change);
+
+    subtest("handshake-api", test_handshake_api);
 
     ctx_peer->sign_certificate = sc_orig;
 

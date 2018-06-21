@@ -388,6 +388,11 @@ PTLS_CALLBACK_TYPE(void, log_secret, ptls_t *tls, const char *label, ptls_iovec_
  * reference counting
  */
 PTLS_CALLBACK_TYPE(void, update_open_count, ssize_t delta);
+/**
+ * applications that have their own record layer can set this function to derive their own traffic keys from the traffic secret.
+ * The cipher-suite that is being associated to the connection can be obtained by calling the ptls_get_cipher function.
+ */
+PTLS_CALLBACK_TYPE(int, update_traffic_key, ptls_t *tls, int is_enc, size_t epoch, const void *secret);
 
 /**
  * the configuration
@@ -473,6 +478,10 @@ struct st_ptls_context_t {
      *
      */
     ptls_update_open_count_t *update_open_count;
+    /**
+     *
+     */
+    ptls_update_traffic_key_t *update_traffic_key;
 };
 
 typedef struct st_ptls_raw_extension_t {
@@ -809,6 +818,11 @@ int ptls_hkdf_extract(ptls_hash_algorithm_t *hash, void *output, ptls_iovec_t sa
  */
 int ptls_hkdf_expand(ptls_hash_algorithm_t *hash, void *output, size_t outlen, ptls_iovec_t prk, ptls_iovec_t info);
 /**
+ *
+ */
+int ptls_hkdf_expand_label(ptls_hash_algorithm_t *algo, void *output, size_t outlen, ptls_iovec_t secret, const char *label,
+                           ptls_iovec_t hash_value, const char *base_label);
+/**
  * instantiates a symmetric cipher
  */
 ptls_cipher_context_t *ptls_cipher_new(ptls_cipher_algorithm_t *algo, int is_enc, const void *key);
@@ -825,13 +839,15 @@ static void ptls_cipher_init(ptls_cipher_context_t *ctx, const void *iv);
  */
 static void ptls_cipher_encrypt(ptls_cipher_context_t *ctx, void *output, const void *input, size_t len);
 /**
- * instantiates an AEAD cipher given a key. `static_iv` field must be set up after calling this function.
- * @param aead AEAD algorithm
+ * instantiates an AEAD cipher given a secret, which is expanded using hkdf to a set of key and iv
+ * @param aead
+ * @param hash
  * @param is_enc 1 if creating a context for encryption, 0 if creating a context for decryption
- * @param key encryption key
+ * @param secret the secret. The size must be the digest length of the hash algorithm
  * @return pointer to an AEAD context if successful, otherwise NULL
  */
-ptls_aead_context_t *ptls_aead_new(ptls_aead_algorithm_t *aead, int is_enc, const void *key);
+ptls_aead_context_t *ptls_aead_new(ptls_aead_algorithm_t *aead, ptls_hash_algorithm_t *hash, int is_enc, const void *secret,
+                                   const char *base_label);
 /**
  * destroys an AEAD cipher context
  */
@@ -861,6 +877,24 @@ static size_t ptls_aead_encrypt_final(ptls_aead_context_t *ctx, void *output);
  */
 static size_t ptls_aead_decrypt(ptls_aead_context_t *ctx, void *output, const void *input, size_t inlen, uint64_t seq,
                                 const void *aad, size_t aadlen);
+/**
+ * runs the handshake by dealing directly with handshake messages
+ * @param tls            the TLS context
+ * @param sendbuf        buffer to which the output will be written
+ * @param epoch_offsets  start and end offset of the messages in each epoch. For example, when the server emits ServerHello between
+ *                       offset 0 and 38, the following handshake messages between offset 39 and 348, and a post-handshake message
+ *                       between 349 and 451, epoch_offsets will be {0,39,39,349,452} and the length of the sendbuf will be 452.
+ *                       This argument is an I/O argument. Applications can either reset sendbuf to empty and epoch_offsets and to
+ *                       all zero every time they invoke the function, or retain the values until the handshake completes so that
+ *                       data will be appended to sendbuf and epoch_offsets will be adjusted.
+ * @param in_epoch       epoch of the input
+ * @param input          input bytes (must be NULL when starting the handshake on the client side)
+ * @param inlen          length of the input
+ * @param properties     properties specific to the running handshake
+ * @return same as `ptls_handshake`
+ */
+int ptls_handle_message(ptls_t *tls, ptls_buffer_t *sendbuf, size_t epoch_offsets[5], size_t in_epoch, const void *input,
+                        size_t inlen, ptls_handshake_properties_t *properties);
 /**
  * internal
  */
