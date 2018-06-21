@@ -611,7 +611,7 @@ static void test_hrr_stateless_handshake(void)
     ok(sc_callcnt == 1);
 }
 
-static int copy_ticket(ptls_encrypt_ticket_t *self, ptls_t *tls, int is_encrypt, ptls_buffer_t *dst, ptls_iovec_t src)
+static int on_copy_ticket(ptls_encrypt_ticket_t *self, ptls_t *tls, int is_encrypt, ptls_buffer_t *dst, ptls_iovec_t src)
 {
     int ret;
 
@@ -625,7 +625,7 @@ static int copy_ticket(ptls_encrypt_ticket_t *self, ptls_t *tls, int is_encrypt,
 
 static ptls_iovec_t saved_ticket = {NULL};
 
-static int save_ticket(ptls_save_ticket_t *self, ptls_t *tls, ptls_iovec_t src)
+static int on_save_ticket(ptls_save_ticket_t *self, ptls_t *tls, ptls_iovec_t src)
 {
     saved_ticket.base = malloc(src.len);
     memcpy(saved_ticket.base, src.base, src.len);
@@ -645,8 +645,8 @@ static void test_resumption_impl(int different_preferred_key_share, int require_
     if (different_preferred_key_share)
         ctx->key_exchanges = different_key_exchanges;
 
-    ptls_encrypt_ticket_t et = {copy_ticket};
-    ptls_save_ticket_t st = {save_ticket};
+    ptls_encrypt_ticket_t et = {on_copy_ticket};
+    ptls_save_ticket_t st = {on_save_ticket};
 
     assert(ctx_peer->ticket_lifetime == 0);
     assert(ctx_peer->max_early_data_size == 0);
@@ -881,7 +881,7 @@ static int on_update_traffic_key(ptls_update_traffic_key_t *self, ptls_t *tls, i
 }
 
 static int feed_messages(ptls_t *tls, ptls_buffer_t *outbuf, size_t *out_epoch_offsets, const uint8_t *input,
-                         const size_t *in_epoch_offsets)
+                         const size_t *in_epoch_offsets, ptls_handshake_properties_t *props)
 {
     size_t i;
     int ret = PTLS_ERROR_IN_PROGRESS;
@@ -892,7 +892,7 @@ static int feed_messages(ptls_t *tls, ptls_buffer_t *outbuf, size_t *out_epoch_o
     for (i = 0; i != 4; ++i) {
         size_t len = in_epoch_offsets[i + 1] - in_epoch_offsets[i];
         if (len != 0) {
-            ret = ptls_handle_message(tls, outbuf, out_epoch_offsets, i, input + in_epoch_offsets[i], len, NULL);
+            ret = ptls_handle_message(tls, outbuf, out_epoch_offsets, i, input + in_epoch_offsets[i], len, props);
             if (!(ret == 0 || ret == PTLS_ERROR_IN_PROGRESS))
                 break;
         }
@@ -908,51 +908,107 @@ static void test_handshake_api(void)
     ptls_buffer_t cbuf, sbuf;
     size_t coffs[5] = {0}, soffs[5];
     ptls_update_traffic_key_t update_traffic_key = {on_update_traffic_key};
+    ptls_encrypt_ticket_t encrypt_ticket = {on_copy_ticket};
+    ptls_save_ticket_t save_ticket = {on_save_ticket};
     int ret;
 
     ctx->update_traffic_key = &update_traffic_key;
+    ctx->save_ticket = &save_ticket;
     ctx_peer->update_traffic_key = &update_traffic_key;
+    ctx_peer->encrypt_ticket = &encrypt_ticket;
+    ctx_peer->ticket_lifetime = 86400;
+    ctx_peer->max_early_data_size = 8192;
+
+    saved_ticket = ptls_iovec_init(NULL, 0);
+
+    ptls_buffer_init(&cbuf, "", 0);
+    ptls_buffer_init(&sbuf, "", 0);
 
     client = ptls_new(ctx, 0);
     *ptls_get_data_ptr(client) = &client_secrets;
     server = ptls_new(ctx_peer, 1);
     *ptls_get_data_ptr(server) = &server_secrets;
-    ptls_buffer_init(&cbuf, "", 0);
-    ptls_buffer_init(&sbuf, "", 0);
 
+    /* full handshake */
     ret = ptls_handle_message(client, &cbuf, coffs, 0, NULL, 0, NULL);
     ok(ret == PTLS_ERROR_IN_PROGRESS);
-    ret = feed_messages(server, &sbuf, soffs, cbuf.base, coffs);
+    ret = feed_messages(server, &sbuf, soffs, cbuf.base, coffs, NULL);
     ok(ret == 0);
     ok(sbuf.off != 0);
-    ok(!ptls_handshake_is_complete(client));
     ok(!ptls_handshake_is_complete(server));
     ok(memcmp(server_secrets[1][2], zeroes_of_max_digest_size, PTLS_MAX_DIGEST_SIZE) != 0);
     ok(memcmp(server_secrets[1][3], zeroes_of_max_digest_size, PTLS_MAX_DIGEST_SIZE) != 0);
     ok(memcmp(server_secrets[0][2], zeroes_of_max_digest_size, PTLS_MAX_DIGEST_SIZE) != 0);
     ok(memcmp(server_secrets[0][3], zeroes_of_max_digest_size, PTLS_MAX_DIGEST_SIZE) == 0);
-    ret = feed_messages(client, &cbuf, coffs, sbuf.base, soffs);
+    ret = feed_messages(client, &cbuf, coffs, sbuf.base, soffs, NULL);
     ok(ret == 0);
     ok(cbuf.off != 0);
     ok(ptls_handshake_is_complete(client));
-    ok(!ptls_handshake_is_complete(server));
     ok(memcmp(client_secrets[0][2], server_secrets[1][2], PTLS_MAX_DIGEST_SIZE) == 0);
     ok(memcmp(client_secrets[1][2], server_secrets[0][2], PTLS_MAX_DIGEST_SIZE) == 0);
     ok(memcmp(client_secrets[0][3], server_secrets[1][3], PTLS_MAX_DIGEST_SIZE) == 0);
     ok(memcmp(client_secrets[1][3], zeroes_of_max_digest_size, PTLS_MAX_DIGEST_SIZE) != 0);
-    ret = feed_messages(server, &sbuf, soffs, cbuf.base, coffs);
+    ret = feed_messages(server, &sbuf, soffs, cbuf.base, coffs, NULL);
     ok(ret == 0);
     ok(sbuf.off == 0);
     ok(ptls_handshake_is_complete(server));
     ok(memcmp(client_secrets[1][3], server_secrets[0][3], PTLS_MAX_DIGEST_SIZE) == 0);
 
-    ptls_buffer_dispose(&cbuf);
-    ptls_buffer_dispose(&sbuf);
     ptls_free(client);
     ptls_free(server);
 
+    cbuf.off = 0;
+    sbuf.off = 0;
+    memset(client_secrets, 0, sizeof(client_secrets));
+    memset(server_secrets, 0, sizeof(server_secrets));
+    memset(coffs, 0, sizeof(coffs));
+    memset(soffs, 0, sizeof(soffs));
+
+    size_t max_early_data_size = 0;
+    ptls_handshake_properties_t client_hs_prop = {{{{NULL}, saved_ticket, &max_early_data_size}}};
+    client = ptls_new(ctx, 0);
+    *ptls_get_data_ptr(client) = &client_secrets;
+    server = ptls_new(ctx_peer, 1);
+    *ptls_get_data_ptr(server) = &server_secrets;
+
+    /* 0-RTT resumption */
+    ret = ptls_handle_message(client, &cbuf, coffs, 0, NULL, 0, &client_hs_prop);
+    ok(ret == PTLS_ERROR_IN_PROGRESS);
+    ok(max_early_data_size != 0);
+    ok(memcmp(client_secrets[1][1], zeroes_of_max_digest_size, PTLS_MAX_DIGEST_SIZE) != 0);
+    ret = feed_messages(server, &sbuf, soffs, cbuf.base, coffs, NULL);
+    ok(ret == 0);
+    ok(sbuf.off != 0);
+    ok(!ptls_handshake_is_complete(server));
+    ok(memcmp(client_secrets[1][1], server_secrets[0][1], PTLS_MAX_DIGEST_SIZE) == 0);
+    ok(memcmp(server_secrets[0][2], zeroes_of_max_digest_size, PTLS_MAX_DIGEST_SIZE) != 0); /* !!!overlap!!! */
+    ok(memcmp(server_secrets[1][2], zeroes_of_max_digest_size, PTLS_MAX_DIGEST_SIZE) != 0);
+    ok(memcmp(server_secrets[1][3], zeroes_of_max_digest_size, PTLS_MAX_DIGEST_SIZE) != 0);
+    ok(memcmp(server_secrets[0][3], zeroes_of_max_digest_size, PTLS_MAX_DIGEST_SIZE) == 0);
+    ret = feed_messages(client, &cbuf, coffs, sbuf.base, soffs, &client_hs_prop);
+    ok(ret == 0);
+    ok(cbuf.off != 0);
+    ok(ptls_handshake_is_complete(client));
+    ok(memcmp(client_secrets[0][3], server_secrets[1][3], PTLS_MAX_DIGEST_SIZE) == 0);
+    ok(memcmp(client_secrets[1][3], zeroes_of_max_digest_size, PTLS_MAX_DIGEST_SIZE) != 0);
+    ret = feed_messages(server, &sbuf, soffs, cbuf.base, coffs, NULL);
+    ok(ret == 0);
+    ok(ptls_handshake_is_complete(server));
+    ok(memcmp(client_secrets[1][3], server_secrets[0][3], PTLS_MAX_DIGEST_SIZE) == 0);
+
+    ptls_free(client);
+    ptls_free(server);
+
+    ptls_buffer_dispose(&cbuf);
+    ptls_buffer_dispose(&sbuf);
+
     ctx->update_traffic_key = NULL;
+    ctx->save_ticket = NULL;
     ctx_peer->update_traffic_key = NULL;
+    ctx_peer->encrypt_ticket = NULL;
+    ctx_peer->save_ticket = NULL;
+    ctx_peer->ticket_lifetime = 0;
+    ctx_peer->max_early_data_size = 0;
 }
 
 void test_picotls(void)
