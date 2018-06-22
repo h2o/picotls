@@ -555,7 +555,6 @@ static int do_sign(EVP_PKEY *key, ptls_buffer_t *outbuf, ptls_iovec_t input, con
         goto Exit;
     }
     if (EVP_DigestSignInit(ctx, &pkey_ctx, md, NULL, key) != 1) {
-        ERR_print_errors_fp(stderr);
         ret = PTLS_ERROR_LIBRARY;
         goto Exit;
     }
