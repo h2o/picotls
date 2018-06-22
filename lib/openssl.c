@@ -42,6 +42,11 @@
 #include "picotls.h"
 #include "picotls/openssl.h"
 
+#ifdef _WINDOWS
+#include <ms\applink.c>
+#endif
+
+
 #if !defined(LIBRESSL_VERSION_NUMBER) && OPENSSL_VERSION_NUMBER >= 0x10100000L
 #define OPENSSL_1_1_API 1
 #elif defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER >= 0x2070000fL
@@ -550,6 +555,7 @@ static int do_sign(EVP_PKEY *key, ptls_buffer_t *outbuf, ptls_iovec_t input, con
         goto Exit;
     }
     if (EVP_DigestSignInit(ctx, &pkey_ctx, md, NULL, key) != 1) {
+        ERR_print_errors_fp(stderr);
         ret = PTLS_ERROR_LIBRARY;
         goto Exit;
     }
