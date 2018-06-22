@@ -593,6 +593,7 @@ Exit:
 struct cipher_context_t {
     ptls_cipher_context_t super;
     EVP_CIPHER_CTX *evp;
+    int (*evp_do_cipher)(EVP_CIPHER_CTX *,unsigned char *, const unsigned char *, size_t inl);
 };
 
 static void cipher_dispose(ptls_cipher_context_t *_ctx)
@@ -624,6 +625,8 @@ static int cipher_setup_crypto(ptls_cipher_context_t *_ctx, const void *key, con
         EVP_CIPHER_CTX_free(ctx->evp);
         return PTLS_ERROR_LIBRARY;
     }
+    ctx->evp_do_cipher = EVP_CIPHER_meth_get_do_cipher(cipher);
+    assert(ctx->evp_do_cipher != NULL);
 
     return 0;
 }
@@ -631,13 +634,13 @@ static int cipher_setup_crypto(ptls_cipher_context_t *_ctx, const void *key, con
 static void cipher_encrypt(ptls_cipher_context_t *_ctx, void *output, const void *input, size_t _len)
 {
     struct cipher_context_t *ctx = (struct cipher_context_t *)_ctx;
-    int len = (int)_len, ret = EVP_EncryptUpdate(ctx->evp, output, &len, input, len);
+    int ret = ctx->evp_do_cipher(ctx->evp, output, input, _len);
     assert(ret);
 }
 
 static int aes128ctr_setup_crypto(ptls_cipher_context_t *ctx, int is_enc, const void *key)
 {
-    return cipher_setup_crypto(ctx, key, EVP_aes_128_ctr(), cipher_encrypt);
+    return cipher_setup_crypto(ctx, key, EVP_aes_128_ecb(), cipher_encrypt);
 }
 
 static int aes256ctr_setup_crypto(ptls_cipher_context_t *ctx, int is_enc, const void *key)
