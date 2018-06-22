@@ -262,10 +262,10 @@ X509_STORE * openssl_init_cert_store(char const * crt_file)
 
     if (store != NULL) {
         X509_LOOKUP *lookup = X509_STORE_add_lookup(store, X509_LOOKUP_file());
-        ret = X509_LOOKUP_load_file(lookup, PICOTLS_CERT_STORE, X509_FILETYPE_PEM);
+        ret = X509_LOOKUP_load_file(lookup, crt_file, X509_FILETYPE_PEM);
         if (ret != 1) {
             fprintf(stderr, "Cannot load store (%s), ret = %d\n",
-                PICOTLS_CERT_STORE, ret);
+                crt_file, ret);
         }
     }
 
