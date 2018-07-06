@@ -255,14 +255,14 @@ int main(int argc, char **argv)
             cipher_suites.elements[cipher_suites.count++] = ptls_openssl_cipher_suites[i];
         } break;
         case 'd':
-            if (sscanf(optarg, "%" PRIu64, &lifetime) != 1 || lifetime == 0) {
+            if (sscanf(optarg, "%" SCNu64, &lifetime) != 1 || lifetime == 0) {
                 fprintf(stderr, "lifetime must be a positive integer\n");
                 exit(1);
             }
             lifetime *= 86400; /* convert to seconds */
             break;
         case 'p':
-            if (sscanf(optarg, "%" PRIu16, &padded_length) != 1 || padded_length == 0) {
+            if (sscanf(optarg, "%" SCNu16, &padded_length) != 1 || padded_length == 0) {
                 fprintf(stderr, "padded length must be a positive integer\n");
                 exit(1);
             }
