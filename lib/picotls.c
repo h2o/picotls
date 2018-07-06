@@ -2839,14 +2839,6 @@ static int server_handle_hello(ptls_t *tls, struct st_ptls_message_emitter_t *em
     /* handle client_random and SNI */
     if (!is_second_flight) {
         memcpy(tls->client_random, ch.random_bytes, sizeof(tls->client_random));
-        if (ch.server_name.base != NULL) {
-            if ((tls->server_name = malloc(ch.server_name.len + 1)) == NULL) {
-                ret = PTLS_ERROR_NO_MEMORY;
-                goto Exit;
-            }
-            memcpy(tls->server_name, ch.server_name.base, ch.server_name.len);
-            tls->server_name[ch.server_name.len] = '\0';
-        }
         if (tls->ctx->on_client_hello != NULL &&
             (ret = tls->ctx->on_client_hello->cb(tls->ctx->on_client_hello, tls, ch.server_name, ch.alpn.list, ch.alpn.count,
                                                  ch.signature_algorithms.list, ch.signature_algorithms.count)) != 0)
@@ -2856,6 +2848,8 @@ static int server_handle_hello(ptls_t *tls, struct st_ptls_message_emitter_t *em
             ret = PTLS_ALERT_DECODE_ERROR;
             goto Exit;
         }
+        /* We compare SNI only when the value is saved by the on_client_hello callback. This should be OK because we are ignoring
+         * the value unless the callback saves the server-name. */
         if (memcmp(tls->client_random, ch.random_bytes, sizeof(tls->client_random)) != 0 ||
             (tls->server_name != NULL) != (ch.server_name.base != NULL) ||
             (tls->server_name != NULL &&
