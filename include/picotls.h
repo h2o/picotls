@@ -590,6 +590,10 @@ typedef struct st_ptls_handshake_properties_t {
              * if retry should be stateless (cookie.key MUST be set when this option is used)
              */
             unsigned retry_uses_cookie : 1;
+            /**
+             * if esni was used
+             */
+            unsigned esni : 1;
         } server;
     };
     /**

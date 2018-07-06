@@ -3187,21 +3187,23 @@ static int server_handle_hello(ptls_t *tls, struct st_ptls_message_emitter_t *em
     if (!is_second_flight) {
         memcpy(tls->client_random, ch.random_bytes, sizeof(tls->client_random));
         ptls_iovec_t server_name = {NULL};
-        int should_free_server_name = 0;
+        int is_esni = 0;
         if (ch.server_name.base != NULL) {
             server_name = ch.server_name;
         } else if (ch.esni.cipher != NULL && tls->ctx->esni != NULL) {
             if ((ret = client_hello_decode_esni(tls->ctx, &key_share.algorithm, &key_share.peer_key, &server_name, &ch)) != 0)
                 goto Exit;
-            should_free_server_name = 1;
+            is_esni = 1;
         }
+        if (properties != NULL)
+            properties->server.esni = is_esni;
         if (tls->ctx->on_client_hello != NULL) {
             ret = tls->ctx->on_client_hello->cb(tls->ctx->on_client_hello, tls, server_name, ch.alpn.list, ch.alpn.count,
                                                 ch.signature_algorithms.list, ch.signature_algorithms.count);
         } else {
             ret = 0;
         }
-        if (should_free_server_name)
+        if (is_esni)
             free(server_name.base);
         if (ret != 0)
             goto Exit;
