@@ -1064,15 +1064,15 @@ void test_key_exchange(ptls_key_exchange_algorithm_t *client, ptls_key_exchange_
     int ret;
 
     /* fail */
-    ret = server->exchange(&server_pubkey, &server_secret, (ptls_iovec_t){NULL});
+    ret = server->exchange(server, &server_pubkey, &server_secret, (ptls_iovec_t){NULL});
     ok(ret != 0);
 
     /* perform ecdh */
-    ret = client->create(&ctx, &client_pubkey);
+    ret = client->create(client, &ctx, &client_pubkey);
     ok(ret == 0);
-    ret = server->exchange(&server_pubkey, &server_secret, client_pubkey);
+    ret = server->exchange(server, &server_pubkey, &server_secret, client_pubkey);
     ok(ret == 0);
-    ret = ctx->on_exchange(&ctx, &client_secret, server_pubkey);
+    ret = ctx->on_exchange(&ctx, 1, &client_secret, server_pubkey);
     ok(ret == 0);
     ok(client_secret.len == server_secret.len);
     ok(memcmp(client_secret.base, server_secret.base, client_secret.len) == 0);
@@ -1082,9 +1082,9 @@ void test_key_exchange(ptls_key_exchange_algorithm_t *client, ptls_key_exchange_
     free(server_secret.base);
 
     /* client abort */
-    ret = client->create(&ctx, &client_pubkey);
+    ret = client->create(client, &ctx, &client_pubkey);
     ok(ret == 0);
-    ret = ctx->on_exchange(&ctx, NULL, ptls_iovec_init(NULL, 0));
+    ret = ctx->on_exchange(&ctx, 1, NULL, ptls_iovec_init(NULL, 0));
     ok(ret == 0);
     ok(ctx == NULL);
 }

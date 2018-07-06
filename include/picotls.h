@@ -170,11 +170,15 @@ typedef struct st_ptls_buffer_t {
  * key exchange context built by ptls_key_exchange_algorithm::create.
  */
 typedef struct st_ptls_key_exchange_context_t {
+    const struct st_ptls_key_exchange_algorithm_t *algo;
     /**
-     * called once per created context. Callee must free resources allocated to the context and set *keyex to NULL. Secret and
-     * peerkey will be NULL in case the exchange never happened.
+     * If `release` is set, the callee frees resources allocated to the context and set *keyex to NULL
      */
-    int (*on_exchange)(struct st_ptls_key_exchange_context_t **keyex, ptls_iovec_t *secret, ptls_iovec_t peerkey);
+    int (*on_exchange)(struct st_ptls_key_exchange_context_t **keyex, int release, ptls_iovec_t *secret, ptls_iovec_t peerkey);
+    /**
+     * optional callback to serialize the private key
+     */
+    int (*save)(struct st_ptls_key_exchange_context_t *keyex, ptls_buffer_t *outbuf);
 } ptls_key_exchange_context_t;
 
 /**
@@ -189,11 +193,21 @@ typedef const struct st_ptls_key_exchange_algorithm_t {
      * creates a context for asynchronous key exchange. The function is called when ClientHello is generated. The on_exchange
      * callback of the created context is called when the client receives ServerHello.
      */
-    int (*create)(ptls_key_exchange_context_t **ctx, ptls_iovec_t *pubkey);
+    int (*create)(const struct st_ptls_key_exchange_algorithm_t *algo, ptls_key_exchange_context_t **ctx, ptls_iovec_t *pubkey);
     /**
      * implements synchronous key exchange. Called when receiving a ServerHello.
      */
-    int (*exchange)(ptls_iovec_t *pubkey, ptls_iovec_t *secret, ptls_iovec_t peerkey);
+    int (*exchange)(const struct st_ptls_key_exchange_algorithm_t *algo, ptls_iovec_t *pubkey, ptls_iovec_t *secret,
+                    ptls_iovec_t peerkey);
+    /**
+     * optional callback for loading a serialized private key
+     */
+    int (*load)(const struct st_ptls_key_exchange_algorithm_t *algo, ptls_key_exchange_context_t **ctx, ptls_iovec_t pubkey,
+                ptls_iovec_t privkey);
+    /**
+     * crypto-specific data
+     */
+    intptr_t data;
 } ptls_key_exchange_algorithm_t;
 
 /**

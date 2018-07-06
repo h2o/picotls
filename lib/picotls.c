@@ -1519,7 +1519,7 @@ static int send_client_hello(ptls_t *tls, struct st_ptls_message_emitter_t *emit
                 ptls_buffer_push_block(sendbuf, 2, {
                     if (tls->key_share != NULL) {
                         ptls_iovec_t pubkey;
-                        if ((ret = tls->key_share->create(&tls->client.key_share_ctx, &pubkey)) != 0)
+                        if ((ret = tls->key_share->create(tls->key_share, &tls->client.key_share_ctx, &pubkey)) != 0)
                             goto Exit;
                         ptls_buffer_push16(sendbuf, tls->key_share->id);
                         ptls_buffer_push_block(sendbuf, 2, { ptls_buffer_pushv(sendbuf, pubkey.base, pubkey.len); });
@@ -1757,7 +1757,7 @@ static int handle_hello_retry_request(ptls_t *tls, struct st_ptls_message_emitte
     int ret;
 
     if (tls->client.key_share_ctx != NULL) {
-        tls->client.key_share_ctx->on_exchange(&tls->client.key_share_ctx, NULL, ptls_iovec_init(NULL, 0));
+        tls->client.key_share_ctx->on_exchange(&tls->client.key_share_ctx, 1, NULL, ptls_iovec_init(NULL, 0));
         tls->client.key_share_ctx = NULL;
     }
 
@@ -1813,7 +1813,7 @@ static int client_handle_hello(ptls_t *tls, struct st_ptls_message_emitter_t *em
         goto Exit;
 
     if (sh.peerkey.base != NULL) {
-        if ((ret = tls->client.key_share_ctx->on_exchange(&tls->client.key_share_ctx, &ecdh_secret, sh.peerkey)) != 0)
+        if ((ret = tls->client.key_share_ctx->on_exchange(&tls->client.key_share_ctx, 1, &ecdh_secret, sh.peerkey)) != 0)
             goto Exit;
     }
 
@@ -3037,7 +3037,7 @@ static int server_handle_hello(ptls_t *tls, struct st_ptls_message_emitter_t *em
             ret = ch.key_shares.base != NULL ? PTLS_ALERT_HANDSHAKE_FAILURE : PTLS_ALERT_MISSING_EXTENSION;
             goto Exit;
         }
-        if ((ret = key_share.algorithm->exchange(&pubkey, &ecdh_secret, key_share.peer_key)) != 0)
+        if ((ret = key_share.algorithm->exchange(key_share.algorithm, &pubkey, &ecdh_secret, key_share.peer_key)) != 0)
             goto Exit;
         tls->key_share = key_share.algorithm;
     }
@@ -3331,7 +3331,7 @@ void ptls_free(ptls_t *tls)
         /* nothing to do */
     } else {
         if (tls->client.key_share_ctx != NULL)
-            tls->client.key_share_ctx->on_exchange(&tls->client.key_share_ctx, NULL, ptls_iovec_init(NULL, 0));
+            tls->client.key_share_ctx->on_exchange(&tls->client.key_share_ctx, 1, NULL, ptls_iovec_init(NULL, 0));
         if (tls->client.certificate_request.context.base != NULL)
             free(tls->client.certificate_request.context.base);
     }
