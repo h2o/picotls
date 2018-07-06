@@ -129,7 +129,7 @@ static inline void setup_esni(ptls_context_t *ctx, const char *fn)
     size_t keys_buf_len;
     int ret = 0;
 
-    if ((fp = fopen(optarg, "rb")) == NULL) {
+    if ((fp = fopen(fn, "rb")) == NULL) {
         fprintf(stderr, "failed to open file:%s:%s\n", fn, strerror(errno));
         exit(1);
     }
