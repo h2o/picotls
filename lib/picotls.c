@@ -350,6 +350,14 @@ static uint8_t zeroes_of_max_digest_size[PTLS_MAX_DIGEST_SIZE] = {0};
 static ptls_aead_context_t *new_aead(ptls_aead_algorithm_t *aead, ptls_hash_algorithm_t *hash, int is_enc, const void *secret,
                                      ptls_iovec_t hash_value, const char *base_label);
 
+static void dumphex(const char *file, int line, const uint8_t *src, const uint8_t *const end)
+{
+    fprintf(stderr, "%s:%d:", file, line);
+    for (; src != end; ++src)
+        fprintf(stderr, "%02x", (unsigned)*src);
+    fprintf(stderr, "\n");
+}
+
 static int is_supported_version(uint16_t v)
 {
     size_t i;
@@ -2610,48 +2618,64 @@ static int client_hello_decode_esni(ptls_context_t *ctx, ptls_key_exchange_algor
     int ret;
 
     /* find the matching esni structure */
+fprintf(stderr, "%s:%d\n", __FILE__, __LINE__);
     for (esni = ctx->esni; *esni != NULL; ++esni) {
         size_t i;
+fprintf(stderr, "%s:%d\n", __FILE__, __LINE__);
         for (i = 0; (*esni)->cipher_suites[i].cipher_suite != NULL; ++i)
             if ((*esni)->cipher_suites[i].cipher_suite == ch->esni.cipher)
                 break;
+fprintf(stderr, "%s:%d\n", __FILE__, __LINE__);
         if ((*esni)->cipher_suites[i].cipher_suite == NULL) {
+fprintf(stderr, "%s:%d\n", __FILE__, __LINE__);
             ret = PTLS_ALERT_ILLEGAL_PARAMETER;
             goto Exit;
         }
+fprintf(stderr, "%s:%d\n", __FILE__, __LINE__);
         if (memcmp((*esni)->cipher_suites[i].record_digest, ch->esni.record_digest, ch->esni.cipher->hash->digest_size) == 0)
             break;
+fprintf(stderr, "%s:%d\n", __FILE__, __LINE__);
     }
+fprintf(stderr, "%s:%d\n", __FILE__, __LINE__);
     if (*esni == NULL) {
+fprintf(stderr, "%s:%d\n", __FILE__, __LINE__);
         ret = PTLS_ALERT_ILLEGAL_PARAMETER;
         goto Exit;
     }
 
+fprintf(stderr, "%s:%d\n", __FILE__, __LINE__);
     /* determine the key share */
     if ((ret = select_key_share(selected_key_share, selected_peer_key, ctx->key_exchanges, ch->key_shares.base,
                                 ch->key_shares.base + ch->key_shares.len, 1)) != 0)
         goto Exit;
 
+fprintf(stderr, "%s:%d\n", __FILE__, __LINE__);
     /* find the matching private key for ESNI decryption */
     for (key_share = (*esni)->key_exchanges; *key_share != NULL; ++key_share)
         if ((*key_share)->algo == *selected_key_share)
             break;
     if (*key_share == NULL) {
+fprintf(stderr, "%s:%d\n", __FILE__, __LINE__);
         ret = PTLS_ALERT_ILLEGAL_PARAMETER;
         goto Exit;
     }
 
+fprintf(stderr, "%s:%d\n", __FILE__, __LINE__);
     /* decrypt */
     if (ch->esni.encrypted_sni.len - ch->esni.cipher->aead->tag_size != (*esni)->padded_length) {
+fprintf(stderr, "%s:%d\n", __FILE__, __LINE__);
         ret = PTLS_ALERT_ILLEGAL_PARAMETER;
         goto Exit;
     }
+fprintf(stderr, "%s:%d\n", __FILE__, __LINE__);
     if ((padded_server_name_list = malloc((*esni)->padded_length)) == NULL) {
         ret = PTLS_ERROR_NO_MEMORY;
         goto Exit;
     }
+fprintf(stderr, "%s:%d\n", __FILE__, __LINE__);
     if ((ret = create_esni_aead(&aead, 0, *key_share, *selected_peer_key, ch->esni.cipher, ch->random_bytes)) != 0)
         goto Exit;
+fprintf(stderr, "%s:%d\n", __FILE__, __LINE__);
     if (ptls_aead_decrypt(aead, padded_server_name_list, ch->esni.encrypted_sni.base, ch->esni.encrypted_sni.len, 0, "", 0) !=
         (*esni)->padded_length) {
         ret = PTLS_ALERT_DECRYPT_ERROR;
@@ -2662,11 +2686,14 @@ static int client_hello_decode_esni(ptls_context_t *ctx, ptls_key_exchange_algor
 
     { /* decode sni */
         const uint8_t *src = padded_server_name_list, *const end = src + (*esni)->padded_length;
+dumphex(__FILE__, __LINE__, src, end);
         ptls_iovec_t found_name;
         if ((ret = client_hello_decode_server_name(&found_name, &src, end)) != 0)
             goto Exit;
+fprintf(stderr, "%s:%d\n", __FILE__, __LINE__);
         for (; src != end; ++src) {
             if (*src != '\0') {
+fprintf(stderr, "%s:%d\n", __FILE__, __LINE__);
                 ret = PTLS_ALERT_ILLEGAL_PARAMETER;
                 goto Exit;
             }
@@ -2677,6 +2704,7 @@ static int client_hello_decode_esni(ptls_context_t *ctx, ptls_key_exchange_algor
         padded_server_name_list = NULL;
     }
 
+fprintf(stderr, "%s:%d\n", __FILE__, __LINE__);
     ret = 0;
 Exit:
     if (padded_server_name_list != NULL)
@@ -2775,39 +2803,52 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
             }
             break;
         case PTLS_EXTENSION_TYPE_ENCRYPTED_SERVER_NAME: {
+dumphex(__FILE__, __LINE__, src, end);
             if (ch->esni.cipher != NULL) {
                 ret = PTLS_ALERT_ILLEGAL_PARAMETER;
                 goto Exit;
             }
             uint16_t csid;
+fprintf(stderr, "%s:%d\n", __FILE__, __LINE__);
             if ((ret = ptls_decode16(&csid, &src, end)) != 0)
                 goto Exit;
+fprintf(stderr, "%s:%d\n", __FILE__, __LINE__);
             ptls_cipher_suite_t **cipher;
             for (cipher = tls->ctx->cipher_suites; *cipher != NULL; ++cipher)
                 if ((*cipher)->id == csid)
                     break;
+fprintf(stderr, "%s:%d\n", __FILE__, __LINE__);
             if (*cipher == NULL) {
                 ret = PTLS_ALERT_ILLEGAL_PARAMETER;
                 goto Exit;
             }
+fprintf(stderr, "%s:%d\n", __FILE__, __LINE__);
             ptls_decode_open_block(src, end, 2, {
+fprintf(stderr, "%s:%d\n", __FILE__, __LINE__);
                 size_t len = end - src;
                 if (len != (*cipher)->hash->digest_size) {
+fprintf(stderr, "%s:%d\n", __FILE__, __LINE__);
                     ret = PTLS_ALERT_ILLEGAL_PARAMETER;
                     goto Exit;
                 }
                 ch->esni.record_digest = src;
                 src += len;
+fprintf(stderr, "%s:%d\n", __FILE__, __LINE__);
             });
+fprintf(stderr, "%s:%d\n", __FILE__, __LINE__);
             ptls_decode_block(src, end, 2, {
+fprintf(stderr, "%s:%d\n", __FILE__, __LINE__);
                 size_t len = end - src;
                 if (len < (*cipher)->aead->tag_size) {
+fprintf(stderr, "%s:%d\n", __FILE__, __LINE__);
                     ret = PTLS_ALERT_ILLEGAL_PARAMETER;
                     goto Exit;
                 }
+fprintf(stderr, "%s:%d\n", __FILE__, __LINE__);
                 ch->esni.encrypted_sni = ptls_iovec_init(src, len);
                 src += len;
             });
+fprintf(stderr, "%s:%d\n", __FILE__, __LINE__);
             ch->esni.cipher = *cipher; /* set only after successful parsing */
         } break;
         case PTLS_EXTENSION_TYPE_ALPN:
@@ -2954,12 +2995,17 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
             goto Exit;
         }
         /* esni */
+fprintf(stderr, "%s:%d\n", __FILE__, __LINE__);
         if (ch->esni.cipher != NULL) {
+fprintf(stderr, "%s:%d\n", __FILE__, __LINE__);
             if (ch->server_name.base != NULL || ch->key_shares.base == NULL) {
+fprintf(stderr, "%s:%d\n", __FILE__, __LINE__);
                 ret = PTLS_ALERT_ILLEGAL_PARAMETER;
                 goto Exit;
             }
+fprintf(stderr, "%s:%d\n", __FILE__, __LINE__);
         }
+fprintf(stderr, "%s:%d\n", __FILE__, __LINE__);
         /* pre-shared key */
         if (ch->psk.hash_end != NULL) {
             /* PSK must be the last extension */
@@ -3191,8 +3237,10 @@ static int server_handle_hello(ptls_t *tls, struct st_ptls_message_emitter_t *em
         if (ch.server_name.base != NULL) {
             server_name = ch.server_name;
         } else if (ch.esni.cipher != NULL && tls->ctx->esni != NULL) {
+fprintf(stderr, "%s:%d\n", __FILE__, __LINE__);
             if ((ret = client_hello_decode_esni(tls->ctx, &key_share.algorithm, &key_share.peer_key, &server_name, &ch)) != 0)
                 goto Exit;
+fprintf(stderr, "%s:%d\n", __FILE__, __LINE__);
             is_esni = 1;
         }
         if (properties != NULL)
