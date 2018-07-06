@@ -1602,15 +1602,24 @@ static int create_esni_aead(ptls_aead_context_t **aead_ctx, int is_enc, ptls_key
                             ptls_iovec_t peer_key, ptls_cipher_suite_t *cipher, const uint8_t *client_random)
 {
     ptls_iovec_t ecdh_secret = {NULL};
-    uint8_t aead_secret[PTLS_MAX_DIGEST_SIZE];
+    uint8_t aead_secret[PTLS_MAX_DIGEST_SIZE], random_hash[PTLS_MAX_DIGEST_SIZE];
     int ret;
 
     if ((ret = key_share_ctx->on_exchange(&key_share_ctx, 0, &ecdh_secret, peer_key)) != 0)
         goto Exit;
     if ((ret = ptls_hkdf_extract(cipher->hash, aead_secret, ptls_iovec_init(NULL, 0), ecdh_secret)) != 0)
         goto Exit;
+    {
+        ptls_hash_context_t *hctx = NULL;
+        if ((hctx = cipher->hash->create()) == NULL) {
+            ret = PTLS_ERROR_NO_MEMORY;
+            goto Exit;
+        }
+        hctx->update(hctx, client_random, PTLS_HELLO_RANDOM_SIZE);
+        hctx->final(hctx, random_hash, PTLS_HASH_FINAL_MODE_FREE);
+    }
     if ((*aead_ctx = new_aead(cipher->aead, cipher->hash, is_enc, aead_secret,
-                              ptls_iovec_init(client_random, PTLS_HELLO_RANDOM_SIZE), "tls13 esni ")) == NULL) {
+                              ptls_iovec_init(random_hash, cipher->hash->digest_size), "tls13 esni ")) == NULL) {
         ret = PTLS_ERROR_NO_MEMORY;
         goto Exit;
     }
@@ -1622,6 +1631,7 @@ Exit:
         free(ecdh_secret.base);
     }
     ptls_clear_memory(aead_secret, sizeof(aead_secret));
+    ptls_clear_memory(random_hash, sizeof(random_hash));
     return ret;
 }
 
