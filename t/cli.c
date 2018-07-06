@@ -19,9 +19,6 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
-#ifndef _XOPEN_SOURCE
-#define _XOPEN_SOURCE 700 /* required for glibc to use getaddrinfo, etc. */
-#endif
 
 #include <arpa/inet.h>
 #include <assert.h>
