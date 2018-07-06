@@ -1610,7 +1610,7 @@ static int create_esni_aead(ptls_aead_context_t **aead_ctx, int is_enc, ptls_key
     if ((ret = ptls_hkdf_extract(cipher->hash, aead_secret, ptls_iovec_init(NULL, 0), ecdh_secret)) != 0)
         goto Exit;
     if ((*aead_ctx = new_aead(cipher->aead, cipher->hash, is_enc, aead_secret,
-                              ptls_iovec_init(client_random, PTLS_HELLO_RANDOM_SIZE), "esni ")) == NULL) {
+                              ptls_iovec_init(client_random, PTLS_HELLO_RANDOM_SIZE), "tls13 esni ")) == NULL) {
         ret = PTLS_ERROR_NO_MEMORY;
         goto Exit;
     }
