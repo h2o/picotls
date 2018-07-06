@@ -34,7 +34,10 @@
 #include <sys/param.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#include <arpa/nameser.h>
+#include <resolv.h>
 #include <openssl/pem.h>
+#include "picotls/pembase64.h"
 #include "picotls/openssl.h"
 
 static inline void load_certificate_chain(ptls_context_t *ctx, const char *fn)
@@ -117,6 +120,47 @@ static inline void setup_verify_certificate(ptls_context_t *ctx)
     static ptls_openssl_verify_certificate_t vc;
     ptls_openssl_init_verify_certificate(&vc, NULL);
     ctx->verify_certificate = &vc.super;
+}
+
+static inline void setup_esni(ptls_context_t *ctx, const char *fn)
+{
+    FILE *fp;
+    uint8_t keys_buf[65536];
+    size_t keys_buf_len;
+    int ret = 0;
+
+    if ((fp = fopen(optarg, "rb")) == NULL) {
+        fprintf(stderr, "failed to open file:%s:%s\n", fn, strerror(errno));
+        exit(1);
+    }
+    keys_buf_len = fread(keys_buf, 1, sizeof(keys_buf), fp);
+    if (keys_buf_len == 0 || !feof(fp)) {
+        fprintf(stderr, "failed to load ESNI data from file:%s\n", fn);
+        exit(1);
+    }
+    fclose(fp);
+
+    const uint8_t *src = keys_buf, *const end = src + keys_buf_len;
+    size_t num_blocks = 0;
+    do {
+        ptls_decode_open_block(src, end, 2, {
+            ptls_esni_t *esni = malloc(sizeof(*esni));
+            assert(esni != NULL);
+            if ((ret = ptls_esni_parse(ctx, esni, NULL, src, end)) != 0)
+                goto Exit;
+            ctx->esni = realloc(ctx->esni, sizeof(*ctx->esni) * (num_blocks + 1));
+            assert(ctx->esni != NULL);
+            ctx->esni[num_blocks++] = esni;
+            ctx->esni[num_blocks] = NULL;
+            src = end;
+        });
+    } while (src != end);
+
+Exit:
+    if (ret != 0) {
+        fprintf(stderr, "failed to parse ESNI data of file:%s:error=%d\n", fn, ret);
+        exit(1);
+    }
 }
 
 struct st_util_log_secret_t {
@@ -235,6 +279,63 @@ static inline int resolve_address(struct sockaddr *sa, socklen_t *salen, const c
 
     freeaddrinfo(res);
     return 0;
+}
+
+static inline int normalize_txt(uint8_t *p, size_t len)
+{
+    uint8_t *const end = p + len, *dst = p;
+
+    if (p == end)
+        return 0;
+
+    do {
+        size_t block_len = *p++;
+        if (end - p < block_len)
+            return 0;
+        memmove(dst, p, block_len);
+        dst += block_len;
+        p += block_len;
+    } while (p != end);
+    *dst = '\0';
+
+    return 1;
+}
+
+static inline ptls_iovec_t resolve_esni_keys(const char *server_name)
+{
+    char esni_name[256], *base64;
+    uint8_t answer[1024];
+    ns_msg msg;
+    ns_rr rr;
+    ptls_buffer_t decode_buf;
+    ptls_base64_decode_state_t ds;
+    int answer_len;
+
+    ptls_buffer_init(&decode_buf, "", 0);
+
+    if (snprintf(esni_name, sizeof(esni_name), "_esni.%s", server_name) > sizeof(esni_name) - 1)
+        goto Error;
+    if ((answer_len = res_query(esni_name, ns_c_in, ns_t_txt, answer, sizeof(answer))) <= 0)
+        goto Error;
+    if (ns_initparse(answer, answer_len, &msg) != 0)
+        goto Error;
+    if (ns_msg_count(msg, ns_s_an) < 1)
+        goto Error;
+    if (ns_parserr(&msg, ns_s_an, 0, &rr) != 0)
+        goto Error;
+    base64 = (void *)ns_rr_rdata(rr);
+    if (!normalize_txt((void *)base64, ns_rr_rdlen(rr)))
+        goto Error;
+
+    ptls_base64_decode_init(&ds);
+    if (ptls_base64_decode(base64, &ds, &decode_buf) != 0)
+        goto Error;
+    assert(decode_buf.is_allocated);
+
+    return ptls_iovec_init(decode_buf.base, decode_buf.off);
+Error:
+    ptls_buffer_dispose(&decode_buf);
+    return ptls_iovec_init(NULL, 0);
 }
 
 #endif

@@ -347,6 +347,20 @@ typedef const struct st_ptls_cipher_suite_t {
     ptls_hash_algorithm_t *hash;
 } ptls_cipher_suite_t;
 
+/**
+ * holds ESNIKeys and the private key (instantiated by ptlts_esni_parse, freed using ptls_esni_dispose)
+ */
+typedef struct st_ptls_esni_t {
+    ptls_key_exchange_context_t **key_exchanges;
+    struct {
+        ptls_cipher_suite_t *cipher_suite;
+        uint8_t record_digest[PTLS_MAX_DIGEST_SIZE];
+    } * cipher_suites;
+    uint16_t padded_length;
+    uint64_t not_before;
+    uint64_t not_after;
+} ptls_esni_t;
+
 #define PTLS_CALLBACK_TYPE0(ret, name)                                                                                             \
     typedef struct st_ptls_##name##_t {                                                                                            \
         ret (*cb)(struct st_ptls_##name##_t * self);                                                                               \
@@ -435,6 +449,10 @@ struct st_ptls_context_t {
         ptls_iovec_t *list;
         size_t count;
     } certificates;
+    /**
+     * list of ESNI data terminated by NULL
+     */
+    ptls_esni_t **esni;
     /**
      *
      */
@@ -529,6 +547,10 @@ typedef struct st_ptls_handshake_properties_t {
              * pointer to store the maximum size of early-data that can be sent immediately (if NULL, early data is not used)
              */
             size_t *max_early_data_size;
+            /**
+             * ESNIKeys (the value of the TXT record, after being base64-"decoded")
+             */
+            ptls_iovec_t esni_keys;
             /**
              *
              */
@@ -989,6 +1011,9 @@ inline size_t ptls_aead_decrypt(ptls_aead_context_t *ctx, void *output, const vo
 int ptls_load_certificates(ptls_context_t *ctx, char const *cert_pem_file);
 
 extern ptls_get_time_t ptls_get_time;
+
+void ptls_esni_dispose(ptls_esni_t *esni);
+int ptls_esni_parse(ptls_context_t *ctx, ptls_esni_t *esni, ptls_iovec_t *esnikeys, const uint8_t *src, const uint8_t *end);
 
 #define ptls_define_hash(name, ctx_type, init_func, update_func, final_func)                                                       \
                                                                                                                                    \

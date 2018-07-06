@@ -72,6 +72,7 @@
 #define PTLS_EXTENSION_TYPE_COOKIE 44
 #define PTLS_EXTENSION_TYPE_PSK_KEY_EXCHANGE_MODES 45
 #define PTLS_EXTENSION_TYPE_KEY_SHARE 51
+#define PTLS_EXTENSION_TYPE_ENCRYPTED_SERVER_NAME 0xffce
 
 #define PTLS_PROTOCOL_VERSION_DRAFT26 0x7f1a
 #define PTLS_PROTOCOL_VERSION_DRAFT27 0x7f1b
@@ -284,6 +285,11 @@ struct st_ptls_client_hello_t {
     struct st_ptls_signature_algorithms_t signature_algorithms;
     ptls_iovec_t server_name;
     struct {
+        ptls_cipher_suite_t *cipher; /* selected cipher-suite, or NULL if esni extension is not used */
+        const uint8_t *record_digest;
+        ptls_iovec_t encrypted_sni;
+    } esni;
+    struct {
         ptls_iovec_t list[16];
         size_t count;
     } alpn;
@@ -340,6 +346,9 @@ struct st_ptls_extension_bitmap_t {
 };
 
 static uint8_t zeroes_of_max_digest_size[PTLS_MAX_DIGEST_SIZE] = {0};
+
+static ptls_aead_context_t *new_aead(ptls_aead_algorithm_t *aead, ptls_hash_algorithm_t *hash, int is_enc, const void *secret,
+                                     ptls_iovec_t hash_value, const char *base_label);
 
 static int is_supported_version(uint16_t v)
 {
@@ -1065,10 +1074,10 @@ Exit:
 }
 
 static int get_traffic_key(ptls_hash_algorithm_t *algo, void *key, size_t key_size, int is_iv, const void *secret,
-                           const char *base_label)
+                           ptls_iovec_t hash_value, const char *base_label)
 {
-    return ptls_hkdf_expand_label(algo, key, key_size, ptls_iovec_init(secret, algo->digest_size), is_iv ? "iv" : "key",
-                                  ptls_iovec_init(NULL, 0), base_label);
+    return ptls_hkdf_expand_label(algo, key, key_size, ptls_iovec_init(secret, algo->digest_size), is_iv ? "iv" : "key", hash_value,
+                                  base_label);
 }
 
 static int setup_traffic_protection(ptls_t *tls, int is_enc, const char *secret_label, size_t epoch, int skip_notify)
@@ -1409,16 +1418,278 @@ Exit:
     return ret;
 }
 
+static int sha256_digest(ptls_context_t *ctx, uint8_t *digest, const void *src, size_t len)
+{
+    ptls_cipher_suite_t **cs;
+    ptls_hash_context_t *h;
+
+    for (cs = ctx->cipher_suites; *cs != NULL; ++cs) {
+        switch ((*cs)->id) {
+        case PTLS_CIPHER_SUITE_AES_128_GCM_SHA256:
+        case PTLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256:
+            goto Found_Cipher;
+        }
+    }
+    return PTLS_ERROR_LIBRARY;
+
+Found_Cipher:
+    if ((h = (*cs)->hash->create()) == NULL)
+        return PTLS_ERROR_NO_MEMORY;
+    h->update(h, src, len);
+    h->final(h, digest, PTLS_HASH_FINAL_MODE_FREE);
+    return 0;
+}
+
+static int select_cipher(ptls_cipher_suite_t **selected, ptls_cipher_suite_t **candidates, const uint8_t *src,
+                         const uint8_t *const end)
+{
+    int ret;
+
+    while (src != end) {
+        uint16_t id;
+        if ((ret = ptls_decode16(&id, &src, end)) != 0)
+            goto Exit;
+        ptls_cipher_suite_t **c = candidates;
+        for (; *c != NULL; ++c) {
+            if ((*c)->id == id) {
+                *selected = *c;
+                return 0;
+            }
+        }
+    }
+
+    ret = PTLS_ALERT_HANDSHAKE_FAILURE;
+
+Exit:
+    return ret;
+}
+
+static int decode_key_share_entry(uint16_t *group, ptls_iovec_t *key_exchange, const uint8_t **src, const uint8_t *const end)
+{
+    int ret;
+
+    if ((ret = ptls_decode16(group, src, end)) != 0)
+        goto Exit;
+    ptls_decode_open_block(*src, end, 2, {
+        *key_exchange = ptls_iovec_init(*src, end - *src);
+        *src = end;
+    });
+
+Exit:
+    return ret;
+}
+
+static int select_key_share(ptls_key_exchange_algorithm_t **selected, ptls_iovec_t *peer_key,
+                            ptls_key_exchange_algorithm_t **candidates, const uint8_t *src, const uint8_t *const end,
+                            int expect_one)
+{
+    int ret;
+
+    if (expect_one && src == end) {
+        ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+        goto Exit;
+    }
+
+    while (src != end) {
+        uint16_t group;
+        ptls_iovec_t key;
+        if ((ret = decode_key_share_entry(&group, &key, &src, end)) != 0)
+            goto Exit;
+        ptls_key_exchange_algorithm_t **c = candidates;
+        for (; *c != NULL; ++c) {
+            if ((*c)->id == group) {
+                *selected = *c;
+                *peer_key = key;
+                return 0;
+            }
+        }
+        if (expect_one && src != end) {
+            ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+            goto Exit;
+        }
+    }
+
+    *selected = NULL;
+    ret = 0;
+
+Exit:
+    return ret;
+}
+
+static int emit_server_name_extension(ptls_buffer_t *buf, const char *server_name)
+{
+    int ret;
+
+    ptls_buffer_push_block(buf, 2, {
+        ptls_buffer_push(buf, PTLS_SERVER_NAME_TYPE_HOSTNAME);
+        ptls_buffer_push_block(buf, 2, { ptls_buffer_pushv(buf, server_name, strlen(server_name)); });
+    });
+
+    ret = 0;
+Exit:
+    return ret;
+}
+
+static int parse_esni_keys(ptls_context_t *ctx, ptls_key_exchange_algorithm_t **selected_key_share,
+                           ptls_cipher_suite_t **selected_cipher, ptls_iovec_t *peer_key, uint16_t *padded_length,
+                           ptls_iovec_t input)
+{
+    const uint8_t *src = input.base, *const end = input.base + input.len;
+    uint64_t not_before, not_after, now;
+    int ret = 0;
+
+    { /* verify checksum */
+        uint8_t digest[PTLS_SHA256_DIGEST_SIZE];
+        if (end - src < 4) {
+            ret = PTLS_ALERT_DECODE_ERROR;
+            goto Exit;
+        }
+        if ((ret = sha256_digest(ctx, digest, src + 4, end - (src + 4))) != 0)
+            goto Exit;
+        if (memcmp(src, digest, 4) != 0)
+            goto Exit;
+        src += 4;
+    }
+    /* key-shares */
+    ptls_decode_open_block(src, end, 2, {
+        if ((ret = select_key_share(selected_key_share, peer_key, ctx->key_exchanges, src, end, 0)) != 0)
+            goto Exit;
+        src = end;
+    });
+    /* cipher-suite */
+    ptls_decode_open_block(src, end, 2, {
+        if ((ret = select_cipher(selected_cipher, ctx->cipher_suites, src, end)) != 0)
+            goto Exit;
+        src = end;
+    });
+    /* padded-length */
+    if ((ret = ptls_decode16(padded_length, &src, end)) != 0)
+        goto Exit;
+    if (padded_length == 0)
+        goto Exit;
+    /* not-before, not_after */
+    if ((ret = ptls_decode64(&not_before, &src, end)) != 0 || (ret = ptls_decode64(&not_after, &src, end)) != 0)
+        goto Exit;
+    /* extensions */
+    ptls_decode_block(src, end, 2, {
+        while (src != end) {
+            uint16_t id;
+            if ((ret = ptls_decode16(&id, &src, end)) != 0)
+                goto Exit;
+            ptls_decode_open_block(src, end, 2, { src = end; });
+        }
+    });
+
+    /* check validity period */
+    now = ctx->get_time->cb(ctx->get_time) / 1000;
+    if (!(not_before <= now && now <= not_after)) {
+        ret = PTLS_ALERT_DECODE_ERROR;
+        goto Exit;
+    }
+
+    ret = 0;
+Exit:
+    if (ret != 0) {
+        *selected_key_share = NULL;
+        *selected_cipher = NULL;
+        *peer_key = ptls_iovec_init(NULL, 0);
+        *padded_length = 0;
+    }
+    return ret == 0;
+}
+
+static int create_esni_aead(ptls_aead_context_t **aead_ctx, int is_enc, ptls_key_exchange_context_t *key_share_ctx,
+                            ptls_iovec_t peer_key, ptls_cipher_suite_t *cipher, const uint8_t *client_random)
+{
+    ptls_iovec_t ecdh_secret = {NULL};
+    uint8_t aead_secret[PTLS_MAX_DIGEST_SIZE];
+    int ret;
+
+    if ((ret = key_share_ctx->on_exchange(&key_share_ctx, 0, &ecdh_secret, peer_key)) != 0)
+        goto Exit;
+    if ((ret = ptls_hkdf_extract(cipher->hash, aead_secret, ptls_iovec_init(NULL, 0), ecdh_secret)) != 0)
+        goto Exit;
+    if ((*aead_ctx = new_aead(cipher->aead, cipher->hash, is_enc, aead_secret,
+                              ptls_iovec_init(client_random, PTLS_HELLO_RANDOM_SIZE), "esni ")) == NULL) {
+        ret = PTLS_ERROR_NO_MEMORY;
+        goto Exit;
+    }
+
+    ret = 0;
+Exit:
+    if (ecdh_secret.base != NULL) {
+        ptls_clear_memory(ecdh_secret.base, ecdh_secret.len);
+        free(ecdh_secret.base);
+    }
+    ptls_clear_memory(aead_secret, sizeof(aead_secret));
+    return ret;
+}
+
+static int emit_esni_extension(ptls_buffer_t *buf, ptls_iovec_t esni_keys, ptls_key_exchange_context_t *key_share_ctx,
+                               ptls_iovec_t peer_key, ptls_cipher_suite_t *cipher, uint16_t padded_length, const char *server_name,
+                               const uint8_t *client_random)
+{
+    ptls_aead_context_t *aead;
+    int ret;
+
+    if ((ret = create_esni_aead(&aead, 1, key_share_ctx, peer_key, cipher, client_random)) != 0)
+        goto Exit;
+
+    /* cipher-suite id */
+    ptls_buffer_push16(buf, cipher->id);
+    /* full digest of ESNIKeys */
+    ptls_buffer_push_block(buf, 2, {
+        if ((ret = ptls_buffer_reserve(buf, cipher->hash->digest_size)) != 0)
+            goto Exit;
+        ptls_hash_context_t *h = cipher->hash->create();
+        if (h == NULL) {
+            ret = PTLS_ERROR_NO_MEMORY;
+            goto Exit;
+        }
+        h->update(h, esni_keys.base, esni_keys.len);
+        h->final(h, buf->base + buf->off, PTLS_HASH_FINAL_MODE_FREE);
+        buf->off += cipher->hash->digest_size;
+    });
+    ptls_buffer_push_block(buf, 2, {
+        size_t start_off = buf->off;
+        /* emit server-name extension */
+        if ((ret = emit_server_name_extension(buf, server_name)) != 0)
+            goto Exit;
+        /* pad */
+        if (buf->off - start_off < padded_length) {
+            size_t bytes_to_pad = padded_length - (buf->off - start_off);
+            if ((ret = ptls_buffer_reserve(buf, bytes_to_pad)) != 0)
+                goto Exit;
+            memset(buf->base + buf->off, 0, bytes_to_pad);
+            buf->off += bytes_to_pad;
+        }
+        /* encrypt */
+        if ((ret = ptls_buffer_reserve(buf, aead->algo->tag_size)) != 0)
+            goto Exit;
+        ptls_aead_encrypt(aead, buf->base + start_off, buf->base + start_off, buf->off - start_off, 0, "", 0);
+        buf->off += aead->algo->tag_size;
+    });
+
+    ret = 0;
+Exit:
+    return ret;
+}
+
 static int send_client_hello(ptls_t *tls, struct st_ptls_message_emitter_t *emitter, ptls_handshake_properties_t *properties,
                              ptls_iovec_t *cookie)
 {
-    ptls_iovec_t resumption_secret = {NULL}, resumption_ticket;
+    ptls_iovec_t resumption_secret = {NULL}, resumption_ticket, esni_peer_key = {NULL};
+    uint16_t esni_padded_length = 0;
     uint32_t obfuscated_ticket_age = 0;
     size_t msghash_off;
     uint8_t binder_key[PTLS_MAX_DIGEST_SIZE];
     int ret, is_second_flight = tls->key_schedule != NULL;
 
     if (properties != NULL) {
+        /* parse esni (used only when possible) */
+        if (properties->client.esni_keys.base != NULL)
+            parse_esni_keys(tls->ctx, &tls->key_share, &tls->cipher_suite, &esni_peer_key, &esni_padded_length,
+                            properties->client.esni_keys);
         /* setup resumption-related data. If successful, resumption_secret becomes a non-zero value. */
         if (properties->client.session_ticket.base != NULL) {
             ptls_key_exchange_algorithm_t *key_share = NULL;
@@ -1426,7 +1697,9 @@ static int send_client_hello(ptls_t *tls, struct st_ptls_message_emitter_t *emit
             uint32_t max_early_data_size;
             if (decode_stored_session_ticket(tls->ctx, &key_share, &cipher_suite, &resumption_secret, &obfuscated_ticket_age,
                                              &resumption_ticket, &max_early_data_size, properties->client.session_ticket.base,
-                                             properties->client.session_ticket.base + properties->client.session_ticket.len) == 0) {
+                                             properties->client.session_ticket.base + properties->client.session_ticket.len) == 0 &&
+                (tls->key_share == NULL || tls->key_share == key_share) &&
+                (tls->cipher_suite == NULL || tls->cipher_suite == cipher_suite)) {
                 tls->client.offered_psk = 1;
                 tls->key_share = key_share;
                 tls->cipher_suite = cipher_suite;
@@ -1475,14 +1748,33 @@ static int send_client_hello(ptls_t *tls, struct st_ptls_message_emitter_t *emit
         ptls_buffer_push_block(sendbuf, 1, { ptls_buffer_push(sendbuf, 0); });
         /* extensions */
         ptls_buffer_push_block(sendbuf, 2, {
-            if (tls->server_name != NULL) {
-                buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SERVER_NAME, {
-                    ptls_buffer_push_block(sendbuf, 2, {
-                        ptls_buffer_push(sendbuf, PTLS_SERVER_NAME_TYPE_HOSTNAME);
-                        ptls_buffer_push_block(sendbuf, 2,
-                                               { ptls_buffer_pushv(sendbuf, tls->server_name, strlen(tls->server_name)); });
-                    });
+            buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_KEY_SHARE, {
+                ptls_buffer_push_block(sendbuf, 2, {
+                    if (tls->key_share != NULL) {
+                        ptls_iovec_t pubkey;
+                        if ((ret = tls->key_share->create(tls->key_share, &tls->client.key_share_ctx, &pubkey)) != 0)
+                            goto Exit;
+                        ptls_buffer_push16(sendbuf, tls->key_share->id);
+                        ptls_buffer_push_block(sendbuf, 2, { ptls_buffer_pushv(sendbuf, pubkey.base, pubkey.len); });
+                    }
                 });
+            });
+            if (tls->server_name != NULL) {
+                if (esni_peer_key.base != NULL) {
+                    assert(tls->key_share != NULL);
+                    assert(tls->client.key_share_ctx != NULL);
+                    buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_ENCRYPTED_SERVER_NAME, {
+                        if ((ret = emit_esni_extension(sendbuf, properties->client.esni_keys, tls->client.key_share_ctx,
+                                                       esni_peer_key, tls->cipher_suite, esni_padded_length, tls->server_name,
+                                                       tls->client_random)) != 0)
+                            goto Exit;
+                    });
+                } else {
+                    buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SERVER_NAME, {
+                        if ((ret = emit_server_name_extension(sendbuf, tls->server_name)) != 0)
+                            goto Exit;
+                    });
+                }
             }
             if (properties != NULL && properties->client.negotiated_protocols.count != 0) {
                 buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_ALPN, {
@@ -1513,17 +1805,6 @@ static int send_client_hello(ptls_t *tls, struct st_ptls_message_emitter_t *emit
                 ptls_buffer_push_block(sendbuf, 2, {
                     for (; *algo != NULL; ++algo)
                         ptls_buffer_push16(sendbuf, (*algo)->id);
-                });
-            });
-            buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_KEY_SHARE, {
-                ptls_buffer_push_block(sendbuf, 2, {
-                    if (tls->key_share != NULL) {
-                        ptls_iovec_t pubkey;
-                        if ((ret = tls->key_share->create(tls->key_share, &tls->client.key_share_ctx, &pubkey)) != 0)
-                            goto Exit;
-                        ptls_buffer_push16(sendbuf, tls->key_share->id);
-                        ptls_buffer_push_block(sendbuf, 2, { ptls_buffer_pushv(sendbuf, pubkey.base, pubkey.len); });
-                    }
                 });
             });
             if (cookie != NULL && cookie->base != NULL) {
@@ -1592,21 +1873,6 @@ static int send_client_hello(ptls_t *tls, struct st_ptls_message_emitter_t *emit
 
 Exit:
     ptls_clear_memory(binder_key, sizeof(binder_key));
-    return ret;
-}
-
-static int decode_key_share_entry(uint16_t *group, ptls_iovec_t *key_exchange, const uint8_t **src, const uint8_t *const end)
-{
-    int ret;
-
-    if ((ret = ptls_decode16(group, src, end)) != 0)
-        goto Exit;
-    ptls_decode_open_block(*src, end, 2, {
-        *key_exchange = ptls_iovec_init(*src, end - *src);
-        *src = end;
-    });
-
-Exit:
     return ret;
 }
 
@@ -2302,90 +2568,121 @@ Exit:
     return ret;
 }
 
-static int client_hello_decode_server_name(ptls_iovec_t *name, const uint8_t *src, const uint8_t *const end)
+static int client_hello_decode_server_name(ptls_iovec_t *name, const uint8_t **src, const uint8_t *const end)
 {
     int ret = 0;
 
-    ptls_decode_block(src, end, 2, {
-        if (src == end) {
+    ptls_decode_open_block(*src, end, 2, {
+        if (*src == end) {
             ret = PTLS_ALERT_DECODE_ERROR;
             goto Exit;
         }
         do {
-            uint8_t type = *src++;
-            ptls_decode_open_block(src, end, 2, {
+            uint8_t type = *(*src)++;
+            ptls_decode_open_block(*src, end, 2, {
                 switch (type) {
                 case PTLS_SERVER_NAME_TYPE_HOSTNAME:
-                    if (memchr(src, '\0', end - src) != 0) {
+                    if (memchr(*src, '\0', end - *src) != 0) {
                         ret = PTLS_ALERT_ILLEGAL_PARAMETER;
                         goto Exit;
                     }
-                    *name = ptls_iovec_init(src, end - src);
+                    *name = ptls_iovec_init(*src, end - *src);
                     break;
                 default:
                     break;
                 }
-                src = end;
+                *src = end;
             });
-        } while (src != end);
+        } while (*src != end);
     });
 
 Exit:
     return ret;
 }
 
-static int select_cipher_suite(ptls_cipher_suite_t **selected, ptls_cipher_suite_t **candidates, const uint8_t *src,
-                               const uint8_t *const end)
+static int client_hello_decode_esni(ptls_context_t *ctx, ptls_key_exchange_algorithm_t **selected_key_share,
+                                    ptls_iovec_t *selected_peer_key, ptls_iovec_t *server_name, struct st_ptls_client_hello_t *ch)
 {
+    ptls_esni_t **esni;
+    ptls_key_exchange_context_t **key_share;
+    uint8_t *padded_server_name_list = NULL;
+    ptls_aead_context_t *aead = NULL;
     int ret;
 
-    ptls_decode_block(src, end, 2, {
-        while (src != end) {
-            uint16_t id;
-            if ((ret = ptls_decode16(&id, &src, end)) != 0)
+    /* find the matching esni structure */
+    for (esni = ctx->esni; *esni != NULL; ++esni) {
+        size_t i;
+        for (i = 0; (*esni)->cipher_suites[i].cipher_suite != NULL; ++i)
+            if ((*esni)->cipher_suites[i].cipher_suite == ch->esni.cipher)
+                break;
+        if ((*esni)->cipher_suites[i].cipher_suite == NULL) {
+            ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+            goto Exit;
+        }
+        if (memcmp((*esni)->cipher_suites[i].record_digest, ch->esni.record_digest, ch->esni.cipher->hash->digest_size) == 0)
+            break;
+    }
+    if (*esni == NULL) {
+        ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+        goto Exit;
+    }
+
+    /* determine the key share */
+    if ((ret = select_key_share(selected_key_share, selected_peer_key, ctx->key_exchanges, ch->key_shares.base,
+                                ch->key_shares.base + ch->key_shares.len, 1)) != 0)
+        goto Exit;
+
+    /* find the matching private key for ESNI decryption */
+    for (key_share = (*esni)->key_exchanges; *key_share != NULL; ++key_share)
+        if ((*key_share)->algo == *selected_key_share)
+            break;
+    if (*key_share == NULL) {
+        ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+        goto Exit;
+    }
+
+    /* decrypt */
+    if (ch->esni.encrypted_sni.len - ch->esni.cipher->aead->tag_size != (*esni)->padded_length) {
+        ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+        goto Exit;
+    }
+    if ((padded_server_name_list = malloc((*esni)->padded_length)) == NULL) {
+        ret = PTLS_ERROR_NO_MEMORY;
+        goto Exit;
+    }
+    if ((ret = create_esni_aead(&aead, 0, *key_share, *selected_peer_key, ch->esni.cipher, ch->random_bytes)) != 0)
+        goto Exit;
+    if (ptls_aead_decrypt(aead, padded_server_name_list, ch->esni.encrypted_sni.base, ch->esni.encrypted_sni.len, 0, "", 0) !=
+        (*esni)->padded_length) {
+        ret = PTLS_ALERT_DECRYPT_ERROR;
+        goto Exit;
+    }
+    ptls_aead_free(aead);
+    aead = NULL;
+
+    { /* decode sni */
+        const uint8_t *src = padded_server_name_list, *const end = src + (*esni)->padded_length;
+        ptls_iovec_t found_name;
+        if ((ret = client_hello_decode_server_name(&found_name, &src, end)) != 0)
+            goto Exit;
+        for (; src != end; ++src) {
+            if (*src != '\0') {
+                ret = PTLS_ALERT_ILLEGAL_PARAMETER;
                 goto Exit;
-            ptls_cipher_suite_t **c = candidates;
-            for (; *c != NULL; ++c) {
-                if ((*c)->id == id) {
-                    *selected = *c;
-                    return 0;
-                }
             }
         }
-    });
+        /* if successful, reuse memory allocated for padded_server_name for storing the found name (freed by the caller) */
+        memmove(padded_server_name_list, found_name.base, found_name.len);
+        *server_name = ptls_iovec_init(padded_server_name_list, found_name.len);
+        padded_server_name_list = NULL;
+    }
 
-    ret = PTLS_ALERT_HANDSHAKE_FAILURE;
-
-Exit:
-    return ret;
-}
-
-static int select_key_share(ptls_key_exchange_algorithm_t **selected, ptls_iovec_t *peer_key,
-                            ptls_key_exchange_algorithm_t **candidates, const uint8_t *src, const uint8_t *const end)
-{
-    int ret;
-
-    ptls_decode_block(src, end, 2, {
-        while (src != end) {
-            uint16_t group;
-            ptls_iovec_t key;
-            if ((ret = decode_key_share_entry(&group, &key, &src, end)) != 0)
-                goto Exit;
-            ptls_key_exchange_algorithm_t **c = candidates;
-            for (; *c != NULL; ++c) {
-                if ((*c)->id == group) {
-                    *selected = *c;
-                    *peer_key = key;
-                    return 0;
-                }
-            }
-        }
-    });
-
-    *selected = NULL;
     ret = 0;
-
 Exit:
+    if (padded_server_name_list != NULL)
+        free(padded_server_name_list);
+    if (aead != NULL)
+        ptls_aead_free(aead);
     return ret;
 }
 
@@ -2451,7 +2748,7 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
 
     /* decode and select from ciphersuites */
     ptls_decode_open_block(src, end, 2, {
-        ch->cipher_suites = ptls_iovec_init(src - 2, end - src + 2);
+        ch->cipher_suites = ptls_iovec_init(src, end - src);
         src = end;
     });
 
@@ -2470,9 +2767,49 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
     decode_extensions(src, end, PTLS_HANDSHAKE_TYPE_CLIENT_HELLO, &exttype, {
         switch (exttype) {
         case PTLS_EXTENSION_TYPE_SERVER_NAME:
-            if ((ret = client_hello_decode_server_name(&ch->server_name, src, end)) != 0)
+            if ((ret = client_hello_decode_server_name(&ch->server_name, &src, end)) != 0)
                 goto Exit;
+            if (src != end) {
+                ret = PTLS_ALERT_DECODE_ERROR;
+                goto Exit;
+            }
             break;
+        case PTLS_EXTENSION_TYPE_ENCRYPTED_SERVER_NAME: {
+            if (ch->esni.cipher != NULL) {
+                ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+                goto Exit;
+            }
+            uint16_t csid;
+            if ((ret = ptls_decode16(&csid, &src, end)) != 0)
+                goto Exit;
+            ptls_cipher_suite_t **cipher;
+            for (cipher = tls->ctx->cipher_suites; *cipher != NULL; ++cipher)
+                if ((*cipher)->id == csid)
+                    break;
+            if (*cipher == NULL) {
+                ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+                goto Exit;
+            }
+            ptls_decode_open_block(src, end, 2, {
+                size_t len = end - src;
+                if (len != (*cipher)->hash->digest_size) {
+                    ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+                    goto Exit;
+                }
+                ch->esni.record_digest = src;
+                src += len;
+            });
+            ptls_decode_block(src, end, 2, {
+                size_t len = end - src;
+                if (len < (*cipher)->aead->tag_size) {
+                    ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+                    goto Exit;
+                }
+                ch->esni.encrypted_sni = ptls_iovec_init(src, len);
+                src += len;
+            });
+            ch->esni.cipher = *cipher; /* set only after successful parsing */
+        } break;
         case PTLS_EXTENSION_TYPE_ALPN:
             ptls_decode_block(src, end, 2, {
                 do {
@@ -2492,7 +2829,10 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
                 goto Exit;
             break;
         case PTLS_EXTENSION_TYPE_KEY_SHARE:
-            ch->key_shares = ptls_iovec_init(src, end - src);
+            ptls_decode_open_block(src, end, 2, {
+                ch->key_shares = ptls_iovec_init(src, end - src);
+                src = end;
+            });
             break;
         case PTLS_EXTENSION_TYPE_SUPPORTED_VERSIONS:
             ptls_decode_block(src, end, 1, {
@@ -2612,6 +2952,13 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
         if (!(ch->compression_methods.count == 1 && ch->compression_methods.ids[0] == 0)) {
             ret = PTLS_ALERT_ILLEGAL_PARAMETER;
             goto Exit;
+        }
+        /* esni */
+        if (ch->esni.cipher != NULL) {
+            if (ch->server_name.base != NULL || ch->key_shares.base == NULL) {
+                ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+                goto Exit;
+            }
         }
         /* pre-shared key */
         if (ch->psk.hash_end != NULL) {
@@ -2817,8 +3164,8 @@ static int server_handle_hello(ptls_t *tls, struct st_ptls_message_emitter_t *em
                           } while (0);                                                                                             \
                       })
 
-    struct st_ptls_client_hello_t ch = {NULL,  {NULL}, {NULL},     0,        {NULL}, {NULL},        {NULL},
-                                        {{0}}, {NULL}, {{{NULL}}}, {{NULL}}, {NULL}, {{UINT16_MAX}}};
+    struct st_ptls_client_hello_t ch = {NULL,  {NULL}, {NULL}, 0,          {NULL},   {NULL}, {NULL},
+                                        {{0}}, {NULL}, {NULL}, {{{NULL}}}, {{NULL}}, {NULL}, {{UINT16_MAX}}};
     struct {
         ptls_key_exchange_algorithm_t *algorithm;
         ptls_iovec_t peer_key;
@@ -2836,20 +3183,33 @@ static int server_handle_hello(ptls_t *tls, struct st_ptls_message_emitter_t *em
     if (tls->ctx->require_dhe_on_psk)
         ch.psk.ke_modes &= ~(1u << PTLS_PSK_KE_MODE_PSK);
 
-    /* handle client_random and SNI */
+    /* handle client_random, SNI, ESNI */
     if (!is_second_flight) {
         memcpy(tls->client_random, ch.random_bytes, sizeof(tls->client_random));
-        if (tls->ctx->on_client_hello != NULL &&
-            (ret = tls->ctx->on_client_hello->cb(tls->ctx->on_client_hello, tls, ch.server_name, ch.alpn.list, ch.alpn.count,
-                                                 ch.signature_algorithms.list, ch.signature_algorithms.count)) != 0)
+        ptls_iovec_t server_name = {NULL};
+        int should_free_server_name = 0;
+        if (ch.server_name.base != NULL) {
+            server_name = ch.server_name;
+        } else if (ch.esni.cipher != NULL && tls->ctx->esni != NULL) {
+            if ((ret = client_hello_decode_esni(tls->ctx, &key_share.algorithm, &key_share.peer_key, &server_name, &ch)) != 0)
+                goto Exit;
+            should_free_server_name = 1;
+        }
+        if (tls->ctx->on_client_hello != NULL) {
+            ret = tls->ctx->on_client_hello->cb(tls->ctx->on_client_hello, tls, server_name, ch.alpn.list, ch.alpn.count,
+                                                ch.signature_algorithms.list, ch.signature_algorithms.count);
+        } else {
+            ret = 0;
+        }
+        if (should_free_server_name)
+            free(server_name.base);
+        if (ret != 0)
             goto Exit;
     } else {
         if (ch.psk.early_data_indication) {
             ret = PTLS_ALERT_DECODE_ERROR;
             goto Exit;
         }
-        /* We compare SNI only when the value is saved by the on_client_hello callback. This should be OK because we are ignoring
-         * the value unless the callback saves the server-name. */
         if (memcmp(tls->client_random, ch.random_bytes, sizeof(tls->client_random)) != 0 ||
             (tls->server_name != NULL) != (ch.server_name.base != NULL) ||
             (tls->server_name != NULL &&
@@ -2862,8 +3222,8 @@ static int server_handle_hello(ptls_t *tls, struct st_ptls_message_emitter_t *em
 
     { /* select (or check) cipher-suite, create key_schedule */
         ptls_cipher_suite_t *cs;
-        if ((ret = select_cipher_suite(&cs, tls->ctx->cipher_suites, ch.cipher_suites.base,
-                                       ch.cipher_suites.base + ch.cipher_suites.len)) != 0)
+        if ((ret = select_cipher(&cs, tls->ctx->cipher_suites, ch.cipher_suites.base,
+                                 ch.cipher_suites.base + ch.cipher_suites.len)) != 0)
             goto Exit;
         if (!is_second_flight) {
             tls->cipher_suite = cs;
@@ -2877,9 +3237,9 @@ static int server_handle_hello(ptls_t *tls, struct st_ptls_message_emitter_t *em
     }
 
     /* select key_share */
-    if (ch.key_shares.base != NULL &&
+    if (key_share.algorithm == NULL && ch.key_shares.base != NULL &&
         (ret = select_key_share(&key_share.algorithm, &key_share.peer_key, tls->ctx->key_exchanges, ch.key_shares.base,
-                                ch.key_shares.base + ch.key_shares.len)) != 0)
+                                ch.key_shares.base + ch.key_shares.len, 0)) != 0)
         goto Exit;
 
     if (!is_second_flight) {
@@ -4034,8 +4394,8 @@ void ptls_cipher_free(ptls_cipher_context_t *ctx)
     free(ctx);
 }
 
-ptls_aead_context_t *ptls_aead_new(ptls_aead_algorithm_t *aead, ptls_hash_algorithm_t *hash, int is_enc, const void *secret,
-                                   const char *base_label)
+ptls_aead_context_t *new_aead(ptls_aead_algorithm_t *aead, ptls_hash_algorithm_t *hash, int is_enc, const void *secret,
+                              ptls_iovec_t hash_value, const char *base_label)
 {
     ptls_aead_context_t *ctx;
     uint8_t key[PTLS_MAX_SECRET_SIZE];
@@ -4045,9 +4405,9 @@ ptls_aead_context_t *ptls_aead_new(ptls_aead_algorithm_t *aead, ptls_hash_algori
         return NULL;
 
     *ctx = (ptls_aead_context_t){aead};
-    if ((ret = get_traffic_key(hash, key, aead->key_size, 0, secret, base_label)) != 0)
+    if ((ret = get_traffic_key(hash, key, aead->key_size, 0, secret, hash_value, base_label)) != 0)
         goto Exit;
-    if ((ret = get_traffic_key(hash, ctx->static_iv, aead->iv_size, 1, secret, base_label)) != 0)
+    if ((ret = get_traffic_key(hash, ctx->static_iv, aead->iv_size, 1, secret, hash_value, base_label)) != 0)
         goto Exit;
     ret = aead->setup_crypto(ctx, is_enc, key);
 
@@ -4060,6 +4420,12 @@ Exit:
     }
 
     return ctx;
+}
+
+ptls_aead_context_t *ptls_aead_new(ptls_aead_algorithm_t *aead, ptls_hash_algorithm_t *hash, int is_enc, const void *secret,
+                                   const char *base_label)
+{
+    return new_aead(aead, hash, is_enc, secret, ptls_iovec_init(NULL, 0), base_label);
 }
 
 void ptls_aead_free(ptls_aead_context_t *ctx)
@@ -4207,4 +4573,149 @@ int ptls_handle_message(ptls_t *tls, ptls_buffer_t *sendbuf, size_t epoch_offset
         return PTLS_ALERT_UNEXPECTED_MESSAGE;
 
     return handle_handshake_record(tls, handle_handshake_message, &emitter.super, &rec, properties);
+}
+
+void ptls_esni_dispose(ptls_esni_t *esni)
+{
+    size_t i;
+
+    if (esni->key_exchanges != NULL) {
+        for (i = 0; esni->key_exchanges[i] != NULL; ++i)
+            esni->key_exchanges[i]->on_exchange(esni->key_exchanges + i, 1, NULL, ptls_iovec_init(NULL, 0));
+        free(esni->key_exchanges);
+    }
+    free(esni->cipher_suites);
+}
+
+int ptls_esni_parse(ptls_context_t *ctx, ptls_esni_t *esni, ptls_iovec_t *_esnikeys, const uint8_t *src, const uint8_t *end)
+{
+    struct {
+        struct {
+            ptls_key_exchange_algorithm_t *algo;
+            ptls_iovec_t peer_key;
+        } elements[16];
+        size_t count;
+    } key_exchanges = {{{NULL}}};
+    ptls_iovec_t esni_keys = {NULL};
+    size_t num_cipher_suites = 0;
+    int ret;
+
+    memset(esni, 0, sizeof(*esni));
+
+    /* ESNIKeys */
+    ptls_decode_open_block(src, end, 2, {
+        esni_keys.base = (void *)src;
+        if (end - src < 4) {
+            ret = PTLS_ALERT_DECRYPT_ERROR;
+            goto Exit;
+        }
+        src += 4;
+        ptls_decode_open_block(src, end, 2, {
+            do {
+                uint16_t id;
+                ptls_iovec_t peer_key;
+                if ((ret = ptls_decode16(&id, &src, end)) != 0)
+                    goto Exit;
+                ptls_decode_open_block(src, end, 2, {
+                    peer_key = ptls_iovec_init(src, end - src);
+                    src = end;
+                });
+                if (key_exchanges.count >= sizeof(key_exchanges.elements) / sizeof(key_exchanges.elements[0])) {
+                    ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+                    goto Exit;
+                }
+                size_t i;
+                for (i = 0; ctx->key_exchanges[i] != NULL; ++i)
+                    if (ctx->key_exchanges[i]->id == id)
+                        break;
+                if (ctx->key_exchanges[i] == NULL) {
+                    ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+                    goto Exit;
+                }
+                key_exchanges.elements[key_exchanges.count].algo = ctx->key_exchanges[i];
+                key_exchanges.elements[key_exchanges.count].peer_key = peer_key;
+                ++key_exchanges.count;
+            } while (src != end);
+        });
+        ptls_decode_open_block(src, end, 2, {
+            void *newp;
+            do {
+                uint16_t id;
+                if ((ret = ptls_decode16(&id, &src, end)) != 0)
+                    goto Exit;
+                size_t i;
+                for (i = 0; ctx->cipher_suites[i] != NULL; ++i)
+                    if (ctx->cipher_suites[i]->id == id)
+                        break;
+                if (ctx->cipher_suites[i] != NULL) {
+                    if ((newp = realloc(esni->cipher_suites, sizeof(*esni->cipher_suites) * (num_cipher_suites + 1))) == NULL) {
+                        ret = PTLS_ERROR_NO_MEMORY;
+                        goto Exit;
+                    }
+                    esni->cipher_suites = newp;
+                    esni->cipher_suites[num_cipher_suites++].cipher_suite = ctx->cipher_suites[i];
+                }
+            } while (src != end);
+            if ((newp = realloc(esni->cipher_suites, sizeof(*esni->cipher_suites) * (num_cipher_suites + 1))) == NULL) {
+                ret = PTLS_ERROR_NO_MEMORY;
+                goto Exit;
+            }
+            esni->cipher_suites = newp;
+            esni->cipher_suites[num_cipher_suites].cipher_suite = NULL;
+        });
+        if ((ret = ptls_decode16(&esni->padded_length, &src, end)) != 0)
+            goto Exit;
+        if ((ret = ptls_decode64(&esni->not_before, &src, end)) != 0)
+            goto Exit;
+        if ((ret = ptls_decode64(&esni->not_after, &src, end)) != 0)
+            goto Exit;
+        ptls_decode_block(src, end, 2, {
+            while (src != end) {
+                uint16_t ext_type;
+                if ((ret = ptls_decode16(&ext_type, &src, end)) != 0)
+                    goto Exit;
+                ptls_decode_open_block(src, end, 2, { src = end; });
+            }
+        });
+        esni_keys.len = src - esni_keys.base;
+    });
+
+    /* private keys */
+    ptls_decode_block(src, end, 2, {
+        if ((esni->key_exchanges = malloc(sizeof(*esni->key_exchanges) * (key_exchanges.count + 1))) == NULL) {
+            ret = PTLS_ERROR_NO_MEMORY;
+            goto Exit;
+        }
+        memset(esni->key_exchanges, 0, sizeof(*esni->key_exchanges) * (key_exchanges.count + 1));
+        size_t i;
+        for (i = 0; i != key_exchanges.count; ++i) {
+            ptls_decode_open_block(src, end, 2, {
+                ptls_key_exchange_algorithm_t *algo = key_exchanges.elements[i].algo;
+                if ((ret = algo->load(algo, esni->key_exchanges + i, key_exchanges.elements[i].peer_key,
+                                      ptls_iovec_init(src, end - src))) != 0)
+                    goto Exit;
+                src = end;
+            });
+        }
+        esni->key_exchanges[i] = NULL;
+    });
+
+    { /* calculate digests for every cipher-suite */
+        size_t i;
+        for (i = 0; esni->cipher_suites[i].cipher_suite != NULL; ++i) {
+            ptls_hash_context_t *h = esni->cipher_suites[i].cipher_suite->hash->create();
+            h->update(h, esni_keys.base, esni_keys.len);
+            h->final(h, esni->cipher_suites[i].record_digest, PTLS_HASH_FINAL_MODE_FREE);
+        }
+    }
+
+    ret = 0;
+Exit:
+    if (ret == 0) {
+        if (_esnikeys != NULL)
+            *_esnikeys = esni_keys;
+    } else {
+        ptls_esni_dispose(esni);
+    }
+    return ret;
 }
