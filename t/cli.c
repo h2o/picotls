@@ -301,13 +301,13 @@ static void usage(const char *cmd)
            "\n"
            "Supported named groups: secp256r1"
 #ifdef PTLS_OPENSSL_HAS_SECP384R1
-    ", secp384r1"
+           ", secp384r1"
 #endif
 #ifdef PTLS_OPENSSL_HAS_SECP521R1
-            ", secp521r1"
+           ", secp521r1"
 #endif
 #ifdef PTLS_OPENSSL_HAS_X25519
-            ", X25519"
+           ", X25519"
 #endif
            "\n\n",
            cmd);
@@ -379,7 +379,9 @@ int main(int argc, char **argv)
             break;
         case 'N': {
             ptls_key_exchange_algorithm_t *algo = NULL;
-#define MATCH(name) if (algo == NULL && strcasecmp(optarg, #name) == 0) algo = (&ptls_openssl_##name)
+#define MATCH(name)                                                                                                                \
+    if (algo == NULL && strcasecmp(optarg, #name) == 0)                                                                            \
+    algo = (&ptls_openssl_##name)
             MATCH(secp256r1);
 #ifdef PTLS_OPENSSL_HAS_SECP384R1
             MATCH(secp384r1);
