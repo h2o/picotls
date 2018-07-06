@@ -132,6 +132,12 @@ static int handle_connection(int sockfd, ptls_context_t *ctx, const char *server
                         /* release data sent as early-data, if server accepted it */
                         if (hsprop->client.early_data_accepted_by_peer)
                             shift_buffer(&ptbuf, early_bytes_sent);
+                        if (ptls_is_server(tls)) {
+                            char buf[1024];
+                            snprintf(buf, sizeof(buf), "server-name: %s\nesni: %s\n", ptls_get_server_name(tls),
+                                     hsprop->server.esni ? "yes" : "no");
+                            ptls_buffer_pushv(&ptbuf, buf, strlen(buf));
+                        }
                         if (ptbuf.off != 0) {
                             if ((ret = ptls_send(tls, &encbuf, ptbuf.base, ptbuf.off)) != 0) {
                                 fprintf(stderr, "ptls_send(1rtt):%d\n", ret);
@@ -317,6 +323,13 @@ static void usage(const char *cmd)
            cmd);
 }
 
+static int save_client_hello(ptls_on_client_hello_t *self, ptls_t *tls, ptls_iovec_t server_name, const ptls_iovec_t *protocols,
+                             size_t num_protocols, const uint16_t *signature_algorithms, size_t num_signature_algorithms)
+{
+    ptls_set_server_name(tls, (const char *)server_name.base, server_name.len);
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     ERR_load_crypto_strings();
@@ -331,7 +344,9 @@ int main(int argc, char **argv)
     res_init();
 
     ptls_key_exchange_algorithm_t *key_exchanges[128] = {NULL};
+    ptls_on_client_hello_t on_client_hello = {save_client_hello};
     ptls_context_t ctx = {ptls_openssl_random_bytes, &ptls_get_time, key_exchanges, ptls_openssl_cipher_suites};
+    ctx.on_client_hello = &on_client_hello;
     ptls_handshake_properties_t hsprop = {{{{NULL}}}};
     const char *host, *port, *file = NULL, *esni_file = NULL;
     int is_server = 0, use_early_data = 0, ch;
