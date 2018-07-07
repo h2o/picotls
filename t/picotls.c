@@ -45,10 +45,9 @@ static ptls_cipher_suite_t *find_cipher(ptls_context_t *ctx, uint16_t id)
 
 static void test_hash(ptls_hash_algorithm_t *hash)
 {
-    ptls_hash_context_t *hctx = hash->create();
     uint8_t digest[PTLS_MAX_DIGEST_SIZE];
-
-    hctx->final(hctx, digest, PTLS_HASH_FINAL_MODE_FREE);
+    int ret = ptls_calc_hash(hash, digest, "", 0);
+    ok(ret == 0);
     ok(memcmp(digest, hash->empty_digest, hash->digest_size) == 0);
 }
 
