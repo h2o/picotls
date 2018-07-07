@@ -1421,7 +1421,6 @@ Exit:
 static int sha256_digest(ptls_context_t *ctx, uint8_t *digest, const void *src, size_t len)
 {
     ptls_cipher_suite_t **cs;
-    ptls_hash_context_t *h;
 
     for (cs = ctx->cipher_suites; *cs != NULL; ++cs) {
         switch ((*cs)->id) {
@@ -1433,11 +1432,7 @@ static int sha256_digest(ptls_context_t *ctx, uint8_t *digest, const void *src, 
     return PTLS_ERROR_LIBRARY;
 
 Found_Cipher:
-    if ((h = (*cs)->hash->create()) == NULL)
-        return PTLS_ERROR_NO_MEMORY;
-    h->update(h, src, len);
-    h->final(h, digest, PTLS_HASH_FINAL_MODE_FREE);
-    return 0;
+    return ptls_calc_hash((*cs)->hash, digest, src, len);
 }
 
 static int select_cipher(ptls_cipher_suite_t **selected, ptls_cipher_suite_t **candidates, const uint8_t *src,
@@ -1609,15 +1604,8 @@ static int create_esni_aead(ptls_aead_context_t **aead_ctx, int is_enc, ptls_key
         goto Exit;
     if ((ret = ptls_hkdf_extract(cipher->hash, aead_secret, ptls_iovec_init(NULL, 0), ecdh_secret)) != 0)
         goto Exit;
-    {
-        ptls_hash_context_t *hctx = NULL;
-        if ((hctx = cipher->hash->create()) == NULL) {
-            ret = PTLS_ERROR_NO_MEMORY;
-            goto Exit;
-        }
-        hctx->update(hctx, client_random, PTLS_HELLO_RANDOM_SIZE);
-        hctx->final(hctx, random_hash, PTLS_HASH_FINAL_MODE_FREE);
-    }
+    if ((ret = ptls_calc_hash(cipher->hash, random_hash, client_random, PTLS_HELLO_RANDOM_SIZE)) != 0)
+        goto Exit;
     if ((*aead_ctx = new_aead(cipher->aead, cipher->hash, is_enc, aead_secret,
                               ptls_iovec_init(random_hash, cipher->hash->digest_size), "tls13 esni ")) == NULL) {
         ret = PTLS_ERROR_NO_MEMORY;
@@ -1651,13 +1639,8 @@ static int emit_esni_extension(ptls_buffer_t *buf, ptls_iovec_t esni_keys, ptls_
     ptls_buffer_push_block(buf, 2, {
         if ((ret = ptls_buffer_reserve(buf, cipher->hash->digest_size)) != 0)
             goto Exit;
-        ptls_hash_context_t *h = cipher->hash->create();
-        if (h == NULL) {
-            ret = PTLS_ERROR_NO_MEMORY;
+        if ((ret = ptls_calc_hash(cipher->hash, buf->base + buf->off, esni_keys.base, esni_keys.len)) != 0)
             goto Exit;
-        }
-        h->update(h, esni_keys.base, esni_keys.len);
-        h->final(h, buf->base + buf->off, PTLS_HASH_FINAL_MODE_FREE);
         buf->off += cipher->hash->digest_size;
     });
     ptls_buffer_push_block(buf, 2, {
@@ -4723,9 +4706,9 @@ int ptls_esni_parse(ptls_context_t *ctx, ptls_esni_t *esni, ptls_iovec_t *_esnik
     { /* calculate digests for every cipher-suite */
         size_t i;
         for (i = 0; esni->cipher_suites[i].cipher_suite != NULL; ++i) {
-            ptls_hash_context_t *h = esni->cipher_suites[i].cipher_suite->hash->create();
-            h->update(h, esni_keys.base, esni_keys.len);
-            h->final(h, esni->cipher_suites[i].record_digest, PTLS_HASH_FINAL_MODE_FREE);
+            if ((ret = ptls_calc_hash(esni->cipher_suites[i].cipher_suite->hash, esni->cipher_suites[i].record_digest,
+                                      esni_keys.base, esni_keys.len)) != 0)
+                goto Exit;
         }
     }
 
