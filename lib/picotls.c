@@ -2839,14 +2839,6 @@ static int server_handle_hello(ptls_t *tls, struct st_ptls_message_emitter_t *em
     /* handle client_random and SNI */
     if (!is_second_flight) {
         memcpy(tls->client_random, ch.random_bytes, sizeof(tls->client_random));
-        if (ch.server_name.base != NULL) {
-            if ((tls->server_name = malloc(ch.server_name.len + 1)) == NULL) {
-                ret = PTLS_ERROR_NO_MEMORY;
-                goto Exit;
-            }
-            memcpy(tls->server_name, ch.server_name.base, ch.server_name.len);
-            tls->server_name[ch.server_name.len] = '\0';
-        }
         if (tls->ctx->on_client_hello != NULL &&
             (ret = tls->ctx->on_client_hello->cb(tls->ctx->on_client_hello, tls, ch.server_name, ch.alpn.list, ch.alpn.count,
                                                  ch.signature_algorithms.list, ch.signature_algorithms.count)) != 0)
@@ -2856,6 +2848,8 @@ static int server_handle_hello(ptls_t *tls, struct st_ptls_message_emitter_t *em
             ret = PTLS_ALERT_DECODE_ERROR;
             goto Exit;
         }
+        /* We compare SNI only when the value is saved by the on_client_hello callback. This should be OK because we are ignoring
+         * the value unless the callback saves the server-name. */
         if (memcmp(tls->client_random, ch.random_bytes, sizeof(tls->client_random)) != 0 ||
             (tls->server_name != NULL) != (ch.server_name.base != NULL) ||
             (tls->server_name != NULL &&
@@ -3839,7 +3833,6 @@ Exit:
 int ptls_export_secret(ptls_t *tls, void *output, size_t outlen, const char *label, ptls_iovec_t context_value, int is_early)
 {
     ptls_hash_algorithm_t *algo = tls->key_schedule->hashes[0].algo;
-    ptls_hash_context_t *hctx;
     uint8_t *master_secret = is_early ? tls->exporter_master_secret.early : tls->exporter_master_secret.one_rtt,
             derived_secret[PTLS_MAX_DIGEST_SIZE], context_value_hash[PTLS_MAX_DIGEST_SIZE];
     int ret;
@@ -3861,10 +3854,8 @@ int ptls_export_secret(ptls_t *tls, void *output, size_t outlen, const char *lab
         return ret;
     }
 
-    if ((hctx = algo->create()) == NULL)
-        return PTLS_ERROR_NO_MEMORY;
-    hctx->update(hctx, context_value.base, context_value.len);
-    hctx->final(hctx, context_value_hash, PTLS_HASH_FINAL_MODE_FREE);
+    if ((ret = ptls_calc_hash(algo, context_value_hash, context_value.base, context_value.len)) != 0)
+        return ret;
 
     if ((ret = ptls_hkdf_expand_label(algo, derived_secret, algo->digest_size, ptls_iovec_init(master_secret, algo->digest_size),
                                       label, ptls_iovec_init(algo->empty_digest, algo->digest_size), NULL)) != 0)
@@ -3927,6 +3918,17 @@ static void hmac_final(ptls_hash_context_t *_ctx, void *md, ptls_hash_final_mode
         assert(!"FIXME");
         break;
     }
+}
+
+int ptls_calc_hash(ptls_hash_algorithm_t *algo, void *output, const void *src, size_t len)
+{
+    ptls_hash_context_t *ctx;
+
+    if ((ctx = algo->create()) == NULL)
+        return PTLS_ERROR_NO_MEMORY;
+    ctx->update(ctx, src, len);
+    ctx->final(ctx, output, PTLS_HASH_FINAL_MODE_FREE);
+    return 0;
 }
 
 ptls_hash_context_t *ptls_hmac_create(ptls_hash_algorithm_t *algo, const void *key, size_t key_size)
