@@ -2948,7 +2948,7 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
         }
         /* esni */
         if (ch->esni.cipher != NULL) {
-            if (ch->server_name.base != NULL || ch->key_shares.base == NULL) {
+            if (ch->key_shares.base == NULL) {
                 ret = PTLS_ALERT_ILLEGAL_PARAMETER;
                 goto Exit;
             }
@@ -3181,12 +3181,12 @@ static int server_handle_hello(ptls_t *tls, struct st_ptls_message_emitter_t *em
         memcpy(tls->client_random, ch.random_bytes, sizeof(tls->client_random));
         ptls_iovec_t server_name = {NULL};
         int is_esni = 0;
-        if (ch.server_name.base != NULL) {
-            server_name = ch.server_name;
-        } else if (ch.esni.cipher != NULL && tls->ctx->esni != NULL) {
+        if (ch.esni.cipher != NULL && tls->ctx->esni != NULL) {
             if ((ret = client_hello_decode_esni(tls->ctx, &key_share.algorithm, &key_share.peer_key, &server_name, &ch)) != 0)
                 goto Exit;
             is_esni = 1;
+        } else if (ch.server_name.base != NULL) {
+            server_name = ch.server_name;
         }
         if (properties != NULL)
             properties->server.esni = is_esni;
