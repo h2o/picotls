@@ -848,6 +848,10 @@ int ptls_export_secret(ptls_t *tls, void *output, size_t outlen, const char *lab
 /**
  *
  */
+int ptls_calc_hash(ptls_hash_algorithm_t *algo, void *output, const void *src, size_t len);
+/**
+ *
+ */
 ptls_hash_context_t *ptls_hmac_create(ptls_hash_algorithm_t *algo, const void *key, size_t key_size);
 /**
  *

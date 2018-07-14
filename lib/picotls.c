@@ -1429,7 +1429,6 @@ Exit:
 static int sha256_digest(ptls_context_t *ctx, uint8_t *digest, const void *src, size_t len)
 {
     ptls_cipher_suite_t **cs;
-    ptls_hash_context_t *h;
 
     for (cs = ctx->cipher_suites; *cs != NULL; ++cs) {
         switch ((*cs)->id) {
@@ -1441,11 +1440,7 @@ static int sha256_digest(ptls_context_t *ctx, uint8_t *digest, const void *src, 
     return PTLS_ERROR_LIBRARY;
 
 Found_Cipher:
-    if ((h = (*cs)->hash->create()) == NULL)
-        return PTLS_ERROR_NO_MEMORY;
-    h->update(h, src, len);
-    h->final(h, digest, PTLS_HASH_FINAL_MODE_FREE);
-    return 0;
+    return ptls_calc_hash((*cs)->hash, digest, src, len);
 }
 
 static int select_cipher(ptls_cipher_suite_t **selected, ptls_cipher_suite_t **candidates, const uint8_t *src,
@@ -1617,15 +1612,8 @@ static int create_esni_aead(ptls_aead_context_t **aead_ctx, int is_enc, ptls_key
         goto Exit;
     if ((ret = ptls_hkdf_extract(cipher->hash, aead_secret, ptls_iovec_init(NULL, 0), ecdh_secret)) != 0)
         goto Exit;
-    {
-        ptls_hash_context_t *hctx = NULL;
-        if ((hctx = cipher->hash->create()) == NULL) {
-            ret = PTLS_ERROR_NO_MEMORY;
-            goto Exit;
-        }
-        hctx->update(hctx, client_random, PTLS_HELLO_RANDOM_SIZE);
-        hctx->final(hctx, random_hash, PTLS_HASH_FINAL_MODE_FREE);
-    }
+    if ((ret = ptls_calc_hash(cipher->hash, random_hash, client_random, PTLS_HELLO_RANDOM_SIZE)) != 0)
+        goto Exit;
     if ((*aead_ctx = new_aead(cipher->aead, cipher->hash, is_enc, aead_secret,
                               ptls_iovec_init(random_hash, cipher->hash->digest_size), "tls13 esni ")) == NULL) {
         ret = PTLS_ERROR_NO_MEMORY;
@@ -1659,13 +1647,8 @@ static int emit_esni_extension(ptls_buffer_t *buf, ptls_iovec_t esni_keys, ptls_
     ptls_buffer_push_block(buf, 2, {
         if ((ret = ptls_buffer_reserve(buf, cipher->hash->digest_size)) != 0)
             goto Exit;
-        ptls_hash_context_t *h = cipher->hash->create();
-        if (h == NULL) {
-            ret = PTLS_ERROR_NO_MEMORY;
+        if ((ret = ptls_calc_hash(cipher->hash, buf->base + buf->off, esni_keys.base, esni_keys.len)) != 0)
             goto Exit;
-        }
-        h->update(h, esni_keys.base, esni_keys.len);
-        h->final(h, buf->base + buf->off, PTLS_HASH_FINAL_MODE_FREE);
         buf->off += cipher->hash->digest_size;
     });
     ptls_buffer_push_block(buf, 2, {
@@ -3008,7 +2991,7 @@ fprintf(stderr, "%s:%d\n", __FILE__, __LINE__);
 fprintf(stderr, "%s:%d\n", __FILE__, __LINE__);
         if (ch->esni.cipher != NULL) {
 fprintf(stderr, "%s:%d\n", __FILE__, __LINE__);
-            if (ch->server_name.base != NULL || ch->key_shares.base == NULL) {
+            if (ch->key_shares.base == NULL) {
 fprintf(stderr, "%s:%d\n", __FILE__, __LINE__);
                 ret = PTLS_ALERT_ILLEGAL_PARAMETER;
                 goto Exit;
@@ -3244,14 +3227,14 @@ static int server_handle_hello(ptls_t *tls, struct st_ptls_message_emitter_t *em
         memcpy(tls->client_random, ch.random_bytes, sizeof(tls->client_random));
         ptls_iovec_t server_name = {NULL};
         int is_esni = 0;
-        if (ch.server_name.base != NULL) {
-            server_name = ch.server_name;
-        } else if (ch.esni.cipher != NULL && tls->ctx->esni != NULL) {
+        if (ch.esni.cipher != NULL && tls->ctx->esni != NULL) {
 fprintf(stderr, "%s:%d\n", __FILE__, __LINE__);
             if ((ret = client_hello_decode_esni(tls->ctx, &key_share.algorithm, &key_share.peer_key, &server_name, &ch)) != 0)
                 goto Exit;
 fprintf(stderr, "%s:%d\n", __FILE__, __LINE__);
             is_esni = 1;
+        } else if (ch.server_name.base != NULL) {
+            server_name = ch.server_name;
         }
         if (properties != NULL)
             properties->server.esni = is_esni;
@@ -3503,7 +3486,7 @@ fprintf(stderr, "%s:%d\n", __FILE__, __LINE__);
     push_message(emitter, tls->key_schedule, PTLS_HANDSHAKE_TYPE_ENCRYPTED_EXTENSIONS, {
         ptls_buffer_t *sendbuf = emitter->buf;
         ptls_buffer_push_block(sendbuf, 2, {
-            if (tls->server_name != NULL) {
+            if (tls->server_name != NULL && ch.esni.cipher == NULL) {
                 /* In this event, the server SHALL include an extension of type "server_name" in the (extended) server
                  * hello. The "extension_data" field of this extension SHALL be empty. (RFC 6066 section 3) */
                 buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SERVER_NAME, {});
@@ -4253,7 +4236,6 @@ Exit:
 int ptls_export_secret(ptls_t *tls, void *output, size_t outlen, const char *label, ptls_iovec_t context_value, int is_early)
 {
     ptls_hash_algorithm_t *algo = tls->key_schedule->hashes[0].algo;
-    ptls_hash_context_t *hctx;
     uint8_t *master_secret = is_early ? tls->exporter_master_secret.early : tls->exporter_master_secret.one_rtt,
             derived_secret[PTLS_MAX_DIGEST_SIZE], context_value_hash[PTLS_MAX_DIGEST_SIZE];
     int ret;
@@ -4275,10 +4257,8 @@ int ptls_export_secret(ptls_t *tls, void *output, size_t outlen, const char *lab
         return ret;
     }
 
-    if ((hctx = algo->create()) == NULL)
-        return PTLS_ERROR_NO_MEMORY;
-    hctx->update(hctx, context_value.base, context_value.len);
-    hctx->final(hctx, context_value_hash, PTLS_HASH_FINAL_MODE_FREE);
+    if ((ret = ptls_calc_hash(algo, context_value_hash, context_value.base, context_value.len)) != 0)
+        return ret;
 
     if ((ret = ptls_hkdf_expand_label(algo, derived_secret, algo->digest_size, ptls_iovec_init(master_secret, algo->digest_size),
                                       label, ptls_iovec_init(algo->empty_digest, algo->digest_size), NULL)) != 0)
@@ -4341,6 +4321,17 @@ static void hmac_final(ptls_hash_context_t *_ctx, void *md, ptls_hash_final_mode
         assert(!"FIXME");
         break;
     }
+}
+
+int ptls_calc_hash(ptls_hash_algorithm_t *algo, void *output, const void *src, size_t len)
+{
+    ptls_hash_context_t *ctx;
+
+    if ((ctx = algo->create()) == NULL)
+        return PTLS_ERROR_NO_MEMORY;
+    ctx->update(ctx, src, len);
+    ctx->final(ctx, output, PTLS_HASH_FINAL_MODE_FREE);
+    return 0;
 }
 
 ptls_hash_context_t *ptls_hmac_create(ptls_hash_algorithm_t *algo, const void *key, size_t key_size)
@@ -4763,9 +4754,9 @@ int ptls_esni_parse(ptls_context_t *ctx, ptls_esni_t *esni, ptls_iovec_t *_esnik
     { /* calculate digests for every cipher-suite */
         size_t i;
         for (i = 0; esni->cipher_suites[i].cipher_suite != NULL; ++i) {
-            ptls_hash_context_t *h = esni->cipher_suites[i].cipher_suite->hash->create();
-            h->update(h, esni_keys.base, esni_keys.len);
-            h->final(h, esni->cipher_suites[i].record_digest, PTLS_HASH_FINAL_MODE_FREE);
+            if ((ret = ptls_calc_hash(esni->cipher_suites[i].cipher_suite->hash, esni->cipher_suites[i].record_digest,
+                                      esni_keys.base, esni_keys.len)) != 0)
+                goto Exit;
         }
     }
 
