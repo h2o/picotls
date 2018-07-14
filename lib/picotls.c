@@ -3438,7 +3438,7 @@ static int server_handle_hello(ptls_t *tls, struct st_ptls_message_emitter_t *em
     push_message(emitter, tls->key_schedule, PTLS_HANDSHAKE_TYPE_ENCRYPTED_EXTENSIONS, {
         ptls_buffer_t *sendbuf = emitter->buf;
         ptls_buffer_push_block(sendbuf, 2, {
-            if (tls->server_name != NULL) {
+            if (tls->server_name != NULL && ch.esni.cipher == NULL) {
                 /* In this event, the server SHALL include an extension of type "server_name" in the (extended) server
                  * hello. The "extension_data" field of this extension SHALL be empty. (RFC 6066 section 3) */
                 buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SERVER_NAME, {});
