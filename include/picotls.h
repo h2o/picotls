@@ -446,6 +446,10 @@ struct st_ptls_context_t {
      */
     uint32_t max_early_data_size;
     /**
+     * the label prefix used in hkdf-expand-label (if NULL, uses "tls13 ")
+     */
+    const char *hkdf_label_prefix;
+    /**
      * if set, psk handshakes use (ec)dhe
      */
     unsigned require_dhe_on_psk : 1;
