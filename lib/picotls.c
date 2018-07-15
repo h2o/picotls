@@ -4009,7 +4009,7 @@ int ptls_hkdf_expand_label(ptls_hash_algorithm_t *algo, void *output, size_t out
     ptls_buffer_push16(&hkdf_label, (uint16_t)outlen);
     ptls_buffer_push_block(&hkdf_label, 1, {
         if (base_label == NULL)
-            base_label = "tls13 ";
+            base_label = "quic ";
         ptls_buffer_pushv(&hkdf_label, base_label, strlen(base_label));
         ptls_buffer_pushv(&hkdf_label, label, strlen(label));
     });
