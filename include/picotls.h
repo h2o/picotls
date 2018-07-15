@@ -446,6 +446,10 @@ struct st_ptls_context_t {
      */
     uint32_t max_early_data_size;
     /**
+     * the label prefix used in hkdf-expand-label (if NULL, uses "tls13 ")
+     */
+    const char *hkdf_label_prefix;
+    /**
      * if set, psk handshakes use (ec)dhe
      */
     unsigned require_dhe_on_psk : 1;
@@ -825,7 +829,7 @@ int ptls_hkdf_expand(ptls_hash_algorithm_t *hash, void *output, size_t outlen, p
  *
  */
 int ptls_hkdf_expand_label(ptls_hash_algorithm_t *algo, void *output, size_t outlen, ptls_iovec_t secret, const char *label,
-                           ptls_iovec_t hash_value, const char *base_label);
+                           ptls_iovec_t hash_value, const char *label_prefix);
 /**
  * instantiates a symmetric cipher
  */
@@ -851,7 +855,7 @@ static void ptls_cipher_encrypt(ptls_cipher_context_t *ctx, void *output, const 
  * @return pointer to an AEAD context if successful, otherwise NULL
  */
 ptls_aead_context_t *ptls_aead_new(ptls_aead_algorithm_t *aead, ptls_hash_algorithm_t *hash, int is_enc, const void *secret,
-                                   const char *base_label);
+                                   const char *label_prefix);
 /**
  * destroys an AEAD cipher context
  */
