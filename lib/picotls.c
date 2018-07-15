@@ -1065,10 +1065,10 @@ Exit:
 }
 
 static int get_traffic_key(ptls_hash_algorithm_t *algo, void *key, size_t key_size, int is_iv, const void *secret,
-                           const char *base_label)
+                           const char *label_prefix)
 {
     return ptls_hkdf_expand_label(algo, key, key_size, ptls_iovec_init(secret, algo->digest_size), is_iv ? "iv" : "key",
-                                  ptls_iovec_init(NULL, 0), base_label);
+                                  ptls_iovec_init(NULL, 0), label_prefix);
 }
 
 static int setup_traffic_protection(ptls_t *tls, int is_enc, const char *secret_label, size_t epoch, int skip_notify)
@@ -3998,7 +3998,7 @@ int ptls_hkdf_expand(ptls_hash_algorithm_t *algo, void *output, size_t outlen, p
 }
 
 int ptls_hkdf_expand_label(ptls_hash_algorithm_t *algo, void *output, size_t outlen, ptls_iovec_t secret, const char *label,
-                           ptls_iovec_t hash_value, const char *base_label)
+                           ptls_iovec_t hash_value, const char *label_prefix)
 {
     ptls_buffer_t hkdf_label;
     uint8_t hkdf_label_buf[512];
@@ -4008,9 +4008,9 @@ int ptls_hkdf_expand_label(ptls_hash_algorithm_t *algo, void *output, size_t out
 
     ptls_buffer_push16(&hkdf_label, (uint16_t)outlen);
     ptls_buffer_push_block(&hkdf_label, 1, {
-        if (base_label == NULL)
-            base_label = "tls13 ";
-        ptls_buffer_pushv(&hkdf_label, base_label, strlen(base_label));
+        if (label_prefix == NULL)
+            label_prefix = "tls13 ";
+        ptls_buffer_pushv(&hkdf_label, label_prefix, strlen(label_prefix));
         ptls_buffer_pushv(&hkdf_label, label, strlen(label));
     });
     ptls_buffer_push_block(&hkdf_label, 1, { ptls_buffer_pushv(&hkdf_label, hash_value.base, hash_value.len); });
@@ -4043,7 +4043,7 @@ void ptls_cipher_free(ptls_cipher_context_t *ctx)
 }
 
 ptls_aead_context_t *ptls_aead_new(ptls_aead_algorithm_t *aead, ptls_hash_algorithm_t *hash, int is_enc, const void *secret,
-                                   const char *base_label)
+                                   const char *label_prefix)
 {
     ptls_aead_context_t *ctx;
     uint8_t key[PTLS_MAX_SECRET_SIZE];
@@ -4053,9 +4053,9 @@ ptls_aead_context_t *ptls_aead_new(ptls_aead_algorithm_t *aead, ptls_hash_algori
         return NULL;
 
     *ctx = (ptls_aead_context_t){aead};
-    if ((ret = get_traffic_key(hash, key, aead->key_size, 0, secret, base_label)) != 0)
+    if ((ret = get_traffic_key(hash, key, aead->key_size, 0, secret, label_prefix)) != 0)
         goto Exit;
-    if ((ret = get_traffic_key(hash, ctx->static_iv, aead->iv_size, 1, secret, base_label)) != 0)
+    if ((ret = get_traffic_key(hash, ctx->static_iv, aead->iv_size, 1, secret, label_prefix)) != 0)
         goto Exit;
     ret = aead->setup_crypto(ctx, is_enc, key);
 
