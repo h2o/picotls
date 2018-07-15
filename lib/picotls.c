@@ -227,7 +227,7 @@ struct st_ptls_t {
      */
     union {
         struct {
-            uint8_t legacy_session_id[16];
+            uint8_t legacy_session_id[32];
             ptls_key_exchange_context_t *key_share_ctx;
             unsigned offered_psk : 1;
             struct st_ptls_certificate_request_t certificate_request;
