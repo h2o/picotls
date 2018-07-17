@@ -3948,6 +3948,8 @@ ptls_hash_context_t *ptls_hmac_create(ptls_hash_algorithm_t *algo, const void *k
 {
     struct st_picotls_hmac_context_t *ctx;
 
+    assert(key_size <= algo->block_size);
+
     if ((ctx = malloc(offsetof(struct st_picotls_hmac_context_t, key) + algo->block_size)) == NULL)
         return NULL;
 
