@@ -1108,7 +1108,7 @@ static int verify_cert(ptls_verify_certificate_t *_self, ptls_t *tls, int (**ver
 
 Exit:
     if (chain != NULL)
-        sk_X509_free(chain);
+        sk_X509_pop_free(chain, X509_free);
     if (cert != NULL)
         X509_free(cert);
     return ret;
