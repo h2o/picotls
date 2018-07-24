@@ -2860,15 +2860,18 @@ static int server_handle_hello(ptls_t *tls, struct st_ptls_message_emitter_t *em
             ret = PTLS_ALERT_DECODE_ERROR;
             goto Exit;
         }
-        /* We compare SNI only when the value is saved by the on_client_hello callback. This should be OK because we are ignoring
-         * the value unless the callback saves the server-name. */
-        if (memcmp(tls->client_random, ch.random_bytes, sizeof(tls->client_random)) != 0 ||
-            (tls->server_name != NULL) != (ch.server_name.base != NULL) ||
-            (tls->server_name != NULL &&
-             !(strncmp(tls->server_name, (char *)ch.server_name.base, ch.server_name.len) == 0 &&
-               tls->server_name[ch.server_name.len] == '\0'))) {
+        if (memcmp(tls->client_random, ch.random_bytes, sizeof(tls->client_random)) != 0) {
             ret = PTLS_ALERT_HANDSHAKE_FAILURE;
             goto Exit;
+        }
+        /* We compare SNI only when the value is saved by the on_client_hello callback. This should be OK because we are ignoring
+         * the value unless the callback saves the server-name. */
+        if (tls->server_name != NULL) {
+            size_t l = strlen(tls->server_name);
+            if (!(ch.server_name.len == l && memcmp(ch.server_name.base, tls->server_name, l) == 0)) {
+                ret = PTLS_ALERT_HANDSHAKE_FAILURE;
+                goto Exit;
+            }
         }
     }
 
