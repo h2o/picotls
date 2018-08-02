@@ -1487,7 +1487,7 @@ static int send_client_hello(ptls_t *tls, struct st_ptls_message_emitter_t *emit
         ptls_buffer_push_block(sendbuf, 1, { ptls_buffer_push(sendbuf, 0); });
         /* extensions */
         ptls_buffer_push_block(sendbuf, 2, {
-            if (tls->server_name != NULL) {
+            if (tls->server_name != NULL && ptls_server_name_is_host_name(tls->server_name)) {
                 buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SERVER_NAME, {
                     ptls_buffer_push_block(sendbuf, 2, {
                         ptls_buffer_push(sendbuf, PTLS_SERVER_NAME_TYPE_HOSTNAME);
@@ -1893,7 +1893,7 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
                 ret = PTLS_ALERT_DECODE_ERROR;
                 goto Exit;
             }
-            if (tls->server_name == NULL) {
+            if (!(tls->server_name != NULL && ptls_server_name_is_host_name(tls->server_name))) {
                 ret = PTLS_ALERT_ILLEGAL_PARAMETER;
                 goto Exit;
             }
@@ -4242,4 +4242,38 @@ int ptls_handle_message(ptls_t *tls, ptls_buffer_t *sendbuf, size_t epoch_offset
         return PTLS_ALERT_UNEXPECTED_MESSAGE;
 
     return handle_handshake_record(tls, handle_handshake_message, &emitter.super, &rec, properties);
+}
+
+/**
+ * checks if given name is a DNS name that can be sent as an argument of SNI
+ */
+int ptls_server_name_is_host_name(const char *name)
+{
+#define IS_ALPHA(c) (('A' <= (c) && (c) <= 'Z') || ('a' <= (c) && (c) <= 'z'))
+#define IS_DIGIT(c) ('0' <= (c) && (c) <= '9')
+
+    const char *p = name;
+    int is_first_ch = 1;
+
+    if (*p == '\0')
+        return 0;
+    for (; *p != '\0'; ++p) {
+        if (*p == '.') {
+            if (is_first_ch)
+                return 0;
+            is_first_ch = 1;
+        } else if (is_first_ch) {
+            if (!IS_ALPHA(*p))
+                return 0;
+            is_first_ch = 0;
+        } else {
+            if (!(IS_ALPHA(*p) || IS_DIGIT(*p) || *p == '-'))
+                return 0;
+        }
+    }
+
+    return 1;
+
+#undef IS_ALPHA
+#undef IS_DIGIT
 }
