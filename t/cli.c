@@ -141,6 +141,8 @@ static int handle_connection(int sockfd, ptls_context_t *ctx, const char *server
                     } else if (ret == PTLS_ERROR_IN_PROGRESS) {
                         /* ok */
                     } else {
+                        if (encbuf.off != 0)
+                            (void)write(sockfd, encbuf.base, encbuf.off);
                         fprintf(stderr, "ptls_handshake:%d\n", ret);
                         goto Exit;
                     }

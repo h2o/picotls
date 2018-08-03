@@ -86,6 +86,8 @@
 
 #define PTLS_EARLY_DATA_MAX_DELAY 10000 /* max. RTT (in msec) to permit early data */
 
+#define PTLS_HKDF_EXPAND_LABEL_PREFIX "tls13 "
+
 #if defined(PTLS_DEBUG) && PTLS_DEBUG
 #define PTLS_DEBUGF(...) fprintf(stderr, __VA_ARGS__)
 #else
@@ -227,7 +229,7 @@ struct st_ptls_t {
      */
     union {
         struct {
-            uint8_t legacy_session_id[16];
+            uint8_t legacy_session_id[32];
             ptls_key_exchange_context_t *key_share_ctx;
             unsigned offered_psk : 1;
             struct st_ptls_certificate_request_t certificate_request;
@@ -322,6 +324,7 @@ struct st_ptls_server_hello_t {
 
 struct st_ptls_key_schedule_t {
     unsigned generation; /* early secret (1), hanshake secret (2), master secret (3) */
+    const char *hkdf_label_prefix;
     uint8_t secret[PTLS_MAX_DIGEST_SIZE];
     size_t num_hashes;
     struct {
@@ -340,6 +343,9 @@ struct st_ptls_extension_bitmap_t {
 };
 
 static uint8_t zeroes_of_max_digest_size[PTLS_MAX_DIGEST_SIZE] = {0};
+
+static int hkdf_expand_label(ptls_hash_algorithm_t *algo, void *output, size_t outlen, ptls_iovec_t secret, const char *label,
+                             ptls_iovec_t hash_value, const char *label_prefix);
 
 static int is_supported_version(uint16_t v)
 {
@@ -749,7 +755,8 @@ static void key_schedule_free(struct st_ptls_key_schedule_t *sched)
     free(sched);
 }
 
-static struct st_ptls_key_schedule_t *key_schedule_new(ptls_cipher_suite_t *preferred, ptls_cipher_suite_t **offered)
+static struct st_ptls_key_schedule_t *key_schedule_new(ptls_cipher_suite_t *preferred, ptls_cipher_suite_t **offered,
+                                                       const char *hkdf_label_prefix)
 {
 #define FOREACH_HASH(block)                                                                                                        \
     do {                                                                                                                           \
@@ -774,12 +781,15 @@ static struct st_ptls_key_schedule_t *key_schedule_new(ptls_cipher_suite_t *pref
 
     struct st_ptls_key_schedule_t *sched;
 
+    if (hkdf_label_prefix == NULL)
+        hkdf_label_prefix = PTLS_HKDF_EXPAND_LABEL_PREFIX;
+
     { /* allocate */
         size_t num_hashes = 0;
         FOREACH_HASH({ ++num_hashes; });
         if ((sched = malloc(offsetof(struct st_ptls_key_schedule_t, hashes) + sizeof(sched->hashes[0]) * num_hashes)) == NULL)
             return NULL;
-        *sched = (struct st_ptls_key_schedule_t){0};
+        *sched = (struct st_ptls_key_schedule_t){0, hkdf_label_prefix};
     }
 
     /* setup the hash algos and contexts */
@@ -806,10 +816,10 @@ static int key_schedule_extract(struct st_ptls_key_schedule_t *sched, ptls_iovec
         ikm = ptls_iovec_init(zeroes_of_max_digest_size, sched->hashes[0].algo->digest_size);
 
     if (sched->generation != 0 &&
-        (ret = ptls_hkdf_expand_label(sched->hashes[0].algo, sched->secret, sched->hashes[0].algo->digest_size,
-                                      ptls_iovec_init(sched->secret, sched->hashes[0].algo->digest_size), "derived",
-                                      ptls_iovec_init(sched->hashes[0].algo->empty_digest, sched->hashes[0].algo->digest_size),
-                                      NULL)) != 0)
+        (ret = hkdf_expand_label(sched->hashes[0].algo, sched->secret, sched->hashes[0].algo->digest_size,
+                                 ptls_iovec_init(sched->secret, sched->hashes[0].algo->digest_size), "derived",
+                                 ptls_iovec_init(sched->hashes[0].algo->empty_digest, sched->hashes[0].algo->digest_size),
+                                 sched->hkdf_label_prefix)) != 0)
         return ret;
 
     ++sched->generation;
@@ -886,9 +896,9 @@ static void key_schedule_transform_post_ch1hash(struct st_ptls_key_schedule_t *s
 
 static int derive_secret_with_hash(struct st_ptls_key_schedule_t *sched, void *secret, const char *label, const uint8_t *hash)
 {
-    int ret = ptls_hkdf_expand_label(sched->hashes[0].algo, secret, sched->hashes[0].algo->digest_size,
-                                     ptls_iovec_init(sched->secret, sched->hashes[0].algo->digest_size), label,
-                                     ptls_iovec_init(hash, sched->hashes[0].algo->digest_size), NULL);
+    int ret = hkdf_expand_label(sched->hashes[0].algo, secret, sched->hashes[0].algo->digest_size,
+                                ptls_iovec_init(sched->secret, sched->hashes[0].algo->digest_size), label,
+                                ptls_iovec_init(hash, sched->hashes[0].algo->digest_size), sched->hkdf_label_prefix);
     PTLS_DEBUGF("%s: (label=%s, hash=%02x%02x) => %02x%02x\n", __FUNCTION__, label, hash[0], hash[1], ((uint8_t *)secret)[0],
                 ((uint8_t *)secret)[1]);
     return ret;
@@ -949,8 +959,9 @@ static int derive_resumption_secret(struct st_ptls_key_schedule_t *sched, uint8_
 
     if ((ret = derive_secret(sched, secret, "res master")) != 0)
         goto Exit;
-    if ((ret = ptls_hkdf_expand_label(sched->hashes[0].algo, secret, sched->hashes[0].algo->digest_size,
-                                      ptls_iovec_init(secret, sched->hashes[0].algo->digest_size), "resumption", nonce, NULL)) != 0)
+    if ((ret = hkdf_expand_label(sched->hashes[0].algo, secret, sched->hashes[0].algo->digest_size,
+                                 ptls_iovec_init(secret, sched->hashes[0].algo->digest_size), "resumption", nonce,
+                                 sched->hkdf_label_prefix)) != 0)
         goto Exit;
 
 Exit:
@@ -1065,10 +1076,10 @@ Exit:
 }
 
 static int get_traffic_key(ptls_hash_algorithm_t *algo, void *key, size_t key_size, int is_iv, const void *secret,
-                           const char *base_label)
+                           const char *label_prefix)
 {
     return ptls_hkdf_expand_label(algo, key, key_size, ptls_iovec_init(secret, algo->digest_size), is_iv ? "iv" : "key",
-                                  ptls_iovec_init(NULL, 0), base_label);
+                                  ptls_iovec_init(NULL, 0), label_prefix);
 }
 
 static int setup_traffic_protection(ptls_t *tls, int is_enc, const char *secret_label, size_t epoch, int skip_notify)
@@ -1095,15 +1106,16 @@ static int setup_traffic_protection(ptls_t *tls, int is_enc, const char *secret_
 
     if (ctx->aead != NULL)
         ptls_aead_free(ctx->aead);
-    if ((ctx->aead = ptls_aead_new(tls->cipher_suite->aead, tls->cipher_suite->hash, is_enc, ctx->secret, NULL)) == NULL)
+    if ((ctx->aead = ptls_aead_new(tls->cipher_suite->aead, tls->cipher_suite->hash, is_enc, ctx->secret,
+                                   tls->ctx->hkdf_label_prefix)) == NULL)
         return PTLS_ERROR_NO_MEMORY; /* TODO obtain error from ptls_aead_new */
     ctx->seq = 0;
 
     if (tls->ctx->log_secret != NULL)
         tls->ctx->log_secret->cb(tls->ctx->log_secret, tls, log_labels[ptls_is_server(tls) == is_enc][epoch],
                                  ptls_iovec_init(ctx->secret, tls->key_schedule->hashes[0].algo->digest_size));
-    PTLS_DEBUGF("[%s] %02x%02x,%02x%02x\n", log_labels[is_server][epoch], (unsigned)ctx->secret[0], (unsigned)ctx->secret[1],
-                (unsigned)ctx->aead->static_iv[0], (unsigned)ctx->aead->static_iv[1]);
+    PTLS_DEBUGF("[%s] %02x%02x,%02x%02x\n", log_labels[ptls_is_server(tls)][epoch], (unsigned)ctx->secret[0],
+                (unsigned)ctx->secret[1], (unsigned)ctx->aead->static_iv[0], (unsigned)ctx->aead->static_iv[1]);
 
     return 0;
 }
@@ -1224,9 +1236,9 @@ static int calc_verify_data(void *output, struct st_ptls_key_schedule_t *sched, 
     uint8_t digest[PTLS_MAX_DIGEST_SIZE];
     int ret;
 
-    if ((ret = ptls_hkdf_expand_label(sched->hashes[0].algo, digest, sched->hashes[0].algo->digest_size,
-                                      ptls_iovec_init(secret, sched->hashes[0].algo->digest_size), "finished",
-                                      ptls_iovec_init(NULL, 0), NULL)) != 0)
+    if ((ret = hkdf_expand_label(sched->hashes[0].algo, digest, sched->hashes[0].algo->digest_size,
+                                 ptls_iovec_init(secret, sched->hashes[0].algo->digest_size), "finished", ptls_iovec_init(NULL, 0),
+                                 sched->hkdf_label_prefix)) != 0)
         return ret;
     if ((hmac = ptls_hmac_create(sched->hashes[0].algo, digest, sched->hashes[0].algo->digest_size)) == NULL) {
         ptls_clear_memory(digest, sizeof(digest));
@@ -1450,7 +1462,7 @@ static int send_client_hello(ptls_t *tls, struct st_ptls_message_emitter_t *emit
         tls->key_share = tls->ctx->key_exchanges[0];
 
     if (!is_second_flight) {
-        tls->key_schedule = key_schedule_new(tls->cipher_suite, tls->ctx->cipher_suites);
+        tls->key_schedule = key_schedule_new(tls->cipher_suite, tls->ctx->cipher_suites, tls->ctx->hkdf_label_prefix);
         if ((ret = key_schedule_extract(tls->key_schedule, resumption_secret)) != 0)
             goto Exit;
     }
@@ -2848,15 +2860,18 @@ static int server_handle_hello(ptls_t *tls, struct st_ptls_message_emitter_t *em
             ret = PTLS_ALERT_DECODE_ERROR;
             goto Exit;
         }
-        /* We compare SNI only when the value is saved by the on_client_hello callback. This should be OK because we are ignoring
-         * the value unless the callback saves the server-name. */
-        if (memcmp(tls->client_random, ch.random_bytes, sizeof(tls->client_random)) != 0 ||
-            (tls->server_name != NULL) != (ch.server_name.base != NULL) ||
-            (tls->server_name != NULL &&
-             !(strncmp(tls->server_name, (char *)ch.server_name.base, ch.server_name.len) == 0 &&
-               tls->server_name[ch.server_name.len] == '\0'))) {
+        if (memcmp(tls->client_random, ch.random_bytes, sizeof(tls->client_random)) != 0) {
             ret = PTLS_ALERT_HANDSHAKE_FAILURE;
             goto Exit;
+        }
+        /* We compare SNI only when the value is saved by the on_client_hello callback. This should be OK because we are ignoring
+         * the value unless the callback saves the server-name. */
+        if (tls->server_name != NULL) {
+            size_t l = strlen(tls->server_name);
+            if (!(ch.server_name.len == l && memcmp(ch.server_name.base, tls->server_name, l) == 0)) {
+                ret = PTLS_ALERT_HANDSHAKE_FAILURE;
+                goto Exit;
+            }
         }
     }
 
@@ -2867,7 +2882,7 @@ static int server_handle_hello(ptls_t *tls, struct st_ptls_message_emitter_t *em
             goto Exit;
         if (!is_second_flight) {
             tls->cipher_suite = cs;
-            tls->key_schedule = key_schedule_new(cs, NULL);
+            tls->key_schedule = key_schedule_new(cs, NULL, tls->ctx->hkdf_label_prefix);
         } else {
             if (tls->cipher_suite != cs) {
                 ret = PTLS_ALERT_HANDSHAKE_FAILURE;
@@ -3857,11 +3872,12 @@ int ptls_export_secret(ptls_t *tls, void *output, size_t outlen, const char *lab
     if ((ret = ptls_calc_hash(algo, context_value_hash, context_value.base, context_value.len)) != 0)
         return ret;
 
-    if ((ret = ptls_hkdf_expand_label(algo, derived_secret, algo->digest_size, ptls_iovec_init(master_secret, algo->digest_size),
-                                      label, ptls_iovec_init(algo->empty_digest, algo->digest_size), NULL)) != 0)
+    if ((ret = hkdf_expand_label(algo, derived_secret, algo->digest_size, ptls_iovec_init(master_secret, algo->digest_size), label,
+                                 ptls_iovec_init(algo->empty_digest, algo->digest_size), tls->key_schedule->hkdf_label_prefix)) !=
+        0)
         goto Exit;
-    ret = ptls_hkdf_expand_label(algo, output, outlen, ptls_iovec_init(derived_secret, algo->digest_size), "exporter",
-                                 ptls_iovec_init(context_value_hash, algo->digest_size), NULL);
+    ret = hkdf_expand_label(algo, output, outlen, ptls_iovec_init(derived_secret, algo->digest_size), "exporter",
+                            ptls_iovec_init(context_value_hash, algo->digest_size), tls->key_schedule->hkdf_label_prefix);
 
 Exit:
     ptls_clear_memory(derived_secret, sizeof(derived_secret));
@@ -3935,6 +3951,8 @@ ptls_hash_context_t *ptls_hmac_create(ptls_hash_algorithm_t *algo, const void *k
 {
     struct st_picotls_hmac_context_t *ctx;
 
+    assert(key_size <= algo->block_size);
+
     if ((ctx = malloc(offsetof(struct st_picotls_hmac_context_t, key) + algo->block_size)) == NULL)
         return NULL;
 
@@ -3997,20 +4015,20 @@ int ptls_hkdf_expand(ptls_hash_algorithm_t *algo, void *output, size_t outlen, p
     return 0;
 }
 
-int ptls_hkdf_expand_label(ptls_hash_algorithm_t *algo, void *output, size_t outlen, ptls_iovec_t secret, const char *label,
-                           ptls_iovec_t hash_value, const char *base_label)
+int hkdf_expand_label(ptls_hash_algorithm_t *algo, void *output, size_t outlen, ptls_iovec_t secret, const char *label,
+                      ptls_iovec_t hash_value, const char *label_prefix)
 {
     ptls_buffer_t hkdf_label;
     uint8_t hkdf_label_buf[512];
     int ret;
 
+    assert(label_prefix != NULL);
+
     ptls_buffer_init(&hkdf_label, hkdf_label_buf, sizeof(hkdf_label_buf));
 
     ptls_buffer_push16(&hkdf_label, (uint16_t)outlen);
     ptls_buffer_push_block(&hkdf_label, 1, {
-        if (base_label == NULL)
-            base_label = "tls13 ";
-        ptls_buffer_pushv(&hkdf_label, base_label, strlen(base_label));
+        ptls_buffer_pushv(&hkdf_label, label_prefix, strlen(label_prefix));
         ptls_buffer_pushv(&hkdf_label, label, strlen(label));
     });
     ptls_buffer_push_block(&hkdf_label, 1, { ptls_buffer_pushv(&hkdf_label, hash_value.base, hash_value.len); });
@@ -4020,6 +4038,15 @@ int ptls_hkdf_expand_label(ptls_hash_algorithm_t *algo, void *output, size_t out
 Exit:
     ptls_buffer_dispose(&hkdf_label);
     return ret;
+}
+
+int ptls_hkdf_expand_label(ptls_hash_algorithm_t *algo, void *output, size_t outlen, ptls_iovec_t secret, const char *label,
+                           ptls_iovec_t hash_value, const char *label_prefix)
+{
+    /* the handshake layer should call hkdf_expand_label directly, always setting key_schedule->hkdf_label_prefix as the argument */
+    if (label_prefix == NULL)
+        label_prefix = PTLS_HKDF_EXPAND_LABEL_PREFIX;
+    return hkdf_expand_label(algo, output, outlen, secret, label, hash_value, label_prefix);
 }
 
 ptls_cipher_context_t *ptls_cipher_new(ptls_cipher_algorithm_t *algo, int is_enc, const void *key)
@@ -4043,7 +4070,7 @@ void ptls_cipher_free(ptls_cipher_context_t *ctx)
 }
 
 ptls_aead_context_t *ptls_aead_new(ptls_aead_algorithm_t *aead, ptls_hash_algorithm_t *hash, int is_enc, const void *secret,
-                                   const char *base_label)
+                                   const char *label_prefix)
 {
     ptls_aead_context_t *ctx;
     uint8_t key[PTLS_MAX_SECRET_SIZE];
@@ -4053,9 +4080,9 @@ ptls_aead_context_t *ptls_aead_new(ptls_aead_algorithm_t *aead, ptls_hash_algori
         return NULL;
 
     *ctx = (ptls_aead_context_t){aead};
-    if ((ret = get_traffic_key(hash, key, aead->key_size, 0, secret, base_label)) != 0)
+    if ((ret = get_traffic_key(hash, key, aead->key_size, 0, secret, label_prefix)) != 0)
         goto Exit;
-    if ((ret = get_traffic_key(hash, ctx->static_iv, aead->iv_size, 1, secret, base_label)) != 0)
+    if ((ret = get_traffic_key(hash, ctx->static_iv, aead->iv_size, 1, secret, label_prefix)) != 0)
         goto Exit;
     ret = aead->setup_crypto(ctx, is_enc, key);
 
