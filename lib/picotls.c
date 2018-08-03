@@ -30,6 +30,7 @@
 #include <sys/time.h>
 #endif
 #include "picotls.h"
+#include "picotls/asn1.h"
 
 #define PTLS_MAX_PLAINTEXT_RECORD_SIZE 16384
 #define PTLS_MAX_ENCRYPTED_RECORD_SIZE (16384 + 256)
@@ -56,6 +57,10 @@
 #define PTLS_HANDSHAKE_TYPE_KEY_UPDATE 24
 #define PTLS_HANDSHAKE_TYPE_MESSAGE_HASH 254
 
+/* 4.4.2 */
+#define PTLS_CERTIFICATE_TYPE_X509 0
+#define PTLS_CERTIFICATE_TYPE_RAW_PUBLIC_KEY 2
+
 #define PTLS_PSK_KE_MODE_PSK 0
 #define PTLS_PSK_KE_MODE_PSK_DHE 1
 
@@ -66,6 +71,8 @@
 #define PTLS_EXTENSION_TYPE_SUPPORTED_GROUPS 10
 #define PTLS_EXTENSION_TYPE_SIGNATURE_ALGORITHMS 13
 #define PTLS_EXTENSION_TYPE_ALPN 16
+#define PTLS_EXTENSION_TYPE_CLIENT_CERTIFICATE_TYPE 19
+#define PTLS_EXTENSION_TYPE_SERVER_CERTIFICATE_TYPE 20
 #define PTLS_EXTENSION_TYPE_PRE_SHARED_KEY 41
 #define PTLS_EXTENSION_TYPE_EARLY_DATA 42
 #define PTLS_EXTENSION_TYPE_SUPPORTED_VERSIONS 43
@@ -1538,6 +1545,20 @@ static int send_client_hello(ptls_t *tls, struct st_ptls_message_emitter_t *emit
                     }
                 });
             });
+            /* RFC 7250 RawPublicKey
+             * TODO make sure all every ptls_key_exchange_algorithm_t implements RawPublicKey
+             * as per https://tools.ietf.org/html/rfc7250#section-4.1 P 5 and 6
+             */
+            if (properties->client_raw_public_key) {
+                buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_CLIENT_CERTIFICATE_TYPE, {
+                    ptls_buffer_push(sendbuf, PTLS_CERTIFICATE_TYPE_RAW_PUBLIC_KEY);
+                });
+            }
+            if (properties->server_raw_public_key) {
+                buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SERVER_CERTIFICATE_TYPE, {
+                    ptls_buffer_push(sendbuf, PTLS_CERTIFICATE_TYPE_RAW_PUBLIC_KEY);
+                });
+            }
             if (cookie != NULL && cookie->base != NULL) {
                 buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_COOKIE, {
                     ptls_buffer_push_block(sendbuf, 2, { ptls_buffer_pushv(sendbuf, cookie->base, cookie->len); });
@@ -1992,11 +2013,41 @@ Exit:
     return ret;
 }
 
+static int send_raw_public_key(ptls_t *tls, struct st_ptls_message_emitter_t *emitter,
+                                                   ptls_iovec_t context, const char *context_string)
+{
+    ptls_buffer_t *sendbuf = emitter->buf;
+    int ret = 0;
+
+    buffer_push_extension(sendbuf, tls->is_server ? PTLS_EXTENSION_TYPE_SERVER_CERTIFICATE_TYPE : PTLS_EXTENSION_TYPE_CLIENT_CERTIFICATE_TYPE, {
+        ptls_buffer_push(sendbuf, PTLS_CERTIFICATE_TYPE_RAW_PUBLIC_KEY);
+    });
+
+    /* This is secp256r1 specific */
+    push_message(emitter, tls->key_schedule, PTLS_HANDSHAKE_TYPE_CERTIFICATE, {
+        ptls_buffer_push(sendbuf, PTLS_ASN1_DER_SEQUENCE, 84,
+                                  PTLS_ASN1_DER_SEQUENCE, 19, PTLS_ASN1_DER_OBJECT_IDENTIFIER, 7,
+                         0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x02, 0x01, /* 1.2.840.10045.2.1 ecPublicKey (ANSI X9.62 public key type) */
+                         PTLS_ASN1_DER_OBJECT_IDENTIFIER, 8,
+                         0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x03, 0x01, 0x07, /* 1.2.840.10045.3.1.7 prime256v1 (ANSI X9.62 named elliptic curve) */
+                         PTLS_ASN1_DER_BIT_STRING, 0x42);
+    });
+
+    /* TODO print public key, what variable is this in? Why is the public key an extra 10 bytes large (42 bytes)? */
+Exit:
+    return ret;
+}
+
 static int send_certificate_and_certificate_verify(ptls_t *tls, struct st_ptls_message_emitter_t *emitter,
                                                    struct st_ptls_signature_algorithms_t *signature_algorithms,
-                                                   ptls_iovec_t context, const char *context_string, uint8_t push_status_request)
+                                                   ptls_iovec_t context, const char *context_string, uint8_t push_status_request,
+                                                   ptls_handshake_properties_t *properties)
 {
     int ret;
+
+    if ((properties->server_raw_public_key && tls->is_server) ||
+        (properties->client_raw_public_key && !tls->is_server))
+        return send_raw_public_key(tls, emitter, context, context_string);
 
     if (signature_algorithms->count == 0) {
         ret = PTLS_ALERT_MISSING_EXTENSION;
@@ -2212,7 +2263,7 @@ static int server_handle_certificate_verify(ptls_t *tls, ptls_iovec_t message)
     return ret;
 }
 
-static int client_handle_finished(ptls_t *tls, struct st_ptls_message_emitter_t *emitter, ptls_iovec_t message)
+static int client_handle_finished(ptls_t *tls, struct st_ptls_message_emitter_t *emitter, ptls_iovec_t message, ptls_handshake_properties_t *properties)
 {
     uint8_t send_secret[PTLS_MAX_DIGEST_SIZE];
     int ret;
@@ -2249,7 +2300,7 @@ static int client_handle_finished(ptls_t *tls, struct st_ptls_message_emitter_t 
         }
         ret = send_certificate_and_certificate_verify(tls, emitter, &tls->client.certificate_request.signature_algorithms,
                                                       tls->client.certificate_request.context,
-                                                      PTLS_CLIENT_CERTIFICATE_VERIFY_CONTEXT_STRING, 0);
+                                                      PTLS_CLIENT_CERTIFICATE_VERIFY_CONTEXT_STRING, 0, properties);
         free(tls->client.certificate_request.context.base);
         tls->client.certificate_request.context = ptls_iovec_init(NULL, 0);
         if (ret != 0)
@@ -2611,6 +2662,32 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
             break;
         case PTLS_EXTENSION_TYPE_STATUS_REQUEST:
             ch->status_request = 1;
+            break;
+        case PTLS_EXTENSION_TYPE_CLIENT_CERTIFICATE_TYPE:
+        case PTLS_EXTENSION_TYPE_SERVER_CERTIFICATE_TYPE:
+            ptls_decode_block(src, end, 1, {
+                if (src == end) {
+                    ret = PTLS_ALERT_DECODE_ERROR;
+                    goto Exit;
+                }
+                for (; src != end; ++src) {
+                    uint8_t certificate_type = *src;
+                    switch (certificate_type) {
+                    case PTLS_CERTIFICATE_TYPE_X509:
+                        /* nothing, but this message is forbidden by https://tools.ietf.org/html/rfc7250#section-4.1 P 6 */
+                        break;
+                    case PTLS_CERTIFICATE_TYPE_RAW_PUBLIC_KEY:
+                        if (exttype == PTLS_EXTENSION_TYPE_CLIENT_CERTIFICATE_TYPE)
+                            properties->client_raw_public_key = 1;
+                        else if (exttype == PTLS_EXTENSION_TYPE_SERVER_CERTIFICATE_TYPE)
+                            properties->server_raw_public_key = 1;
+                        break;
+                    default:
+                        ret = PTLS_ALERT_UNSUPPORTED_CERTIFICATE;
+                        goto Exit;
+                    }
+                }
+            });
             break;
         default:
             handle_unknown_extension(tls, properties, exttype, src, end, ch->unknown_extensions);
@@ -3143,7 +3220,7 @@ static int server_handle_hello(ptls_t *tls, struct st_ptls_message_emitter_t *em
         }
 
         ret = send_certificate_and_certificate_verify(tls, emitter, &ch.signature_algorithms, ptls_iovec_init(NULL, 0),
-                                                      PTLS_SERVER_CERTIFICATE_VERIFY_CONTEXT_STRING, ch.status_request);
+                                                      PTLS_SERVER_CERTIFICATE_VERIFY_CONTEXT_STRING, ch.status_request, properties);
 
         if (ret != 0) {
             goto Exit;
@@ -3498,7 +3575,7 @@ static int handle_handshake_message(ptls_t *tls, struct st_ptls_message_emitter_
         break;
     case PTLS_STATE_CLIENT_EXPECT_FINISHED:
         if (type == PTLS_HANDSHAKE_TYPE_FINISHED && is_end_of_record) {
-            ret = client_handle_finished(tls, emitter, message);
+            ret = client_handle_finished(tls, emitter, message, properties);
         } else {
             ret = PTLS_ALERT_UNEXPECTED_MESSAGE;
         }

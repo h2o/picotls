@@ -92,6 +92,7 @@ extern "C" {
 #define PTLS_ALERT_BAD_RECORD_MAC 20
 #define PTLS_ALERT_HANDSHAKE_FAILURE 40
 #define PTLS_ALERT_BAD_CERTIFICATE 42
+#define PTLS_ALERT_UNSUPPORTED_CERTIFICATE 43
 #define PTLS_ALERT_CERTIFICATE_REVOKED 44
 #define PTLS_ALERT_CERTIFICATE_EXPIRED 45
 #define PTLS_ALERT_CERTIFICATE_UNKNOWN 46
@@ -559,6 +560,11 @@ typedef struct st_ptls_handshake_properties_t {
              */
             unsigned retry_uses_cookie : 1;
         } server;
+        /**
+         * do not send any certificates (4.4.2)
+         */
+        unsigned client_raw_public_key : 1;
+        unsigned server_raw_public_key : 1;
     };
     /**
      * an optional list of additional extensions to send either in CH or EE, terminated by type == UINT16_MAX

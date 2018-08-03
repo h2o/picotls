@@ -39,6 +39,10 @@ typedef struct st_ptls_minicrypto_log_ctx_t {
     void (*fn)(void *ctx, const char *format, ...);
 } ptls_minicrypto_log_ctx_t;
 
+#define PTLS_ASN1_DER_SEQUENCE 0x30
+#define PTLS_ASN1_DER_OBJECT_IDENTIFIER 0x06
+#define PTLS_ASN1_DER_BIT_STRING 0x03
+
 size_t ptls_asn1_error_message(char const *error_label, size_t bytes_max, size_t byte_index, int level,
                                ptls_minicrypto_log_ctx_t *log_ctx);
 
