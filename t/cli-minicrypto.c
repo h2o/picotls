@@ -317,7 +317,7 @@ int main(int argc, char **argv)
     socklen_t salen;
     int family = 0;
 
-    while ((ch = getopt(argc, argv, "46aC:c:i:k:nN:es:Sl:vh:jJ")) != -1) {
+    while ((ch = getopt(argc, argv, "46aC:c:i:k:nN:es:Sl:vh:jJrR")) != -1) {
         switch (ch) {
         case '4':
             family = AF_INET;
@@ -336,6 +336,12 @@ int main(int argc, char **argv)
             }
             load_certificate_chain(&ctx, optarg);
             is_server = ch == 'c';
+            break;
+        case 'r':
+            ctx.server_raw_public_key = 1;
+            break;
+        case 'R':
+            ctx.client_raw_public_key = 1;
             break;
         case 'i':
             file = optarg;

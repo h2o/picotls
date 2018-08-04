@@ -92,6 +92,7 @@ extern "C" {
 #define PTLS_ALERT_BAD_RECORD_MAC 20
 #define PTLS_ALERT_HANDSHAKE_FAILURE 40
 #define PTLS_ALERT_BAD_CERTIFICATE 42
+#define PTLS_ALERT_UNSUPPORTED_CERTIFICATE 43
 #define PTLS_ALERT_CERTIFICATE_REVOKED 44
 #define PTLS_ALERT_CERTIFICATE_EXPIRED 45
 #define PTLS_ALERT_CERTIFICATE_UNKNOWN 46
@@ -466,6 +467,11 @@ struct st_ptls_context_t {
      * to authenticate the client.
      */
     unsigned require_client_authentication : 1;
+    /*
+    * Ask for Raw Public Key instead of x509 certificate (RFC 7250)
+    */
+    unsigned server_raw_public_key : 1;
+    unsigned client_raw_public_key : 1;
     /**
      *
      */
