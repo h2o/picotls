@@ -1049,10 +1049,10 @@ static int verify_cert_chain(X509_STORE *store, X509 *cert, STACK_OF(X509) * cha
 #ifdef X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS
     /* verify CN */
     if (server_name != NULL) {
-        if (ptls_server_name_is_host_name(server_name)) {
-            ret = X509_check_host(cert, server_name, strlen(server_name), X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS, NULL);
-        } else {
+        if (ptls_server_name_is_ipaddr(server_name)) {
             ret = X509_check_ip_asc(cert, server_name, 0);
+        } else {
+            ret = X509_check_host(cert, server_name, strlen(server_name), X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS, NULL);
         }
         if (ret != 1) {
             if (ret == 0) { /* failed match */

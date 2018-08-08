@@ -918,9 +918,9 @@ extern void (*volatile ptls_clear_memory)(void *p, size_t len);
  */
 static ptls_iovec_t ptls_iovec_init(const void *p, size_t len);
 /**
- * checks if a server name is one that can be sent using ServerNameIndication.HostName.
+ * checks if a server name is an IP address.
  */
-int ptls_server_name_is_host_name(const char *name);
+int ptls_server_name_is_ipaddr(const char *name);
 
 /* inline functions */
 inline ptls_iovec_t ptls_iovec_init(const void *p, size_t len)
