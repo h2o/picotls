@@ -980,9 +980,10 @@ static void test_handshake_api(void)
     ok(sbuf.off != 0);
     ok(!ptls_handshake_is_complete(server));
     ok(memcmp(client_secrets[1][1], server_secrets[0][1], PTLS_MAX_DIGEST_SIZE) == 0);
-    ok(memcmp(server_secrets[0][2], zeroes_of_max_digest_size, PTLS_MAX_DIGEST_SIZE) != 0); /* !!!overlap!!! */
     ok(memcmp(server_secrets[1][2], zeroes_of_max_digest_size, PTLS_MAX_DIGEST_SIZE) != 0);
     ok(memcmp(server_secrets[1][3], zeroes_of_max_digest_size, PTLS_MAX_DIGEST_SIZE) != 0);
+    ok(memcmp(client_secrets[1][1], server_secrets[0][1], PTLS_MAX_DIGEST_SIZE) == 0);
+    ok(memcmp(server_secrets[0][2], zeroes_of_max_digest_size, PTLS_MAX_DIGEST_SIZE) == 0);
     ok(memcmp(server_secrets[0][3], zeroes_of_max_digest_size, PTLS_MAX_DIGEST_SIZE) == 0);
     ret = feed_messages(client, &cbuf, coffs, sbuf.base, soffs, &client_hs_prop);
     ok(ret == 0);
@@ -993,6 +994,7 @@ static void test_handshake_api(void)
     ret = feed_messages(server, &sbuf, soffs, cbuf.base, coffs, NULL);
     ok(ret == 0);
     ok(ptls_handshake_is_complete(server));
+    ok(memcmp(client_secrets[1][2], server_secrets[0][2], PTLS_MAX_DIGEST_SIZE) == 0);
     ok(memcmp(client_secrets[1][3], server_secrets[0][3], PTLS_MAX_DIGEST_SIZE) == 0);
 
     ptls_free(client);
