@@ -1129,7 +1129,7 @@ static int retire_early_data_secret(ptls_t *tls, int is_enc)
     free(tls->early_data);
     tls->early_data = NULL;
 
-    return setup_traffic_protection(tls, is_enc, NULL, 2, 1);
+    return setup_traffic_protection(tls, is_enc, NULL, 2, is_enc);
 }
 
 #define SESSION_IDENTIFIER_MAGIC "ptls0001" /* the number should be changed upon incompatible format change */
@@ -3083,9 +3083,6 @@ static int server_handle_hello(ptls_t *tls, struct st_ptls_message_emitter_t *em
         goto Exit;
     if (tls->early_data != NULL) {
         if ((ret = derive_secret(tls->key_schedule, tls->early_data->next_secret, "c hs traffic")) != 0)
-            goto Exit;
-        if (tls->ctx->update_traffic_key != NULL &&
-            (ret = tls->ctx->update_traffic_key->cb(tls->ctx->update_traffic_key, tls, 0, 2, tls->early_data->next_secret)) != 0)
             goto Exit;
     } else {
         if ((ret = setup_traffic_protection(tls, 0, "c hs traffic", 2, 0)) != 0)
