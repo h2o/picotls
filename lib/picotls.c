@@ -4175,57 +4175,33 @@ static int commit_raw_message(struct st_ptls_message_emitter_t *_self)
     return 0;
 }
 
-static int validate_epoch(enum en_ptls_state_t state, size_t epoch)
+size_t ptls_get_read_epoch(ptls_t *tls)
 {
-    switch (epoch) {
-    case 0: /* plaintext */
-        switch (state) {
-        case PTLS_STATE_CLIENT_EXPECT_SERVER_HELLO:
-        case PTLS_STATE_CLIENT_EXPECT_SECOND_SERVER_HELLO:
-        case PTLS_STATE_SERVER_EXPECT_CLIENT_HELLO:
-        case PTLS_STATE_SERVER_EXPECT_SECOND_CLIENT_HELLO:
-            return 1;
-        default:
-            break;
-        }
-        break;
-    case 1: /* 0-rtt */
-        switch (state) {
-        case PTLS_STATE_SERVER_EXPECT_END_OF_EARLY_DATA:
-            return 1;
-        default:
-            break;
-        }
-        break;
-    case 2: /* handshake */
-        switch (state) {
-        case PTLS_STATE_CLIENT_EXPECT_ENCRYPTED_EXTENSIONS:
-        case PTLS_STATE_CLIENT_EXPECT_CERTIFICATE_REQUEST_OR_CERTIFICATE:
-        case PTLS_STATE_CLIENT_EXPECT_CERTIFICATE:
-        case PTLS_STATE_CLIENT_EXPECT_CERTIFICATE_VERIFY:
-        case PTLS_STATE_CLIENT_EXPECT_FINISHED:
-        case PTLS_STATE_SERVER_EXPECT_CERTIFICATE:
-        case PTLS_STATE_SERVER_EXPECT_CERTIFICATE_VERIFY:
-        case PTLS_STATE_SERVER_EXPECT_FINISHED:
-            return 1;
-        default:
-            break;
-        }
-        break;
-    case 3: /* 1-rtt */
-        switch (state) {
-        case PTLS_STATE_CLIENT_POST_HANDSHAKE:
-        case PTLS_STATE_SERVER_POST_HANDSHAKE:
-            return 1;
-        default:
-            break;
-        }
-        break;
+    switch (tls->state) {
+    case PTLS_STATE_CLIENT_HANDSHAKE_START:
+    case PTLS_STATE_CLIENT_EXPECT_SERVER_HELLO:
+    case PTLS_STATE_CLIENT_EXPECT_SECOND_SERVER_HELLO:
+    case PTLS_STATE_SERVER_EXPECT_CLIENT_HELLO:
+    case PTLS_STATE_SERVER_EXPECT_SECOND_CLIENT_HELLO:
+        return 0; /* plaintext */
+    case PTLS_STATE_SERVER_EXPECT_END_OF_EARLY_DATA:
+        return 1; /* 0-rtt */
+    case PTLS_STATE_CLIENT_EXPECT_ENCRYPTED_EXTENSIONS:
+    case PTLS_STATE_CLIENT_EXPECT_CERTIFICATE_REQUEST_OR_CERTIFICATE:
+    case PTLS_STATE_CLIENT_EXPECT_CERTIFICATE:
+    case PTLS_STATE_CLIENT_EXPECT_CERTIFICATE_VERIFY:
+    case PTLS_STATE_CLIENT_EXPECT_FINISHED:
+    case PTLS_STATE_SERVER_EXPECT_CERTIFICATE:
+    case PTLS_STATE_SERVER_EXPECT_CERTIFICATE_VERIFY:
+    case PTLS_STATE_SERVER_EXPECT_FINISHED:
+        return 2; /* handshake */
+    case PTLS_STATE_CLIENT_POST_HANDSHAKE:
+    case PTLS_STATE_SERVER_POST_HANDSHAKE:
+        return 3; /* 1-rtt */
     default:
-        break;
+        assert(!"invalid state");
+        return SIZE_MAX;
     }
-
-    return 0;
 }
 
 int ptls_handle_message(ptls_t *tls, ptls_buffer_t *sendbuf, size_t epoch_offsets[5], size_t in_epoch, const void *input,
@@ -4238,7 +4214,7 @@ int ptls_handle_message(ptls_t *tls, ptls_buffer_t *sendbuf, size_t epoch_offset
     if (input == NULL)
         return send_client_hello(tls, &emitter.super, properties, NULL);
 
-    if (!validate_epoch(tls->state, in_epoch))
+    if (ptls_get_read_epoch(tls) != in_epoch)
         return PTLS_ALERT_UNEXPECTED_MESSAGE;
 
     return handle_handshake_record(tls, handle_handshake_message, &emitter.super, &rec, properties);
