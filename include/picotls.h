@@ -886,7 +886,12 @@ static size_t ptls_aead_encrypt_final(ptls_aead_context_t *ctx, void *output);
 static size_t ptls_aead_decrypt(ptls_aead_context_t *ctx, void *output, const void *input, size_t inlen, uint64_t seq,
                                 const void *aad, size_t aadlen);
 /**
- * runs the handshake by dealing directly with handshake messages
+ * Return the current read epoch.
+ */
+size_t ptls_get_read_epoch(ptls_t *tls);
+/**
+ * Runs the handshake by dealing directly with handshake messages. Callers MUST delay supplying input to this function until the
+ * epoch of the input becomes equal to the value returned by `ptls_get_read_epoch()`.
  * @param tls            the TLS context
  * @param sendbuf        buffer to which the output will be written
  * @param epoch_offsets  start and end offset of the messages in each epoch. For example, when the server emits ServerHello between
