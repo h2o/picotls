@@ -26,6 +26,7 @@
 #define _XOPEN_SOURCE 700 /* required for glibc to use getaddrinfo, etc. */
 #endif
 
+#include <stdlib.h>
 #include <errno.h>
 #include <netdb.h>
 #include <netinet/in.h>
@@ -34,8 +35,12 @@
 #include <sys/param.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#ifdef USE_MINICRYPTO
+#include "picotls/minicrypto.h"
+#else /* openssl */
 #include <openssl/pem.h>
 #include "picotls/openssl.h"
+#endif
 
 static inline void load_certificate_chain(ptls_context_t *ctx, const char *fn)
 {
@@ -47,6 +52,9 @@ static inline void load_certificate_chain(ptls_context_t *ctx, const char *fn)
 
 static inline void load_private_key(ptls_context_t *ctx, const char *fn)
 {
+#ifdef USE_MINICRYPTO
+    ptls_minicrypto_load_private_key(ctx, fn);
+#else /* openssl */
     static ptls_openssl_sign_certificate_t sc;
     FILE *fp;
     EVP_PKEY *pkey;
@@ -67,6 +75,7 @@ static inline void load_private_key(ptls_context_t *ctx, const char *fn)
     EVP_PKEY_free(pkey);
 
     ctx->sign_certificate = &sc.super;
+#endif
 }
 
 struct st_util_save_ticket_t {
@@ -114,9 +123,13 @@ static inline void setup_session_file(ptls_context_t *ctx, ptls_handshake_proper
 
 static inline void setup_verify_certificate(ptls_context_t *ctx)
 {
+#ifdef USE_MINICRYPTO
+    /* stub */
+#else
     static ptls_openssl_verify_certificate_t vc;
     ptls_openssl_init_verify_certificate(&vc, NULL);
     ctx->verify_certificate = &vc.super;
+#endif
 }
 
 struct st_util_log_secret_t {

@@ -299,10 +299,10 @@ static int ptls_set_ecdsa_private_key(ptls_context_t *ctx, ptls_asn1_pkcs8_priva
 
                 if (log_ctx != NULL) {
                     /* print the OID value */
-                    log_ctx->fn(log_ctx->ctx, "Initialized SECP512R1 signing key with %d bytes.\n", ecdsa_key_data_length);
+                    log_ctx->fn(log_ctx->ctx, "Initialized SECP256R1 signing key with %d bytes.\n", ecdsa_key_data_length);
                 }
             } else if (log_ctx != NULL) {
-                log_ctx->fn(log_ctx->ctx, "SECP512R1 init with %d bytes returns %d.\n", ecdsa_key_data_length, decode_error);
+                log_ctx->fn(log_ctx->ctx, "SECP256R1 init with %d bytes returns %d.\n", ecdsa_key_data_length, decode_error);
             }
         }
     } else {

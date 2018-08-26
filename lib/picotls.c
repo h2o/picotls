@@ -56,6 +56,10 @@
 #define PTLS_HANDSHAKE_TYPE_KEY_UPDATE 24
 #define PTLS_HANDSHAKE_TYPE_MESSAGE_HASH 254
 
+/* 4.4.2 */
+#define PTLS_CERTIFICATE_TYPE_X509 0
+#define PTLS_CERTIFICATE_TYPE_RAW_PUBLIC_KEY 2
+
 #define PTLS_PSK_KE_MODE_PSK 0
 #define PTLS_PSK_KE_MODE_PSK_DHE 1
 
@@ -66,6 +70,8 @@
 #define PTLS_EXTENSION_TYPE_SUPPORTED_GROUPS 10
 #define PTLS_EXTENSION_TYPE_SIGNATURE_ALGORITHMS 13
 #define PTLS_EXTENSION_TYPE_ALPN 16
+#define PTLS_EXTENSION_TYPE_CLIENT_CERTIFICATE_TYPE 19
+#define PTLS_EXTENSION_TYPE_SERVER_CERTIFICATE_TYPE 20
 #define PTLS_EXTENSION_TYPE_PRE_SHARED_KEY 41
 #define PTLS_EXTENSION_TYPE_EARLY_DATA 42
 #define PTLS_EXTENSION_TYPE_SUPPORTED_VERSIONS 43
@@ -218,6 +224,11 @@ struct st_ptls_t {
     unsigned is_psk_handshake : 1;
     unsigned skip_early_data : 1; /* if early-data is not recognized by the server */
     unsigned send_change_cipher_spec : 1;
+    /* RFC 7250 */
+    uint8_t client_certificate_types; /* bit field as should have been all along */
+    uint8_t server_certificate_types; /* bit field as should have been all along */
+    uint8_t client_certificate_type;
+    uint8_t server_certificate_type;
     /**
      * exporter master secret (either 0rtt or 1rtt)
      */
@@ -1539,6 +1550,22 @@ static int send_client_hello(ptls_t *tls, struct st_ptls_message_emitter_t *emit
                     }
                 });
             });
+            /* RFC 7250 RawPublicKey
+             * TODO make sure all every ptls_key_exchange_algorithm_t implements RawPublicKey
+             * as per https://tools.ietf.org/html/rfc7250#section-4.1 P 5 and 6
+             * TODO allow accepting both RAW_PUBLIC_KEY and X509, and then extracting the public key from the certificate
+             *      ptls_buffer_push(sendbuf, 2, PTLS_CERTIFICATE_TYPE_X509, PTLS_CERTIFICATE_TYPE_RAW_PUBLIC_KEY);
+             */
+            if (tls->ctx->client_raw_public_key) {
+                buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_CLIENT_CERTIFICATE_TYPE, {
+                    ptls_buffer_push(sendbuf, 1, PTLS_CERTIFICATE_TYPE_RAW_PUBLIC_KEY);
+                });
+            }
+            if (tls->ctx->server_raw_public_key) {
+                buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SERVER_CERTIFICATE_TYPE, {
+                    ptls_buffer_push(sendbuf, 1, PTLS_CERTIFICATE_TYPE_RAW_PUBLIC_KEY);
+                });
+            }
             if (cookie != NULL && cookie->base != NULL) {
                 buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_COOKIE, {
                     ptls_buffer_push_block(sendbuf, 2, { ptls_buffer_pushv(sendbuf, cookie->base, cookie->len); });
@@ -1731,11 +1758,42 @@ static int decode_server_hello(ptls_t *tls, struct st_ptls_server_hello_t *sh, c
                     goto Exit;
             }
             break;
-        default:
+        case PTLS_EXTENSION_TYPE_CLIENT_CERTIFICATE_TYPE:
+        case PTLS_EXTENSION_TYPE_SERVER_CERTIFICATE_TYPE: {
+            if (src == end) {
+                ret = PTLS_ALERT_DECODE_ERROR;
+                goto Exit;
+            }
+            uint8_t certificate_type = *src++;
+            if (certificate_type > PTLS_CERTIFICATE_TYPE_RAW_PUBLIC_KEY ||
+                certificate_type == 1/* OpenSSH, forbidden by TLS 1.3 */) {
+                ret = PTLS_ALERT_UNSUPPORTED_CERTIFICATE;
+                goto Exit;
+            }
+            switch (exttype) {
+            case PTLS_EXTENSION_TYPE_CLIENT_CERTIFICATE_TYPE:
+                tls->client_certificate_type = certificate_type;
+                break;
+            case PTLS_EXTENSION_TYPE_SERVER_CERTIFICATE_TYPE:
+                tls->server_certificate_type = certificate_type;
+                break;
+            default:
+                break;
+            }
+            break;
+        } default:
             src = end;
             break;
         }
     });
+
+    if (((tls->client_certificate_type == PTLS_CERTIFICATE_TYPE_RAW_PUBLIC_KEY) !=
+         tls->ctx->client_raw_public_key) || /* TODO handle this case by extracting public key from client certificate */
+        ((tls->server_certificate_type == PTLS_CERTIFICATE_TYPE_RAW_PUBLIC_KEY) !=
+         tls->ctx->server_raw_public_key)) {
+        ret = PTLS_ALERT_UNSUPPORTED_CERTIFICATE;
+        goto Exit;
+    }
 
     if (!is_supported_version(found_version)) {
         ret = PTLS_ALERT_ILLEGAL_PARAMETER;
@@ -2613,12 +2671,49 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
         case PTLS_EXTENSION_TYPE_STATUS_REQUEST:
             ch->status_request = 1;
             break;
-        default:
+        case PTLS_EXTENSION_TYPE_CLIENT_CERTIFICATE_TYPE:
+        case PTLS_EXTENSION_TYPE_SERVER_CERTIFICATE_TYPE: {
+            if (src == end) {
+                ret = PTLS_ALERT_DECODE_ERROR;
+                goto Exit;
+            }
+            uint8_t length = *src++;
+            if (end - src != length) {
+                ret = PTLS_ALERT_DECODE_ERROR;
+                goto Exit;
+            }
+            for (;src != end; ++src) {
+                uint8_t certificate_type = *src;
+                if (certificate_type > PTLS_CERTIFICATE_TYPE_RAW_PUBLIC_KEY ||
+                    certificate_type == 1/* OpenSSH, forbidden by TLS 1.3 */) {
+                    ret = PTLS_ALERT_UNSUPPORTED_CERTIFICATE;
+                    goto Exit;
+                }
+                if (exttype == PTLS_EXTENSION_TYPE_CLIENT_CERTIFICATE_TYPE) {
+                    tls->client_certificate_types |= (1 << certificate_type);
+                } else if (exttype == PTLS_EXTENSION_TYPE_SERVER_CERTIFICATE_TYPE) {
+                    tls->server_certificate_types |= (1 << certificate_type);
+                }
+            }
+            break;
+        } default:
             handle_unknown_extension(tls, properties, exttype, src, end, ch->unknown_extensions);
             break;
         }
         src = end;
     });
+
+    if ((tls->client_certificate_types & (1 << PTLS_CERTIFICATE_TYPE_RAW_PUBLIC_KEY)) &&
+        !tls->ctx->client_raw_public_key ) {
+        ret = PTLS_ALERT_UNSUPPORTED_CERTIFICATE;
+        goto Exit;
+    }
+    /* TODO handle this case by extracting public key from certificate */
+    if ((tls->server_certificate_types & (1 << PTLS_CERTIFICATE_TYPE_RAW_PUBLIC_KEY) &&
+        !tls->ctx->server_raw_public_key)) {
+        ret = PTLS_ALERT_UNSUPPORTED_CERTIFICATE;
+        goto Exit;
+    }
 
     /* check if client hello make sense */
     if (is_supported_version(ch->selected_version)) {
@@ -3073,6 +3168,14 @@ static int server_handle_hello(ptls_t *tls, struct st_ptls_message_emitter_t *em
                               buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_PRE_SHARED_KEY,
                                                     { ptls_buffer_push16(sendbuf, (uint16_t)psk_index); });
                           }
+                          if (tls->ctx->server_raw_public_key)
+                              buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SERVER_CERTIFICATE_TYPE, {
+                                  ptls_buffer_push(sendbuf, PTLS_CERTIFICATE_TYPE_RAW_PUBLIC_KEY);
+                              });
+                          if (tls->ctx->client_raw_public_key)
+                              buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_CLIENT_CERTIFICATE_TYPE, {
+                                  ptls_buffer_push(sendbuf, PTLS_CERTIFICATE_TYPE_RAW_PUBLIC_KEY);
+                              });
                       });
     if ((ret = push_change_cipher_spec(tls, emitter->buf)) != 0)
         goto Exit;

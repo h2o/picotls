@@ -367,6 +367,9 @@ int ptls_load_certificates(ptls_context_t *ctx, char const *cert_pem_file)
     } else {
         ret = ptls_load_pem_objects(cert_pem_file, "CERTIFICATE", ctx->certificates.list, PTLS_MAX_CERTS_IN_CONTEXT,
                                     &ctx->certificates.count);
+        if (ret != 0)
+            ret = ptls_load_pem_objects(cert_pem_file, "PUBLIC KEY", ctx->certificates.list, PTLS_MAX_CERTS_IN_CONTEXT,
+                                        &ctx->certificates.count);
     }
 
     return ret;
