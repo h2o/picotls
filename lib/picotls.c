@@ -1308,8 +1308,10 @@ static int send_session_ticket(ptls_t *tls, struct st_ptls_message_emitter_t *em
     { /* calculate verify-data that will be sent by the client */
         size_t orig_off = emitter->buf->off;
         if (tls->early_data != NULL) {
-            assert(tls->state == PTLS_STATE_SERVER_EXPECT_END_OF_EARLY_DATA);
-            buffer_push_handshake_body(emitter->buf, tls->key_schedule, PTLS_HANDSHAKE_TYPE_END_OF_EARLY_DATA, {});
+            if (!tls->ctx->omit_end_of_early_data) {
+                assert(tls->state == PTLS_STATE_SERVER_EXPECT_END_OF_EARLY_DATA);
+                buffer_push_handshake_body(emitter->buf, tls->key_schedule, PTLS_HANDSHAKE_TYPE_END_OF_EARLY_DATA, {});
+            }
             emitter->buf->off = orig_off;
         }
         buffer_push_handshake_body(emitter->buf, tls->key_schedule, PTLS_HANDSHAKE_TYPE_FINISHED, {
@@ -2235,9 +2237,8 @@ static int client_handle_finished(ptls_t *tls, struct st_ptls_message_emitter_t 
     /* if sending early data, emit EOED and commision the client handshake traffic secret */
     if (tls->early_data != NULL) {
         assert(tls->traffic_protection.enc.aead != NULL || tls->ctx->update_traffic_key != NULL);
-        if (!tls->skip_early_data) {
+        if (!tls->skip_early_data && !tls->ctx->omit_end_of_early_data)
             push_message(emitter, tls->key_schedule, PTLS_HANDSHAKE_TYPE_END_OF_EARLY_DATA, {});
-        }
         if ((ret = retire_early_data_secret(tls, 1)) != 0)
             goto Exit;
     }
@@ -3164,7 +3165,8 @@ static int server_handle_hello(ptls_t *tls, struct st_ptls_message_emitter_t *em
         goto Exit;
 
     if (tls->early_data != NULL) {
-        tls->state = PTLS_STATE_SERVER_EXPECT_END_OF_EARLY_DATA;
+        tls->state =
+            tls->ctx->omit_end_of_early_data ? PTLS_STATE_SERVER_EXPECT_FINISHED : PTLS_STATE_SERVER_EXPECT_END_OF_EARLY_DATA;
     } else if (tls->ctx->require_client_authentication) {
         tls->state = PTLS_STATE_SERVER_EXPECT_CERTIFICATE;
     } else {
@@ -3527,6 +3529,7 @@ static int handle_handshake_message(ptls_t *tls, struct st_ptls_message_emitter_
         }
         break;
     case PTLS_STATE_SERVER_EXPECT_END_OF_EARLY_DATA:
+        assert(!tls->ctx->omit_end_of_early_data);
         if (type == PTLS_HANDSHAKE_TYPE_END_OF_EARLY_DATA) {
             ret = server_handle_end_of_early_data(tls, message);
         } else {
@@ -4186,6 +4189,7 @@ size_t ptls_get_read_epoch(ptls_t *tls)
     case PTLS_STATE_SERVER_EXPECT_SECOND_CLIENT_HELLO:
         return 0; /* plaintext */
     case PTLS_STATE_SERVER_EXPECT_END_OF_EARLY_DATA:
+        assert(!tls->ctx->omit_end_of_early_data);
         return 1; /* 0-rtt */
     case PTLS_STATE_CLIENT_EXPECT_ENCRYPTED_EXTENSIONS:
     case PTLS_STATE_CLIENT_EXPECT_CERTIFICATE_REQUEST_OR_CERTIFICATE:
