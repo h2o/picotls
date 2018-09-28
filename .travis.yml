@@ -7,7 +7,7 @@ matrix:
     - os: linux
       dist: trusty
       sudo: required
-      compiler: clang
+      compiler: clang-6.0
     - os: osx
 
 language: c
