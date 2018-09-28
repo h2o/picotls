@@ -49,3 +49,7 @@ ADD_CUSTOM_TARGET(check prove --exec '' -v ${CMAKE_CURRENT_BINARY_DIR}/*.t WORKI
 IF ("${CMAKE_SYSTEM_NAME}" MATCHES "SunOS")
     TARGET_LINK_LIBRARIES(cli "socket" "nsl")
 ENDIF ()
+
+ADD_EXECUTABLE(fuzzer-asn1 fuzz/fuzzer-asn1.c lib/asn1.c)
+SET_TARGET_PROPERTIES(fuzzer-asn1 PROPERTIES LINK_FLAGS "-fsanitize=fuzzer")
+SET_TARGET_PROPERTIES(fuzzer-asn1 PROPERTIES COMPILE_FLAGS "-fsanitize=fuzzer")
