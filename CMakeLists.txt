@@ -50,7 +50,7 @@ IF ("${CMAKE_SYSTEM_NAME}" MATCHES "SunOS")
     TARGET_LINK_LIBRARIES(cli "socket" "nsl")
 ENDIF ()
 
-IF (CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND CMAKE_C_COMPILER_ID MATCHES "Clang")
+IF (CMAKE_C_COMPILER_ID MATCHES "Clang" AND NOT APPLE)
     ADD_EXECUTABLE(fuzzer-asn1-validation fuzz/fuzzer-asn1-validation.c lib/asn1.c)
     SET_TARGET_PROPERTIES(fuzzer-asn1-validation PROPERTIES LINK_FLAGS "-fsanitize=fuzzer")
     SET_TARGET_PROPERTIES(fuzzer-asn1-validation PROPERTIES COMPILE_FLAGS "-fsanitize=fuzzer")
