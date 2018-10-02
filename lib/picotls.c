@@ -1307,11 +1307,9 @@ static int send_session_ticket(ptls_t *tls, struct st_ptls_message_emitter_t *em
 
     { /* calculate verify-data that will be sent by the client */
         size_t orig_off = emitter->buf->off;
-        if (tls->early_data != NULL) {
-            if (!tls->ctx->omit_end_of_early_data) {
-                assert(tls->state == PTLS_STATE_SERVER_EXPECT_END_OF_EARLY_DATA);
-                buffer_push_handshake_body(emitter->buf, tls->key_schedule, PTLS_HANDSHAKE_TYPE_END_OF_EARLY_DATA, {});
-            }
+        if (tls->early_data != NULL && !tls->ctx->omit_end_of_early_data) {
+            assert(tls->state == PTLS_STATE_SERVER_EXPECT_END_OF_EARLY_DATA);
+            buffer_push_handshake_body(emitter->buf, tls->key_schedule, PTLS_HANDSHAKE_TYPE_END_OF_EARLY_DATA, {});
             emitter->buf->off = orig_off;
         }
         buffer_push_handshake_body(emitter->buf, tls->key_schedule, PTLS_HANDSHAKE_TYPE_FINISHED, {
@@ -3165,8 +3163,13 @@ static int server_handle_hello(ptls_t *tls, struct st_ptls_message_emitter_t *em
         goto Exit;
 
     if (tls->early_data != NULL) {
-        tls->state =
-            tls->ctx->omit_end_of_early_data ? PTLS_STATE_SERVER_EXPECT_FINISHED : PTLS_STATE_SERVER_EXPECT_END_OF_EARLY_DATA;
+        if (tls->ctx->omit_end_of_early_data) {
+            if ((ret = retire_early_data_secret(tls, 0)) != 0)
+                goto Exit;
+            tls->state = PTLS_STATE_SERVER_EXPECT_FINISHED;
+        } else {
+            tls->state = PTLS_STATE_SERVER_EXPECT_END_OF_EARLY_DATA;
+        }
     } else if (tls->ctx->require_client_authentication) {
         tls->state = PTLS_STATE_SERVER_EXPECT_CERTIFICATE;
     } else {
