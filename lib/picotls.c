@@ -3163,8 +3163,13 @@ static int server_handle_hello(ptls_t *tls, struct st_ptls_message_emitter_t *em
         goto Exit;
 
     if (tls->early_data != NULL) {
-        tls->state =
-            tls->ctx->omit_end_of_early_data ? PTLS_STATE_SERVER_EXPECT_FINISHED : PTLS_STATE_SERVER_EXPECT_END_OF_EARLY_DATA;
+        if (tls->ctx->omit_end_of_early_data) {
+            if ((ret = retire_early_data_secret(tls, 0)) != 0)
+                goto Exit;
+            tls->state = PTLS_STATE_SERVER_EXPECT_FINISHED;
+        } else {
+            tls->state = PTLS_STATE_SERVER_EXPECT_END_OF_EARLY_DATA;
+        }
     } else if (tls->ctx->require_client_authentication) {
         tls->state = PTLS_STATE_SERVER_EXPECT_CERTIFICATE;
     } else {
