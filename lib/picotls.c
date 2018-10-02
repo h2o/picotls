@@ -1307,11 +1307,9 @@ static int send_session_ticket(ptls_t *tls, struct st_ptls_message_emitter_t *em
 
     { /* calculate verify-data that will be sent by the client */
         size_t orig_off = emitter->buf->off;
-        if (tls->early_data != NULL) {
-            if (!tls->ctx->omit_end_of_early_data) {
-                assert(tls->state == PTLS_STATE_SERVER_EXPECT_END_OF_EARLY_DATA);
-                buffer_push_handshake_body(emitter->buf, tls->key_schedule, PTLS_HANDSHAKE_TYPE_END_OF_EARLY_DATA, {});
-            }
+        if (tls->early_data != NULL && !tls->ctx->omit_end_of_early_data) {
+            assert(tls->state == PTLS_STATE_SERVER_EXPECT_END_OF_EARLY_DATA);
+            buffer_push_handshake_body(emitter->buf, tls->key_schedule, PTLS_HANDSHAKE_TYPE_END_OF_EARLY_DATA, {});
             emitter->buf->off = orig_off;
         }
         buffer_push_handshake_body(emitter->buf, tls->key_schedule, PTLS_HANDSHAKE_TYPE_FINISHED, {
