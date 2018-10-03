@@ -912,8 +912,10 @@ static void test_handshake_api(void)
     int ret;
 
     ctx->update_traffic_key = &update_traffic_key;
+    ctx->omit_end_of_early_data = 1;
     ctx->save_ticket = &save_ticket;
     ctx_peer->update_traffic_key = &update_traffic_key;
+    ctx_peer->omit_end_of_early_data = 1;
     ctx_peer->encrypt_ticket = &encrypt_ticket;
     ctx_peer->ticket_lifetime = 86400;
     ctx_peer->max_early_data_size = 8192;
@@ -1002,8 +1004,10 @@ static void test_handshake_api(void)
     ptls_buffer_dispose(&sbuf);
 
     ctx->update_traffic_key = NULL;
+    ctx->omit_end_of_early_data = 0;
     ctx->save_ticket = NULL;
     ctx_peer->update_traffic_key = NULL;
+    ctx_peer->omit_end_of_early_data = 0;
     ctx_peer->encrypt_ticket = NULL;
     ctx_peer->save_ticket = NULL;
     ctx_peer->ticket_lifetime = 0;

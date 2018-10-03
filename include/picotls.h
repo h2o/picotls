@@ -467,6 +467,10 @@ struct st_ptls_context_t {
      */
     unsigned require_client_authentication : 1;
     /**
+     * if set, EOED will not be emitted or accepted
+     */
+    unsigned omit_end_of_early_data : 1;
+    /**
      *
      */
     ptls_encrypt_ticket_t *encrypt_ticket;
