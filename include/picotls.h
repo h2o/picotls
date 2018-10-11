@@ -759,9 +759,11 @@ ptls_cipher_suite_t *ptls_get_cipher(ptls_t *tls);
  */
 const char *ptls_get_server_name(ptls_t *tls);
 /**
- * sets the server-name (for client the value sent in SNI). If server_name_len is zero, then strlen(server_name) is called to
- * determine
- * the length of the name.
+ * sets the server-name associated to the TLS connection. If server_name_len is zero, then strlen(server_name) is called to
+ * determine the length of the name.
+ * On the client-side, the value is used for certificate validation. The value will be also sent as an SNI extension, if it looks
+ * like a DNS name.
+ * On the server-side, it can be called from on_client_hello to indicate the acceptance of the SNI extension to the client.
  */
 int ptls_set_server_name(ptls_t *tls, const char *server_name, size_t server_name_len);
 /**
@@ -932,6 +934,10 @@ extern int (*volatile ptls_mem_equal)(const void *x, const void *y, size_t len);
  *
  */
 static ptls_iovec_t ptls_iovec_init(const void *p, size_t len);
+/**
+ * checks if a server name is an IP address.
+ */
+int ptls_server_name_is_ipaddr(const char *name);
 
 /* inline functions */
 inline ptls_iovec_t ptls_iovec_init(const void *p, size_t len)

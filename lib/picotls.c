@@ -19,6 +19,7 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
+#include <arpa/inet.h>
 #include <assert.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -1493,7 +1494,7 @@ static int send_client_hello(ptls_t *tls, struct st_ptls_message_emitter_t *emit
         ptls_buffer_push_block(sendbuf, 1, { ptls_buffer_push(sendbuf, 0); });
         /* extensions */
         ptls_buffer_push_block(sendbuf, 2, {
-            if (tls->server_name != NULL) {
+            if (tls->server_name != NULL && !ptls_server_name_is_ipaddr(tls->server_name)) {
                 buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SERVER_NAME, {
                     ptls_buffer_push_block(sendbuf, 2, {
                         ptls_buffer_push(sendbuf, PTLS_SERVER_NAME_TYPE_HOSTNAME);
@@ -1899,7 +1900,7 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
                 ret = PTLS_ALERT_DECODE_ERROR;
                 goto Exit;
             }
-            if (tls->server_name == NULL) {
+            if (!(tls->server_name != NULL && !ptls_server_name_is_ipaddr(tls->server_name))) {
                 ret = PTLS_ALERT_ILLEGAL_PARAMETER;
                 goto Exit;
             }
@@ -4252,4 +4253,22 @@ int ptls_handle_message(ptls_t *tls, ptls_buffer_t *sendbuf, size_t epoch_offset
         return PTLS_ALERT_UNEXPECTED_MESSAGE;
 
     return handle_handshake_record(tls, handle_handshake_message, &emitter.super, &rec, properties);
+}
+
+/**
+ * checks if given name looks like an IP address
+ */
+int ptls_server_name_is_ipaddr(const char *name)
+{
+#ifdef AF_INET
+    struct sockaddr_in sin;
+    if (inet_pton(AF_INET, name, &sin) == 1)
+        return 1;
+#endif
+#ifdef AF_INET6
+    struct sockaddr_in6 sin6;
+    if (inet_pton(AF_INET6, name, &sin6) == 1)
+        return 1;
+#endif
+    return 0;
 }

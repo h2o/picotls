@@ -32,6 +32,17 @@
 #include "../lib/picotls.c"
 #include "test.h"
 
+static void test_is_ipaddr(void)
+{
+    ok(!ptls_server_name_is_ipaddr("www.google.com"));
+    ok(!ptls_server_name_is_ipaddr("www.google.com."));
+    ok(!ptls_server_name_is_ipaddr("www"));
+    ok(!ptls_server_name_is_ipaddr(""));
+    ok(!ptls_server_name_is_ipaddr("123"));
+    ok(ptls_server_name_is_ipaddr("1.1.1.1"));
+    ok(ptls_server_name_is_ipaddr("2001:db8::2:1"));
+}
+
 ptls_context_t *ctx, *ctx_peer;
 ptls_verify_certificate_t *verify_certificate;
 
@@ -1046,6 +1057,7 @@ static void test_handshake_api(void)
 
 void test_picotls(void)
 {
+    subtest("is_ipaddr", test_is_ipaddr);
     subtest("sha256", test_sha256);
     subtest("sha384", test_sha384);
     subtest("hmac-sha256", test_hmac_sha256);
