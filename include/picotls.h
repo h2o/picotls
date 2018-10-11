@@ -446,6 +446,10 @@ struct st_ptls_context_t {
      */
     uint32_t max_early_data_size;
     /**
+     * the label prefix used in hkdf-expand-label (if NULL, uses "tls13 ")
+     */
+    const char *hkdf_label_prefix;
+    /**
      * if set, psk handshakes use (ec)dhe
      */
     unsigned require_dhe_on_psk : 1;
@@ -462,6 +466,14 @@ struct st_ptls_context_t {
      * to authenticate the client.
      */
     unsigned require_client_authentication : 1;
+    /**
+     * if set, EOED will not be emitted or accepted
+     */
+    unsigned omit_end_of_early_data : 1;
+    /**
+     * if set, key update is disabled and there will be no KeyUpdate post-handshake exchanges
+     */
+    unsigned disable_key_update : 1;
     /**
      *
      */
@@ -808,6 +820,10 @@ int ptls_export_secret(ptls_t *tls, void *output, size_t outlen, const char *lab
 /**
  *
  */
+int ptls_calc_hash(ptls_hash_algorithm_t *algo, void *output, const void *src, size_t len);
+/**
+ *
+ */
 ptls_hash_context_t *ptls_hmac_create(ptls_hash_algorithm_t *algo, const void *key, size_t key_size);
 /**
  *
@@ -821,7 +837,7 @@ int ptls_hkdf_expand(ptls_hash_algorithm_t *hash, void *output, size_t outlen, p
  *
  */
 int ptls_hkdf_expand_label(ptls_hash_algorithm_t *algo, void *output, size_t outlen, ptls_iovec_t secret, const char *label,
-                           ptls_iovec_t hash_value, const char *base_label);
+                           ptls_iovec_t hash_value, const char *label_prefix);
 /**
  * instantiates a symmetric cipher
  */
@@ -847,7 +863,7 @@ static void ptls_cipher_encrypt(ptls_cipher_context_t *ctx, void *output, const 
  * @return pointer to an AEAD context if successful, otherwise NULL
  */
 ptls_aead_context_t *ptls_aead_new(ptls_aead_algorithm_t *aead, ptls_hash_algorithm_t *hash, int is_enc, const void *secret,
-                                   const char *base_label);
+                                   const char *label_prefix);
 /**
  * destroys an AEAD cipher context
  */
@@ -878,7 +894,12 @@ static size_t ptls_aead_encrypt_final(ptls_aead_context_t *ctx, void *output);
 static size_t ptls_aead_decrypt(ptls_aead_context_t *ctx, void *output, const void *input, size_t inlen, uint64_t seq,
                                 const void *aad, size_t aadlen);
 /**
- * runs the handshake by dealing directly with handshake messages
+ * Return the current read epoch.
+ */
+size_t ptls_get_read_epoch(ptls_t *tls);
+/**
+ * Runs the handshake by dealing directly with handshake messages. Callers MUST delay supplying input to this function until the
+ * epoch of the input becomes equal to the value returned by `ptls_get_read_epoch()`.
  * @param tls            the TLS context
  * @param sendbuf        buffer to which the output will be written
  * @param epoch_offsets  start and end offset of the messages in each epoch. For example, when the server emits ServerHello between
