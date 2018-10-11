@@ -27,6 +27,7 @@
 #include <stdio.h>
 #include "picotls.h"
 #include "picotls/minicrypto.h"
+#include "picotls/pembase64.h"
 #include "../deps/picotest/picotest.h"
 #include "../lib/picotls.c"
 #include "test.h"
@@ -240,6 +241,35 @@ static void test_chacha20poly1305(void)
         test_ciphersuite(cs, cs_peer);
         test_aad_ciphersuite(cs, cs_peer);
     }
+}
+
+static void test_base64_decode(void)
+{
+    ptls_base64_decode_state_t state;
+    ptls_buffer_t buf;
+    int ret;
+
+    ptls_buffer_init(&buf, "", 0);
+
+    ptls_base64_decode_init(&state);
+    ret = ptls_base64_decode("aGVsbG8gd29ybGQ=", &state, &buf);
+    ok(ret == 0);
+    ok(buf.off == 11);
+    ok(memcmp(buf.base, "hello world", 11) == 0);
+
+    buf.off = 0;
+
+    ptls_base64_decode_init(&state);
+    ret = ptls_base64_decode("a$b", &state, &buf);
+    ok(ret != 0);
+
+    buf.off = 0;
+
+    ptls_base64_decode_init(&state);
+    ret = ptls_base64_decode("a\xFF" "b", &state, &buf);
+    ok(ret != 0);
+
+    ptls_buffer_dispose(&buf);
 }
 
 static struct {
@@ -1025,6 +1055,8 @@ void test_picotls(void)
     subtest("chacha20poly1305", test_chacha20poly1305);
     subtest("aes128ctr", test_aes128ctr);
     subtest("chacha20", test_chacha20);
+
+    subtest("base64-decode", test_base64_decode);
 
     subtest("fragmented-message", test_fragmented_message);
 
