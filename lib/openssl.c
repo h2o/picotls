@@ -42,6 +42,10 @@
 #include "picotls.h"
 #include "picotls/openssl.h"
 
+#ifdef _WINDOWS
+#include <ms\applink.c>
+#endif
+
 #if !defined(LIBRESSL_VERSION_NUMBER) && OPENSSL_VERSION_NUMBER >= 0x10100000L
 #define OPENSSL_1_1_API 1
 #elif defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER >= 0x2070000fL
@@ -1104,7 +1108,7 @@ static int verify_cert(ptls_verify_certificate_t *_self, ptls_t *tls, int (**ver
 
 Exit:
     if (chain != NULL)
-        sk_X509_free(chain);
+        sk_X509_pop_free(chain, X509_free);
     if (cert != NULL)
         X509_free(cert);
     return ret;
