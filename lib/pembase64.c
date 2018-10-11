@@ -34,7 +34,7 @@ static char ptls_base64_alphabet[] = {'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I
                                       'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v',
                                       'w', 'x', 'y', 'z', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '+', '/'};
 
-static char ptls_base64_values[] = {
+static signed char ptls_base64_values[] = {
     /* 0x00 to 0x0F */
     -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
     /* 0x10 to 0x1F */
@@ -126,7 +126,7 @@ int ptls_base64_decode(const char *text, ptls_base64_decode_state_t *state, ptls
     uint8_t decoded[3];
     size_t text_index = 0;
     int c;
-    char vc;
+    signed char vc;
 
     /* skip initial blanks */
     while (text[text_index] != 0) {
@@ -143,7 +143,7 @@ int ptls_base64_decode(const char *text, ptls_base64_decode_state_t *state, ptls
         c = text[text_index++];
 
         vc = 0 < c && c < 0x7f ? ptls_base64_values[c] : -1;
-        if (vc == (char)-1) {
+        if (vc == -1) {
             if (state->nbc == 2 && c == '=' && text[text_index] == '=') {
                 state->nbc = 4;
                 text_index++;
