@@ -925,6 +925,10 @@ void ptls_aead__build_iv(ptls_aead_context_t *ctx, uint8_t *iv, uint64_t seq);
  */
 extern void (*volatile ptls_clear_memory)(void *p, size_t len);
 /**
+ * constant-time memcmp
+ */
+extern int (*volatile ptls_mem_equal)(const void *x, const void *y, size_t len);
+/**
  *
  */
 static ptls_iovec_t ptls_iovec_init(const void *p, size_t len);
