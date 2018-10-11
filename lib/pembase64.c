@@ -155,13 +155,10 @@ int ptls_base64_decode(const char *text, ptls_base64_decode_state_t *state, ptls
                 state->v <<= 6;
             } else {
                 /* Skip final blanks */
-                text_index--;
-                while (text[text_index] != 0) {
-                    c = text[text_index++];
-
-                    if (c == ' ' || c == '\t' || c == '\r' || c == '\n' || c == 0x0B || c == 0x0C) {
-                        continue;
-                    }
+                for (--text_index; text[text_index] != 0; ++text_index) {
+                    c = text[text_index];
+                    if (!(c == ' ' || c == '\t' || c == '\r' || c == '\n' || c == 0x0B || c == 0x0C))
+                        break;
                 }
 
                 /* Should now be at end of buffer */
