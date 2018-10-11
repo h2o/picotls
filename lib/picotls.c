@@ -89,6 +89,10 @@
 
 #define PTLS_HKDF_EXPAND_LABEL_PREFIX "tls13 "
 
+#ifndef PTLS_MAX_EARLY_DATA_SKIP_SIZE
+#define PTLS_MAX_EARLY_DATA_SKIP_SIZE 65536
+#endif
+
 #if defined(PTLS_DEBUG) && PTLS_DEBUG
 #define PTLS_DEBUGF(...) fprintf(stderr, __VA_ARGS__)
 #else
@@ -216,7 +220,6 @@ struct st_ptls_t {
     /* flags */
     unsigned is_server : 1;
     unsigned is_psk_handshake : 1;
-    unsigned skip_early_data : 1; /* if early-data is not recognized by the server */
     unsigned send_change_cipher_spec : 1;
     /**
      * exporter master secret (either 0rtt or 1rtt)
@@ -233,10 +236,12 @@ struct st_ptls_t {
             uint8_t legacy_session_id[32];
             ptls_key_exchange_context_t *key_share_ctx;
             unsigned offered_psk : 1;
+            unsigned early_data_skipped : 1;
             struct st_ptls_certificate_request_t certificate_request;
         } client;
         struct {
             uint8_t pending_traffic_secret[PTLS_MAX_DIGEST_SIZE];
+            uint32_t early_data_skipped_bytes; /* if not UINT32_MAX, the server is skipping early data */
         } server;
     };
     /**
@@ -1927,7 +1932,7 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
     });
 
     if (tls->early_data != NULL) {
-        tls->skip_early_data = skip_early_data;
+        tls->client.early_data_skipped = skip_early_data;
         if (properties != NULL && !skip_early_data)
             properties->client.early_data_accepted_by_peer = 1;
         if ((ret = derive_secret(tls->key_schedule, tls->early_data->next_secret, "c hs traffic")) != 0)
@@ -2235,7 +2240,7 @@ static int client_handle_finished(ptls_t *tls, struct st_ptls_message_emitter_t 
     /* if sending early data, emit EOED and commision the client handshake traffic secret */
     if (tls->early_data != NULL) {
         assert(tls->traffic_protection.enc.aead != NULL || tls->ctx->update_traffic_key != NULL);
-        if (!tls->skip_early_data && !tls->ctx->omit_end_of_early_data)
+        if (!tls->client.early_data_skipped && !tls->ctx->omit_end_of_early_data)
             push_message(emitter, tls->key_schedule, PTLS_HANDSHAKE_TYPE_END_OF_EARLY_DATA, {});
         if ((ret = retire_early_data_secret(tls, 1)) != 0)
             goto Exit;
@@ -2984,7 +2989,7 @@ static int server_handle_hello(ptls_t *tls, struct st_ptls_message_emitter_t *em
                     goto Exit;
                 tls->state = PTLS_STATE_SERVER_EXPECT_SECOND_CLIENT_HELLO;
                 if (ch.psk.early_data_indication)
-                    tls->skip_early_data = 1;
+                    tls->server.early_data_skipped_bytes = 0;
                 ret = PTLS_ERROR_IN_PROGRESS;
             }
             goto Exit;
@@ -3092,7 +3097,7 @@ static int server_handle_hello(ptls_t *tls, struct st_ptls_message_emitter_t *em
         if ((ret = setup_traffic_protection(tls, 0, "c hs traffic", 2, 0)) != 0)
             goto Exit;
         if (ch.psk.early_data_indication)
-            tls->skip_early_data = 1;
+            tls->server.early_data_skipped_bytes = 0;
     }
 
     /* send EncryptedExtensions */
@@ -3330,6 +3335,7 @@ ptls_t *ptls_new(ptls_context_t *ctx, int is_server)
         tls->ctx->random_bytes(tls->client.legacy_session_id, sizeof(tls->client.legacy_session_id));
     } else {
         tls->state = PTLS_STATE_SERVER_EXPECT_CLIENT_HELLO;
+        tls->server.early_data_skipped_bytes = UINT32_MAX;
     }
 
     return tls;
@@ -3675,18 +3681,18 @@ static int handle_input(ptls_t *tls, struct st_ptls_message_emitter_t *emitter, 
         goto NextRecord;
     }
     if (tls->traffic_protection.dec.aead != NULL && rec.type != PTLS_CONTENT_TYPE_ALERT) {
+        size_t decrypted_length;
         if (rec.type != PTLS_CONTENT_TYPE_APPDATA)
             return PTLS_ALERT_HANDSHAKE_FAILURE;
         if ((ret = ptls_buffer_reserve(decryptbuf, 5 + rec.length)) != 0)
             return ret;
-        if ((ret = aead_decrypt(&tls->traffic_protection.dec, decryptbuf->base + decryptbuf->off, &rec.length, rec.fragment,
+        if ((ret = aead_decrypt(&tls->traffic_protection.dec, decryptbuf->base + decryptbuf->off, &decrypted_length, rec.fragment,
                                 rec.length)) != 0) {
-            if (tls->skip_early_data) {
-                ret = PTLS_ERROR_IN_PROGRESS;
-                goto NextRecord;
-            }
+            if (tls->is_server && tls->server.early_data_skipped_bytes != UINT32_MAX)
+                goto ServerSkipEarlyData;
             return ret;
         }
+        rec.length = decrypted_length;
         rec.fragment = decryptbuf->base + decryptbuf->off;
         /* skip padding */
         for (; rec.length != 0; --rec.length)
@@ -3695,9 +3701,8 @@ static int handle_input(ptls_t *tls, struct st_ptls_message_emitter_t *emitter, 
         if (rec.length == 0)
             return PTLS_ALERT_UNEXPECTED_MESSAGE;
         rec.type = rec.fragment[--rec.length];
-    } else if (rec.type == PTLS_CONTENT_TYPE_APPDATA && tls->skip_early_data) {
-        ret = PTLS_ERROR_IN_PROGRESS;
-        goto NextRecord;
+    } else if (rec.type == PTLS_CONTENT_TYPE_APPDATA && tls->is_server && tls->server.early_data_skipped_bytes != UINT32_MAX) {
+        goto ServerSkipEarlyData;
     }
 
     if (tls->recvbuf.mess.base != NULL || rec.type == PTLS_CONTENT_TYPE_HANDSHAKE) {
@@ -3730,6 +3735,13 @@ static int handle_input(ptls_t *tls, struct st_ptls_message_emitter_t *emitter, 
 NextRecord:
     ptls_buffer_dispose(&tls->recvbuf.rec);
     return ret;
+
+ServerSkipEarlyData:
+    tls->server.early_data_skipped_bytes += rec.length;
+    if (tls->server.early_data_skipped_bytes > PTLS_MAX_EARLY_DATA_SKIP_SIZE)
+        return PTLS_ALERT_HANDSHAKE_FAILURE;
+    ret = PTLS_ERROR_IN_PROGRESS;
+    goto NextRecord;
 }
 
 int ptls_handshake(ptls_t *tls, ptls_buffer_t *_sendbuf, const void *input, size_t *inlen, ptls_handshake_properties_t *properties)
