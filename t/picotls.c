@@ -277,7 +277,9 @@ static void test_base64_decode(void)
     buf.off = 0;
 
     ptls_base64_decode_init(&state);
-    ret = ptls_base64_decode("a\xFF" "b", &state, &buf);
+    ret = ptls_base64_decode("a\xFF"
+                             "b",
+                             &state, &buf);
     ok(ret != 0);
 
     ptls_buffer_dispose(&buf);
@@ -374,7 +376,14 @@ static int save_client_hello(ptls_on_client_hello_t *self, ptls_t *tls, ptls_iov
     return 0;
 }
 
-enum { TEST_HANDSHAKE_1RTT, TEST_HANDSHAKE_2RTT, TEST_HANDSHAKE_HRR, TEST_HANDSHAKE_HRR_STATELESS, TEST_HANDSHAKE_EARLY_DATA };
+enum {
+    TEST_HANDSHAKE_1RTT,
+    TEST_HANDSHAKE_2RTT,
+    TEST_HANDSHAKE_HRR,
+    TEST_HANDSHAKE_HRR_STATELESS,
+    TEST_HANDSHAKE_EARLY_DATA,
+    TEST_HANDSHAKE_KEY_UPDATE
+};
 
 static void test_handshake(ptls_iovec_t ticket, int mode, int expect_ticket, int check_ch, int require_client_authentication)
 {
@@ -545,6 +554,7 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int expect_ticket, int
         ok(memcmp(decbuf.base, req, strlen(req)) == 0);
         ok(ptls_handshake_is_complete(server));
         decbuf.off = 0;
+        cbuf.off = 0;
 
         ret = ptls_send(server, &sbuf, resp, strlen(resp));
         ok(ret == 0);
@@ -558,6 +568,7 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int expect_ticket, int
     ok(memcmp(decbuf.base, resp, strlen(resp)) == 0);
     ok(ptls_handshake_is_complete(client));
     decbuf.off = 0;
+    sbuf.off = 0;
 
     if (mode == TEST_HANDSHAKE_EARLY_DATA) {
         consumed = cbuf.off;
@@ -566,6 +577,46 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int expect_ticket, int
         ok(cbuf.off == consumed);
         ok(decbuf.off == 0);
         ok(ptls_handshake_is_complete(client));
+        cbuf.off = 0;
+    }
+
+    if (mode == TEST_HANDSHAKE_KEY_UPDATE) {
+        /* server -> client with update_request */
+        ret = ptls_update_key(server, &sbuf, 1);
+        ok(ret == 0);
+        ok(sbuf.off != 0);
+        ret = ptls_send(server, &sbuf, "good bye", 8);
+        ok(ret == 0);
+        consumed = sbuf.off;
+        ret = ptls_receive(client, &decbuf, sbuf.base, &consumed);
+        ok(ret == PTLS_ERROR_KEY_UPDATE_REQUESTED);
+        ok(consumed != 0);
+        ok(consumed != sbuf.off);
+        ok(decbuf.off == 0);
+        memmove(sbuf.base, sbuf.base + consumed, sbuf.off - consumed);
+        sbuf.off -= consumed;
+        consumed = sbuf.off;
+        ret = ptls_receive(client, &decbuf, sbuf.base, &consumed);
+        ok(ret == 0);
+        ok(sbuf.off == consumed);
+        ok(decbuf.off == 8);
+        ok(memcmp(decbuf.base, "good bye", 8) == 0);
+        sbuf.off = 0;
+        decbuf.off = 0;
+        /* client -> server wo. update_request */
+        ret = ptls_update_key(client, &cbuf, 0);
+        ok(ret == 0);
+        ok(cbuf.base != 0);
+        ret = ptls_send(client, &cbuf, "hello", 5);
+        ok(ret == 0);
+        consumed = cbuf.off;
+        ret = ptls_receive(server, &decbuf, cbuf.base, &consumed);
+        ok(ret == 0);
+        ok(cbuf.off == consumed);
+        ok(decbuf.off == 5);
+        ok(memcmp(decbuf.base, "hello", 5) == 0);
+        cbuf.off = 0;
+        decbuf.off = 0;
     }
 
     ptls_buffer_dispose(&cbuf);
@@ -635,6 +686,11 @@ static void test_full_handshake(void)
 static void test_full_handshake_with_client_authentication(void)
 {
     test_full_handshake_impl(1);
+}
+
+static void test_key_update(void)
+{
+    test_handshake(ptls_iovec_init(NULL, 0), TEST_HANDSHAKE_KEY_UPDATE, 0, 0, 0);
 }
 
 static void test_hrr_handshake(void)
@@ -1094,6 +1150,8 @@ void test_picotls(void)
     subtest("enforce-retry-stateless", test_enforce_retry_stateless);
 
     subtest("stateless-hrr-aad-change", test_stateless_hrr_aad_change);
+
+    subtest("key-update", test_key_update);
 
     subtest("handshake-api", test_handshake_api);
 

@@ -115,6 +115,7 @@ extern "C" {
 #define PTLS_ERROR_SESSION_NOT_FOUND (PTLS_ERROR_CLASS_INTERNAL + 5)
 #define PTLS_ERROR_STATELESS_RETRY (PTLS_ERROR_CLASS_INTERNAL + 6)
 #define PTLS_ERROR_NOT_AVAILABLE (PTLS_ERROR_CLASS_INTERNAL + 7)
+#define PTLS_ERROR_KEY_UPDATE_REQUESTED (PTLS_ERROR_CLASS_INTERNAL + 8)
 
 #define PTLS_ERROR_INCORRECT_BASE64 (PTLS_ERROR_CLASS_INTERNAL + 50)
 #define PTLS_ERROR_PEM_LABEL_NOT_FOUND (PTLS_ERROR_CLASS_INTERNAL + 51)
@@ -471,10 +472,6 @@ struct st_ptls_context_t {
      */
     unsigned omit_end_of_early_data : 1;
     /**
-     * if set, key update is disabled and there will be no KeyUpdate post-handshake exchanges
-     */
-    unsigned disable_key_update : 1;
-    /**
      *
      */
     ptls_encrypt_ticket_t *encrypt_ticket;
@@ -803,6 +800,10 @@ int ptls_receive(ptls_t *tls, ptls_buffer_t *plaintextbuf, const void *input, si
  * encrypts given buffer into multiple TLS records
  */
 int ptls_send(ptls_t *tls, ptls_buffer_t *sendbuf, const void *input, size_t inlen);
+/**
+ * updates the send traffic key (as well as asks the peer to update)
+ */
+int ptls_update_key(ptls_t *tls, ptls_buffer_t *sendbuf, int request_update);
 /**
  * Returns if the context is a server context.
  */
