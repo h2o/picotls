@@ -472,10 +472,6 @@ struct st_ptls_context_t {
      */
     unsigned omit_end_of_early_data : 1;
     /**
-     * if set, key update is disabled and there will be no KeyUpdate post-handshake exchanges
-     */
-    unsigned disable_key_update : 1;
-    /**
      *
      */
     ptls_encrypt_ticket_t *encrypt_ticket;
