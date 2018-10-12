@@ -3247,10 +3247,13 @@ static int update_traffic_key(ptls_t *tls, int is_enc)
     ptls_hash_algorithm_t *hash = tls->key_schedule->hashes[0].algo;
     if ((ret = hkdf_expand_label(hash, secret, hash->digest_size, ptls_iovec_init(tp->secret, hash->digest_size), "traffic upd",
                                  ptls_iovec_init(NULL, 0), tls->key_schedule->hkdf_label_prefix)) != 0)
-        return ret;
-
+        goto Exit;
     memcpy(tp->secret, secret, sizeof(secret));
-    return setup_traffic_protection(tls, is_enc, NULL, 3, 1);
+    ret = setup_traffic_protection(tls, is_enc, NULL, 3, 1);
+
+Exit:
+    ptls_clear_memory(secret, sizeof(secret));
+    return ret;
 }
 
 static int handle_key_update(ptls_t *tls, struct st_ptls_message_emitter_t *emitter, ptls_iovec_t message)
