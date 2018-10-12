@@ -3238,6 +3238,37 @@ static int server_handle_finished(ptls_t *tls, ptls_iovec_t message)
     return 0;
 }
 
+static int update_traffic_key(ptls_t *tls, int is_enc)
+{
+    struct st_ptls_traffic_protection_t *tp = is_enc ? &tls->traffic_protection.enc : &tls->traffic_protection.dec;
+    uint8_t secret[PTLS_MAX_DIGEST_SIZE];
+    int ret;
+
+    ptls_hash_algorithm_t *hash = tls->key_schedule->hashes[0].algo;
+    if ((ret = hkdf_expand_label(hash, secret, hash->digest_size, ptls_iovec_init(tp->secret, hash->digest_size), "traffic upd",
+                                 ptls_iovec_init(NULL, 0), tls->key_schedule->hkdf_label_prefix)) != 0)
+        return ret;
+
+    memcpy(tp->secret, secret, sizeof(secret));
+    return setup_traffic_protection(tls, is_enc, NULL, 3, 1);
+}
+
+static int handle_key_update(ptls_t *tls, struct st_ptls_message_emitter_t *emitter, ptls_iovec_t message)
+{
+    const uint8_t *src = message.base + PTLS_HANDSHAKE_HEADER_SIZE, *const end = message.base + message.len;
+    int ret = 0;
+
+    /* validate */
+    if (end - src != 1 || *src > 1)
+        return PTLS_ALERT_DECODE_ERROR;
+
+    /* update receive key */
+    if ((ret = update_traffic_key(tls, 0)) != 0)
+        return ret;
+
+    return *src == 1 ? PTLS_ERROR_KEY_UPDATE_REQUESTED : 0;
+}
+
 static int parse_record_header(struct st_ptls_record_t *rec, const uint8_t *src)
 {
     rec->type = src[0];
@@ -3559,13 +3590,23 @@ static int handle_handshake_message(ptls_t *tls, struct st_ptls_message_emitter_
         case PTLS_HANDSHAKE_TYPE_NEW_SESSION_TICKET:
             ret = client_handle_new_session_ticket(tls, message);
             break;
+        case PTLS_HANDSHAKE_TYPE_KEY_UPDATE:
+            ret = handle_key_update(tls, emitter, message);
+            break;
         default:
             ret = PTLS_ALERT_UNEXPECTED_MESSAGE;
             break;
         }
         break;
     case PTLS_STATE_SERVER_POST_HANDSHAKE:
-        ret = PTLS_ALERT_UNEXPECTED_MESSAGE;
+        switch (type) {
+        case PTLS_HANDSHAKE_TYPE_KEY_UPDATE:
+            ret = handle_key_update(tls, emitter, message);
+            break;
+        default:
+            ret = PTLS_ALERT_UNEXPECTED_MESSAGE;
+            break;
+        }
         break;
     default:
         assert(!"unexpected state");
@@ -3745,14 +3786,21 @@ ServerSkipEarlyData:
     goto NextRecord;
 }
 
+static void init_record_message_emmitter(ptls_t *tls, struct st_ptls_record_message_emitter_t *emitter, ptls_buffer_t *sendbuf)
+{
+    *emitter = (struct st_ptls_record_message_emitter_t){
+        {sendbuf, &tls->traffic_protection.enc, 5, begin_record_message, commit_record_message}};
+}
+
 int ptls_handshake(ptls_t *tls, ptls_buffer_t *_sendbuf, const void *input, size_t *inlen, ptls_handshake_properties_t *properties)
 {
-    struct st_ptls_record_message_emitter_t emitter = {
-        {_sendbuf, &tls->traffic_protection.enc, 5, begin_record_message, commit_record_message}};
-    size_t sendbuf_orig_off = emitter.super.buf->off;
+    struct st_ptls_record_message_emitter_t emitter;
     int ret;
 
     assert(tls->state < PTLS_STATE_POST_HANDSHAKE_MIN);
+
+    init_record_message_emmitter(tls, &emitter, _sendbuf);
+    size_t sendbuf_orig_off = emitter.super.buf->off;
 
     /* special handlings */
     switch (tls->state) {
@@ -3843,6 +3891,25 @@ int ptls_send(ptls_t *tls, ptls_buffer_t *sendbuf, const void *input, size_t inl
 {
     assert(tls->traffic_protection.enc.aead != NULL);
     return buffer_push_encrypted_records(sendbuf, PTLS_CONTENT_TYPE_APPDATA, input, inlen, &tls->traffic_protection.enc);
+}
+
+int ptls_update_key(ptls_t *tls, ptls_buffer_t *_sendbuf, int request_update)
+{
+    struct st_ptls_record_message_emitter_t emitter;
+    int ret;
+
+    init_record_message_emmitter(tls, &emitter, _sendbuf);
+    size_t sendbuf_orig_off = emitter.super.buf->off;
+
+    push_message(&emitter.super, NULL, PTLS_HANDSHAKE_TYPE_KEY_UPDATE, { ptls_buffer_push(emitter.super.buf, !!request_update); });
+    if ((ret = update_traffic_key(tls, 1)) != 0)
+        goto Exit;
+    ret = 0;
+
+Exit:
+    if (ret != 0)
+        emitter.super.buf->off = sendbuf_orig_off;
+    return ret;
 }
 
 size_t ptls_get_record_overhead(ptls_t *tls)
