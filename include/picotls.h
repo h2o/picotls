@@ -115,7 +115,6 @@ extern "C" {
 #define PTLS_ERROR_SESSION_NOT_FOUND (PTLS_ERROR_CLASS_INTERNAL + 5)
 #define PTLS_ERROR_STATELESS_RETRY (PTLS_ERROR_CLASS_INTERNAL + 6)
 #define PTLS_ERROR_NOT_AVAILABLE (PTLS_ERROR_CLASS_INTERNAL + 7)
-#define PTLS_ERROR_KEY_UPDATE_REQUESTED (PTLS_ERROR_CLASS_INTERNAL + 8)
 
 #define PTLS_ERROR_INCORRECT_BASE64 (PTLS_ERROR_CLASS_INTERNAL + 50)
 #define PTLS_ERROR_PEM_LABEL_NOT_FOUND (PTLS_ERROR_CLASS_INTERNAL + 51)
@@ -803,7 +802,7 @@ int ptls_send(ptls_t *tls, ptls_buffer_t *sendbuf, const void *input, size_t inl
 /**
  * updates the send traffic key (as well as asks the peer to update)
  */
-int ptls_update_key(ptls_t *tls, ptls_buffer_t *sendbuf, int request_update);
+int ptls_update_key(ptls_t *tls, int request_update);
 /**
  * Returns if the context is a server context.
  */

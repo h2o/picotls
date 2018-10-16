@@ -131,12 +131,8 @@ static int handle_connection(int sockfd, ptls_context_t *ctx, const char *server
                         /* release data sent as early-data, if server accepted it */
                         if (hsprop->client.early_data_accepted_by_peer)
                             shift_buffer(&ptbuf, early_bytes_sent);
-                        if (request_key_update) {
-                            if ((ret = ptls_update_key(tls, &encbuf, 1)) != 0) {
-                                fprintf(stderr, "ptls_update_key(update_requested):%d\n", ret);
-                                goto Exit;
-                            }
-                        }
+                        if (request_key_update)
+                            ptls_update_key(tls, 1);
                         if (ptbuf.off != 0) {
                             if ((ret = ptls_send(tls, &encbuf, ptbuf.base, ptbuf.off)) != 0) {
                                 fprintf(stderr, "ptls_send(1rtt):%d\n", ret);
@@ -160,11 +156,6 @@ static int handle_connection(int sockfd, ptls_context_t *ctx, const char *server
                         }
                     } else if (ret == PTLS_ERROR_IN_PROGRESS) {
                         /* ok */
-                    } else if (ret == PTLS_ERROR_KEY_UPDATE_REQUESTED) {
-                        if ((ret = ptls_update_key(tls, &encbuf, 0)) != 0) {
-                            fprintf(stderr, "ptls_update_key(update_not_requested):%d\n", ret);
-                            goto Exit;
-                        }
                     } else {
                         fprintf(stderr, "ptls_receive:%d\n", ret);
                         goto Exit;
