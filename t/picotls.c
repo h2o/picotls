@@ -582,31 +582,24 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int expect_ticket, int
 
     if (mode == TEST_HANDSHAKE_KEY_UPDATE) {
         /* server -> client with update_request */
-        ret = ptls_update_key(server, &sbuf, 1);
+        ret = ptls_update_key(server, 1);
         ok(ret == 0);
-        ok(sbuf.off != 0);
+        ok(server->needs_key_update);
+        ok(server->key_update_send_request);
         ret = ptls_send(server, &sbuf, "good bye", 8);
         ok(ret == 0);
-        consumed = sbuf.off;
-        ret = ptls_receive(client, &decbuf, sbuf.base, &consumed);
-        ok(ret == PTLS_ERROR_KEY_UPDATE_REQUESTED);
-        ok(consumed != 0);
-        ok(consumed != sbuf.off);
-        ok(decbuf.off == 0);
-        memmove(sbuf.base, sbuf.base + consumed, sbuf.off - consumed);
-        sbuf.off -= consumed;
+        ok(!server->needs_key_update);
+        ok(!server->key_update_send_request);
         consumed = sbuf.off;
         ret = ptls_receive(client, &decbuf, sbuf.base, &consumed);
         ok(ret == 0);
         ok(sbuf.off == consumed);
         ok(decbuf.off == 8);
         ok(memcmp(decbuf.base, "good bye", 8) == 0);
+        ok(client->needs_key_update);
+        ok(!client->key_update_send_request);
         sbuf.off = 0;
         decbuf.off = 0;
-        /* client -> server wo. update_request */
-        ret = ptls_update_key(client, &cbuf, 0);
-        ok(ret == 0);
-        ok(cbuf.base != 0);
         ret = ptls_send(client, &cbuf, "hello", 5);
         ok(ret == 0);
         consumed = cbuf.off;

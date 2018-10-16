@@ -222,6 +222,8 @@ struct st_ptls_t {
     unsigned is_server : 1;
     unsigned is_psk_handshake : 1;
     unsigned send_change_cipher_spec : 1;
+    unsigned needs_key_update : 1;
+    unsigned key_update_send_request : 1;
     /**
      * exporter master secret (either 0rtt or 1rtt)
      */
@@ -3259,7 +3261,7 @@ Exit:
 static int handle_key_update(ptls_t *tls, struct st_ptls_message_emitter_t *emitter, ptls_iovec_t message)
 {
     const uint8_t *src = message.base + PTLS_HANDSHAKE_HEADER_SIZE, *const end = message.base + message.len;
-    int ret = 0;
+    int ret;
 
     /* validate */
     if (end - src != 1 || *src > 1)
@@ -3269,7 +3271,13 @@ static int handle_key_update(ptls_t *tls, struct st_ptls_message_emitter_t *emit
     if ((ret = update_traffic_key(tls, 0)) != 0)
         return ret;
 
-    return *src == 1 ? PTLS_ERROR_KEY_UPDATE_REQUESTED : 0;
+    if (*src) {
+        if (tls->ctx->update_traffic_key != NULL)
+            return PTLS_ALERT_UNEXPECTED_MESSAGE;
+        tls->needs_key_update = 1;
+    }
+
+    return 0;
 }
 
 static int parse_record_header(struct st_ptls_record_t *rec, const uint8_t *src)
@@ -3890,13 +3898,7 @@ int ptls_receive(ptls_t *tls, ptls_buffer_t *decryptbuf, const void *_input, siz
     return ret;
 }
 
-int ptls_send(ptls_t *tls, ptls_buffer_t *sendbuf, const void *input, size_t inlen)
-{
-    assert(tls->traffic_protection.enc.aead != NULL);
-    return buffer_push_encrypted_records(sendbuf, PTLS_CONTENT_TYPE_APPDATA, input, inlen, &tls->traffic_protection.enc);
-}
-
-int ptls_update_key(ptls_t *tls, ptls_buffer_t *_sendbuf, int request_update)
+static int update_send_key(ptls_t *tls, ptls_buffer_t *_sendbuf, int request_update)
 {
     struct st_ptls_record_message_emitter_t emitter;
     int ret;
@@ -3913,6 +3915,35 @@ Exit:
     if (ret != 0)
         emitter.super.buf->off = sendbuf_orig_off;
     return ret;
+}
+
+int ptls_send(ptls_t *tls, ptls_buffer_t *sendbuf, const void *input, size_t inlen)
+{
+    assert(tls->traffic_protection.enc.aead != NULL);
+
+    /* "For AES-GCM, up to 2^24.5 full-size records (about 24 million) may be encrypted on a given connection while keeping a
+     * safety margin of approximately 2^-57 for Authenticated Encryption (AE) security." (RFC 8446 section 5.5)
+     */
+    if (tls->traffic_protection.enc.seq >= 16777216)
+        tls->needs_key_update = 1;
+
+    if (tls->needs_key_update) {
+        int ret;
+        if ((ret = update_send_key(tls, sendbuf, tls->key_update_send_request)) != 0)
+            return ret;
+        tls->needs_key_update = 0;
+        tls->key_update_send_request = 0;
+    }
+
+    return buffer_push_encrypted_records(sendbuf, PTLS_CONTENT_TYPE_APPDATA, input, inlen, &tls->traffic_protection.enc);
+}
+
+int ptls_update_key(ptls_t *tls, int request_update)
+{
+    assert(tls->ctx->update_traffic_key == NULL);
+    tls->needs_key_update = 1;
+    tls->key_update_send_request = request_update;
+    return 0;
 }
 
 size_t ptls_get_record_overhead(ptls_t *tls)
