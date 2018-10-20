@@ -335,7 +335,7 @@ static int secp256r1_key_exchange(ptls_iovec_t *pubkey, ptls_iovec_t *secret, pt
     return secp_key_exchange(pubkey, secret, peerkey, NID_X9_62_prime256v1);
 }
 
-#ifdef PTLS_OPENSSL_HAS_SECP384R1
+#if PTLS_OPENSSL_HAVE_SECP384R1
 
 static int secp384r1_create_key_exchange(ptls_key_exchange_context_t **ctx, ptls_iovec_t *pubkey)
 {
@@ -349,7 +349,7 @@ static int secp384r1_key_exchange(ptls_iovec_t *pubkey, ptls_iovec_t *secret, pt
 
 #endif
 
-#ifdef PTLS_OPENSSL_HAS_SECP521R1
+#if PTLS_OPENSSL_HAVE_SECP521R1
 
 static int secp521r1_create_key_exchange(ptls_key_exchange_context_t **ctx, ptls_iovec_t *pubkey)
 {
@@ -363,7 +363,7 @@ static int secp521r1_key_exchange(ptls_iovec_t *pubkey, ptls_iovec_t *secret, pt
 
 #endif
 
-#ifdef PTLS_OPENSSL_HAS_X25519
+#if PTLS_OPENSSL_HAVE_X25519
 
 struct st_evp_keyex_context_t {
     ptls_key_exchange_context_t super;
@@ -649,7 +649,7 @@ static int aes256ctr_setup_crypto(ptls_cipher_context_t *ctx, int is_enc, const 
     return cipher_setup_crypto(ctx, key, EVP_aes_256_ctr(), cipher_encrypt);
 }
 
-#if defined(PTLS_OPENSSL_HAVE_CHACHA20_POLY1305)
+#if PTLS_OPENSSL_HAVE_CHACHA20_POLY1305
 
 static int chacha20_setup_crypto(ptls_cipher_context_t *ctx, int is_enc, const void *key)
 {
@@ -800,7 +800,7 @@ static int aead_aes256gcm_setup_crypto(ptls_aead_context_t *ctx, int is_enc, con
     return aead_setup_crypto(ctx, is_enc, key, EVP_aes_256_gcm());
 }
 
-#if defined(PTLS_OPENSSL_HAVE_CHACHA20_POLY1305)
+#if PTLS_OPENSSL_HAVE_CHACHA20_POLY1305
 static int aead_chacha20poly1305_setup_crypto(ptls_aead_context_t *ctx, int is_enc, const void *key)
 {
     return aead_setup_crypto(ctx, is_enc, key, EVP_chacha20_poly1305());
@@ -1297,15 +1297,15 @@ Exit:
 
 ptls_key_exchange_algorithm_t ptls_openssl_secp256r1 = {PTLS_GROUP_SECP256R1, secp256r1_create_key_exchange,
                                                         secp256r1_key_exchange};
-#ifdef PTLS_OPENSSL_HAS_SECP384R1
+#if PTLS_OPENSSL_HAVE_SECP384R1
 ptls_key_exchange_algorithm_t ptls_openssl_secp384r1 = {PTLS_GROUP_SECP384R1, secp384r1_create_key_exchange,
                                                         secp384r1_key_exchange};
 #endif
-#ifdef PTLS_OPENSSL_HAS_SECP521R1
+#if PTLS_OPENSSL_HAVE_SECP521R1
 ptls_key_exchange_algorithm_t ptls_openssl_secp521r1 = {PTLS_GROUP_SECP521R1, secp521r1_create_key_exchange,
                                                         secp521r1_key_exchange};
 #endif
-#ifdef PTLS_OPENSSL_HAS_X25519
+#if PTLS_OPENSSL_HAVE_X25519
 ptls_key_exchange_algorithm_t ptls_openssl_x25519 = {PTLS_GROUP_X25519, x25519_create_key_exchange, x25519_key_exchange};
 #endif
 ptls_key_exchange_algorithm_t *ptls_openssl_key_exchanges[] = {&ptls_openssl_secp256r1, NULL};
@@ -1335,7 +1335,7 @@ ptls_cipher_suite_t ptls_openssl_aes128gcmsha256 = {PTLS_CIPHER_SUITE_AES_128_GC
                                                     &ptls_openssl_sha256};
 ptls_cipher_suite_t ptls_openssl_aes256gcmsha384 = {PTLS_CIPHER_SUITE_AES_256_GCM_SHA384, &ptls_openssl_aes256gcm,
                                                     &ptls_openssl_sha384};
-#if defined(PTLS_OPENSSL_HAVE_CHACHA20_POLY1305)
+#if PTLS_OPENSSL_HAVE_CHACHA20_POLY1305
 ptls_cipher_algorithm_t ptls_openssl_chacha20 = {"CHACHA20", PTLS_CHACHA20_KEY_SIZE, PTLS_CHACHA20_IV_SIZE,
                                                  sizeof(struct cipher_context_t), chacha20_setup_crypto};
 ptls_aead_algorithm_t ptls_openssl_chacha20poly1305 = {"CHACHA20-POLY1305",
@@ -1349,7 +1349,7 @@ ptls_cipher_suite_t ptls_openssl_chacha20poly1305sha256 = {PTLS_CIPHER_SUITE_CHA
                                                            &ptls_openssl_chacha20poly1305, &ptls_openssl_sha256};
 #endif
 ptls_cipher_suite_t *ptls_openssl_cipher_suites[] = {&ptls_openssl_aes256gcmsha384, &ptls_openssl_aes128gcmsha256,
-#if defined(PTLS_OPENSSL_HAVE_CHACHA20_POLY1305)
+#if PTLS_OPENSSL_HAVE_CHACHA20_POLY1305
                                                      &ptls_openssl_chacha20poly1305sha256,
 #endif
                                                      NULL};
