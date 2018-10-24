@@ -344,6 +344,27 @@ typedef const struct st_ptls_cipher_suite_t {
     } ptls_##name##_t
 
 /**
+ * arguments passsed to the on_client_hello callback
+ */
+typedef struct st_ptls_on_client_hello_parameters_t {
+    /**
+     * SNI value received from the client. The value is {NULL, 0} if the extension was absent.
+     */
+    ptls_iovec_t server_name;
+    /**
+     *
+     */
+    struct {
+        ptls_iovec_t *list;
+        size_t count;
+    } negotiated_protocols;
+    struct {
+        const uint16_t *list;
+        size_t count;
+    } signature_algorithms;
+} ptls_on_client_hello_parameters_t;
+
+/**
  * returns current time in milliseconds (ptls_get_time can be used to return the physical time)
  */
 PTLS_CALLBACK_TYPE0(uint64_t, get_time);
@@ -351,8 +372,7 @@ PTLS_CALLBACK_TYPE0(uint64_t, get_time);
  * after receiving ClientHello, the core calls the optional callback to give a chance to the swap the context depending on the input
  * values. The callback is required to call `ptls_set_server_name` if an SNI extension needs to be sent to the client.
  */
-PTLS_CALLBACK_TYPE(int, on_client_hello, ptls_t *tls, ptls_iovec_t server_name, const ptls_iovec_t *negotiated_protocols,
-                   size_t num_negotiated_protocols, const uint16_t *signature_algorithms, size_t num_signature_algorithms);
+PTLS_CALLBACK_TYPE(int, on_client_hello, ptls_t *tls, ptls_on_client_hello_parameters_t *params);
 /**
  * when generating Certificate, the core calls the callback to obtain the OCSP response for stapling.
  */

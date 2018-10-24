@@ -2860,10 +2860,12 @@ static int server_handle_hello(ptls_t *tls, struct st_ptls_message_emitter_t *em
     /* handle client_random and SNI */
     if (!is_second_flight) {
         memcpy(tls->client_random, ch.random_bytes, sizeof(tls->client_random));
-        if (tls->ctx->on_client_hello != NULL &&
-            (ret = tls->ctx->on_client_hello->cb(tls->ctx->on_client_hello, tls, ch.server_name, ch.alpn.list, ch.alpn.count,
-                                                 ch.signature_algorithms.list, ch.signature_algorithms.count)) != 0)
-            goto Exit;
+        if (tls->ctx->on_client_hello != NULL) {
+            ptls_on_client_hello_parameters_t params = {
+                ch.server_name, {ch.alpn.list, ch.alpn.count}, {ch.signature_algorithms.list, ch.signature_algorithms.count}};
+            if ((ret = tls->ctx->on_client_hello->cb(tls->ctx->on_client_hello, tls, &params)) != 0)
+                goto Exit;
+        }
     } else {
         if (ch.psk.early_data_indication) {
             ret = PTLS_ALERT_DECODE_ERROR;
