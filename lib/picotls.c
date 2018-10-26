@@ -2869,6 +2869,8 @@ static int server_handle_hello(ptls_t *tls, struct st_ptls_message_emitter_t *em
             ret = PTLS_ALERT_DECODE_ERROR;
             goto Exit;
         }
+        /* the following check is necessary so that we would be able to track the connection in SSLKEYLOGFILE, even though it might
+         * not be for the safety of the protocol */
         if (!ptls_mem_equal(tls->client_random, ch.random_bytes, sizeof(tls->client_random))) {
             ret = PTLS_ALERT_HANDSHAKE_FAILURE;
             goto Exit;
