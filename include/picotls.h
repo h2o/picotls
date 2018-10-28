@@ -115,6 +115,7 @@ extern "C" {
 #define PTLS_ERROR_SESSION_NOT_FOUND (PTLS_ERROR_CLASS_INTERNAL + 5)
 #define PTLS_ERROR_STATELESS_RETRY (PTLS_ERROR_CLASS_INTERNAL + 6)
 #define PTLS_ERROR_NOT_AVAILABLE (PTLS_ERROR_CLASS_INTERNAL + 7)
+#define PTLS_ERROR_COMPRESSION_FAILURE (PTLS_ERROR_CLASS_INTERNAL + 8)
 
 #define PTLS_ERROR_INCORRECT_BASE64 (PTLS_ERROR_CLASS_INTERNAL + 50)
 #define PTLS_ERROR_PEM_LABEL_NOT_FOUND (PTLS_ERROR_CLASS_INTERNAL + 51)
@@ -131,6 +132,19 @@ extern "C" {
 #define PTLS_ERROR_INCORRECT_PEM_ECDSA_CURVE (PTLS_ERROR_CLASS_INTERNAL + 62)
 #define PTLS_ERROR_INCORRECT_PEM_ECDSA_KEYSIZE (PTLS_ERROR_CLASS_INTERNAL + 63)
 #define PTLS_ERROR_INCORRECT_ASN1_ECDSA_KEY_SYNTAX (PTLS_ERROR_CLASS_INTERNAL + 64)
+
+#define PTLS_HANDSHAKE_TYPE_CLIENT_HELLO 1
+#define PTLS_HANDSHAKE_TYPE_SERVER_HELLO 2
+#define PTLS_HANDSHAKE_TYPE_NEW_SESSION_TICKET 4
+#define PTLS_HANDSHAKE_TYPE_END_OF_EARLY_DATA 5
+#define PTLS_HANDSHAKE_TYPE_ENCRYPTED_EXTENSIONS 8
+#define PTLS_HANDSHAKE_TYPE_CERTIFICATE 11
+#define PTLS_HANDSHAKE_TYPE_CERTIFICATE_REQUEST 13
+#define PTLS_HANDSHAKE_TYPE_CERTIFICATE_VERIFY 15
+#define PTLS_HANDSHAKE_TYPE_FINISHED 20
+#define PTLS_HANDSHAKE_TYPE_KEY_UPDATE 24
+#define PTLS_HANDSHAKE_TYPE_COMPRESSED_CERTIFICATE 25
+#define PTLS_HANDSHAKE_TYPE_MESSAGE_HASH 254
 
 #define PTLS_ZERO_DIGEST_SHA256                                                                                                    \
     {                                                                                                                              \
@@ -362,6 +376,10 @@ typedef struct st_ptls_on_client_hello_parameters_t {
         const uint16_t *list;
         size_t count;
     } signature_algorithms;
+    struct {
+        const uint16_t *list;
+        size_t count;
+    } certificate_compression_algorithms;
 } ptls_on_client_hello_parameters_t;
 
 /**
@@ -374,9 +392,9 @@ PTLS_CALLBACK_TYPE0(uint64_t, get_time);
  */
 PTLS_CALLBACK_TYPE(int, on_client_hello, ptls_t *tls, ptls_on_client_hello_parameters_t *params);
 /**
- * when generating Certificate, the core calls the callback to obtain the OCSP response for stapling.
+ * callback to generate the certificate message. `ptls_context::certificates` are set when the callback is set to NULL.
  */
-PTLS_CALLBACK_TYPE(int, staple_ocsp, ptls_t *tls, ptls_buffer_t *output, size_t cert_index);
+PTLS_CALLBACK_TYPE(int, emit_certificate, ptls_t *tls, ptls_iovec_t context, uint8_t *out_type, ptls_buffer_t *outbuf);
 /**
  * when gerenating CertificateVerify, the core calls the callback to sign the handshake context using the certificate.
  */
@@ -413,6 +431,20 @@ PTLS_CALLBACK_TYPE(void, update_open_count, ssize_t delta);
  * The cipher-suite that is being associated to the connection can be obtained by calling the ptls_get_cipher function.
  */
 PTLS_CALLBACK_TYPE(int, update_traffic_key, ptls_t *tls, int is_enc, size_t epoch, const void *secret);
+/**
+ *
+ */
+typedef struct st_ptls_decompress_certificate_t {
+    /**
+     * list of supported algorithms terminated by UINT16_MAX
+     */
+    const uint16_t *supported_algorithms;
+    /**
+     * callback that decompresses the message
+     */
+    int (*cb)(struct st_ptls_decompress_certificate_t *self, ptls_t *tls, uint16_t algorithm, ptls_iovec_t output,
+              ptls_iovec_t input);
+} ptls_decompress_certificate_t;
 
 /**
  * the configuration
@@ -448,7 +480,7 @@ struct st_ptls_context_t {
     /**
      *
      */
-    ptls_staple_ocsp_t *staple_ocsp;
+    ptls_emit_certificate_t *emit_certificate;
     /**
      *
      */
@@ -510,6 +542,10 @@ struct st_ptls_context_t {
      *
      */
     ptls_update_traffic_key_t *update_traffic_key;
+    /**
+     *
+     */
+    ptls_decompress_certificate_t *decompress_certificate;
 };
 
 typedef struct st_ptls_raw_extension_t {
@@ -652,6 +688,12 @@ int ptls_buffer_push_asn1_ubigint(ptls_buffer_t *buf, const void *bignum, size_t
         ptls_buffer_push(buf, (uint8_t)(_v >> 8), (uint8_t)_v);                                                                    \
     } while (0)
 
+#define ptls_buffer_push24(buf, v)                                                                                                 \
+    do {                                                                                                                           \
+        uint32_t _v = (v);                                                                                                         \
+        ptls_buffer_push(buf, (uint8_t)(_v >> 16), (uint8_t)(_v >> 8), (uint8_t)_v);                                               \
+    } while (0)
+
 #define ptls_buffer_push32(buf, v)                                                                                                 \
     do {                                                                                                                           \
         uint32_t _v = (v);                                                                                                         \
@@ -701,6 +743,7 @@ int ptls_buffer_push_asn1_ubigint(ptls_buffer_t *buf, const void *bignum, size_t
     } while (0)
 
 int ptls_decode16(uint16_t *value, const uint8_t **src, const uint8_t *end);
+int ptls_decode24(uint32_t *value, const uint8_t **src, const uint8_t *end);
 int ptls_decode32(uint32_t *value, const uint8_t **src, const uint8_t *end);
 int ptls_decode64(uint64_t *value, const uint8_t **src, const uint8_t *end);
 
@@ -839,6 +882,11 @@ int ptls_send_alert(ptls_t *tls, ptls_buffer_t *sendbuf, uint8_t level, uint8_t 
  *
  */
 int ptls_export_secret(ptls_t *tls, void *output, size_t outlen, const char *label, ptls_iovec_t context_value, int is_early);
+/**
+ * build the body of a Certificate message. Can be called with tls set to NULL in order to create a precompressed message.
+ */
+int ptls_build_certificate_message(ptls_buffer_t *buf, ptls_iovec_t request_context, ptls_iovec_t *certificates,
+                                   size_t num_certificates, ptls_iovec_t ocsp_status);
 /**
  *
  */
