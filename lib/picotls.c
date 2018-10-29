@@ -2009,12 +2009,20 @@ Exit:
     return ret;
 }
 
-static int default_emit_certificate_cb(ptls_emit_certificate_t *_self, ptls_t *tls, ptls_iovec_t context, uint8_t *type,
-                                       ptls_buffer_t *outbuf)
+static int default_emit_certificate_cb(ptls_emit_certificate_t *_self, ptls_t *tls, ptls_message_emitter_t *emitter,
+                                       ptls_key_schedule_t *key_sched, ptls_iovec_t context)
 {
-    *type = PTLS_HANDSHAKE_TYPE_CERTIFICATE;
-    return ptls_build_certificate_message(outbuf, context, tls->ctx->certificates.list, tls->ctx->certificates.count,
-                                          ptls_iovec_init(NULL, 0));
+    int ret;
+
+    ptls_push_message(emitter, key_sched, PTLS_HANDSHAKE_TYPE_CERTIFICATE, {
+        if ((ret = ptls_build_certificate_message(emitter->buf, context, tls->ctx->certificates.list, tls->ctx->certificates.count,
+                                                  ptls_iovec_init(NULL, 0))) != 0)
+            goto Exit;
+    });
+
+    ret = 0;
+Exit:
+    return ret;
 }
 
 static int send_certificate_and_certificate_verify(ptls_t *tls, ptls_message_emitter_t *emitter,
@@ -2032,14 +2040,8 @@ static int send_certificate_and_certificate_verify(ptls_t *tls, ptls_message_emi
     }
 
     /* send Certificate (or the equivalent) */
-    ptls_push_message(emitter, tls->key_schedule, PTLS_HANDSHAKE_TYPE_CERTIFICATE, {
-        /* emit a custom message by filling in the bytes and then overwriting the message type */
-        size_t start_at = emitter->buf->off;
-        uint8_t type;
-        if ((ret = emit_certificate->cb(emit_certificate, tls, context, &type, emitter->buf)) != 0)
-            goto Exit;
-        emitter->buf->base[start_at - 4] = type;
-    });
+    if ((ret = emit_certificate->cb(emit_certificate, tls, emitter, tls->key_schedule, context)) != 0)
+        goto Exit;
 
     /* build and send CertificateVerify */
     if (tls->ctx->sign_certificate != NULL) {

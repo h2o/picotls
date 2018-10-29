@@ -405,7 +405,8 @@ PTLS_CALLBACK_TYPE(int, on_client_hello, ptls_t *tls, ptls_on_client_hello_param
 /**
  * callback to generate the certificate message. `ptls_context::certificates` are set when the callback is set to NULL.
  */
-PTLS_CALLBACK_TYPE(int, emit_certificate, ptls_t *tls, ptls_iovec_t context, uint8_t *out_type, ptls_buffer_t *outbuf);
+PTLS_CALLBACK_TYPE(int, emit_certificate, ptls_t *tls, ptls_message_emitter_t *emitter, ptls_key_schedule_t *key_sched,
+                   ptls_iovec_t context);
 /**
  * when gerenating CertificateVerify, the core calls the callback to sign the handshake context using the certificate.
  */

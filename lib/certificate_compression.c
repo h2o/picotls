@@ -47,19 +47,19 @@ static const uint16_t algorithms[] = {PTLS_CERTIFICATE_COMPRESSION_ALGORITHM_BRO
 
 ptls_decompress_certificate_t ptls_decompress_certificate = {algorithms, decompress_certificate};
 
-static int emit_compressed_certificate(ptls_emit_certificate_t *_self, ptls_t *tls, ptls_iovec_t context, uint8_t *out_type,
-                                       ptls_buffer_t *outbuf)
+static int emit_compressed_certificate(ptls_emit_certificate_t *_self, ptls_t *tls, ptls_message_emitter_t *emitter,
+                                       ptls_key_schedule_t *key_sched, ptls_iovec_t context)
 {
     ptls_emit_compressed_certificate_t *self = (void *)_self;
     int ret;
 
     assert(context.len == 0 || !"precompressed mode can only be used for server certificates");
 
-    *out_type = PTLS_HANDSHAKE_TYPE_COMPRESSED_CERTIFICATE;
-
-    ptls_buffer_push16(outbuf, self->algo);
-    ptls_buffer_push24(outbuf, self->uncompressed_length);
-    ptls_buffer_push_block(outbuf, 3, { ptls_buffer_pushv(outbuf, self->buf.base, self->buf.len); });
+    ptls_push_message(emitter, key_sched, PTLS_HANDSHAKE_TYPE_COMPRESSED_CERTIFICATE, {
+        ptls_buffer_push16(emitter->buf, self->algo);
+        ptls_buffer_push24(emitter->buf, self->uncompressed_length);
+        ptls_buffer_push_block(emitter->buf, 3, { ptls_buffer_pushv(emitter->buf, self->buf.base, self->buf.len); });
+    });
 
     ret = 0;
 
