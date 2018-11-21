@@ -19,7 +19,6 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
-#include <arpa/inet.h>
 #include <assert.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -28,6 +27,7 @@
 #ifdef _WINDOWS
 #include "wincompat.h"
 #else
+#include <arpa/inet.h>
 #include <sys/time.h>
 #endif
 #include "picotls.h"
@@ -653,8 +653,8 @@ static int commit_record_message(ptls_message_emitter_t *_self)
         /* TODO allow CH,SH,HRR above 16KB */
         size_t sz = self->super.buf->off - self->rec_start - 5;
         assert(sz <= PTLS_MAX_PLAINTEXT_RECORD_SIZE);
-        self->super.buf->base[self->rec_start + 3] = sz >> 8;
-        self->super.buf->base[self->rec_start + 4] = sz;
+        self->super.buf->base[self->rec_start + 3] = (uint8_t)(sz >> 8);
+        self->super.buf->base[self->rec_start + 4] = (uint8_t)(sz);
         ret = 0;
     }
 
@@ -3865,7 +3865,7 @@ NextRecord:
     return ret;
 
 ServerSkipEarlyData:
-    tls->server.early_data_skipped_bytes += rec.length;
+    tls->server.early_data_skipped_bytes += (uint32_t)rec.length;
     if (tls->server.early_data_skipped_bytes > PTLS_MAX_EARLY_DATA_SKIP_SIZE)
         return PTLS_ALERT_HANDSHAKE_FAILURE;
     ret = PTLS_ERROR_IN_PROGRESS;
