@@ -875,6 +875,10 @@ int ptls_handshake_is_complete(ptls_t *tls);
  */
 int ptls_is_psk_handshake(ptls_t *tls);
 /**
+ * returns if the server is skipping early data. Only valid on the client.
+ */
+int ptls_is_early_data_skipped(ptls_t *tls);
+/**
  * returns a pointer to user data pointer (client is reponsible for freeing the associated data prior to calling ptls_free)
  */
 void **ptls_get_data_ptr(ptls_t *tls);

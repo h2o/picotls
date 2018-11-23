@@ -3575,6 +3575,12 @@ int ptls_is_psk_handshake(ptls_t *tls)
     return tls->is_psk_handshake;
 }
 
+int ptls_is_early_data_skipped(ptls_t *tls)
+{
+    return tls->client.early_data_skipped;
+}
+
+
 void **ptls_get_data_ptr(ptls_t *tls)
 {
     return &tls->data_ptr;
