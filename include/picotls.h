@@ -588,11 +588,14 @@ typedef struct st_ptls_handshake_properties_t {
              */
             ptls_iovec_t session_ticket;
             /**
-             * pointer to store the maximum size of early-data that can be sent immediately (if NULL, early data is not used)
+             * pointer to store the maximum size of early-data that can be sent immediately. If set to non-NULL, the first call to
+             * ptls_handshake (or ptls_handle_message) will set `*max_early_data` to the value obtained from the session ticket, or
+             * to zero if early-data cannot be sent. If NULL, early data will not be used.
              */
             size_t *max_early_data_size;
             /**
-             *
+             * if early-data has been accepted by peer. For clients using `update_traffic_key` callback, the flag is set when the
+             * callback is called with (is_enc, epoch) set to (1, 2).
              */
             unsigned early_data_accepted_by_peer : 1;
             /**
