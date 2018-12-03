@@ -1086,7 +1086,7 @@ static int setup_traffic_protection(ptls_t *tls, int is_enc, const char *secret_
     if (ctx->aead != NULL)
         ptls_aead_free(ctx->aead);
     if ((ctx->aead = ptls_aead_new(tls->cipher_suite->aead, tls->cipher_suite->hash, is_enc, ctx->secret,
-                                   tls->ctx->hkdf_label_prefix)) == NULL)
+                                   tls->ctx->hkdf_label_prefix__obsolete)) == NULL)
         return PTLS_ERROR_NO_MEMORY; /* TODO obtain error from ptls_aead_new */
     ctx->seq = 0;
 
@@ -1441,7 +1441,7 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
         tls->key_share = tls->ctx->key_exchanges[0];
 
     if (!is_second_flight) {
-        tls->key_schedule = key_schedule_new(tls->cipher_suite, tls->ctx->cipher_suites, tls->ctx->hkdf_label_prefix);
+        tls->key_schedule = key_schedule_new(tls->cipher_suite, tls->ctx->cipher_suites, tls->ctx->hkdf_label_prefix__obsolete);
         if ((ret = key_schedule_extract(tls->key_schedule, resumption_secret)) != 0)
             goto Exit;
     }
@@ -2966,7 +2966,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
             goto Exit;
         if (!is_second_flight) {
             tls->cipher_suite = cs;
-            tls->key_schedule = key_schedule_new(cs, NULL, tls->ctx->hkdf_label_prefix);
+            tls->key_schedule = key_schedule_new(cs, NULL, tls->ctx->hkdf_label_prefix__obsolete);
         } else {
             if (tls->cipher_suite != cs) {
                 ret = PTLS_ALERT_HANDSHAKE_FAILURE;

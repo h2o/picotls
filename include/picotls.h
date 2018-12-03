@@ -513,9 +513,10 @@ struct st_ptls_context_t {
      */
     uint32_t max_early_data_size;
     /**
-     * the label prefix used in hkdf-expand-label (if NULL, uses "tls13 ")
+     * the field is obsolete; should be set to NULL for QUIC draft-17.  Note also that even though everybody did, it was incorrect
+     * to set the value to "quic " in the earlier versions of the draft.
      */
-    const char *hkdf_label_prefix;
+    const char *hkdf_label_prefix__obsolete;
     /**
      * if set, psk handshakes use (ec)dhe
      */
