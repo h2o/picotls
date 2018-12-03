@@ -77,8 +77,6 @@
 
 #define PTLS_EARLY_DATA_MAX_DELAY 10000 /* max. RTT (in msec) to permit early data */
 
-#define PTLS_HKDF_EXPAND_LABEL_PREFIX "tls13 "
-
 #ifndef PTLS_MAX_EARLY_DATA_SKIP_SIZE
 #define PTLS_MAX_EARLY_DATA_SKIP_SIZE 65536
 #endif

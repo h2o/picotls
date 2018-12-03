@@ -83,6 +83,9 @@ extern "C" {
 #define PTLS_ALERT_TO_PEER_ERROR(e) ((e) + PTLS_ERROR_CLASS_PEER_ALERT)
 #define PTLS_ERROR_TO_ALERT(e) ((e)&0xff)
 
+/* the HKDF prefix */
+#define PTLS_HKDF_EXPAND_LABEL_PREFIX "tls13 "
+
 /* alerts */
 #define PTLS_ALERT_LEVEL_WARNING 1
 #define PTLS_ALERT_LEVEL_FATAL 2
