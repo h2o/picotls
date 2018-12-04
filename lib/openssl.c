@@ -1219,8 +1219,10 @@ int ptls_openssl_encrypt_ticket(ptls_buffer_t *buf, ptls_iovec_t src,
     ret = 0;
 
 Exit:
-    if (cctx != NULL)
-        EVP_CIPHER_CTX_cleanup(cctx);
+    if (cctx != NULL) {
+        int ret = EVP_CIPHER_CTX_cleanup(cctx);
+        assert(ret);
+    }
     if (hctx != NULL)
         HMAC_CTX_free(hctx);
     return ret;
@@ -1289,8 +1291,10 @@ int ptls_openssl_decrypt_ticket(ptls_buffer_t *buf, ptls_iovec_t src,
     ret = 0;
 
 Exit:
-    if (cctx != NULL)
-        EVP_CIPHER_CTX_cleanup(cctx);
+    if (cctx != NULL) {
+        int ret = EVP_CIPHER_CTX_cleanup(cctx);
+        assert(ret);
+    }
     if (hctx != NULL)
         HMAC_CTX_free(hctx);
     return ret;
