@@ -79,7 +79,8 @@ static void HMAC_CTX_free(HMAC_CTX *ctx)
 
 void ptls_openssl_random_bytes(void *buf, size_t len)
 {
-    RAND_bytes(buf, (int)len);
+    int ret = RAND_bytes(buf, (int)len);
+    assert(ret);
 }
 
 static EC_KEY *ecdh_gerenate_key(EC_GROUP *group)
