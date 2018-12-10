@@ -1695,8 +1695,8 @@ static int emit_esni_extension(ptls_buffer_t *buf, ptls_iovec_t esni_keys, ptls_
         if ((ret = emit_server_name_extension(buf, server_name)) != 0)
             goto Exit;
         /* pad */
-        if (buf->off - start_off < padded_length) {
-            size_t bytes_to_pad = padded_length - (buf->off - start_off);
+        if (buf->off - start_off < padded_length + PTLS_ESNI_NONCE_SIZE) {
+            size_t bytes_to_pad = padded_length + PTLS_ESNI_NONCE_SIZE - (buf->off - start_off);
             if ((ret = ptls_buffer_reserve(buf, bytes_to_pad)) != 0)
                 goto Exit;
             memset(buf->base + buf->off, 0, bytes_to_pad);
@@ -2820,18 +2820,18 @@ static int client_hello_decrypt_esni(ptls_context_t *ctx, ptls_iovec_t *server_n
         goto Exit;
 
     /* decrypt */
-    if (ch->esni.encrypted_sni.len - ch->esni.cipher->aead->tag_size != (*esni)->padded_length) {
+    if (ch->esni.encrypted_sni.len - ch->esni.cipher->aead->tag_size != (*esni)->padded_length + PTLS_ESNI_NONCE_SIZE) {
         ret = PTLS_ALERT_ILLEGAL_PARAMETER;
         goto Exit;
     }
-    if ((decrypted = malloc((*esni)->padded_length)) == NULL) {
+    if ((decrypted = malloc((*esni)->padded_length + PTLS_ESNI_NONCE_SIZE)) == NULL) {
         ret = PTLS_ERROR_NO_MEMORY;
         goto Exit;
     }
     if ((ret = create_esni_aead(&aead, 0, ch->esni.cipher, secret, ptls_iovec_init(esni_contents.base, esni_contents.off))) != 0)
         goto Exit;
     if (ptls_aead_decrypt(aead, decrypted, ch->esni.encrypted_sni.base, ch->esni.encrypted_sni.len, 0, ch->key_shares.base,
-                          ch->key_shares.len) != (*esni)->padded_length) {
+                          ch->key_shares.len) != (*esni)->padded_length + PTLS_ESNI_NONCE_SIZE) {
         ret = PTLS_ALERT_DECRYPT_ERROR;
         goto Exit;
     }
