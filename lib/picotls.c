@@ -39,6 +39,7 @@
 #define PTLS_RECORD_VERSION_MINOR 3
 
 #define PTLS_HELLO_RANDOM_SIZE 32
+#define PTLS_ESNI_NONCE_SIZE 16
 
 #define PTLS_CONTENT_TYPE_CHANGE_CIPHER_SPEC 20
 #define PTLS_CONTENT_TYPE_ALERT 21
@@ -83,7 +84,6 @@
 #ifndef PTLS_MAX_EARLY_DATA_SKIP_SIZE
 #define PTLS_MAX_EARLY_DATA_SKIP_SIZE 65536
 #endif
-
 #if defined(PTLS_DEBUG) && PTLS_DEBUG
 #define PTLS_DEBUGF(...) fprintf(stderr, __VA_ARGS__)
 #else
@@ -220,6 +220,7 @@ struct st_ptls_t {
         struct {
             uint8_t legacy_session_id[32];
             ptls_key_exchange_context_t *key_share_ctx;
+            uint8_t *esni_nonce;
             unsigned offered_psk : 1;
             unsigned early_data_skipped : 1;
             struct st_ptls_certificate_request_t certificate_request;
@@ -279,6 +280,7 @@ struct st_ptls_client_hello_t {
     struct {
         ptls_cipher_suite_t *cipher; /* selected cipher-suite, or NULL if esni extension is not used */
         const uint8_t *record_digest;
+        uint8_t nonce[PTLS_ESNI_NONCE_SIZE];
         ptls_iovec_t encrypted_sni;
     } esni;
     struct {
@@ -1617,7 +1619,7 @@ Exit:
 
 static int emit_esni_extension(ptls_buffer_t *buf, ptls_iovec_t esni_keys, ptls_key_exchange_context_t *key_share_ctx,
                                ptls_iovec_t peer_key, ptls_cipher_suite_t *cipher, uint16_t padded_length, const char *server_name,
-                               const uint8_t *client_random)
+                               const uint8_t *client_random, const uint8_t *esni_nonce)
 {
     ptls_aead_context_t *aead;
     int ret;
@@ -1637,6 +1639,8 @@ static int emit_esni_extension(ptls_buffer_t *buf, ptls_iovec_t esni_keys, ptls_
     });
     ptls_buffer_push_block(buf, 2, {
         size_t start_off = buf->off;
+        /* nonce */
+        ptls_buffer_pushv(buf, esni_nonce, PTLS_ESNI_NONCE_SIZE);
         /* emit server-name extension */
         if ((ret = emit_server_name_extension(buf, server_name)) != 0)
             goto Exit;
@@ -1748,10 +1752,17 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
                 if (esni_peer_key.base != NULL) {
                     assert(tls->key_share != NULL);
                     assert(tls->client.key_share_ctx != NULL);
+                    if (!is_second_flight) {
+                        if ((tls->client.esni_nonce = malloc(PTLS_ESNI_NONCE_SIZE)) == NULL) {
+                            ret = PTLS_ERROR_NO_MEMORY;
+                            goto Exit;
+                        }
+                        tls->ctx->random_bytes(tls->client.esni_nonce, PTLS_ESNI_NONCE_SIZE);
+                    }
                     buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_ENCRYPTED_SERVER_NAME, {
                         if ((ret = emit_esni_extension(sendbuf, properties->client.esni_keys, tls->client.key_share_ctx,
                                                        esni_peer_key, tls->cipher_suite, esni_padded_length, tls->server_name,
-                                                       tls->client_random)) != 0)
+                                                       tls->client_random, tls->client.esni_nonce)) != 0)
                             goto Exit;
                     });
                 } else {
@@ -2128,7 +2139,7 @@ static int report_unknown_extensions(ptls_t *tls, ptls_handshake_properties_t *p
 
 static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message, ptls_handshake_properties_t *properties)
 {
-    const uint8_t *src = message.base + PTLS_HANDSHAKE_HEADER_SIZE, *const end = message.base + message.len;
+    const uint8_t *src = message.base + PTLS_HANDSHAKE_HEADER_SIZE, *const end = message.base + message.len, *esni = NULL;
     uint16_t type;
     ptls_raw_extension_t unknown_extensions[MAX_UNKNOWN_EXTENSIONS + 1];
     int ret, skip_early_data = 1;
@@ -2146,6 +2157,13 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
                 ret = PTLS_ALERT_ILLEGAL_PARAMETER;
                 goto Exit;
             }
+            break;
+        case PTLS_EXTENSION_TYPE_ENCRYPTED_SERVER_NAME:
+            if (end - src != PTLS_ESNI_NONCE_SIZE) {
+                ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+                goto Exit;
+            }
+            esni = src;
             break;
         case PTLS_EXTENSION_TYPE_ALPN:
             ptls_decode_block(src, end, 2, {
@@ -2173,6 +2191,18 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
         }
         src = end;
     });
+
+    if (tls->client.esni_nonce != NULL) {
+        if (esni == NULL || !ptls_mem_equal(esni, tls->client.esni_nonce, PTLS_ESNI_NONCE_SIZE)) {
+            ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+            goto Exit;
+        }
+    } else {
+        if (esni != NULL) {
+            ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+            goto Exit;
+        }
+    }
 
     if (tls->early_data != NULL) {
         tls->client.early_data_skipped = skip_early_data;
@@ -2676,7 +2706,7 @@ static int client_hello_decode_esni(ptls_context_t *ctx, ptls_key_exchange_algor
 {
     ptls_esni_t **esni;
     ptls_key_exchange_context_t **key_share;
-    uint8_t *padded_server_name_list = NULL;
+    uint8_t *decrypted = NULL;
     ptls_aead_context_t *aead = NULL;
     int ret;
 
@@ -2717,13 +2747,13 @@ static int client_hello_decode_esni(ptls_context_t *ctx, ptls_key_exchange_algor
         ret = PTLS_ALERT_ILLEGAL_PARAMETER;
         goto Exit;
     }
-    if ((padded_server_name_list = malloc((*esni)->padded_length)) == NULL) {
+    if ((decrypted = malloc((*esni)->padded_length)) == NULL) {
         ret = PTLS_ERROR_NO_MEMORY;
         goto Exit;
     }
     if ((ret = create_esni_aead(&aead, 0, *key_share, *selected_peer_key, ch->esni.cipher, ch->random_bytes)) != 0)
         goto Exit;
-    if (ptls_aead_decrypt(aead, padded_server_name_list, ch->esni.encrypted_sni.base, ch->esni.encrypted_sni.len, 0, "", 0) !=
+    if (ptls_aead_decrypt(aead, decrypted, ch->esni.encrypted_sni.base, ch->esni.encrypted_sni.len, 0, "", 0) !=
         (*esni)->padded_length) {
         ret = PTLS_ALERT_DECRYPT_ERROR;
         goto Exit;
@@ -2732,8 +2762,14 @@ static int client_hello_decode_esni(ptls_context_t *ctx, ptls_key_exchange_algor
     aead = NULL;
 
     { /* decode sni */
-        const uint8_t *src = padded_server_name_list, *const end = src + (*esni)->padded_length;
+        const uint8_t *src = decrypted, *const end = src + (*esni)->padded_length;
         ptls_iovec_t found_name;
+        if (end - src < PTLS_ESNI_NONCE_SIZE) {
+            ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+            goto Exit;
+        }
+        memcpy(ch->esni.nonce, src, PTLS_ESNI_NONCE_SIZE);
+        src += PTLS_ESNI_NONCE_SIZE;
         if ((ret = client_hello_decode_server_name(&found_name, &src, end)) != 0)
             goto Exit;
         for (; src != end; ++src) {
@@ -2743,15 +2779,15 @@ static int client_hello_decode_esni(ptls_context_t *ctx, ptls_key_exchange_algor
             }
         }
         /* if successful, reuse memory allocated for padded_server_name for storing the found name (freed by the caller) */
-        memmove(padded_server_name_list, found_name.base, found_name.len);
-        *server_name = ptls_iovec_init(padded_server_name_list, found_name.len);
-        padded_server_name_list = NULL;
+        memmove(decrypted, found_name.base, found_name.len);
+        *server_name = ptls_iovec_init(decrypted, found_name.len);
+        decrypted = NULL;
     }
 
     ret = 0;
 Exit:
-    if (padded_server_name_list != NULL)
-        free(padded_server_name_list);
+    if (decrypted != NULL)
+        free(decrypted);
     if (aead != NULL)
         ptls_aead_free(aead);
     return ret;
@@ -3543,9 +3579,15 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
     ptls_push_message(emitter, tls->key_schedule, PTLS_HANDSHAKE_TYPE_ENCRYPTED_EXTENSIONS, {
         ptls_buffer_t *sendbuf = emitter->buf;
         ptls_buffer_push_block(sendbuf, 2, {
-            if (tls->server_name != NULL && ch.esni.cipher == NULL) {
-                /* In this event, the server SHALL include an extension of type "server_name" in the (extended) server
-                 * hello. The "extension_data" field of this extension SHALL be empty. (RFC 6066 section 3) */
+            if (ch.esni.cipher != NULL) {
+                /* the extension is sent even if the application does not handle server name, because otherwise the handshake would
+                 * fail (FIXME ch.esni.nonce will be zero on HRR) */
+                buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_ENCRYPTED_SERVER_NAME, {
+                    ptls_buffer_pushv(sendbuf, ch.esni.nonce, PTLS_ESNI_NONCE_SIZE);
+                });
+            } else if (tls->server_name != NULL) {
+                /* In this event, the server SHALL include an extension of type "server_name" in the (extended) server hello. The
+                 * "extension_data" field of this extension SHALL be empty. (RFC 6066 section 3) */
                 buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SERVER_NAME, {});
             }
             if (tls->negotiated_protocol != NULL) {
@@ -3839,6 +3881,8 @@ void ptls_free(ptls_t *tls)
     } else {
         if (tls->client.key_share_ctx != NULL)
             tls->client.key_share_ctx->on_exchange(&tls->client.key_share_ctx, 1, NULL, ptls_iovec_init(NULL, 0));
+        if (tls->client.esni_nonce != NULL)
+            free(tls->client.esni_nonce);
         if (tls->client.certificate_request.context.base != NULL)
             free(tls->client.certificate_request.context.base);
     }
