@@ -26,6 +26,7 @@
 #include <unistd.h>
 #endif
 #include <assert.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <openssl/bn.h>
@@ -79,7 +80,11 @@ static void HMAC_CTX_free(HMAC_CTX *ctx)
 
 void ptls_openssl_random_bytes(void *buf, size_t len)
 {
-    RAND_bytes(buf, (int)len);
+    int ret = RAND_bytes(buf, (int)len);
+    if (ret != 1) {
+        fprintf(stderr, "RAND_bytes() failed with code: %d\n", ret);
+        abort();
+    }
 }
 
 static EC_KEY *ecdh_gerenate_key(EC_GROUP *group)
@@ -1119,6 +1124,13 @@ Exit:
     return ret;
 }
 
+static void cleanup_cipher_ctx(EVP_CIPHER_CTX *ctx) {
+    if (!EVP_CIPHER_CTX_cleanup(ctx)) {
+        fprintf(stderr, "EVP_CIPHER_CTX_cleanup() failed\n");
+        abort();
+    }
+}
+
 int ptls_openssl_init_verify_certificate(ptls_openssl_verify_certificate_t *self, X509_STORE *store)
 {
     *self = (ptls_openssl_verify_certificate_t){{verify_cert}};
@@ -1219,7 +1231,7 @@ int ptls_openssl_encrypt_ticket(ptls_buffer_t *buf, ptls_iovec_t src,
 
 Exit:
     if (cctx != NULL)
-        EVP_CIPHER_CTX_cleanup(cctx);
+        cleanup_cipher_ctx(cctx);
     if (hctx != NULL)
         HMAC_CTX_free(hctx);
     return ret;
@@ -1289,7 +1301,7 @@ int ptls_openssl_decrypt_ticket(ptls_buffer_t *buf, ptls_iovec_t src,
 
 Exit:
     if (cctx != NULL)
-        EVP_CIPHER_CTX_cleanup(cctx);
+        cleanup_cipher_ctx(cctx);
     if (hctx != NULL)
         HMAC_CTX_free(hctx);
     return ret;
