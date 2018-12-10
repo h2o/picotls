@@ -22,6 +22,10 @@
 #ifndef picotls_openssl_h
 #define picotls_openssl_h
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <openssl/opensslv.h>
 #include <openssl/evp.h>
 #include <openssl/hmac.h>
@@ -94,5 +98,9 @@ int ptls_openssl_encrypt_ticket(ptls_buffer_t *dst, ptls_iovec_t src,
                                 int (*cb)(unsigned char *, unsigned char *, EVP_CIPHER_CTX *, HMAC_CTX *, int));
 int ptls_openssl_decrypt_ticket(ptls_buffer_t *dst, ptls_iovec_t src,
                                 int (*cb)(unsigned char *, unsigned char *, EVP_CIPHER_CTX *, HMAC_CTX *, int));
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
