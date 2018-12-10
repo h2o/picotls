@@ -422,6 +422,10 @@ typedef struct st_ptls_on_client_hello_parameters_t {
         const uint16_t *list;
         size_t count;
     } certificate_compression_algorithms;
+    /**
+     * if ESNI was used
+     */
+    uint8_t esni : 1;
 } ptls_on_client_hello_parameters_t;
 
 /**
@@ -672,10 +676,6 @@ typedef struct st_ptls_handshake_properties_t {
              * if retry should be stateless (cookie.key MUST be set when this option is used)
              */
             unsigned retry_uses_cookie : 1;
-            /**
-             * if esni was used
-             */
-            unsigned esni : 1;
         } server;
     };
     /**

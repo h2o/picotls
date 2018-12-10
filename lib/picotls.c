@@ -3432,13 +3432,12 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
         } else if (ch.server_name.base != NULL) {
             server_name = ch.server_name;
         }
-        if (properties != NULL)
-            properties->server.esni = is_esni;
         if (tls->ctx->on_client_hello != NULL) {
             ptls_on_client_hello_parameters_t params = {server_name,
                                                         {ch.alpn.list, ch.alpn.count},
                                                         {ch.signature_algorithms.list, ch.signature_algorithms.count},
-                                                        {ch.cert_compression_algos.list, ch.cert_compression_algos.count}};
+                                                        {ch.cert_compression_algos.list, ch.cert_compression_algos.count},
+                                                        is_esni};
             ret = tls->ctx->on_client_hello->cb(tls->ctx->on_client_hello, tls, &params);
         } else {
             ret = 0;
