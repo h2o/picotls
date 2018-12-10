@@ -1616,14 +1616,12 @@ Exit:
 }
 
 static int create_esni_aead(ptls_aead_context_t **aead_ctx, int is_enc, ptls_cipher_suite_t *cipher, ptls_iovec_t ecdh_secret,
-                            ptls_iovec_t esni_contents)
+                            const uint8_t *esni_contents_hash)
 {
-    uint8_t aead_secret[PTLS_MAX_DIGEST_SIZE], esni_contents_hash[PTLS_MAX_DIGEST_SIZE];
+    uint8_t aead_secret[PTLS_MAX_DIGEST_SIZE];
     int ret;
 
     if ((ret = ptls_hkdf_extract(cipher->hash, aead_secret, ptls_iovec_init(NULL, 0), ecdh_secret)) != 0)
-        goto Exit;
-    if ((ret = ptls_calc_hash(cipher->hash, esni_contents_hash, esni_contents.base, esni_contents.len)) != 0)
         goto Exit;
     if ((*aead_ctx = new_aead(cipher->aead, cipher->hash, is_enc, aead_secret,
                               ptls_iovec_init(esni_contents_hash, cipher->hash->digest_size), "tls13 esni ")) == NULL) {
@@ -1637,18 +1635,27 @@ Exit:
     return ret;
 }
 
-static int build_esni_contents(ptls_buffer_t *buf, ptls_iovec_t record_digest, uint16_t group, ptls_iovec_t pubkey,
-                               const uint8_t *client_random)
+static int build_esni_contents_hash(ptls_hash_algorithm_t *hash, uint8_t *digest, const uint8_t *record_digest, uint16_t group,
+                                    ptls_iovec_t pubkey, const uint8_t *client_random)
 {
+    ptls_buffer_t buf;
+    uint8_t smallbuf[256];
     int ret;
 
-    ptls_buffer_push_block(buf, 2, { ptls_buffer_pushv(buf, record_digest.base, record_digest.len); });
-    if ((ret = push_key_share_entry(buf, group, pubkey)) != 0)
+    /* build ESNIContents */
+    ptls_buffer_init(&buf, smallbuf, sizeof(smallbuf));
+    ptls_buffer_push_block(&buf, 2, { ptls_buffer_pushv(&buf, record_digest, hash->digest_size); });
+    if ((ret = push_key_share_entry(&buf, group, pubkey)) != 0)
         goto Exit;
-    ptls_buffer_pushv(buf, client_random, PTLS_HELLO_RANDOM_SIZE);
+    ptls_buffer_pushv(&buf, client_random, PTLS_HELLO_RANDOM_SIZE);
+
+    /* calculate digest */
+    if ((ret = ptls_calc_hash(hash, digest, buf.base, buf.off)) != 0)
+        goto Exit;
 
     ret = 0;
 Exit:
+    ptls_buffer_dispose(&buf);
     return ret;
 }
 
@@ -1657,13 +1664,10 @@ static int emit_esni_extension(ptls_buffer_t *buf, ptls_iovec_t esni_keys, ptls_
                                const uint8_t *client_random, size_t key_share_ch_off, size_t key_share_ch_len,
                                const uint8_t *esni_nonce)
 {
-    uint8_t record_digest[PTLS_MAX_DIGEST_SIZE];
-    ptls_buffer_t esni_contents;
+    uint8_t esni_contents_hash[PTLS_MAX_DIGEST_SIZE], record_digest[PTLS_MAX_DIGEST_SIZE];
     ptls_iovec_t pubkey = {NULL}, secret = {NULL};
     ptls_aead_context_t *aead = NULL;
     int ret;
-
-    ptls_buffer_init(&esni_contents, "", 0);
 
     /* calc record digest */
     if ((ret = ptls_calc_hash(cipher->hash, record_digest, esni_keys.base, esni_keys.len)) != 0)
@@ -1672,11 +1676,11 @@ static int emit_esni_extension(ptls_buffer_t *buf, ptls_iovec_t esni_keys, ptls_
     if ((ret = key_share->exchange(key_share, &pubkey, &secret, peer_key)) != 0)
         goto Exit;
     /* build ESNI_Contents */
-    if ((ret = build_esni_contents(&esni_contents, ptls_iovec_init(record_digest, cipher->hash->digest_size), key_share->id, pubkey,
-                                   client_random)) != 0)
+    if ((ret = build_esni_contents_hash(cipher->hash, esni_contents_hash, record_digest, key_share->id, pubkey, client_random)) !=
+        0)
         goto Exit;
     /* create AEAD */
-    if ((ret = create_esni_aead(&aead, 1, cipher, secret, ptls_iovec_init(esni_contents.base, esni_contents.off))) != 0)
+    if ((ret = create_esni_aead(&aead, 1, cipher, secret, esni_contents_hash)) != 0)
         goto Exit;
 
     /* cipher-suite id */
@@ -1712,7 +1716,6 @@ static int emit_esni_extension(ptls_buffer_t *buf, ptls_iovec_t esni_keys, ptls_
 
     ret = 0;
 Exit:
-    ptls_buffer_dispose(&esni_contents);
     if (pubkey.base != NULL)
         free(pubkey.base);
     if (secret.base != NULL) {
@@ -2775,13 +2778,10 @@ static int client_hello_decrypt_esni(ptls_context_t *ctx, ptls_iovec_t *server_n
 {
     ptls_esni_t **esni;
     ptls_key_exchange_context_t **key_share_ctx;
-    ptls_buffer_t esni_contents;
+    uint8_t esni_contents_hash[PTLS_MAX_DIGEST_SIZE], *decrypted = NULL;
     ptls_iovec_t secret = {NULL};
-    uint8_t *decrypted = NULL;
     ptls_aead_context_t *aead = NULL;
     int ret;
-
-    ptls_buffer_init(&esni_contents, "", 0);
 
     /* find the matching esni structure */
     for (esni = ctx->esni; *esni != NULL; ++esni) {
@@ -2811,8 +2811,8 @@ static int client_hello_decrypt_esni(ptls_context_t *ctx, ptls_iovec_t *server_n
     }
 
     /* calculate ESNIContents */
-    if ((ret = build_esni_contents(&esni_contents, ptls_iovec_init(ch->esni.record_digest, ch->esni.cipher->hash->digest_size),
-                                   ch->esni.key_share->id, ch->esni.peer_key, ch->random_bytes)) != 0)
+    if ((ret = build_esni_contents_hash(ch->esni.cipher->hash, esni_contents_hash, ch->esni.record_digest, ch->esni.key_share->id,
+                                        ch->esni.peer_key, ch->random_bytes)) != 0)
         goto Exit;
 
     /* derive the shared secret */
@@ -2828,7 +2828,7 @@ static int client_hello_decrypt_esni(ptls_context_t *ctx, ptls_iovec_t *server_n
         ret = PTLS_ERROR_NO_MEMORY;
         goto Exit;
     }
-    if ((ret = create_esni_aead(&aead, 0, ch->esni.cipher, secret, ptls_iovec_init(esni_contents.base, esni_contents.off))) != 0)
+    if ((ret = create_esni_aead(&aead, 0, ch->esni.cipher, secret, esni_contents_hash)) != 0)
         goto Exit;
     if (ptls_aead_decrypt(aead, decrypted, ch->esni.encrypted_sni.base, ch->esni.encrypted_sni.len, 0, ch->key_shares.base,
                           ch->key_shares.len) != (*esni)->padded_length + PTLS_ESNI_NONCE_SIZE) {
@@ -2863,7 +2863,6 @@ static int client_hello_decrypt_esni(ptls_context_t *ctx, ptls_iovec_t *server_n
 
     ret = 0;
 Exit:
-    ptls_buffer_dispose(&esni_contents);
     if (secret.base != NULL) {
         ptls_clear_memory(secret.base, secret.len);
         free(secret.base);
