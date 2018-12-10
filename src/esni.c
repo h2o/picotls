@@ -112,6 +112,7 @@ static int emit_esni(ptls_key_exchange_algorithm_t **key_exchanges, ptls_cipher_
         ptls_buffer_push_block(&buf, 2, {
             /* build ESNIKeys */
             size_t start = buf.off;
+            ptls_buffer_push16(&buf, PTLS_ESNI_VERSION_DRAFT02);
             ptls_buffer_push(&buf, 0, 0, 0, 0); /* checksum, filled later */
             ptls_buffer_push_block(&buf, 2, {
                 size_t i;
@@ -142,9 +143,9 @@ static int emit_esni(ptls_key_exchange_algorithm_t **key_exchanges, ptls_cipher_
             { /* fill checksum */
                 ptls_hash_context_t *h = ptls_openssl_sha256.create();
                 uint8_t d[PTLS_SHA256_DIGEST_SIZE];
-                h->update(h, buf.base + start + 4, buf.off - (start + 4));
+                h->update(h, buf.base + start, buf.off - start);
                 h->final(h, d, PTLS_HASH_FINAL_MODE_FREE);
-                memcpy(buf.base + start, d, 4);
+                memcpy(buf.base + start + 2, d, 4);
             }
         });
         /* private keys */

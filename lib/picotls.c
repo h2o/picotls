@@ -1414,7 +1414,7 @@ Exit:
     return ret;
 }
 
-static int sha256_digest(ptls_context_t *ctx, uint8_t *digest, const void *src, size_t len)
+static ptls_hash_context_t *create_sha256_context(ptls_context_t *ctx)
 {
     ptls_cipher_suite_t **cs;
 
@@ -1422,13 +1422,11 @@ static int sha256_digest(ptls_context_t *ctx, uint8_t *digest, const void *src, 
         switch ((*cs)->id) {
         case PTLS_CIPHER_SUITE_AES_128_GCM_SHA256:
         case PTLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256:
-            goto Found_Cipher;
+            return (*cs)->hash->create();
         }
     }
-    return PTLS_ERROR_LIBRARY;
 
-Found_Cipher:
-    return ptls_calc_hash((*cs)->hash, digest, src, len);
+    return NULL;
 }
 
 static int select_cipher(ptls_cipher_suite_t **selected, ptls_cipher_suite_t **candidates, const uint8_t *src,
@@ -1537,19 +1535,37 @@ static int parse_esni_keys(ptls_context_t *ctx, ptls_key_exchange_algorithm_t **
                            ptls_iovec_t input)
 {
     const uint8_t *src = input.base, *const end = input.base + input.len;
+    uint16_t version;
     uint64_t not_before, not_after, now;
     int ret = 0;
 
+    /* version */
+    if ((ret = ptls_decode16(&version, &src, end)) != 0)
+        goto Exit;
+    if (version != PTLS_ESNI_VERSION_DRAFT02) {
+        ret = PTLS_ALERT_DECODE_ERROR;
+        goto Exit;
+    }
+
     { /* verify checksum */
+        ptls_hash_context_t *hctx;
         uint8_t digest[PTLS_SHA256_DIGEST_SIZE];
         if (end - src < 4) {
             ret = PTLS_ALERT_DECODE_ERROR;
             goto Exit;
         }
-        if ((ret = sha256_digest(ctx, digest, src + 4, end - (src + 4))) != 0)
+        if ((hctx = create_sha256_context(ctx)) == NULL) {
+            ret = PTLS_ERROR_LIBRARY;
             goto Exit;
-        if (memcmp(src, digest, 4) != 0)
+        }
+        hctx->update(hctx, input.base, src - input.base);
+        hctx->update(hctx, "\0\0\0\0", 4);
+        hctx->update(hctx, src + 4, end - (src + 4));
+        hctx->final(hctx, digest, PTLS_HASH_FINAL_MODE_FREE);
+        if (memcmp(src, digest, 4) != 0) {
+            ret = PTLS_ALERT_DECODE_ERROR;
             goto Exit;
+        }
         src += 4;
     }
     /* key-shares */
@@ -4941,11 +4957,11 @@ int ptls_esni_parse(ptls_context_t *ctx, ptls_esni_t *esni, ptls_iovec_t *_esnik
     /* ESNIKeys */
     ptls_decode_open_block(src, end, 2, {
         esni_keys.base = (void *)src;
-        if (end - src < 4) {
+        if (end - src < 6) {
             ret = PTLS_ALERT_DECRYPT_ERROR;
             goto Exit;
         }
-        src += 4;
+        src += 6;
         ptls_decode_open_block(src, end, 2, {
             do {
                 uint16_t id;
