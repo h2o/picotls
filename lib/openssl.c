@@ -26,6 +26,7 @@
 #include <unistd.h>
 #endif
 #include <assert.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <openssl/bn.h>
@@ -79,7 +80,11 @@ static void HMAC_CTX_free(HMAC_CTX *ctx)
 
 void ptls_openssl_random_bytes(void *buf, size_t len)
 {
-    RAND_bytes(buf, (int)len);
+    int ret = RAND_bytes(buf, (int)len);
+    if (ret != 1) {
+        fprintf(stderr, "RAND_bytes() failed with code: %d\n", ret);
+        abort();
+    }
 }
 
 static EC_KEY *ecdh_gerenate_key(EC_GROUP *group)
@@ -874,7 +879,7 @@ Found:
 static X509 *to_x509(ptls_iovec_t vec)
 {
     const uint8_t *p = vec.base;
-    return d2i_X509(NULL, &p, vec.len);
+    return d2i_X509(NULL, &p, (long)vec.len);
 }
 
 static int verify_sign(void *verify_ctx, ptls_iovec_t data, ptls_iovec_t signature)
@@ -1087,7 +1092,12 @@ static int verify_cert_chain(X509_STORE *store, X509 *cert, STACK_OF(X509) * cha
 #ifdef X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS
     /* verify CN */
     if (server_name != NULL) {
-        if ((ret = X509_check_host(cert, server_name, strlen(server_name), X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS, NULL)) != 1) {
+        if (ptls_server_name_is_ipaddr(server_name)) {
+            ret = X509_check_ip_asc(cert, server_name, 0);
+        } else {
+            ret = X509_check_host(cert, server_name, strlen(server_name), X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS, NULL);
+        }
+        if (ret != 1) {
             if (ret == 0) { /* failed match */
                 ret = PTLS_ALERT_BAD_CERTIFICATE;
             } else {
@@ -1146,10 +1156,17 @@ static int verify_cert(ptls_verify_certificate_t *_self, ptls_t *tls, int (**ver
 
 Exit:
     if (chain != NULL)
-        sk_X509_free(chain);
+        sk_X509_pop_free(chain, X509_free);
     if (cert != NULL)
         X509_free(cert);
     return ret;
+}
+
+static void cleanup_cipher_ctx(EVP_CIPHER_CTX *ctx) {
+    if (!EVP_CIPHER_CTX_cleanup(ctx)) {
+        fprintf(stderr, "EVP_CIPHER_CTX_cleanup() failed\n");
+        abort();
+    }
 }
 
 int ptls_openssl_init_verify_certificate(ptls_openssl_verify_certificate_t *self, X509_STORE *store)
@@ -1252,7 +1269,7 @@ int ptls_openssl_encrypt_ticket(ptls_buffer_t *buf, ptls_iovec_t src,
 
 Exit:
     if (cctx != NULL)
-        EVP_CIPHER_CTX_cleanup(cctx);
+        cleanup_cipher_ctx(cctx);
     if (hctx != NULL)
         HMAC_CTX_free(hctx);
     return ret;
@@ -1297,7 +1314,7 @@ int ptls_openssl_decrypt_ticket(ptls_buffer_t *buf, ptls_iovec_t src,
         ret = PTLS_ERROR_LIBRARY;
         goto Exit;
     }
-    if (memcmp(src.base + src.len, hmac, hmac_size) != 0) {
+    if (!ptls_mem_equal(src.base + src.len, hmac, hmac_size)) {
         ret = PTLS_ALERT_HANDSHAKE_FAILURE;
         goto Exit;
     }
@@ -1322,7 +1339,7 @@ int ptls_openssl_decrypt_ticket(ptls_buffer_t *buf, ptls_iovec_t src,
 
 Exit:
     if (cctx != NULL)
-        EVP_CIPHER_CTX_cleanup(cctx);
+        cleanup_cipher_ctx(cctx);
     if (hctx != NULL)
         HMAC_CTX_free(hctx);
     return ret;
