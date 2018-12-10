@@ -492,6 +492,11 @@ typedef struct st_ptls_decompress_certificate_t {
     int (*cb)(struct st_ptls_decompress_certificate_t *self, ptls_t *tls, uint16_t algorithm, ptls_iovec_t output,
               ptls_iovec_t input);
 } ptls_decompress_certificate_t;
+/**
+ * provides access to the ESNI shared secret (Zx).  API is subject to change.
+ */
+PTLS_CALLBACK_TYPE(int, update_esni_key, ptls_t *tls, ptls_iovec_t secret, ptls_hash_algorithm_t *hash,
+                   const void *hashed_esni_contents);
 
 /**
  * the configuration
@@ -597,6 +602,10 @@ struct st_ptls_context_t {
      *
      */
     ptls_decompress_certificate_t *decompress_certificate;
+    /**
+     *
+     */
+    ptls_update_esni_key_t *update_esni_key;
 };
 
 typedef struct st_ptls_raw_extension_t {

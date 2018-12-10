@@ -1785,6 +1785,11 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
         if (!is_second_flight && send_sni && properties->client.esni_keys.base != NULL) {
             if ((ret = client_setup_esni(tls->ctx, &tls->esni, properties->client.esni_keys, tls->client_random)) != 0)
                 goto Exit;
+            if (tls->ctx->update_esni_key != NULL) {
+                if ((ret = tls->ctx->update_esni_key->cb(tls->ctx->update_esni_key, tls, tls->esni->secret,
+                                                         tls->esni->client.cipher->hash, tls->esni->esni_contents_hash)) != 0)
+                    goto Exit;
+            }
         }
         /* setup resumption-related data. If successful, resumption_secret becomes a non-zero value. */
         if (properties->client.session_ticket.base != NULL) {
@@ -2849,11 +2854,9 @@ static int client_hello_decrypt_esni(ptls_context_t *ctx, ptls_iovec_t *server_n
     if ((ret = build_esni_contents_hash(ch->esni.cipher->hash, (*secret)->esni_contents_hash, ch->esni.record_digest,
                                         ch->esni.key_share->id, ch->esni.peer_key, ch->random_bytes)) != 0)
         goto Exit;
-
     /* derive the shared secret */
     if ((ret = (*key_share_ctx)->on_exchange(key_share_ctx, 0, &(*secret)->secret, ch->esni.peer_key)) != 0)
         goto Exit;
-
     /* decrypt */
     if (ch->esni.encrypted_sni.len - ch->esni.cipher->aead->tag_size != (*esni)->padded_length + PTLS_ESNI_NONCE_SIZE) {
         ret = PTLS_ALERT_ILLEGAL_PARAMETER;
@@ -3427,6 +3430,11 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
         if (ch.esni.cipher != NULL && tls->ctx->esni != NULL) {
             if ((ret = client_hello_decrypt_esni(tls->ctx, &server_name, &tls->esni, &ch)) != 0)
                 goto Exit;
+            if (tls->ctx->update_esni_key != NULL) {
+                if ((ret = tls->ctx->update_esni_key->cb(tls->ctx->update_esni_key, tls, tls->esni->secret, ch.esni.cipher->hash,
+                                                         tls->esni->esni_contents_hash)) != 0)
+                    goto Exit;
+            }
             is_esni = 1;
         } else if (ch.server_name.base != NULL) {
             server_name = ch.server_name;
