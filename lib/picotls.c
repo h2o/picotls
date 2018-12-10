@@ -1670,16 +1670,18 @@ Exit:
     return ret;
 }
 
-static void free_esni_secret(struct st_ptls_esni_secret_t *esni, int is_server)
+static void free_esni_secret(struct st_ptls_esni_secret_t **esni, int is_server)
 {
-    if (esni->secret.base != NULL) {
-        ptls_clear_memory(esni->secret.base, esni->secret.len);
-        free(esni->secret.base);
+    assert(*esni != NULL);
+    if ((*esni)->secret.base != NULL) {
+        ptls_clear_memory((*esni)->secret.base, (*esni)->secret.len);
+        free((*esni)->secret.base);
     }
     if (!is_server)
-        free(esni->client.pubkey.base);
-    ptls_clear_memory(esni, sizeof(*esni));
-    free(esni);
+        free((*esni)->client.pubkey.base);
+    ptls_clear_memory((*esni), sizeof(**esni));
+    free(*esni);
+    *esni = NULL;
 }
 
 static int client_setup_esni(ptls_context_t *ctx, struct st_ptls_esni_secret_t **esni, ptls_iovec_t esni_keys,
@@ -1716,10 +1718,8 @@ static int client_setup_esni(ptls_context_t *ctx, struct st_ptls_esni_secret_t *
 
     ret = 0;
 Exit:
-    if (ret != 0) {
-        free_esni_secret(*esni, 1);
-        *esni = NULL;
-    }
+    if (ret != 0)
+        free_esni_secret(esni, 0);
     return ret;
 }
 
@@ -2298,6 +2298,7 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
             ret = PTLS_ALERT_ILLEGAL_PARAMETER;
             goto Exit;
         }
+        free_esni_secret(&tls->esni, 0);
     } else {
         if (esni != NULL) {
             ret = PTLS_ALERT_ILLEGAL_PARAMETER;
@@ -2901,10 +2902,8 @@ Exit:
         free(decrypted);
     if (aead != NULL)
         ptls_aead_free(aead);
-    if (ret != 0 && *secret != NULL) {
-        free_esni_secret(*secret, 1);
-        *secret = NULL;
-    }
+    if (ret != 0 && *secret != NULL)
+        free_esni_secret(secret, 1);
     return ret;
 }
 
@@ -3702,6 +3701,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
                  * fail (FIXME ch.esni.nonce will be zero on HRR) */
                 buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_ENCRYPTED_SERVER_NAME,
                                       { ptls_buffer_pushv(sendbuf, tls->esni->nonce, PTLS_ESNI_NONCE_SIZE); });
+                free_esni_secret(&tls->esni, 1);
             } else if (tls->server_name != NULL) {
                 /* In this event, the server SHALL include an extension of type "server_name" in the (extended) server hello. The
                  * "extension_data" field of this extension SHALL be empty. (RFC 6066 section 3) */
@@ -3986,7 +3986,7 @@ void ptls_free(ptls_t *tls)
     free_exporter_master_secret(tls, 1);
     free_exporter_master_secret(tls, 0);
     if (tls->esni != NULL)
-        free_esni_secret(tls->esni, tls->is_server);
+        free_esni_secret(&tls->esni, tls->is_server);
     if (tls->key_schedule != NULL)
         key_schedule_free(tls->key_schedule);
     if (tls->traffic_protection.dec.aead != NULL)
