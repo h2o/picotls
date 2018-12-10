@@ -312,13 +312,13 @@ static void usage(const char *cmd)
            "  -h                   print this help\n"
            "\n"
            "Supported named groups: secp256r1"
-#ifdef PTLS_OPENSSL_HAS_SECP384R1
+#if PTLS_OPENSSL_HAVE_SECP384R1
            ", secp384r1"
 #endif
-#ifdef PTLS_OPENSSL_HAS_SECP521R1
+#if PTLS_OPENSSL_HAVE_SECP521R1
            ", secp521r1"
 #endif
-#ifdef PTLS_OPENSSL_HAS_X25519
+#if PTLS_OPENSSL_HAVE_X25519
            ", X25519"
 #endif
            "\n\n",
@@ -403,13 +403,13 @@ int main(int argc, char **argv)
     if (algo == NULL && strcasecmp(optarg, #name) == 0)                                                                            \
     algo = (&ptls_openssl_##name)
             MATCH(secp256r1);
-#ifdef PTLS_OPENSSL_HAS_SECP384R1
+#if PTLS_OPENSSL_HAVE_SECP384R1
             MATCH(secp384r1);
 #endif
-#ifdef PTLS_OPENSSL_HAS_SECP521R1
+#if PTLS_OPENSSL_HAVE_SECP521R1
             MATCH(secp521r1);
 #endif
-#ifdef PTLS_OPENSSL_HAS_X25519
+#if PTLS_OPENSSL_HAVE_X25519
             MATCH(x25519);
 #endif
 #undef MATCH

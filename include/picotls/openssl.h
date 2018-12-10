@@ -33,20 +33,23 @@ extern "C" {
 #include "../picotls.h"
 
 #if OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)
-#define PTLS_OPENSSL_HAVE_CHACHA20_POLY1305
+#define PTLS_OPENSSL_HAVE_CHACHA20_POLY1305 1
 #endif
 
 extern ptls_key_exchange_algorithm_t ptls_openssl_secp256r1;
 #ifdef NID_secp384r1
-#define PTLS_OPENSSL_HAS_SECP384R1 1
+#define PTLS_OPENSSL_HAVE_SECP384R1 1
+#define PTLS_OPENSSL_HAS_SECP384R1 1 /* deprecated; use HAVE_ */
 extern ptls_key_exchange_algorithm_t ptls_openssl_secp384r1;
 #endif
 #ifdef NID_secp521r1
-#define PTLS_OPENSSL_HAS_SECP521R1 1
+#define PTLS_OPENSSL_HAVE_SECP521R1 1
+#define PTLS_OPENSSL_HAS_SECP521R1 1 /* deprecated; use HAVE_ */
 extern ptls_key_exchange_algorithm_t ptls_openssl_secp521r1;
 #endif
 #if defined(NID_X25519) && !defined(LIBRESSL_VERSION_NUMBER)
-#define PTLS_OPENSSL_HAS_X25519 1
+#define PTLS_OPENSSL_HAVE_X25519 1
+#define PTLS_OPENSSL_HAS_X25519 1  /* deprecated; use HAVE_ */
 extern ptls_key_exchange_algorithm_t ptls_openssl_x25519;
 #endif
 
