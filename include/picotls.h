@@ -188,15 +188,18 @@ typedef struct st_ptls_buffer_t {
  * key exchange context built by ptls_key_exchange_algorithm::create.
  */
 typedef struct st_ptls_key_exchange_context_t {
+    /**
+     * the underlying algorithm
+     */
     const struct st_ptls_key_exchange_algorithm_t *algo;
+    /**
+     * the public key
+     */
+    ptls_iovec_t pubkey;
     /**
      * If `release` is set, the callee frees resources allocated to the context and set *keyex to NULL
      */
     int (*on_exchange)(struct st_ptls_key_exchange_context_t **keyex, int release, ptls_iovec_t *secret, ptls_iovec_t peerkey);
-    /**
-     * optional callback to serialize the private key
-     */
-    int (*save)(struct st_ptls_key_exchange_context_t *keyex, ptls_buffer_t *outbuf);
 } ptls_key_exchange_context_t;
 
 /**
@@ -211,17 +214,12 @@ typedef const struct st_ptls_key_exchange_algorithm_t {
      * creates a context for asynchronous key exchange. The function is called when ClientHello is generated. The on_exchange
      * callback of the created context is called when the client receives ServerHello.
      */
-    int (*create)(const struct st_ptls_key_exchange_algorithm_t *algo, ptls_key_exchange_context_t **ctx, ptls_iovec_t *pubkey);
+    int (*create)(const struct st_ptls_key_exchange_algorithm_t *algo, ptls_key_exchange_context_t **ctx);
     /**
      * implements synchronous key exchange. Called when receiving a ServerHello.
      */
     int (*exchange)(const struct st_ptls_key_exchange_algorithm_t *algo, ptls_iovec_t *pubkey, ptls_iovec_t *secret,
                     ptls_iovec_t peerkey);
-    /**
-     * optional callback for loading a serialized private key
-     */
-    int (*load)(const struct st_ptls_key_exchange_algorithm_t *algo, ptls_key_exchange_context_t **ctx, ptls_iovec_t pubkey,
-                ptls_iovec_t privkey);
     /**
      * crypto-specific data
      */
@@ -378,7 +376,7 @@ typedef struct st_ptls_message_emitter_t {
 /**
  * holds ESNIKeys and the private key (instantiated by ptls_esni_parse, freed using ptls_esni_dispose)
  */
-typedef struct st_ptls_esni_t {
+typedef struct st_ptls_esni_context_t {
     ptls_key_exchange_context_t **key_exchanges;
     struct {
         ptls_cipher_suite_t *cipher_suite;
@@ -387,7 +385,6 @@ typedef struct st_ptls_esni_t {
     uint16_t padded_length;
     uint64_t not_before;
     uint64_t not_after;
-    ptls_iovec_t esni_keys;
 } ptls_esni_context_t;
 
 #define PTLS_CALLBACK_TYPE0(ret, name)                                                                                             \
@@ -1168,7 +1165,8 @@ int ptls_load_certificates(ptls_context_t *ctx, char const *cert_pem_file);
 
 extern ptls_get_time_t ptls_get_time;
 
-int ptls_esni_init_context(ptls_context_t *ctx, ptls_esni_context_t *esni, const uint8_t *src, const uint8_t *end);
+int ptls_esni_init_context(ptls_context_t *ctx, ptls_esni_context_t *esni, ptls_iovec_t esni_keys,
+                           ptls_key_exchange_context_t **key_exchanges);
 void ptls_esni_dispose_context(ptls_esni_context_t *esni);
 
 #define ptls_define_hash(name, ctx_type, init_func, update_func, final_func)                                                       \

@@ -101,7 +101,7 @@ static EC_KEY *ecdh_gerenate_key(EC_GROUP *group)
     return key;
 }
 
-static int ecdh_calc_secret(ptls_iovec_t *out, EC_GROUP *group, EC_KEY *privkey, EC_POINT *peer_point)
+static int ecdh_calc_secret(ptls_iovec_t *out, const EC_GROUP *group, EC_KEY *privkey, EC_POINT *peer_point)
 {
     ptls_iovec_t secret;
     int ret;
@@ -127,7 +127,7 @@ Exit:
     return ret;
 }
 
-static EC_POINT *x9_62_decode_point(EC_GROUP *group, ptls_iovec_t vec, BN_CTX *bn_ctx)
+static EC_POINT *x9_62_decode_point(const EC_GROUP *group, ptls_iovec_t vec, BN_CTX *bn_ctx)
 {
     EC_POINT *point = NULL;
 
@@ -141,7 +141,7 @@ static EC_POINT *x9_62_decode_point(EC_GROUP *group, ptls_iovec_t vec, BN_CTX *b
     return point;
 }
 
-static ptls_iovec_t x9_62_encode_point(EC_GROUP *group, const EC_POINT *point, BN_CTX *bn_ctx)
+static ptls_iovec_t x9_62_encode_point(const EC_GROUP *group, const EC_POINT *point, BN_CTX *bn_ctx)
 {
     ptls_iovec_t vec;
 
@@ -160,18 +160,14 @@ static ptls_iovec_t x9_62_encode_point(EC_GROUP *group, const EC_POINT *point, B
 struct st_x9_62_keyex_context_t {
     ptls_key_exchange_context_t super;
     BN_CTX *bn_ctx;
-    EC_GROUP *group;
     EC_KEY *privkey;
-    ptls_iovec_t pubkey;
 };
 
 static void x9_62_free_context(struct st_x9_62_keyex_context_t *ctx)
 {
-    free(ctx->pubkey.base);
+    free(ctx->super.pubkey.base);
     if (ctx->privkey != NULL)
         EC_KEY_free(ctx->privkey);
-    if (ctx->group != NULL)
-        EC_GROUP_free(ctx->group);
     if (ctx->bn_ctx != NULL)
         BN_CTX_free(ctx->bn_ctx);
     free(ctx);
@@ -180,6 +176,7 @@ static void x9_62_free_context(struct st_x9_62_keyex_context_t *ctx)
 static int x9_62_on_exchange(ptls_key_exchange_context_t **_ctx, int release, ptls_iovec_t *secret, ptls_iovec_t peerkey)
 {
     struct st_x9_62_keyex_context_t *ctx = (struct st_x9_62_keyex_context_t *)*_ctx;
+    const EC_GROUP *group = EC_KEY_get0_group(ctx->privkey);
     EC_POINT *peer_point = NULL;
     int ret;
 
@@ -188,11 +185,11 @@ static int x9_62_on_exchange(ptls_key_exchange_context_t **_ctx, int release, pt
         goto Exit;
     }
 
-    if ((peer_point = x9_62_decode_point(ctx->group, peerkey, ctx->bn_ctx)) == NULL) {
+    if ((peer_point = x9_62_decode_point(group, peerkey, ctx->bn_ctx)) == NULL) {
         ret = PTLS_ALERT_DECODE_ERROR;
         goto Exit;
     }
-    if ((ret = ecdh_calc_secret(secret, ctx->group, ctx->privkey, peer_point)) != 0)
+    if ((ret = ecdh_calc_secret(secret, group, ctx->privkey, peer_point)) != 0)
         goto Exit;
 
 Exit:
@@ -205,21 +202,6 @@ Exit:
     return ret;
 }
 
-static int x9_62_save_private_key(ptls_key_exchange_context_t *_ctx, ptls_buffer_t *buf)
-{
-    struct st_x9_62_keyex_context_t *ctx = (struct st_x9_62_keyex_context_t *)_ctx;
-    const BIGNUM *bn = EC_KEY_get0_private_key(ctx->privkey);
-    size_t bn_bytes = BN_num_bytes(bn);
-    int ret;
-
-    if ((ret = ptls_buffer_reserve(buf, bn_bytes)) != 0)
-        return ret;
-    BN_bn2bin(bn, buf->base + buf->off);
-    buf->off += bn_bytes;
-
-    return 0;
-}
-
 static int x9_62_create_context(ptls_key_exchange_algorithm_t *algo, struct st_x9_62_keyex_context_t **ctx)
 {
     int ret;
@@ -228,14 +210,10 @@ static int x9_62_create_context(ptls_key_exchange_algorithm_t *algo, struct st_x
         ret = PTLS_ERROR_NO_MEMORY;
         goto Exit;
     }
-    **ctx = (struct st_x9_62_keyex_context_t){{algo, x9_62_on_exchange, x9_62_save_private_key}};
+    **ctx = (struct st_x9_62_keyex_context_t){{algo, {NULL}, x9_62_on_exchange}};
 
     if (((*ctx)->bn_ctx = BN_CTX_new()) == NULL) {
         ret = PTLS_ERROR_NO_MEMORY;
-        goto Exit;
-    }
-    if (((*ctx)->group = EC_GROUP_new_by_curve_name((int)algo->data)) == NULL) {
-        ret = PTLS_ERROR_LIBRARY;
         goto Exit;
     }
 
@@ -250,78 +228,61 @@ Exit:
 
 static int x9_62_setup_pubkey(struct st_x9_62_keyex_context_t *ctx)
 {
-    if ((ctx->pubkey = x9_62_encode_point(ctx->group, EC_KEY_get0_public_key(ctx->privkey), ctx->bn_ctx)).base == NULL)
+    const EC_GROUP *group = EC_KEY_get0_group(ctx->privkey);
+    const EC_POINT *pubkey = EC_KEY_get0_public_key(ctx->privkey);
+    if ((ctx->super.pubkey = x9_62_encode_point(group, pubkey, ctx->bn_ctx)).base == NULL)
         return PTLS_ERROR_NO_MEMORY;
     return 0;
 }
 
-static int x9_62_create_key_exchange(ptls_key_exchange_algorithm_t *algo, ptls_key_exchange_context_t **_ctx, ptls_iovec_t *pubkey)
+static int x9_62_create_key_exchange(ptls_key_exchange_algorithm_t *algo, ptls_key_exchange_context_t **_ctx)
 {
+    EC_GROUP* group = NULL;
     struct st_x9_62_keyex_context_t *ctx = NULL;
     int ret;
 
+    /* FIXME use a global? */
+    if ((group = EC_GROUP_new_by_curve_name((int)algo->data)) == NULL) {
+        ret = PTLS_ERROR_LIBRARY;
+        goto Exit;
+    }
     if ((ret = x9_62_create_context(algo, &ctx)) != 0)
         goto Exit;
-    if ((ctx->privkey = ecdh_gerenate_key(ctx->group)) == NULL) {
+    if ((ctx->privkey = ecdh_gerenate_key(group)) == NULL) {
         ret = PTLS_ERROR_LIBRARY;
         goto Exit;
     }
     if ((ret = x9_62_setup_pubkey(ctx)) != 0)
         goto Exit;
-    *pubkey = ctx->pubkey;
     ret = 0;
 
 Exit:
+    if (group != NULL)
+        EC_GROUP_free(group);
     if (ret == 0) {
         *_ctx = &ctx->super;
     } else {
         if (ctx != NULL)
             x9_62_free_context(ctx);
         *_ctx = NULL;
-        *pubkey = (ptls_iovec_t){NULL};
     }
 
     return ret;
 }
 
-static int x9_62_load_key(ptls_key_exchange_algorithm_t *algo, ptls_key_exchange_context_t **_ctx, ptls_iovec_t pubkey,
-                          ptls_iovec_t privkey)
+static int x9_62_init_key(ptls_key_exchange_algorithm_t *algo, ptls_key_exchange_context_t **_ctx, EC_KEY *eckey)
 {
-    EC_POINT *ec_pub = NULL;
-    BIGNUM *bn_priv = NULL;
     struct st_x9_62_keyex_context_t *ctx = NULL;
     int ret;
 
     if ((ret = x9_62_create_context(algo, &ctx)) != 0)
         goto Exit;
-    if ((ec_pub = x9_62_decode_point(ctx->group, pubkey, ctx->bn_ctx)) == NULL) {
-        ret = PTLS_ERROR_LIBRARY;
-        goto Exit;
-    }
-    if ((bn_priv = BN_bin2bn(privkey.base, (int)privkey.len, NULL)) == NULL) {
-        ret = PTLS_ERROR_LIBRARY;
-        goto Exit;
-    }
-    if ((ctx->privkey = EC_KEY_new()) == NULL || !EC_KEY_set_group(ctx->privkey, ctx->group)) {
-        ret = PTLS_ERROR_LIBRARY;
-        goto Exit;
-    }
-    if (!EC_KEY_set_public_key(ctx->privkey, ec_pub)) {
-        ret = PTLS_ERROR_LIBRARY;
-        goto Exit;
-    }
-    if (!EC_KEY_set_private_key(ctx->privkey, bn_priv)) {
-        ret = PTLS_ERROR_LIBRARY;
-        goto Exit;
-    }
+    ctx->privkey = eckey;
     if ((ret = x9_62_setup_pubkey(ctx)) != 0)
         goto Exit;
+    ret = 0;
 
 Exit:
-    if (ec_pub != NULL)
-        EC_POINT_free(ec_pub);
-    if (bn_priv != NULL)
-        BN_free(bn_priv);
     if (ret == 0) {
         *_ctx = &ctx->super;
     } else {
@@ -418,19 +379,14 @@ Exit:
 struct st_evp_keyex_context_t {
     ptls_key_exchange_context_t super;
     EVP_PKEY *privkey;
-    /**
-     * allocated by EVP_PKEY_get1_tls_encodedpoint, freed by OPENSSL_free
-     */
-    unsigned char *pubkey;
-    size_t pubkeylen;
 };
 
 static void evp_keyex_free(struct st_evp_keyex_context_t *ctx)
 {
     if (ctx->privkey != NULL)
         EVP_PKEY_free(ctx->privkey);
-    if (ctx->pubkey != NULL)
-        OPENSSL_free(ctx->pubkey);
+    if (ctx->super.pubkey.base != NULL)
+        OPENSSL_free(ctx->super.pubkey.base);
     free(ctx);
 }
 
@@ -448,7 +404,7 @@ static int evp_keyex_on_exchange(ptls_key_exchange_context_t **_ctx, int release
 
     secret->base = NULL;
 
-    if (peerkey.len != ctx->pubkeylen) {
+    if (peerkey.len != ctx->super.pubkey.len) {
         ret = PTLS_ALERT_DECRYPT_ERROR;
         goto Exit;
     }
@@ -505,15 +461,20 @@ Exit:
     return ret;
 }
 
-static int evp_keyex_create(ptls_key_exchange_algorithm_t *algo, ptls_key_exchange_context_t **_ctx, ptls_iovec_t *_pubkey)
+static int evp_keyex_create(ptls_key_exchange_algorithm_t *algo, ptls_key_exchange_context_t **_ctx)
 {
     struct st_evp_keyex_context_t *ctx = NULL;
     EVP_PKEY_CTX *evpctx = NULL;
-    EVP_PKEY *evpkey = NULL;
-    unsigned char *pubkey = NULL;
-    size_t pubkeylen;
     int ret;
 
+    /* allocate */
+    if ((ctx = malloc(sizeof(*ctx))) == NULL) {
+        ret = PTLS_ERROR_NO_MEMORY;
+        goto Exit;
+    }
+    *ctx = (struct st_evp_keyex_context_t){{algo, {NULL}, evp_keyex_on_exchange}};
+
+    /* generate private key */
     if ((evpctx = EVP_PKEY_CTX_new_id((int)algo->data, NULL)) == NULL) {
         ret = PTLS_ERROR_LIBRARY;
         goto Exit;
@@ -522,32 +483,22 @@ static int evp_keyex_create(ptls_key_exchange_algorithm_t *algo, ptls_key_exchan
         ret = PTLS_ERROR_LIBRARY;
         goto Exit;
     }
-    if (EVP_PKEY_keygen(evpctx, &evpkey) <= 0) {
+    if (EVP_PKEY_keygen(evpctx, &ctx->privkey) <= 0) {
         ret = PTLS_ERROR_LIBRARY;
         goto Exit;
     }
-    if ((pubkeylen = EVP_PKEY_get1_tls_encodedpoint(evpkey, &pubkey)) == 0) {
-        pubkey = NULL;
+
+    /* derive public key */
+    if ((ctx->super.pubkey.len = EVP_PKEY_get1_tls_encodedpoint(ctx->privkey, &ctx->super.pubkey.base)) == 0) {
+        ctx->super.pubkey.base = NULL;
         ret = PTLS_ERROR_NO_MEMORY;
         goto Exit;
     }
-    if ((ctx = malloc(offsetof(struct st_evp_keyex_context_t, pubkey) + pubkeylen)) == NULL) {
-        ret = PTLS_ERROR_NO_MEMORY;
-        goto Exit;
-    }
-    *ctx = (struct st_evp_keyex_context_t){{algo, evp_keyex_on_exchange}, evpkey, pubkey, pubkeylen};
-    evpkey = NULL;
-    pubkey = NULL;
 
     *_ctx = &ctx->super;
-    *_pubkey = ptls_iovec_init(ctx->pubkey, ctx->pubkeylen);
     ret = 0;
 
 Exit:
-    if (pubkey != NULL)
-        OPENSSL_free(pubkey);
-    if (evpkey != NULL)
-        EVP_PKEY_free(evpkey);
     if (evpctx != NULL)
         EVP_PKEY_CTX_free(evpctx);
     if (ret != 0 && ctx != NULL)
@@ -559,19 +510,18 @@ static int evp_keyex_exchange(ptls_key_exchange_algorithm_t *algo, ptls_iovec_t 
                               ptls_iovec_t peerkey)
 {
     ptls_key_exchange_context_t *ctx = NULL;
-    ptls_iovec_t pubkey;
     int ret;
 
     outpubkey->base = NULL;
 
-    if ((ret = evp_keyex_create(algo, &ctx, &pubkey)) != 0)
+    if ((ret = evp_keyex_create(algo, &ctx)) != 0)
         goto Exit;
-    if ((outpubkey->base = malloc(pubkey.len)) == NULL) {
+    if ((outpubkey->base = malloc(ctx->pubkey.len)) == NULL) {
         ret = PTLS_ERROR_NO_MEMORY;
         goto Exit;
     }
-    memcpy(outpubkey->base, pubkey.base, pubkey.len);
-    outpubkey->len = pubkey.len;
+    memcpy(outpubkey->base, ctx->pubkey.base, ctx->pubkey.len);
+    outpubkey->len = ctx->pubkey.len;
     ret = evp_keyex_on_exchange(&ctx, 1, secret, peerkey);
     assert(ctx == NULL);
 
@@ -584,6 +534,52 @@ Exit:
 }
 
 #endif
+
+int ptls_openssl_create_key_exchange(ptls_key_exchange_context_t **ctx, EVP_PKEY *pkey)
+{
+    int ret;
+
+    switch (EVP_PKEY_id(pkey)) {
+
+    case EVP_PKEY_EC: {
+        /* obtain eckey */
+        EC_KEY *eckey = EVP_PKEY_get1_EC_KEY(pkey);
+
+        /* determine algo */
+        ptls_key_exchange_algorithm_t *algo;
+        switch (EC_GROUP_get_curve_name(EC_KEY_get0_group(eckey))) {
+        case NID_X9_62_prime256v1:
+            algo = &ptls_openssl_secp256r1;
+            break;
+#ifdef PTLS_OPENSSL_HAVE_SECP384R1
+        case NID_secp384r1:
+            algo = &ptls_openssl_secp384r1;
+            break;
+#endif
+#ifdef PTLS_OPENSSL_HAVE_SECP521R1
+        case NID_secp384r1:
+            algo = &ptls_openssl_secp521r1;
+            break;
+#endif
+        default:
+            EC_KEY_free(eckey);
+            return PTLS_ERROR_INCOMPATIBLE_KEY;
+        }
+
+        /* load key */
+        if ((ret = x9_62_init_key(algo, ctx, eckey)) != 0) {
+            EC_KEY_free(eckey);
+            return ret;
+        }
+
+        return 0;
+    } break;
+
+    default:
+        return PTLS_ERROR_INCOMPATIBLE_KEY;
+
+    }
+}
 
 static int do_sign(EVP_PKEY *key, ptls_buffer_t *outbuf, ptls_iovec_t input, const EVP_MD *md)
 {
@@ -1346,17 +1342,17 @@ Exit:
 }
 
 ptls_key_exchange_algorithm_t ptls_openssl_secp256r1 = {PTLS_GROUP_SECP256R1, x9_62_create_key_exchange, secp_key_exchange,
-                                                        x9_62_load_key, NID_X9_62_prime256v1};
+                                                        NID_X9_62_prime256v1};
 #ifdef PTLS_OPENSSL_HAS_SECP384R1
 ptls_key_exchange_algorithm_t ptls_openssl_secp384r1 = {PTLS_GROUP_SECP384R1, x9_62_create_key_exchange, secp_key_exchange,
-                                                        x9_62_load_key, NID_secp384r1};
+                                                        NID_secp384r1};
 #endif
 #ifdef PTLS_OPENSSL_HAS_SECP521R1
 ptls_key_exchange_algorithm_t ptls_openssl_secp521r1 = {PTLS_GROUP_SECP521R1, x9_62_create_key_exchange, secp_key_exchange,
-                                                        x9_62_load_key, NID_secp521r1};
+                                                        NID_secp521r1};
 #endif
 #ifdef PTLS_OPENSSL_HAS_X25519
-ptls_key_exchange_algorithm_t ptls_openssl_x25519 = {PTLS_GROUP_X25519, evp_keyex_create, evp_keyex_exchange, NULL, NID_X25519};
+ptls_key_exchange_algorithm_t ptls_openssl_x25519 = {PTLS_GROUP_X25519, evp_keyex_create, evp_keyex_exchange, NID_X25519};
 #endif
 ptls_key_exchange_algorithm_t *ptls_openssl_key_exchanges[] = {&ptls_openssl_secp256r1, NULL};
 ptls_cipher_algorithm_t ptls_openssl_aes128ctr = {"AES128-CTR", PTLS_AES128_KEY_SIZE, PTLS_AES_IV_SIZE,

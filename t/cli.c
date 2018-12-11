@@ -346,12 +346,13 @@ int main(int argc, char **argv)
     ptls_context_t ctx = {ptls_openssl_random_bytes, &ptls_get_time, key_exchanges, ptls_openssl_cipher_suites};
     ptls_handshake_properties_t hsprop = {{{{NULL}}}};
     const char *host, *port, *file = NULL, *esni_file = NULL;
+    ptls_key_exchange_context_t *esni_key_exchange = NULL;
     int is_server = 0, use_early_data = 0, request_key_update = 0, ch;
     struct sockaddr_storage sa;
     socklen_t salen;
     int family = 0;
 
-    while ((ch = getopt(argc, argv, "46abC:c:i:k:nN:es:SE:l:vh")) != -1) {
+    while ((ch = getopt(argc, argv, "46abC:c:i:k:nN:es:SE:K:l:vh")) != -1) {
         switch (ch) {
         case '4':
             family = AF_INET;
@@ -400,6 +401,27 @@ int main(int argc, char **argv)
         case 'E':
             esni_file = optarg;
             break;
+        case 'K': {
+            FILE *fp;
+            EVP_PKEY *pkey;
+            int ret;
+            if (esni_key_exchange != NULL)
+                esni_key_exchange->on_exchange(&esni_key_exchange, 1, NULL, ptls_iovec_init(NULL, 0));
+            if ((fp = fopen(optarg, "rt")) == NULL) {
+                fprintf(stderr, "failed to open ESNI private key file:%s:%s\n", optarg, strerror(errno));
+                return 1;
+            }
+            if ((pkey = PEM_read_PrivateKey(fp, NULL, NULL, NULL)) == NULL) {
+                fprintf(stderr, "failed to load private key from file:%s\n", optarg);
+                return 1;
+            }
+            if ((ret = ptls_openssl_create_key_exchange(&esni_key_exchange, pkey)) != 0) {
+                fprintf(stderr, "failed to load private key from file:%s:picotls-error:%d", optarg, ret);
+                return 1;
+            }
+            EVP_PKEY_free(pkey);
+            fclose(fp);
+        } break;
         case 'l':
             setup_log_secret(&ctx, optarg);
             break;
@@ -471,8 +493,13 @@ int main(int argc, char **argv)
     }
     if (key_exchanges[0] == NULL)
         key_exchanges[0] = &ptls_openssl_secp256r1;
-    if (esni_file != NULL)
-        setup_esni(&ctx, esni_file);
+    if (esni_file != NULL) {
+        if (esni_key_exchange == NULL) {
+            fprintf(stderr, "-E must be used together with -K\n");
+            return 1;
+        }
+        setup_esni(&ctx, esni_file, (ptls_key_exchange_context_t *[]){esni_key_exchange, NULL});
+    }
     if (argc != 2) {
         fprintf(stderr, "missing host and port\n");
         return 1;

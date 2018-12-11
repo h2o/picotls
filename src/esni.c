@@ -28,76 +28,12 @@
 #include <time.h>
 #include <openssl/err.h>
 #include <openssl/engine.h>
+#include <openssl/pem.h>
 #include "picotls.h"
 #include "picotls/pembase64.h"
 #include "picotls/openssl.h"
 
-static ptls_key_exchange_algorithm_t *key_exchanges[] = {&ptls_openssl_secp256r1,
-#ifdef PTLS_OPENSSL_HAS_SECP384R1
-                                                         &ptls_openssl_secp384r1,
-#endif
-#ifdef PTLS_OPENSSL_HAS_SECP521R1
-                                                         &ptls_openssl_secp521r1,
-#endif
-#ifdef PTLS_OPENSSL_HAS_X25519
-                                                         &ptls_openssl_x25519,
-#endif
-                                                         NULL};
-static ptls_context_t ctx = {ptls_openssl_random_bytes, &ptls_get_time, key_exchanges, ptls_openssl_cipher_suites};
-
-static int read_esni(void)
-{
-    ptls_buffer_t buf;
-    int ret;
-
-    ptls_buffer_init(&buf, "", 0);
-
-    { /* read */
-        int ch;
-        while ((ch = fgetc(stdin)) != EOF)
-            ptls_buffer_push(&buf, ch);
-    }
-
-    const uint8_t *src = buf.base, *end = src + buf.off;
-
-    do {
-        ptls_decode_open_block(src, end, 2, {
-            ptls_esni_context_t esni;
-            size_t i;
-            if ((ret = ptls_esni_init_context(&ctx, &esni, src, end)) != 0)
-                goto Exit;
-            printf("ESNIKeys:\n");
-            printf("  key-exchanges:");
-            for (i = 0; esni.key_exchanges[i] != NULL; ++i)
-                printf(" 0x%04" PRIx16, esni.key_exchanges[i]->algo->id);
-            printf("\n");
-            printf("  cipher-suites:");
-            for (i = 0; esni.cipher_suites[i].cipher_suite != NULL; ++i)
-                printf(" 0x%04" PRIx16, esni.cipher_suites[i].cipher_suite->id);
-            printf("\n");
-            printf("  padded-length: %" PRIu16 "\n", esni.padded_length);
-            printf("  not-before: %" PRIu64 "\n", esni.not_before);
-            printf("  not-after: %" PRIu64 "\n", esni.not_after);
-            char *esni_keys_base64 = malloc(ptls_base64_howlong(esni.esni_keys.len) + 1);
-            assert(esni_keys_base64 != NULL);
-            ptls_base64_encode(esni.esni_keys.base, esni.esni_keys.len, esni_keys_base64);
-            printf("  TXT record: \"%s\" (%zu bytes)\n", esni_keys_base64, strlen(esni_keys_base64));
-            free(esni_keys_base64);
-            ptls_esni_dispose_context(&esni);
-            src = end;
-        });
-    } while (src != end);
-
-    ret = 0;
-Exit:
-    if (ret != 0) {
-        fprintf(stderr, "failed to parse ESNI data due to TLS alert: %d\n", ret);
-        return 1;
-    }
-    return 0;
-}
-
-static int emit_esni(ptls_key_exchange_algorithm_t **key_exchanges, ptls_cipher_suite_t **cipher_suites, uint16_t padded_length,
+static int emit_esni(ptls_key_exchange_context_t **key_exchanges, ptls_cipher_suite_t **cipher_suites, uint16_t padded_length,
                      uint64_t not_before, uint64_t lifetime)
 {
     ptls_buffer_t buf;
@@ -106,58 +42,30 @@ static int emit_esni(ptls_key_exchange_algorithm_t **key_exchanges, ptls_cipher_
 
     ptls_buffer_init(&buf, "", 0);
 
-    /* struct that contains ESNIKeys and corresponding private keys */
+    ptls_buffer_push16(&buf, PTLS_ESNI_VERSION_DRAFT02);
+    ptls_buffer_push(&buf, 0, 0, 0, 0); /* checksum, filled later */
     ptls_buffer_push_block(&buf, 2, {
-        ptls_buffer_push_block(&buf, 2, {
-            /* build ESNIKeys */
-            size_t start = buf.off;
-            ptls_buffer_push16(&buf, PTLS_ESNI_VERSION_DRAFT02);
-            ptls_buffer_push(&buf, 0, 0, 0, 0); /* checksum, filled later */
-            ptls_buffer_push_block(&buf, 2, {
-                size_t i;
-                for (i = 0; key_exchanges[i] != NULL; ++i) {
-                    ptls_iovec_t pubkey;
-                    if ((ret = key_exchanges[i]->create(key_exchanges[i], ctx + i, &pubkey)) != 0)
-                        goto Exit;
-                    if (ctx[i]->save == NULL) {
-                        fprintf(stderr,
-                                "the selected key-exchange algorithm (id:%" PRIu16 ") does not support private key exportation\n",
-                                key_exchanges[i]->id);
-                        ret = 1;
-                        goto Exit;
-                    }
-                    ptls_buffer_push16(&buf, key_exchanges[i]->id);
-                    ptls_buffer_push_block(&buf, 2, { ptls_buffer_pushv(&buf, pubkey.base, pubkey.len); });
-                }
-            });
-            ptls_buffer_push_block(&buf, 2, {
-                size_t i;
-                for (i = 0; cipher_suites[i] != NULL; ++i)
-                    ptls_buffer_push16(&buf, cipher_suites[i]->id);
-            });
-            ptls_buffer_push16(&buf, padded_length);
-            ptls_buffer_push64(&buf, not_before);
-            ptls_buffer_push64(&buf, not_before + lifetime - 1);
-            ptls_buffer_push_block(&buf, 2, {});
-            { /* fill checksum */
-                ptls_hash_context_t *h = ptls_openssl_sha256.create();
-                uint8_t d[PTLS_SHA256_DIGEST_SIZE];
-                h->update(h, buf.base + start, buf.off - start);
-                h->final(h, d, PTLS_HASH_FINAL_MODE_FREE);
-                memcpy(buf.base + start + 2, d, 4);
-            }
-        });
-        /* private keys */
-        ptls_buffer_push_block(&buf, 2, {
-            size_t i;
-            for (i = 0; ctx[i] != NULL; ++i) {
-                ptls_buffer_push_block(&buf, 2, {
-                    if ((ret = ctx[i]->save(ctx[i], &buf)) != 0)
-                        goto Exit;
-                });
-            }
-        });
+        size_t i;
+        for (i = 0; key_exchanges[i] != NULL; ++i) {
+            ptls_buffer_push16(&buf, key_exchanges[i]->algo->id);
+            ptls_buffer_push_block(&buf, 2,
+                                   { ptls_buffer_pushv(&buf, key_exchanges[i]->pubkey.base, key_exchanges[i]->pubkey.len); });
+        }
     });
+    ptls_buffer_push_block(&buf, 2, {
+        size_t i;
+        for (i = 0; cipher_suites[i] != NULL; ++i)
+            ptls_buffer_push16(&buf, cipher_suites[i]->id);
+    });
+    ptls_buffer_push16(&buf, padded_length);
+    ptls_buffer_push64(&buf, not_before);
+    ptls_buffer_push64(&buf, not_before + lifetime - 1);
+    ptls_buffer_push_block(&buf, 2, {});
+    { /* fill checksum */
+        uint8_t d[PTLS_SHA256_DIGEST_SIZE];
+        ptls_calc_hash(&ptls_openssl_sha256, d, buf.base, buf.off);
+        memcpy(buf.base + 2, d, 4);
+    }
 
     /* emit the structure to stdout */
     fwrite(buf.base, 1, buf.off, stdout);
@@ -175,17 +83,14 @@ Exit : {
 
 static void usage(const char *cmd, int status)
 {
-    printf("picotls-esni - generates private structure for ESNI\n"
+    printf("picotls-esni - generates an ESNI Resource Record\n"
            "\n"
            "Usage: %s [options]\n"
            "Options:\n"
-           "  -x <key-exchange>   secp256r1, x25519, ... (default: secp256r1)\n"
+           "  -K <key-file>       secp256r1, x25519, ... (default: secp256r1)\n"
            "  -c <cipher-suite>   aes128-gcm, chacha20-poly1305, ...\n"
            "  -d <days>           number of days until expiration (default: 90)\n"
            "  -p <padded-length>  padded length (default: 260)\n"
-           "  -r                  reads the private structure from stdin and prints the\n"
-           "                      content (e.g., TXT record to be registered). The rest of\n"
-           "                      the arguments are ignored when the option is being used.\n"
            "  -h                  prints this help\n"
            "\n"
            "-c and -x can be used multiple times.\n"
@@ -206,7 +111,7 @@ int main(int argc, char **argv)
 #endif
 
     struct {
-        ptls_key_exchange_algorithm_t *elements[256];
+        ptls_key_exchange_context_t *elements[256];
         size_t count;
     } key_exchanges = {{NULL}, 0};
     struct {
@@ -217,31 +122,25 @@ int main(int argc, char **argv)
     uint64_t lifetime = 90 * 86400;
 
     int ch;
-    while ((ch = getopt(argc, argv, "x:c:d:p:rh")) != -1) {
+    while ((ch = getopt(argc, argv, "K:c:d:p:h")) != -1) {
         switch (ch) {
-        case 'x': {
-            if (strcasecmp("secp256r1", optarg) == 0) {
-                key_exchanges.elements[key_exchanges.count++] = &ptls_openssl_secp256r1;
-            }
-#ifdef PTLS_OPENSSL_HAS_SECP384R1
-            else if (strcasecmp("secp384r1", optarg) == 0) {
-                key_exchanges.elements[key_exchanges.count++] = &ptls_openssl_secp384r1;
-            }
-#endif
-#ifdef PTLS_OPENSSL_HAS_SECP521R1
-            else if (strcasecmp("secp521r1", optarg) == 0) {
-                key_exchanges.elements[key_exchanges.count++] = &ptls_openssl_secp521r1;
-            }
-#endif
-#ifdef PTLS_OPENSSL_HAS_X25519
-            else if (strcasecmp("x25519", optarg) == 0) {
-                key_exchanges.elements[key_exchanges.count++] = &ptls_openssl_x25519;
-            }
-#endif
-            else {
-                fprintf(stderr, "unknown key-exchange: %s\n", optarg);
+        case 'K': {
+            FILE *fp;
+            EVP_PKEY *pkey;
+            if ((fp = fopen(optarg, "rt")) == NULL) {
+                fprintf(stderr, "failed to open file:%s:%s\n", optarg, strerror(errno));
                 exit(1);
             }
+            if ((pkey = PEM_read_PrivateKey(fp, NULL, NULL, NULL)) == NULL) {
+                fprintf(stderr, "failed to read private key from file:%s:%s\n", optarg, strerror(errno));
+                exit(1);
+            }
+            fclose(fp);
+            if (ptls_openssl_create_key_exchange(key_exchanges.elements + key_exchanges.count++, pkey) != 0) {
+                fprintf(stderr, "unknown type of private key found in file:%s\n", optarg);
+                exit(1);
+            }
+            EVP_PKEY_free(pkey);
         } break;
         case 'c': {
             size_t i;
@@ -267,8 +166,6 @@ int main(int argc, char **argv)
                 exit(1);
             }
             break;
-        case 'r':
-            return read_esni();
         case 'h':
             usage(argv[0], 0);
             break;
@@ -279,8 +176,11 @@ int main(int argc, char **argv)
     }
     if (cipher_suites.count == 0)
         cipher_suites.elements[cipher_suites.count++] = &ptls_openssl_aes128gcmsha256;
-    if (key_exchanges.count == 0)
-        key_exchanges.elements[key_exchanges.count++] = &ptls_openssl_secp256r1;
+    if (key_exchanges.count == 0) {
+        fprintf(stderr, "no private key specified\n");
+        exit(1);
+    }
+
     argc -= optind;
     argv += optind;
 

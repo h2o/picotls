@@ -1855,10 +1855,9 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
                 key_share_client_hello.off = sendbuf->off;
                 ptls_buffer_push_block(sendbuf, 2, {
                     if (tls->key_share != NULL) {
-                        ptls_iovec_t pubkey;
-                        if ((ret = tls->key_share->create(tls->key_share, &tls->client.key_share_ctx, &pubkey)) != 0)
+                        if ((ret = tls->key_share->create(tls->key_share, &tls->client.key_share_ctx)) != 0)
                             goto Exit;
-                        if ((ret = push_key_share_entry(sendbuf, tls->key_share->id, pubkey)) != 0)
+                        if ((ret = push_key_share_entry(sendbuf, tls->key_share->id, tls->client.key_share_ctx->pubkey)) != 0)
                             goto Exit;
                     }
                 });
@@ -4967,117 +4966,86 @@ int ptls_handle_message(ptls_t *tls, ptls_buffer_t *sendbuf, size_t epoch_offset
     return handle_handshake_record(tls, handle_handshake_message, &emitter.super, &rec, properties);
 }
 
-int ptls_esni_init_context(ptls_context_t *ctx, ptls_esni_context_t *esni, const uint8_t *src, const uint8_t *end)
+int ptls_esni_init_context(ptls_context_t *ctx, ptls_esni_context_t *esni, ptls_iovec_t esni_keys,
+                           ptls_key_exchange_context_t **key_exchanges)
 {
-    struct {
-        struct {
-            ptls_key_exchange_algorithm_t *algo;
-            ptls_iovec_t peer_key;
-        } elements[16];
-        size_t count;
-    } key_exchanges = {{{NULL}}};
-    ptls_iovec_t esni_keys = {NULL};
-    size_t num_cipher_suites = 0;
+    const uint8_t *src = esni_keys.base, *const end = src + esni_keys.len;
+    size_t num_key_exchanges, num_cipher_suites = 0;
     int ret;
 
+    for (num_key_exchanges = 0; key_exchanges[num_key_exchanges] != NULL; ++num_key_exchanges)
+        ;
+
     memset(esni, 0, sizeof(*esni));
+    if ((esni->key_exchanges = malloc(sizeof(*esni->key_exchanges) * (num_key_exchanges + 1))) == NULL) {
+        ret = PTLS_ERROR_NO_MEMORY;
+        goto Exit;
+    }
+    memcpy(esni->key_exchanges, key_exchanges, sizeof(*esni->key_exchanges) * (num_key_exchanges + 1));
 
     /* ESNIKeys */
+    if (end - src < 6) {
+        ret = PTLS_ALERT_DECRYPT_ERROR;
+        goto Exit;
+    }
+    src += 6;
     ptls_decode_open_block(src, end, 2, {
-        esni_keys.base = (void *)src;
-        if (end - src < 6) {
-            ret = PTLS_ALERT_DECRYPT_ERROR;
-            goto Exit;
-        }
-        src += 6;
-        ptls_decode_open_block(src, end, 2, {
-            do {
-                uint16_t id;
-                ptls_iovec_t peer_key;
-                if ((ret = ptls_decode16(&id, &src, end)) != 0)
-                    goto Exit;
-                ptls_decode_open_block(src, end, 2, {
-                    peer_key = ptls_iovec_init(src, end - src);
-                    src = end;
-                });
-                if (key_exchanges.count >= sizeof(key_exchanges.elements) / sizeof(key_exchanges.elements[0])) {
-                    ret = PTLS_ALERT_ILLEGAL_PARAMETER;
-                    goto Exit;
-                }
-                size_t i;
-                for (i = 0; ctx->key_exchanges[i] != NULL; ++i)
-                    if (ctx->key_exchanges[i]->id == id)
-                        break;
-                if (ctx->key_exchanges[i] == NULL) {
-                    ret = PTLS_ALERT_ILLEGAL_PARAMETER;
-                    goto Exit;
-                }
-                key_exchanges.elements[key_exchanges.count].algo = ctx->key_exchanges[i];
-                key_exchanges.elements[key_exchanges.count].peer_key = peer_key;
-                ++key_exchanges.count;
-            } while (src != end);
-        });
-        ptls_decode_open_block(src, end, 2, {
-            void *newp;
-            do {
-                uint16_t id;
-                if ((ret = ptls_decode16(&id, &src, end)) != 0)
-                    goto Exit;
-                size_t i;
-                for (i = 0; ctx->cipher_suites[i] != NULL; ++i)
-                    if (ctx->cipher_suites[i]->id == id)
-                        break;
-                if (ctx->cipher_suites[i] != NULL) {
-                    if ((newp = realloc(esni->cipher_suites, sizeof(*esni->cipher_suites) * (num_cipher_suites + 1))) == NULL) {
-                        ret = PTLS_ERROR_NO_MEMORY;
-                        goto Exit;
-                    }
-                    esni->cipher_suites = newp;
-                    esni->cipher_suites[num_cipher_suites++].cipher_suite = ctx->cipher_suites[i];
-                }
-            } while (src != end);
-            if ((newp = realloc(esni->cipher_suites, sizeof(*esni->cipher_suites) * (num_cipher_suites + 1))) == NULL) {
-                ret = PTLS_ERROR_NO_MEMORY;
+        do {
+            /* parse */
+            uint16_t id;
+            if ((ret = ptls_decode16(&id, &src, end)) != 0)
+                goto Exit;
+            ptls_decode_open_block(src, end, 2, { src = end; });
+            /* check that matching key-share exists */
+            ptls_key_exchange_context_t **found;
+            for (found = key_exchanges; *found != NULL; ++found)
+                if ((*found)->algo->id == id)
+                    break;
+            if (found == NULL) {
+                ret = PTLS_ERROR_INCOMPATIBLE_KEY;
                 goto Exit;
             }
-            esni->cipher_suites = newp;
-            esni->cipher_suites[num_cipher_suites].cipher_suite = NULL;
-        });
-        if ((ret = ptls_decode16(&esni->padded_length, &src, end)) != 0)
-            goto Exit;
-        if ((ret = ptls_decode64(&esni->not_before, &src, end)) != 0)
-            goto Exit;
-        if ((ret = ptls_decode64(&esni->not_after, &src, end)) != 0)
-            goto Exit;
-        ptls_decode_block(src, end, 2, {
-            while (src != end) {
-                uint16_t ext_type;
-                if ((ret = ptls_decode16(&ext_type, &src, end)) != 0)
-                    goto Exit;
-                ptls_decode_open_block(src, end, 2, { src = end; });
-            }
-        });
-        esni_keys.len = src - esni_keys.base;
+        } while (src != end);
     });
-
-    /* private keys */
-    ptls_decode_block(src, end, 2, {
-        if ((esni->key_exchanges = malloc(sizeof(*esni->key_exchanges) * (key_exchanges.count + 1))) == NULL) {
+    ptls_decode_open_block(src, end, 2, {
+        void *newp;
+        do {
+            uint16_t id;
+            if ((ret = ptls_decode16(&id, &src, end)) != 0)
+                goto Exit;
+            size_t i;
+            for (i = 0; ctx->cipher_suites[i] != NULL; ++i)
+                if (ctx->cipher_suites[i]->id == id)
+                    break;
+            if (ctx->cipher_suites[i] != NULL) {
+                if ((newp = realloc(esni->cipher_suites, sizeof(*esni->cipher_suites) * (num_cipher_suites + 1))) == NULL) {
+                    ret = PTLS_ERROR_NO_MEMORY;
+                    goto Exit;
+                }
+                esni->cipher_suites = newp;
+                esni->cipher_suites[num_cipher_suites++].cipher_suite = ctx->cipher_suites[i];
+            }
+        } while (src != end);
+        if ((newp = realloc(esni->cipher_suites, sizeof(*esni->cipher_suites) * (num_cipher_suites + 1))) == NULL) {
             ret = PTLS_ERROR_NO_MEMORY;
             goto Exit;
         }
-        memset(esni->key_exchanges, 0, sizeof(*esni->key_exchanges) * (key_exchanges.count + 1));
-        size_t i;
-        for (i = 0; i != key_exchanges.count; ++i) {
-            ptls_decode_open_block(src, end, 2, {
-                ptls_key_exchange_algorithm_t *algo = key_exchanges.elements[i].algo;
-                if ((ret = algo->load(algo, esni->key_exchanges + i, key_exchanges.elements[i].peer_key,
-                                      ptls_iovec_init(src, end - src))) != 0)
-                    goto Exit;
-                src = end;
-            });
+        esni->cipher_suites = newp;
+        esni->cipher_suites[num_cipher_suites].cipher_suite = NULL;
+    });
+    if ((ret = ptls_decode16(&esni->padded_length, &src, end)) != 0)
+        goto Exit;
+    if ((ret = ptls_decode64(&esni->not_before, &src, end)) != 0)
+        goto Exit;
+    if ((ret = ptls_decode64(&esni->not_after, &src, end)) != 0)
+        goto Exit;
+    ptls_decode_block(src, end, 2, {
+        while (src != end) {
+            uint16_t ext_type;
+            if ((ret = ptls_decode16(&ext_type, &src, end)) != 0)
+                goto Exit;
+            ptls_decode_open_block(src, end, 2, { src = end; });
         }
-        esni->key_exchanges[i] = NULL;
     });
 
     { /* calculate digests for every cipher-suite */
@@ -5088,14 +5056,6 @@ int ptls_esni_init_context(ptls_context_t *ctx, ptls_esni_context_t *esni, const
                 goto Exit;
         }
     }
-
-    /* store copy of esni_keys in esni */
-    if ((esni->esni_keys.base = malloc(esni_keys.len)) == NULL) {
-        ret = PTLS_ERROR_NO_MEMORY;
-        goto Exit;
-    }
-    memcpy(esni->esni_keys.base, esni_keys.base, esni_keys.len);
-    esni->esni_keys.len = esni_keys.len;
 
     ret = 0;
 Exit:
@@ -5114,7 +5074,6 @@ void ptls_esni_dispose_context(ptls_esni_context_t *esni)
         free(esni->key_exchanges);
     }
     free(esni->cipher_suites);
-    free(esni->esni_keys.base);
 }
 
 /**

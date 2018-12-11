@@ -122,43 +122,33 @@ static inline void setup_verify_certificate(ptls_context_t *ctx)
     ctx->verify_certificate = &vc.super;
 }
 
-static inline void setup_esni(ptls_context_t *ctx, const char *fn)
+static inline void setup_esni(ptls_context_t *ctx, const char *esni_fn, ptls_key_exchange_context_t **key_exchanges)
 {
-    FILE *fp;
-    uint8_t keys_buf[65536];
-    size_t keys_buf_len;
+    uint8_t esnikeys[65536];
+    size_t esnikeys_len;
     int ret = 0;
 
-    if ((fp = fopen(fn, "rb")) == NULL) {
-        fprintf(stderr, "failed to open file:%s:%s\n", fn, strerror(errno));
+    { /* read esnikeys */
+        FILE *fp;
+        if ((fp = fopen(esni_fn, "rb")) == NULL) {
+            fprintf(stderr, "failed to open file:%s:%s\n", esni_fn, strerror(errno));
+            exit(1);
+        }
+        esnikeys_len = fread(esnikeys, 1, sizeof(esnikeys), fp);
+        if (esnikeys_len == 0 || !feof(fp)) {
+            fprintf(stderr, "failed to load ESNI data from file:%s\n", esni_fn);
+            exit(1);
+        }
+        fclose(fp);
+    }
+
+    if ((ctx->esni = malloc(sizeof(*ctx->esni) * 2)) == NULL || (*ctx->esni = malloc(sizeof(**ctx->esni))) == NULL) {
+        fprintf(stderr, "no memory\n");
         exit(1);
     }
-    keys_buf_len = fread(keys_buf, 1, sizeof(keys_buf), fp);
-    if (keys_buf_len == 0 || !feof(fp)) {
-        fprintf(stderr, "failed to load ESNI data from file:%s\n", fn);
-        exit(1);
-    }
-    fclose(fp);
 
-    const uint8_t *src = keys_buf, *const end = src + keys_buf_len;
-    size_t num_blocks = 0;
-    do {
-        ptls_decode_open_block(src, end, 2, {
-            ptls_esni_context_t *esni = malloc(sizeof(*esni));
-            assert(esni != NULL);
-            if ((ret = ptls_esni_init_context(ctx, esni, src, end)) != 0)
-                goto Exit;
-            ctx->esni = realloc(ctx->esni, sizeof(*ctx->esni) * (num_blocks + 1));
-            assert(ctx->esni != NULL);
-            ctx->esni[num_blocks++] = esni;
-            ctx->esni[num_blocks] = NULL;
-            src = end;
-        });
-    } while (src != end);
-
-Exit:
-    if (ret != 0) {
-        fprintf(stderr, "failed to parse ESNI data of file:%s:error=%d\n", fn, ret);
+    if ((ret = ptls_esni_init_context(ctx, ctx->esni[0], ptls_iovec_init(esnikeys, esnikeys_len), key_exchanges)) != 0) {
+        fprintf(stderr, "failed to parse ESNI data of file:%s:error=%d\n", esni_fn, ret);
         exit(1);
     }
 }

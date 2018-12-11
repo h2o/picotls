@@ -79,19 +79,17 @@ Exit:
     return ret;
 }
 
-static int secp256r1_create_key_exchange(ptls_key_exchange_algorithm_t *algo, ptls_key_exchange_context_t **_ctx,
-                                         ptls_iovec_t *pubkey)
+static int secp256r1_create_key_exchange(ptls_key_exchange_algorithm_t *algo, ptls_key_exchange_context_t **_ctx)
 {
     struct st_secp256r1_key_exhchange_t *ctx;
 
     if ((ctx = (struct st_secp256r1_key_exhchange_t *)malloc(sizeof(*ctx))) == NULL)
         return PTLS_ERROR_NO_MEMORY;
-    ctx->super = (ptls_key_exchange_context_t){algo, secp256r1_on_exchange};
+    ctx->super = (ptls_key_exchange_context_t){algo, ptls_iovec_init(ctx->pub, sizeof(ctx->pub)), secp256r1_on_exchange};
     ctx->pub[0] = TYPE_UNCOMPRESSED_PUBLIC_KEY;
     uECC_make_key(ctx->pub + 1, ctx->priv, uECC_secp256r1());
 
     *_ctx = &ctx->super;
-    *pubkey = ptls_iovec_init(ctx->pub, sizeof(ctx->pub));
     return 0;
 }
 

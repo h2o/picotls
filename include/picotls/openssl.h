@@ -65,6 +65,10 @@ extern ptls_cipher_suite_t ptls_openssl_chacha20poly1305sha256;
 #endif
 
 void ptls_openssl_random_bytes(void *buf, size_t len);
+/**
+ * constructs a key exchange context. pkey's reference count is incremented.
+ */
+int ptls_openssl_create_key_exchange(ptls_key_exchange_context_t **ctx, EVP_PKEY *pkey);
 
 struct st_ptls_openssl_signature_scheme_t {
     uint16_t scheme_id;
