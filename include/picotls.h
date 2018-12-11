@@ -376,7 +376,7 @@ typedef struct st_ptls_message_emitter_t {
 } ptls_message_emitter_t;
 
 /**
- * holds ESNIKeys and the private key (instantiated by ptlts_esni_parse, freed using ptls_esni_dispose)
+ * holds ESNIKeys and the private key (instantiated by ptls_esni_parse, freed using ptls_esni_dispose)
  */
 typedef struct st_ptls_esni_t {
     ptls_key_exchange_context_t **key_exchanges;
@@ -387,7 +387,7 @@ typedef struct st_ptls_esni_t {
     uint16_t padded_length;
     uint64_t not_before;
     uint64_t not_after;
-} ptls_esni_t;
+} ptls_esni_context_t;
 
 #define PTLS_CALLBACK_TYPE0(ret, name)                                                                                             \
     typedef struct st_ptls_##name##_t {                                                                                            \
@@ -528,7 +528,7 @@ struct st_ptls_context_t {
     /**
      * list of ESNI data terminated by NULL
      */
-    ptls_esni_t **esni;
+    ptls_esni_context_t **esni;
     /**
      *
      */
@@ -1167,8 +1167,9 @@ int ptls_load_certificates(ptls_context_t *ctx, char const *cert_pem_file);
 
 extern ptls_get_time_t ptls_get_time;
 
-void ptls_esni_dispose(ptls_esni_t *esni);
-int ptls_esni_parse(ptls_context_t *ctx, ptls_esni_t *esni, ptls_iovec_t *esnikeys, const uint8_t *src, const uint8_t *end);
+int ptls_esni_init_context(ptls_context_t *ctx, ptls_esni_context_t *esni, ptls_iovec_t *esnikeys, const uint8_t *src,
+                           const uint8_t *end);
+void ptls_esni_dispose_context(ptls_esni_context_t *esni);
 
 #define ptls_define_hash(name, ctx_type, init_func, update_func, final_func)                                                       \
                                                                                                                                    \

@@ -144,9 +144,9 @@ static inline void setup_esni(ptls_context_t *ctx, const char *fn)
     size_t num_blocks = 0;
     do {
         ptls_decode_open_block(src, end, 2, {
-            ptls_esni_t *esni = malloc(sizeof(*esni));
+            ptls_esni_context_t *esni = malloc(sizeof(*esni));
             assert(esni != NULL);
-            if ((ret = ptls_esni_parse(ctx, esni, NULL, src, end)) != 0)
+            if ((ret = ptls_esni_init_context(ctx, esni, NULL, src, end)) != 0)
                 goto Exit;
             ctx->esni = realloc(ctx->esni, sizeof(*ctx->esni) * (num_blocks + 1));
             assert(ctx->esni != NULL);

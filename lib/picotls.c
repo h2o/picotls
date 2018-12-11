@@ -2811,7 +2811,7 @@ Exit:
 static int client_hello_decrypt_esni(ptls_context_t *ctx, ptls_iovec_t *server_name, struct st_ptls_esni_secret_t **secret,
                                      struct st_ptls_client_hello_t *ch)
 {
-    ptls_esni_t **esni;
+    ptls_esni_context_t **esni;
     ptls_key_exchange_context_t **key_share_ctx;
     uint8_t *decrypted = NULL;
     ptls_aead_context_t *aead = NULL;
@@ -4967,19 +4967,8 @@ int ptls_handle_message(ptls_t *tls, ptls_buffer_t *sendbuf, size_t epoch_offset
     return handle_handshake_record(tls, handle_handshake_message, &emitter.super, &rec, properties);
 }
 
-void ptls_esni_dispose(ptls_esni_t *esni)
-{
-    size_t i;
-
-    if (esni->key_exchanges != NULL) {
-        for (i = 0; esni->key_exchanges[i] != NULL; ++i)
-            esni->key_exchanges[i]->on_exchange(esni->key_exchanges + i, 1, NULL, ptls_iovec_init(NULL, 0));
-        free(esni->key_exchanges);
-    }
-    free(esni->cipher_suites);
-}
-
-int ptls_esni_parse(ptls_context_t *ctx, ptls_esni_t *esni, ptls_iovec_t *_esnikeys, const uint8_t *src, const uint8_t *end)
+int ptls_esni_init_context(ptls_context_t *ctx, ptls_esni_context_t *esni, ptls_iovec_t *_esnikeys, const uint8_t *src,
+                           const uint8_t *end)
 {
     struct {
         struct {
@@ -5107,9 +5096,21 @@ Exit:
         if (_esnikeys != NULL)
             *_esnikeys = esni_keys;
     } else {
-        ptls_esni_dispose(esni);
+        ptls_esni_dispose_context(esni);
     }
     return ret;
+}
+
+void ptls_esni_dispose_context(ptls_esni_context_t *esni)
+{
+    size_t i;
+
+    if (esni->key_exchanges != NULL) {
+        for (i = 0; esni->key_exchanges[i] != NULL; ++i)
+            esni->key_exchanges[i]->on_exchange(esni->key_exchanges + i, 1, NULL, ptls_iovec_init(NULL, 0));
+        free(esni->key_exchanges);
+    }
+    free(esni->cipher_suites);
 }
 
 /**
