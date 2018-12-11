@@ -4967,8 +4967,7 @@ int ptls_handle_message(ptls_t *tls, ptls_buffer_t *sendbuf, size_t epoch_offset
     return handle_handshake_record(tls, handle_handshake_message, &emitter.super, &rec, properties);
 }
 
-int ptls_esni_init_context(ptls_context_t *ctx, ptls_esni_context_t *esni, ptls_iovec_t *_esnikeys, const uint8_t *src,
-                           const uint8_t *end)
+int ptls_esni_init_context(ptls_context_t *ctx, ptls_esni_context_t *esni, const uint8_t *src, const uint8_t *end)
 {
     struct {
         struct {
@@ -5090,14 +5089,18 @@ int ptls_esni_init_context(ptls_context_t *ctx, ptls_esni_context_t *esni, ptls_
         }
     }
 
+    /* store copy of esni_keys in esni */
+    if ((esni->esni_keys.base = malloc(esni_keys.len)) == NULL) {
+        ret = PTLS_ERROR_NO_MEMORY;
+        goto Exit;
+    }
+    memcpy(esni->esni_keys.base, esni_keys.base, esni_keys.len);
+    esni->esni_keys.len = esni_keys.len;
+
     ret = 0;
 Exit:
-    if (ret == 0) {
-        if (_esnikeys != NULL)
-            *_esnikeys = esni_keys;
-    } else {
+    if (ret != 0)
         ptls_esni_dispose_context(esni);
-    }
     return ret;
 }
 
@@ -5111,6 +5114,7 @@ void ptls_esni_dispose_context(ptls_esni_context_t *esni)
         free(esni->key_exchanges);
     }
     free(esni->cipher_suites);
+    free(esni->esni_keys.base);
 }
 
 /**

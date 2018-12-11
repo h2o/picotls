@@ -387,6 +387,7 @@ typedef struct st_ptls_esni_t {
     uint16_t padded_length;
     uint64_t not_before;
     uint64_t not_after;
+    ptls_iovec_t esni_keys;
 } ptls_esni_context_t;
 
 #define PTLS_CALLBACK_TYPE0(ret, name)                                                                                             \
@@ -1167,8 +1168,7 @@ int ptls_load_certificates(ptls_context_t *ctx, char const *cert_pem_file);
 
 extern ptls_get_time_t ptls_get_time;
 
-int ptls_esni_init_context(ptls_context_t *ctx, ptls_esni_context_t *esni, ptls_iovec_t *esnikeys, const uint8_t *src,
-                           const uint8_t *end);
+int ptls_esni_init_context(ptls_context_t *ctx, ptls_esni_context_t *esni, const uint8_t *src, const uint8_t *end);
 void ptls_esni_dispose_context(ptls_esni_context_t *esni);
 
 #define ptls_define_hash(name, ctx_type, init_func, update_func, final_func)                                                       \

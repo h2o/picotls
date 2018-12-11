@@ -63,9 +63,8 @@ static int read_esni(void)
     do {
         ptls_decode_open_block(src, end, 2, {
             ptls_esni_context_t esni;
-            ptls_iovec_t esni_keys;
             size_t i;
-            if ((ret = ptls_esni_init_context(&ctx, &esni, &esni_keys, src, end)) != 0)
+            if ((ret = ptls_esni_init_context(&ctx, &esni, src, end)) != 0)
                 goto Exit;
             printf("ESNIKeys:\n");
             printf("  key-exchanges:");
@@ -79,9 +78,9 @@ static int read_esni(void)
             printf("  padded-length: %" PRIu16 "\n", esni.padded_length);
             printf("  not-before: %" PRIu64 "\n", esni.not_before);
             printf("  not-after: %" PRIu64 "\n", esni.not_after);
-            char *esni_keys_base64 = malloc(ptls_base64_howlong(esni_keys.len) + 1);
+            char *esni_keys_base64 = malloc(ptls_base64_howlong(esni.esni_keys.len) + 1);
             assert(esni_keys_base64 != NULL);
-            ptls_base64_encode(esni_keys.base, esni_keys.len, esni_keys_base64);
+            ptls_base64_encode(esni.esni_keys.base, esni.esni_keys.len, esni_keys_base64);
             printf("  TXT record: \"%s\" (%zu bytes)\n", esni_keys_base64, strlen(esni_keys_base64));
             free(esni_keys_base64);
             ptls_esni_dispose_context(&esni);
