@@ -461,18 +461,37 @@ Exit:
     return ret;
 }
 
-static int evp_keyex_create(ptls_key_exchange_algorithm_t *algo, ptls_key_exchange_context_t **_ctx)
+static int evp_keyex_init(ptls_key_exchange_algorithm_t *algo, ptls_key_exchange_context_t **_ctx, EVP_PKEY *pkey)
 {
     struct st_evp_keyex_context_t *ctx = NULL;
-    EVP_PKEY_CTX *evpctx = NULL;
     int ret;
 
-    /* allocate */
+    /* instantiate */
     if ((ctx = malloc(sizeof(*ctx))) == NULL) {
         ret = PTLS_ERROR_NO_MEMORY;
         goto Exit;
     }
-    *ctx = (struct st_evp_keyex_context_t){{algo, {NULL}, evp_keyex_on_exchange}};
+    *ctx = (struct st_evp_keyex_context_t){{algo, {NULL}, evp_keyex_on_exchange}, pkey};
+
+    /* set public key */
+    if ((ctx->super.pubkey.len = EVP_PKEY_get1_tls_encodedpoint(ctx->privkey, &ctx->super.pubkey.base)) == 0) {
+        ctx->super.pubkey.base = NULL;
+        return PTLS_ERROR_NO_MEMORY;
+    }
+
+    *_ctx = &ctx->super;
+    ret = 0;
+Exit:
+    if (ret != 0 && ctx != NULL)
+        evp_keyex_free(ctx);
+    return ret;
+}
+
+static int evp_keyex_create(ptls_key_exchange_algorithm_t *algo, ptls_key_exchange_context_t **ctx)
+{
+    EVP_PKEY_CTX *evpctx = NULL;
+    EVP_PKEY *pkey = NULL;
+    int ret;
 
     /* generate private key */
     if ((evpctx = EVP_PKEY_CTX_new_id((int)algo->data, NULL)) == NULL) {
@@ -483,26 +502,22 @@ static int evp_keyex_create(ptls_key_exchange_algorithm_t *algo, ptls_key_exchan
         ret = PTLS_ERROR_LIBRARY;
         goto Exit;
     }
-    if (EVP_PKEY_keygen(evpctx, &ctx->privkey) <= 0) {
+    if (EVP_PKEY_keygen(evpctx, &pkey) <= 0) {
         ret = PTLS_ERROR_LIBRARY;
         goto Exit;
     }
 
-    /* derive public key */
-    if ((ctx->super.pubkey.len = EVP_PKEY_get1_tls_encodedpoint(ctx->privkey, &ctx->super.pubkey.base)) == 0) {
-        ctx->super.pubkey.base = NULL;
-        ret = PTLS_ERROR_NO_MEMORY;
+    /* setup */
+    if ((ret = evp_keyex_init(algo, ctx, pkey)) != 0)
         goto Exit;
-    }
-
-    *_ctx = &ctx->super;
+    pkey = NULL;
     ret = 0;
 
 Exit:
+    if (pkey != NULL)
+        EVP_PKEY_free(pkey);
     if (evpctx != NULL)
         EVP_PKEY_CTX_free(evpctx);
-    if (ret != 0 && ctx != NULL)
-        evp_keyex_free(ctx);
     return ret;
 }
 
@@ -537,9 +552,9 @@ Exit:
 
 int ptls_openssl_create_key_exchange(ptls_key_exchange_context_t **ctx, EVP_PKEY *pkey)
 {
-    int ret;
+    int ret, id;
 
-    switch (EVP_PKEY_id(pkey)) {
+    switch (id = EVP_PKEY_id(pkey)) {
 
     case EVP_PKEY_EC: {
         /* obtain eckey */
@@ -574,6 +589,14 @@ int ptls_openssl_create_key_exchange(ptls_key_exchange_context_t **ctx, EVP_PKEY
 
         return 0;
     } break;
+
+#ifdef PTLS_OPENSSL_HAVE_X25519
+    case NID_X25519:
+        if ((ret = evp_keyex_init(&ptls_openssl_x25519, ctx, pkey)) != 0)
+            return ret;
+        EVP_PKEY_up_ref(pkey);
+        return 0;
+#endif
 
     default:
         return PTLS_ERROR_INCOMPATIBLE_KEY;

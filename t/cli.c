@@ -346,7 +346,10 @@ int main(int argc, char **argv)
     ptls_context_t ctx = {ptls_openssl_random_bytes, &ptls_get_time, key_exchanges, ptls_openssl_cipher_suites};
     ptls_handshake_properties_t hsprop = {{{{NULL}}}};
     const char *host, *port, *file = NULL, *esni_file = NULL;
-    ptls_key_exchange_context_t *esni_key_exchange = NULL;
+    struct {
+        ptls_key_exchange_context_t *elements[16];
+        size_t count;
+    } esni_key_exchanges;
     int is_server = 0, use_early_data = 0, request_key_update = 0, ch;
     struct sockaddr_storage sa;
     socklen_t salen;
@@ -405,8 +408,6 @@ int main(int argc, char **argv)
             FILE *fp;
             EVP_PKEY *pkey;
             int ret;
-            if (esni_key_exchange != NULL)
-                esni_key_exchange->on_exchange(&esni_key_exchange, 1, NULL, ptls_iovec_init(NULL, 0));
             if ((fp = fopen(optarg, "rt")) == NULL) {
                 fprintf(stderr, "failed to open ESNI private key file:%s:%s\n", optarg, strerror(errno));
                 return 1;
@@ -415,7 +416,7 @@ int main(int argc, char **argv)
                 fprintf(stderr, "failed to load private key from file:%s\n", optarg);
                 return 1;
             }
-            if ((ret = ptls_openssl_create_key_exchange(&esni_key_exchange, pkey)) != 0) {
+            if ((ret = ptls_openssl_create_key_exchange(esni_key_exchanges.elements + esni_key_exchanges.count++, pkey)) != 0) {
                 fprintf(stderr, "failed to load private key from file:%s:picotls-error:%d", optarg, ret);
                 return 1;
             }
@@ -494,11 +495,11 @@ int main(int argc, char **argv)
     if (key_exchanges[0] == NULL)
         key_exchanges[0] = &ptls_openssl_secp256r1;
     if (esni_file != NULL) {
-        if (esni_key_exchange == NULL) {
+        if (esni_key_exchanges.count == 0) {
             fprintf(stderr, "-E must be used together with -K\n");
             return 1;
         }
-        setup_esni(&ctx, esni_file, (ptls_key_exchange_context_t *[]){esni_key_exchange, NULL});
+        setup_esni(&ctx, esni_file, esni_key_exchanges.elements);
     }
     if (argc != 2) {
         fprintf(stderr, "missing host and port\n");
