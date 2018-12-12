@@ -557,7 +557,7 @@ int ptls_openssl_create_key_exchange(ptls_key_exchange_context_t **ctx, EVP_PKEY
             break;
 #endif
 #ifdef PTLS_OPENSSL_HAVE_SECP521R1
-        case NID_secp384r1:
+        case NID_secp521r1:
             algo = &ptls_openssl_secp521r1;
             break;
 #endif
