@@ -3708,19 +3708,9 @@ static int handle_alert(ptls_t *tls, const uint8_t *src, size_t len)
     if (len != 2)
         return PTLS_ALERT_DECODE_ERROR;
 
-    uint8_t level = src[0], desc = src[1];
+    uint8_t desc = src[1];
 
-    /* ignore certain warnings */
-    if (level == PTLS_ALERT_LEVEL_WARNING) {
-        switch (desc) {
-        case PTLS_ALERT_USER_CANCELED:
-            return 0;
-        default:
-            break;
-        }
-    }
-
-    /* all other alerts are considered fatal, regardless of the transmitted level (section 6) */
+    /* all fatal alerts and USER_CANCELLED warning tears down the connection immediately, regardless of the transmitted level */
     return PTLS_ALERT_TO_PEER_ERROR(desc);
 }
 
