@@ -374,7 +374,7 @@ Exit:
     return ret;
 }
 
-#ifdef PTLS_OPENSSL_HAVE_X25519
+#if PTLS_OPENSSL_HAVE_X25519
 
 struct st_evp_keyex_context_t {
     ptls_key_exchange_context_t super;
@@ -566,12 +566,12 @@ int ptls_openssl_create_key_exchange(ptls_key_exchange_context_t **ctx, EVP_PKEY
         case NID_X9_62_prime256v1:
             algo = &ptls_openssl_secp256r1;
             break;
-#ifdef PTLS_OPENSSL_HAVE_SECP384R1
+#if PTLS_OPENSSL_HAVE_SECP384R1
         case NID_secp384r1:
             algo = &ptls_openssl_secp384r1;
             break;
 #endif
-#ifdef PTLS_OPENSSL_HAVE_SECP521R1
+#if PTLS_OPENSSL_HAVE_SECP521R1
         case NID_secp521r1:
             algo = &ptls_openssl_secp521r1;
             break;
@@ -590,7 +590,7 @@ int ptls_openssl_create_key_exchange(ptls_key_exchange_context_t **ctx, EVP_PKEY
         return 0;
     } break;
 
-#ifdef PTLS_OPENSSL_HAVE_X25519
+#if PTLS_OPENSSL_HAVE_X25519
     case NID_X25519:
         if ((ret = evp_keyex_init(&ptls_openssl_x25519, ctx, pkey)) != 0)
             return ret;
@@ -1366,15 +1366,15 @@ Exit:
 
 ptls_key_exchange_algorithm_t ptls_openssl_secp256r1 = {PTLS_GROUP_SECP256R1, x9_62_create_key_exchange, secp_key_exchange,
                                                         NID_X9_62_prime256v1};
-#ifdef PTLS_OPENSSL_HAVE_SECP384R1
+#if PTLS_OPENSSL_HAVE_SECP384R1
 ptls_key_exchange_algorithm_t ptls_openssl_secp384r1 = {PTLS_GROUP_SECP384R1, x9_62_create_key_exchange, secp_key_exchange,
                                                         NID_secp384r1};
 #endif
-#ifdef PTLS_OPENSSL_HAVE_SECP521R1
+#if PTLS_OPENSSL_HAVE_SECP521R1
 ptls_key_exchange_algorithm_t ptls_openssl_secp521r1 = {PTLS_GROUP_SECP521R1, x9_62_create_key_exchange, secp_key_exchange,
                                                         NID_secp521r1};
 #endif
-#ifdef PTLS_OPENSSL_HAVE_X25519
+#if PTLS_OPENSSL_HAVE_X25519
 ptls_key_exchange_algorithm_t ptls_openssl_x25519 = {PTLS_GROUP_X25519, evp_keyex_create, evp_keyex_exchange, NID_X25519};
 #endif
 ptls_key_exchange_algorithm_t *ptls_openssl_key_exchanges[] = {&ptls_openssl_secp256r1, NULL};
