@@ -386,6 +386,7 @@ static inline void init_extension_bitmap(struct st_ptls_extension_bitmap_t *bitm
     EXT(STATUS_REQUEST, {
         ALLOW(CLIENT_HELLO);
         ALLOW(CERTIFICATE);
+        ALLOW(CERTIFICATE_REQUEST);
     });
     EXT(SUPPORTED_GROUPS, {
         ALLOW(CLIENT_HELLO);
