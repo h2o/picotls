@@ -656,6 +656,8 @@ typedef struct st_ptls_handshake_properties_t {
 #pragma warning(pop)
 #endif
 
+void ptls_fuzzing();
+
 /**
  * builds a new ptls_iovec_t instance using the supplied parameters
  */
