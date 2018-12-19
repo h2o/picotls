@@ -91,9 +91,6 @@
 #define PTLS_MEMORY_DEBUG 0
 #endif
 
-int fuzz = 0;
-void ptls_fuzzing() { fuzz = 1; }
-
 /**
  * list of supported versions in the preferred order
  */
@@ -541,11 +538,11 @@ static size_t aead_encrypt(struct st_ptls_traffic_protection_t *ctx, void *outpu
                            uint8_t content_type)
 {
 
-    if (fuzz == 1) {
-        memcpy(output, input, inlen);
-        memcpy(output + inlen, &content_type, 1);
-        return inlen + 1 + 16;
-    }
+#ifdef FUZZ_HANDSHAKE
+    memcpy(output, input, inlen);
+    memcpy(output + inlen, &content_type, 1);
+    return inlen + 1 + 16;
+#endif // #ifdef FUZZ_HANDSHAKE
 
     uint8_t aad[5];
     size_t off = 0;
@@ -562,14 +559,14 @@ static size_t aead_encrypt(struct st_ptls_traffic_protection_t *ctx, void *outpu
 static int aead_decrypt(struct st_ptls_traffic_protection_t *ctx, void *output, size_t *outlen, const void *input, size_t inlen)
 {
 
-    if (fuzz == 1) {
-        if (inlen < 16) {
-           return PTLS_ALERT_BAD_RECORD_MAC;
-        }
-        memcpy(output, input, inlen - 16);
-        *outlen = inlen - 16;  // removing the 16 bytes of tag
-        return 0;
+#ifdef FUZZ_HANDSHAKE
+    if (inlen < 16) {
+        return PTLS_ALERT_BAD_RECORD_MAC;
     }
+    memcpy(output, input, inlen - 16);
+    *outlen = inlen - 16;  // removing the 16 bytes of tag
+    return 0;
+#endif // #ifdef FUZZ_HANDSHAKE
 
     uint8_t aad[5];
 
@@ -2130,11 +2127,13 @@ static int handle_certificate(ptls_t *tls, const uint8_t *src, const uint8_t *en
         }
     });
 
-    if (!fuzz && num_certs != 0 && tls->ctx->verify_certificate != NULL) {  
+#ifndef FUZZ_HANSHAKE
+    if (num_certs != 0 && tls->ctx->verify_certificate != NULL) {
         if ((ret = tls->ctx->verify_certificate->cb(tls->ctx->verify_certificate, tls, &tls->certificate_verify.cb,
                                                     &tls->certificate_verify.verify_ctx, certs, num_certs)) != 0)
             goto Exit;
     }
+#endif // #ifndef FUZZ_HANSHAKE
 
     *got_certs = num_certs != 0;
 
@@ -2257,11 +2256,15 @@ static int handle_certificate_verify(ptls_t *tls, ptls_iovec_t message, const ch
         goto Exit;
     }
     signdata_size = build_certificate_verify_signdata(signdata, tls->key_schedule, context_string);
-    if (!fuzz && tls->certificate_verify.cb != NULL) {
+#ifdef FUZZ_HANDSHAKE
+    ret = 0;
+#else
+    if (tls->certificate_verify.cb != NULL) {
         ret = tls->certificate_verify.cb(tls->certificate_verify.verify_ctx, ptls_iovec_init(signdata, signdata_size), signature);
     } else {
         ret = 0;
     }
+#endif // #ifdef FUZZ_HANDSHAK
     ptls_clear_memory(signdata, signdata_size);
     tls->certificate_verify.cb = NULL;
     if (ret != 0) {
@@ -2772,11 +2775,13 @@ static int try_psk_handshake(ptls_t *tls, size_t *psk_index, int *accept_early_d
         if (decode_session_identifier(&issue_at, &ticket_psk, &age_add, &ticket_server_name, &ticket_key_exchange_id, &ticket_csid,
                                       &ticket_negotiated_protocol, decbuf.base, decbuf.base + decbuf.off) != 0)
             continue;
+#ifndef FUZZ_HANDSHAKE
         /* check age */
-        if (!fuzz && now < issue_at)
+        if (now < issue_at)
             continue;
-        if (!fuzz && now - issue_at > (uint64_t)tls->ctx->ticket_lifetime * 1000)
+        if (now - issue_at > (uint64_t)tls->ctx->ticket_lifetime * 1000)
             continue;
+#endif // #ifndef FUZZ_HANDSHAKE
         *accept_early_data = 0;
         if (ch->psk.early_data_indication) {
             int64_t delta = (now - issue_at) - (identity->obfuscated_ticket_age - age_add);
