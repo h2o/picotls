@@ -525,7 +525,7 @@ Exit:
     return ret;
 }
 
-#ifdef PTLS_FUZZ_HANDSHAKE
+#if PTLS_FUZZ_HANDSHAKE == 1
 #include "aead_crypt_fuzz.c.h"
 #else
 #include "aead_crypt.c.h"
