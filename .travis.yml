@@ -1,5 +1,5 @@
 language: c
-dist: trusty
+dist: xenial
 sudo: required
 
 matrix:
@@ -9,11 +9,7 @@ matrix:
       compiler: gcc
     - name: Linux (clang)
       os: linux
-      compiler: clang-6.0
-      addons:
-        apt:
-          sources: ['llvm-toolchain-trusty-6.0', 'ubuntu-toolchain-r-test']
-          packages: ['g++-4.9','clang-6.0']
+      compiler: clang
     - name: macOS (Xcode)
       os: osx
 
