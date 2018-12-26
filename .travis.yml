@@ -1,20 +1,21 @@
+language: c
+dist: trusty
+sudo: required
+
 matrix:
   include:
-    - os: linux
-      dist: trusty
-      sudo: required
+    - name: Linux (gcc)
+      os: linux
       compiler: gcc
-    - os: linux
-      dist: trusty
-      sudo: required
+    - name: Linux (clang)
+      os: linux
       compiler: clang-6.0
       addons:
         apt:
           sources: ['llvm-toolchain-trusty-6.0', 'ubuntu-toolchain-r-test']
           packages: ['g++-4.9','clang-6.0']
-    - os: osx
-
-language: c
+    - name: macOS (Xcode)
+      os: osx
 
 before_install:
   - |
