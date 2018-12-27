@@ -16,10 +16,12 @@ matrix:
       compiler: clang
     - name: macOS (Xcode)
       os: osx
+      env:
+          - CMAKE_OPTS=" -DOPENSSL_ROOT_DIR=/usr/local/opt/openssl/"
 
 before_install:
 
 script:
-  - cmake .
+  - cmake ${CMAKE_OPTS} .
   - make all
   - make check
