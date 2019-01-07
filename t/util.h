@@ -77,7 +77,7 @@ struct st_util_save_ticket_t {
     char fn[MAXPATHLEN];
 };
 
-static int save_ticket_cb(ptls_save_ticket_t *_self, ptls_t *tls, ptls_iovec_t src)
+static int util_save_ticket_cb(ptls_save_ticket_t *_self, ptls_t *tls, ptls_iovec_t src)
 {
     struct st_util_save_ticket_t *self = (void *)_self;
     FILE *fp;
@@ -99,7 +99,7 @@ static inline void setup_session_file(ptls_context_t *ctx, ptls_handshake_proper
 
     /* setup save_ticket callback */
     strcpy(st.fn, fn);
-    st.super.cb = save_ticket_cb;
+    st.super.cb = util_save_ticket_cb;
     ctx->save_ticket = &st.super;
 
     /* load session ticket if possible */
