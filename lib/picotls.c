@@ -3090,7 +3090,7 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
             });
             break;
         case PTLS_EXTENSION_TYPE_COOKIE:
-            if (properties->server.cookie.key == NULL) {
+            if (properties == NULL || properties->server.cookie.key == NULL) {
                 ret = PTLS_ALERT_ILLEGAL_PARAMETER;
                 goto Exit;
             }
