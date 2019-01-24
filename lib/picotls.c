@@ -2403,7 +2403,7 @@ Exit:
 }
 
 static int default_emit_certificate_cb(ptls_emit_certificate_t *_self, ptls_t *tls, ptls_message_emitter_t *emitter,
-                                       ptls_key_schedule_t *key_sched, ptls_iovec_t context)
+                                       ptls_key_schedule_t *key_sched, ptls_iovec_t context, int push_status_request)
 {
     int ret;
 
@@ -2433,7 +2433,7 @@ static int send_certificate_and_certificate_verify(ptls_t *tls, ptls_message_emi
     }
 
     /* send Certificate (or the equivalent) */
-    if ((ret = emit_certificate->cb(emit_certificate, tls, emitter, tls->key_schedule, context)) != 0)
+    if ((ret = emit_certificate->cb(emit_certificate, tls, emitter, tls->key_schedule, context, push_status_request)) != 0)
         goto Exit;
 
     /* build and send CertificateVerify */
