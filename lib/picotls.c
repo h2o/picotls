@@ -4300,6 +4300,22 @@ static int handle_handshake_record(ptls_t *tls,
     return ret;
 }
 
+/**
+  * validate_record validates a given TLS record in respect to the
+  * current state of the TLS protocol.
+  */
+static int validate_record(ptls_t *tls, struct st_ptls_record_t *rec)
+{
+    switch (tls->state) {
+    case PTLS_STATE_SERVER_EXPECT_CLIENT_HELLO:
+        if (rec->type != PTLS_CONTENT_TYPE_HANDSHAKE)
+            return PTLS_ALERT_HANDSHAKE_FAILURE;
+    default:
+        break;
+    }
+    return 0;
+}
+
 static int handle_input(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_buffer_t *decryptbuf, const void *input, size_t *inlen,
                         ptls_handshake_properties_t *properties)
 {
@@ -4307,8 +4323,15 @@ static int handle_input(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_buffe
     int ret;
 
     /* extract the record */
-    if ((ret = parse_record(tls, &rec, input, inlen)) != 0)
+    if ((ret = parse_record(tls, &rec, input, inlen)) != 0) {
+        /* the header was parsed, which is enough to validate early */
+        if (ret == PTLS_ERROR_IN_PROGRESS && rec.type && inlen)
+            ret = validate_record(tls, &rec);
         return ret;
+    }
+    if ((ret = validate_record(tls, &rec)) != 0)
+        return ret;
+
     assert(rec.fragment != NULL);
 
     /* decrypt the record */
