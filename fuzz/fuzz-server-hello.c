@@ -40,6 +40,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
   // create ptls_context_t
   ptls_context_t ctx_client = {deterministic_random_bytes, &ptls_get_time,
                                key_exchanges, cipher_suites};
+  ctx_client.verify_certificate = NULL;
 
   // create pls_t
   ptls_t *tls_client = ptls_new(&ctx_client, 0);  // 0: client

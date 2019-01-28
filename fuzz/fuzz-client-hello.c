@@ -65,6 +65,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
   // create ptls_context_t
   ptls_context_t ctx_server = {deterministic_random_bytes, &ptls_get_time,
                                key_exchanges, cipher_suites};
+  ctx_server.verify_certificate = NULL;
 
   // setup server fake cache
   struct st_util_session_cache_t sc;
@@ -90,7 +91,6 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
 
   // more messages to parse?
   if (ret == 0 && size - consumed > 0) {
-    printf("yup, more data to parse!\n");
     size = size - consumed;
     // reset buffer
     ptls_buffer_dispose(&server_response);

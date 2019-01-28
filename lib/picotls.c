@@ -2081,7 +2081,7 @@ static int handle_certificate(ptls_t *tls, const uint8_t *src, const uint8_t *en
         }
     });
 
-    if (!PTLS_FUZZ_HANDSHAKE && num_certs != 0 && tls->ctx->verify_certificate != NULL) {
+    if (num_certs != 0 && tls->ctx->verify_certificate != NULL) {
         if ((ret = tls->ctx->verify_certificate->cb(tls->ctx->verify_certificate, tls, &tls->certificate_verify.cb,
                                                     &tls->certificate_verify.verify_ctx, certs, num_certs)) != 0)
             goto Exit;
@@ -2208,7 +2208,7 @@ static int handle_certificate_verify(ptls_t *tls, ptls_iovec_t message, const ch
         goto Exit;
     }
     signdata_size = build_certificate_verify_signdata(signdata, tls->key_schedule, context_string);
-    if (!PTLS_FUZZ_HANDSHAKE && tls->certificate_verify.cb != NULL) {
+    if (tls->certificate_verify.cb != NULL) {
         ret = tls->certificate_verify.cb(tls->certificate_verify.verify_ctx, ptls_iovec_init(signdata, signdata_size), signature);
     } else {
         ret = 0;
