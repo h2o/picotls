@@ -3458,10 +3458,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
         }
         /* the following check is necessary so that we would be able to track the connection in SSLKEYLOGFILE, even though it might
          * not be for the safety of the protocol */
-        if (!ptls_mem_equal(tls->client_random, ch.random_bytes, sizeof(tls->client_random)) ||
-            (tls->server_name != NULL) != (ch.server_name.base != NULL) ||
-            (tls->server_name != NULL && !(strncmp(tls->server_name, (char *)ch.server_name.base, ch.server_name.len) == 0 &&
-                                           tls->server_name[ch.server_name.len] == '\0'))) {
+        if (!ptls_mem_equal(tls->client_random, ch.random_bytes, sizeof(tls->client_random))) {
             ret = PTLS_ALERT_HANDSHAKE_FAILURE;
             goto Exit;
         }
