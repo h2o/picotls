@@ -1520,8 +1520,8 @@ static int select_key_share(ptls_key_exchange_algorithm_t **selected, ptls_iovec
                 *peer_key = key;
             }
         }
-        if (expect_one && *src != end) {
-            ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+        if (expect_one) {
+            ret = *selected != NULL ? 0 : PTLS_ALERT_ILLEGAL_PARAMETER;
             goto Exit;
         }
     }
