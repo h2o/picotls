@@ -1501,6 +1501,8 @@ static int select_key_share(ptls_key_exchange_algorithm_t **selected, ptls_iovec
 {
     int ret;
 
+    *selected = NULL;
+
     if (expect_one && *src == end) {
         ret = PTLS_ALERT_ILLEGAL_PARAMETER;
         goto Exit;
@@ -1513,10 +1515,9 @@ static int select_key_share(ptls_key_exchange_algorithm_t **selected, ptls_iovec
             goto Exit;
         ptls_key_exchange_algorithm_t **c = candidates;
         for (; *c != NULL; ++c) {
-            if ((*c)->id == group) {
+            if (*selected == NULL && (*c)->id == group) {
                 *selected = *c;
                 *peer_key = key;
-                return 0;
             }
         }
         if (expect_one && *src != end) {
@@ -1525,7 +1526,6 @@ static int select_key_share(ptls_key_exchange_algorithm_t **selected, ptls_iovec
         }
     }
 
-    *selected = NULL;
     ret = 0;
 
 Exit:
