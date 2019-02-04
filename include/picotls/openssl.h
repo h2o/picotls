@@ -55,6 +55,7 @@ extern ptls_key_exchange_algorithm_t ptls_openssl_x25519;
 
 extern ptls_key_exchange_algorithm_t *ptls_openssl_key_exchanges[];
 
+extern ptls_cipher_algorithm_t ptls_openssl_aes128ecb;
 extern ptls_cipher_algorithm_t ptls_openssl_aes128ctr;
 extern ptls_aead_algorithm_t ptls_openssl_aes128gcm;
 extern ptls_cipher_algorithm_t ptls_openssl_aes256ctr;

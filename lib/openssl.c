@@ -675,7 +675,7 @@ static void cipher_do_init(ptls_cipher_context_t *_ctx, const void *iv)
     assert(ret);
 }
 
-static int cipher_setup_crypto(ptls_cipher_context_t *_ctx, const void *key, const EVP_CIPHER *cipher,
+static int cipher_setup_crypto(ptls_cipher_context_t *_ctx, int is_enc, const void *key, const EVP_CIPHER *cipher,
                                void (*do_transform)(ptls_cipher_context_t *, void *, const void *, size_t))
 {
     struct cipher_context_t *ctx = (struct cipher_context_t *)_ctx;
@@ -686,12 +686,19 @@ static int cipher_setup_crypto(ptls_cipher_context_t *_ctx, const void *key, con
 
     if ((ctx->evp = EVP_CIPHER_CTX_new()) == NULL)
         return PTLS_ERROR_NO_MEMORY;
-    if (!EVP_EncryptInit_ex(ctx->evp, cipher, NULL, key, NULL)) {
-        EVP_CIPHER_CTX_free(ctx->evp);
-        return PTLS_ERROR_LIBRARY;
+
+    if (is_enc) {
+        if (!EVP_EncryptInit_ex(ctx->evp, cipher, NULL, key, NULL))
+            goto Error;
+    } else {
+        if (!EVP_DecryptInit_ex(ctx->evp, cipher, NULL, key, NULL))
+            goto Error;
     }
 
     return 0;
+Error:
+    EVP_CIPHER_CTX_free(ctx->evp);
+    return PTLS_ERROR_LIBRARY;
 }
 
 static void cipher_encrypt(ptls_cipher_context_t *_ctx, void *output, const void *input, size_t _len)
@@ -699,23 +706,37 @@ static void cipher_encrypt(ptls_cipher_context_t *_ctx, void *output, const void
     struct cipher_context_t *ctx = (struct cipher_context_t *)_ctx;
     int len = (int)_len, ret = EVP_EncryptUpdate(ctx->evp, output, &len, input, len);
     assert(ret);
+    assert(len == (int)_len);
+}
+
+static void cipher_decrypt(ptls_cipher_context_t *_ctx, void *output, const void *input, size_t _len)
+{
+    struct cipher_context_t *ctx = (struct cipher_context_t *)_ctx;
+    int len = (int)_len, ret = EVP_DecryptUpdate(ctx->evp, output, &len, input, len);
+    assert(ret);
+    /* OpenSSL 1.1.0i (or d?) seems to set outlen to zero when passing a 16-byte input to aes128ecb // assert(len == (int)_len); */
+}
+
+static int aes128ecb_setup_crypto(ptls_cipher_context_t *ctx, int is_enc, const void *key)
+{
+    return cipher_setup_crypto(ctx, is_enc, key, EVP_aes_128_ecb(), is_enc ? cipher_encrypt : cipher_decrypt);
 }
 
 static int aes128ctr_setup_crypto(ptls_cipher_context_t *ctx, int is_enc, const void *key)
 {
-    return cipher_setup_crypto(ctx, key, EVP_aes_128_ctr(), cipher_encrypt);
+    return cipher_setup_crypto(ctx, 1, key, EVP_aes_128_ctr(), cipher_encrypt);
 }
 
 static int aes256ctr_setup_crypto(ptls_cipher_context_t *ctx, int is_enc, const void *key)
 {
-    return cipher_setup_crypto(ctx, key, EVP_aes_256_ctr(), cipher_encrypt);
+    return cipher_setup_crypto(ctx, 1, key, EVP_aes_256_ctr(), cipher_encrypt);
 }
 
 #if PTLS_OPENSSL_HAVE_CHACHA20_POLY1305
 
 static int chacha20_setup_crypto(ptls_cipher_context_t *ctx, int is_enc, const void *key)
 {
-    return cipher_setup_crypto(ctx, key, EVP_chacha20(), cipher_encrypt);
+    return cipher_setup_crypto(ctx, 1, key, EVP_chacha20(), cipher_encrypt);
 }
 
 #endif
@@ -1378,10 +1399,13 @@ ptls_key_exchange_algorithm_t ptls_openssl_secp521r1 = {PTLS_GROUP_SECP521R1, x9
 ptls_key_exchange_algorithm_t ptls_openssl_x25519 = {PTLS_GROUP_X25519, evp_keyex_create, evp_keyex_exchange, NID_X25519};
 #endif
 ptls_key_exchange_algorithm_t *ptls_openssl_key_exchanges[] = {&ptls_openssl_secp256r1, NULL};
+ptls_cipher_algorithm_t ptls_openssl_aes128ecb = {"AES128-ECB", PTLS_AES128_KEY_SIZE, 0, sizeof(struct cipher_context_t),
+                                                  aes128ecb_setup_crypto};
 ptls_cipher_algorithm_t ptls_openssl_aes128ctr = {"AES128-CTR", PTLS_AES128_KEY_SIZE, PTLS_AES_IV_SIZE,
                                                   sizeof(struct cipher_context_t), aes128ctr_setup_crypto};
 ptls_aead_algorithm_t ptls_openssl_aes128gcm = {"AES128-GCM",
                                                 &ptls_openssl_aes128ctr,
+                                                &ptls_openssl_aes128ecb,
                                                 PTLS_AES128_KEY_SIZE,
                                                 PTLS_AESGCM_IV_SIZE,
                                                 PTLS_AESGCM_TAG_SIZE,
@@ -1391,6 +1415,7 @@ ptls_cipher_algorithm_t ptls_openssl_aes256ctr = {"AES256-CTR", PTLS_AES256_KEY_
                                                   sizeof(struct cipher_context_t), aes256ctr_setup_crypto};
 ptls_aead_algorithm_t ptls_openssl_aes256gcm = {"AES256-GCM",
                                                 &ptls_openssl_aes256ctr,
+                                                NULL,
                                                 PTLS_AES256_KEY_SIZE,
                                                 PTLS_AESGCM_IV_SIZE,
                                                 PTLS_AESGCM_TAG_SIZE,
@@ -1409,7 +1434,7 @@ ptls_cipher_algorithm_t ptls_openssl_chacha20 = {"CHACHA20", PTLS_CHACHA20_KEY_S
                                                  sizeof(struct cipher_context_t), chacha20_setup_crypto};
 ptls_aead_algorithm_t ptls_openssl_chacha20poly1305 = {"CHACHA20-POLY1305",
                                                        &ptls_openssl_chacha20,
-                                                       PTLS_CHACHA20_KEY_SIZE,
+                                                       NULL, PTLS_CHACHA20_KEY_SIZE,
                                                        PTLS_CHACHA20POLY1305_IV_SIZE,
                                                        PTLS_CHACHA20POLY1305_TAG_SIZE,
                                                        sizeof(struct aead_crypto_context_t),

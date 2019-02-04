@@ -176,10 +176,40 @@ static void test_aad_ciphersuite(ptls_cipher_suite_t *cs1, ptls_cipher_suite_t *
     ptls_aead_free(c);
 }
 
+static void test_ecb(ptls_cipher_algorithm_t *algo, const void *expected, size_t expected_len)
+{
+    static const uint8_t key[] = {0,  1,  2,  3,  4,  5,  6,  7,  8,  9,  10, 11, 12, 13, 14, 15,
+                                  16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31},
+                         plaintext[] = {0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
+                                        0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff};
+    uint8_t *actual = alloca(expected_len);
+
+    /* encrypt */
+    memset(actual, 0, expected_len);
+    ptls_cipher_context_t *ctx = ptls_cipher_new(algo, 1, key);
+    ptls_cipher_encrypt(ctx, actual, plaintext, expected_len);
+    ptls_cipher_free(ctx);
+    ok(memcmp(actual, expected, expected_len) == 0);
+
+    /* decrypt */
+    ctx = ptls_cipher_new(algo, 0, key);
+    ptls_cipher_encrypt(ctx, actual, actual, expected_len);
+    ptls_cipher_free(ctx);
+    ok(memcmp(actual, plaintext, expected_len) == 0);
+}
+
+static void test_aes128ecb(void)
+{
+    static const uint8_t expected[] = {0x69, 0xC4, 0xE0, 0xD8, 0x6A, 0x7B, 0x04, 0x30,
+                                       0xD8, 0xCD, 0xB7, 0x80, 0x70, 0xB4, 0xC5, 0x5A};
+
+    test_ecb(find_cipher(ctx, PTLS_CIPHER_SUITE_AES_128_GCM_SHA256)->aead->ecb_cipher, expected, sizeof(expected));
+}
+
 static void test_ctr(ptls_cipher_suite_t *cs, const uint8_t *key, size_t key_len, const void *iv, size_t iv_len,
                      const void *expected, size_t expected_len)
 {
-    static uint8_t zeroes[64] = {0};
+    static const uint8_t zeroes[64] = {0};
 
     if (cs == NULL)
         return;
@@ -1160,6 +1190,7 @@ void test_picotls(void)
     subtest("aes128gcm", test_aes128gcm);
     subtest("aes256gcm", test_aes256gcm);
     subtest("chacha20poly1305", test_chacha20poly1305);
+    subtest("aes128ecb", test_aes128ecb);
     subtest("aes128ctr", test_aes128ctr);
     subtest("chacha20", test_chacha20);
     subtest("base64-decode", test_base64_decode);
