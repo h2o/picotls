@@ -280,6 +280,10 @@ typedef const struct st_ptls_aead_algorithm_t {
      */
     ptls_cipher_algorithm_t *ctr_cipher;
     /**
+     * the underlying ecb cipher (might not be available)
+     */
+    ptls_cipher_algorithm_t *ecb_cipher;
+    /**
      * key size
      */
     size_t key_size;
