@@ -70,7 +70,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
   // setup server fake cache
   struct st_util_session_cache_t sc;
   sc.super.cb = encrypt_ticket_cb_fake;
-  ctx_server.ticket_lifetime = 86400;
+  ctx_server.ticket_lifetime = UINT_MAX;
   ctx_server.max_early_data_size = 8192;
   ctx_server.encrypt_ticket = &sc.super;
 

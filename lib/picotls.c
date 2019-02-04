@@ -2776,13 +2776,11 @@ static int try_psk_handshake(ptls_t *tls, size_t *psk_index, int *accept_early_d
         if (decode_session_identifier(&issue_at, &ticket_psk, &age_add, &ticket_server_name, &ticket_key_exchange_id, &ticket_csid,
                                       &ticket_negotiated_protocol, decbuf.base, decbuf.base + decbuf.off) != 0)
             continue;
-        if (!PTLS_FUZZ_HANDSHAKE) {
-            /* check age */
-            if (now < issue_at)
-                continue;
-            if (now - issue_at > (uint64_t)tls->ctx->ticket_lifetime * 1000)
-                continue;
-        }
+        /* check age */
+        if (now < issue_at)
+            continue;
+        if (now - issue_at > (uint64_t)tls->ctx->ticket_lifetime * 1000)
+            continue;
         *accept_early_data = 0;
         if (ch->psk.early_data_indication) {
             int64_t delta = (now - issue_at) - (identity->obfuscated_ticket_age - age_add);
