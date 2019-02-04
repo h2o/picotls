@@ -250,14 +250,24 @@ static void aesecb_decrypt(ptls_cipher_context_t *_ctx, void *output, const void
     cf_aes_decrypt(&ctx->aes, input, output);
 }
 
-static int aes128ecb_setup_crypto(ptls_cipher_context_t *_ctx, int is_enc, const void *key)
+static int aesecb_setup_crypto(ptls_cipher_context_t *_ctx, int is_enc, const void *key, size_t key_size)
 {
     struct aesecb_context_t *ctx = (struct aesecb_context_t *)_ctx;
     ctx->super.do_dispose = aesecb_dispose;
     ctx->super.do_init = NULL;
     ctx->super.do_transform = is_enc ? aesecb_encrypt : aesecb_decrypt;
-    cf_aes_init(&ctx->aes, key, PTLS_AES128_KEY_SIZE);
+    cf_aes_init(&ctx->aes, key, key_size);
     return 0;
+}
+
+static int aes128ecb_setup_crypto(ptls_cipher_context_t *ctx, int is_enc, const void *key)
+{
+    return aesecb_setup_crypto(ctx, is_enc, key, PTLS_AES128_KEY_SIZE);
+}
+
+static int aes256ecb_setup_crypto(ptls_cipher_context_t *ctx, int is_enc, const void *key)
+{
+    return aesecb_setup_crypto(ctx, is_enc, key, PTLS_AES256_KEY_SIZE);
 }
 
 struct aesctr_context_t {
@@ -570,16 +580,13 @@ ptls_cipher_algorithm_t ptls_minicrypto_aes128ctr = {"AES128-CTR", PTLS_AES128_K
 ptls_aead_algorithm_t ptls_minicrypto_aes128gcm = {
     "AES128-GCM",        &ptls_minicrypto_aes128ctr, &ptls_minicrypto_aes128ecb,      PTLS_AES128_KEY_SIZE,
     PTLS_AESGCM_IV_SIZE, PTLS_AESGCM_TAG_SIZE,       sizeof(struct aesgcm_context_t), aead_aes128gcm_setup_crypto};
+ptls_cipher_algorithm_t ptls_minicrypto_aes256ecb = {"AES128-ECB", PTLS_AES256_KEY_SIZE, 0, sizeof(struct aesecb_context_t),
+                                                     aes256ecb_setup_crypto};
 ptls_cipher_algorithm_t ptls_minicrypto_aes256ctr = {"AES256-CTR", PTLS_AES256_KEY_SIZE, PTLS_AES_IV_SIZE,
                                                      sizeof(struct aesctr_context_t), aes256ctr_setup_crypto};
-ptls_aead_algorithm_t ptls_minicrypto_aes256gcm = {"AES256-GCM",
-                                                   &ptls_minicrypto_aes256ctr,
-                                                   NULL,
-                                                   PTLS_AES256_KEY_SIZE,
-                                                   PTLS_AESGCM_IV_SIZE,
-                                                   PTLS_AESGCM_TAG_SIZE,
-                                                   sizeof(struct aesgcm_context_t),
-                                                   aead_aes256gcm_setup_crypto};
+ptls_aead_algorithm_t ptls_minicrypto_aes256gcm = {
+    "AES256-GCM",        &ptls_minicrypto_aes256ctr, &ptls_minicrypto_aes256ecb,      PTLS_AES256_KEY_SIZE,
+    PTLS_AESGCM_IV_SIZE, PTLS_AESGCM_TAG_SIZE,       sizeof(struct aesgcm_context_t), aead_aes256gcm_setup_crypto};
 ptls_hash_algorithm_t ptls_minicrypto_sha256 = {PTLS_SHA256_BLOCK_SIZE, PTLS_SHA256_DIGEST_SIZE, sha256_create,
                                                 PTLS_ZERO_DIGEST_SHA256};
 ptls_hash_algorithm_t ptls_minicrypto_sha384 = {PTLS_SHA384_BLOCK_SIZE, PTLS_SHA384_DIGEST_SIZE, sha384_create,

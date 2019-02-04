@@ -58,6 +58,7 @@ extern ptls_key_exchange_algorithm_t *ptls_openssl_key_exchanges[];
 extern ptls_cipher_algorithm_t ptls_openssl_aes128ecb;
 extern ptls_cipher_algorithm_t ptls_openssl_aes128ctr;
 extern ptls_aead_algorithm_t ptls_openssl_aes128gcm;
+extern ptls_cipher_algorithm_t ptls_openssl_aes256ecb;
 extern ptls_cipher_algorithm_t ptls_openssl_aes256ctr;
 extern ptls_aead_algorithm_t ptls_openssl_aes256gcm;
 extern ptls_hash_algorithm_t ptls_openssl_sha256;

@@ -206,6 +206,16 @@ static void test_aes128ecb(void)
     test_ecb(find_cipher(ctx, PTLS_CIPHER_SUITE_AES_128_GCM_SHA256)->aead->ecb_cipher, expected, sizeof(expected));
 }
 
+static void test_aes256ecb(void)
+{
+    static const uint8_t expected[] = {0x8E, 0xA2, 0xB7, 0xCA, 0x51, 0x67, 0x45, 0xBF,
+                                       0xEA, 0xFC, 0x49, 0x90, 0x4B, 0x49, 0x60, 0x89};
+    ptls_cipher_suite_t *cipher = find_cipher(ctx, PTLS_CIPHER_SUITE_AES_256_GCM_SHA384);
+
+    if (cipher != NULL)
+        test_ecb(cipher->aead->ecb_cipher, expected, sizeof(expected));
+}
+
 static void test_ctr(ptls_cipher_suite_t *cs, const uint8_t *key, size_t key_len, const void *iv, size_t iv_len,
                      const void *expected, size_t expected_len)
 {
@@ -1191,6 +1201,7 @@ void test_picotls(void)
     subtest("aes256gcm", test_aes256gcm);
     subtest("chacha20poly1305", test_chacha20poly1305);
     subtest("aes128ecb", test_aes128ecb);
+    subtest("aes256ecb", test_aes256ecb);
     subtest("aes128ctr", test_aes128ctr);
     subtest("chacha20", test_chacha20);
     subtest("base64-decode", test_base64_decode);

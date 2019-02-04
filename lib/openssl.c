@@ -722,6 +722,11 @@ static int aes128ecb_setup_crypto(ptls_cipher_context_t *ctx, int is_enc, const 
     return cipher_setup_crypto(ctx, is_enc, key, EVP_aes_128_ecb(), is_enc ? cipher_encrypt : cipher_decrypt);
 }
 
+static int aes256ecb_setup_crypto(ptls_cipher_context_t *ctx, int is_enc, const void *key)
+{
+    return cipher_setup_crypto(ctx, is_enc, key, EVP_aes_256_ecb(), is_enc ? cipher_encrypt : cipher_decrypt);
+}
+
 static int aes128ctr_setup_crypto(ptls_cipher_context_t *ctx, int is_enc, const void *key)
 {
     return cipher_setup_crypto(ctx, 1, key, EVP_aes_128_ctr(), cipher_encrypt);
@@ -1413,9 +1418,11 @@ ptls_aead_algorithm_t ptls_openssl_aes128gcm = {"AES128-GCM",
                                                 aead_aes128gcm_setup_crypto};
 ptls_cipher_algorithm_t ptls_openssl_aes256ctr = {"AES256-CTR", PTLS_AES256_KEY_SIZE, PTLS_AES_IV_SIZE,
                                                   sizeof(struct cipher_context_t), aes256ctr_setup_crypto};
+ptls_cipher_algorithm_t ptls_openssl_aes256ecb = {"AES256-ECB", PTLS_AES256_KEY_SIZE, 0, sizeof(struct cipher_context_t),
+                                                  aes256ecb_setup_crypto};
 ptls_aead_algorithm_t ptls_openssl_aes256gcm = {"AES256-GCM",
                                                 &ptls_openssl_aes256ctr,
-                                                NULL,
+                                                &ptls_openssl_aes256ecb,
                                                 PTLS_AES256_KEY_SIZE,
                                                 PTLS_AESGCM_IV_SIZE,
                                                 PTLS_AESGCM_TAG_SIZE,
@@ -1434,7 +1441,8 @@ ptls_cipher_algorithm_t ptls_openssl_chacha20 = {"CHACHA20", PTLS_CHACHA20_KEY_S
                                                  sizeof(struct cipher_context_t), chacha20_setup_crypto};
 ptls_aead_algorithm_t ptls_openssl_chacha20poly1305 = {"CHACHA20-POLY1305",
                                                        &ptls_openssl_chacha20,
-                                                       NULL, PTLS_CHACHA20_KEY_SIZE,
+                                                       NULL,
+                                                       PTLS_CHACHA20_KEY_SIZE,
                                                        PTLS_CHACHA20POLY1305_IV_SIZE,
                                                        PTLS_CHACHA20POLY1305_TAG_SIZE,
                                                        sizeof(struct aead_crypto_context_t),
