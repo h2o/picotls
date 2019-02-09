@@ -35,8 +35,7 @@
  *   - the context of the symmetric crypto algorithm,
  *   - key used for the symmetric algorithm,
  *   - number of rounds,
- *   - length of the block in byte,
- *   - encryption mask.
+ *   - length of the block in bits
  *
  * We consider just two symmetric algorithms for now,
  * ChaCha20 and AES128CTR. In theory, any symmetric algorithm
@@ -46,12 +45,15 @@
  * the use cases.
  *
  * The implementation will produce a result for any block
- * length lower than 32, although values lower than 4 would
+ * length lower than 256, although values lower than 32 would
  * not be recommended.
  *
- * The encryption mask is a bit map of the same length as
- * the block. Values at location where the mask is zero will
- * not be encrypted or decrypted. 
+ * The block to be encrypted is passed as a byte array of size
+ * (block_length + 7)/8. When the block_length is not a 
+ * multiple of 8, the algorithm guarantees that the extra bits
+ * in the last byte are left untouched. For example, if the
+ * block length is 39, the least significant bit of the
+ * fifth byte will be copied from input to output.
  *
  * The number of rounds is left as a configuration parameter,
  * which is constrained to be even by our implementation. The
@@ -68,14 +70,13 @@
 typedef struct st_ptls_ffx_state_t {
     ptls_cipher_context_t *enc_ctx;
     int nb_rounds;
-    size_t len;
+    size_t byte_length;
     size_t nb_left;
     size_t nb_right;
-    uint8_t mask_right[16];
-    uint8_t mask_left[16];
+    uint8_t mask_last_byte;
 } ptls_ffx_state_t;
 
-ptls_ffx_state_t *ptls_ffx_get_context(char const *alg_name, int nb_rounds, const void *mask, size_t len, void *key);
+ptls_ffx_state_t *ptls_ffx_get_context(char const *alg_name, int nb_rounds, size_t bit_length, void *key);
 
 void ptls_ffx_delete_context(ptls_ffx_state_t *ctx);
 void ptls_ffx_encrypt(ptls_ffx_state_t *ctx, void *output, const void *input, size_t len);

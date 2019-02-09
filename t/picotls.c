@@ -266,29 +266,26 @@ static void test_ffx(void)
     static uint8_t ffx_test_key[16] = {
         1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16
     };
-    static uint8_t ffx_test_mask[32] = {
-        0x3F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 
-        0x7F, 0xF7, 0x3F, 0xF3, 0x1F, 0x1F, 0xFF, 0xFF,
-        0x7F, 0xF7, 0x3F, 0xF3, 0x1F, 0x1F, 0xFF, 0xFF 
+    static uint8_t ffx_test_mask[8] = {
+        0x00, 0x01, 0x03, 0x07, 0x0F, 0x1F, 0x3F, 0x7F
     };
+
     char const *names[2] = {"CHACHA20", "AES128"};
 
     for (int i_name = 0; i_name < 2; i_name++) {
-        for (size_t len = 4; len <= 32; len++) {
-            ptls_ffx_state_t *ctx = ptls_ffx_get_context(names[i_name], 4, ffx_test_mask, len, ffx_test_key);
+        for (size_t bit_length = 32; bit_length <= 256; bit_length += 11) {
+            ptls_ffx_state_t *ctx = ptls_ffx_get_context(names[i_name], 4, bit_length, ffx_test_key);
             ok(ctx != NULL);
             if (ctx != NULL){
                 uint8_t encrypted[32];
                 uint8_t result[32];
-                int is_same_under_mask = 1;
+                size_t len = (bit_length + 7) / 8;
+
                 ptls_ffx_encrypt(ctx, encrypted, ffx_test_source, len);
 
-                for (size_t i = 0; is_same_under_mask && i < len; i++) {
-                    is_same_under_mask &= ((encrypted[i] | ffx_test_mask[i]) ==
-                                        ((ffx_test_source)[i] | ffx_test_mask[i]));
-                }
-                ok(is_same_under_mask);
+                ok((encrypted[len - 1] & ffx_test_mask[bit_length % 8]) ==
+                   (ffx_test_source[len - 1] & ffx_test_mask[bit_length % 8]));
+
                 ptls_ffx_decrypt(ctx, result, encrypted, len);
                 ok(memcmp(result, ffx_test_source, len) == 0);
 

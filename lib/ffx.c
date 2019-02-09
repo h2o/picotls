@@ -25,12 +25,15 @@
 #include "picotls/minicrypto.h"
 #include "picotls/ffx.h"
 
-ptls_ffx_state_t *ptls_ffx_get_context(char const *alg_name, int nb_rounds, const void *mask, size_t len, void *key)
+ptls_ffx_state_t *ptls_ffx_get_context(char const *alg_name, int nb_rounds, size_t bit_length, void *key)
 {
     ptls_ffx_state_t *ctx = NULL;
     ptls_cipher_context_t *enc_ctx = NULL;
+    size_t len = (bit_length + 7) / 8;
+    uint8_t last_byte_mask[8] = { 
+        0xFF, 0xFE, 0xFC, 0xF8, 0xF0, 0xE0, 0xC0, 0x80};
 
-    if (len <= 32) {
+    if (len <= 256) {
         /* len must be lower than 32 */
 
         if (strcmp(alg_name, "CHACHA20") == 0) {
@@ -51,19 +54,10 @@ ptls_ffx_state_t *ptls_ffx_get_context(char const *alg_name, int nb_rounds, cons
     if (ctx != NULL) {
         ctx->enc_ctx = enc_ctx;
         ctx->nb_rounds = nb_rounds;
-        ctx->len = len;
+        ctx->byte_length = len;
         ctx->nb_left = (int)len / 2;
         ctx->nb_right = (int)len - ctx->nb_left;
-        if (mask != NULL) {
-            /* Split the mask in two halves */
-            memcpy(ctx->mask_left, mask, ctx->nb_left);
-            memcpy(ctx->mask_right, ((uint8_t *)mask) + ctx->nb_left, ctx->nb_right);
-            memset(ctx->mask_left + ctx->nb_left, 0, 16 - ctx->nb_left);
-            memset(ctx->mask_right + ctx->nb_right, 0, 16 - ctx->nb_right);
-        } else {
-            memset(ctx->mask_left, 0xFF, 16);
-            memset(ctx->mask_right, 0xFF, 16);
-        }
+        ctx->mask_last_byte = last_byte_mask[bit_length % 8];
     }
 
     return ctx;
@@ -79,16 +73,20 @@ void ptls_ffx_encrypt(ptls_ffx_state_t *ctx, void *output, const void *input, si
 {
     uint8_t left[16], right[16], confusion[32];
     uint8_t zero16[16] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    uint8_t last_byte;
 
     /* len must match context definition */
-    if (len != ctx->len) {
+    if (len != ctx->byte_length || len < 2) {
         return;
     }
+
     /* Split the input in two halves */
     memcpy(left, input, ctx->nb_left);
     memcpy(right, ((uint8_t *)input) + ctx->nb_left, ctx->nb_right);
     memset(left + ctx->nb_left, 0, 16 - ctx->nb_left);
     memset(right + ctx->nb_right, 0, 16 - ctx->nb_right);
+    last_byte = right[ctx->nb_right - 1];
+    right[ctx->nb_right - 1] &= ctx->mask_last_byte;
 
     /* Feistel construct, using the specified algorithm as S-Box */
     for (int i = 0; i < ctx->nb_rounds; i += 2) {
@@ -97,24 +95,27 @@ void ptls_ffx_encrypt(ptls_ffx_state_t *ctx, void *output, const void *input, si
          * either AES or chacha 20 */
         ptls_cipher_init(ctx->enc_ctx, right);
         ptls_cipher_encrypt(ctx->enc_ctx, confusion, zero16, 16);
-        /* We use a mask to guarantee
-         * that some bits are unchanged */
-        for (int j = 0; j < ctx->nb_left; j++) {
-            left[j] ^= (confusion[j] & ctx->mask_left[j]);
+        for (size_t j = 0; j < ctx->nb_left; j++) {
+            left[j] ^= confusion[j];
         }
 
         memset(confusion, 0, 16);
         ptls_cipher_init(ctx->enc_ctx, left);
         ptls_cipher_encrypt(ctx->enc_ctx, confusion, zero16, 16);
-        for (int j = 0; j < ctx->nb_right; j++) {
-            right[j] ^= (confusion[j] & ctx->mask_right[j]);
+        for (size_t j = 0; j < ctx->nb_right-1; j++) {
+            right[j] ^= confusion[j];
         }
+        right[ctx->nb_right - 1] ^= (confusion[ctx->nb_right - 1] & ctx->mask_last_byte);
     }
 
     /* After enough passes, we have a very strong length preserving
      * encryption, only that many times slower than the underlying
      * algorithm. We copy the result to the output */
     memcpy(output, left, ctx->nb_left);
+
+    right[ctx->nb_right - 1] &= ctx->mask_last_byte;
+    right[ctx->nb_right - 1] |= (last_byte & ~ctx->mask_last_byte);
+
     memcpy(((uint8_t *)output) + ctx->nb_left, right, ctx->nb_right);
 }
 
@@ -122,9 +123,10 @@ void ptls_ffx_decrypt(ptls_ffx_state_t *ctx, void *output, const void *input, si
 {
     uint8_t left[16], right[16], confusion[16];
     uint8_t zero16[16] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    uint8_t last_byte;
 
     /* len must be lower than 31 */
-    if (len != ctx->len) {
+    if (len != ctx->byte_length) {
         return;
     }
 
@@ -133,6 +135,8 @@ void ptls_ffx_decrypt(ptls_ffx_state_t *ctx, void *output, const void *input, si
     memcpy(right, ((uint8_t *)input) + ctx->nb_left, ctx->nb_right);
     memset(left + ctx->nb_left, 0, 16 - ctx->nb_left);
     memset(right + ctx->nb_right, 0, 16 - ctx->nb_right);
+    last_byte = right[ctx->nb_right - 1];
+    right[ctx->nb_right - 1] &= ctx->mask_last_byte;
 
     /* Feistel construct, using the specified algorithm as S-Box,
      * in the opposite order of the encryption */
@@ -143,19 +147,23 @@ void ptls_ffx_decrypt(ptls_ffx_state_t *ctx, void *output, const void *input, si
          * either AES or chacha 20 */
         ptls_cipher_init(ctx->enc_ctx, left);
         ptls_cipher_encrypt(ctx->enc_ctx, confusion, zero16, 16);
-        for (int j = 0; j < ctx->nb_right; j++) {
-            right[j] ^= (confusion[j] & ctx->mask_right[j]);
+        for (size_t j = 0; j < ctx->nb_right - 1; j++) {
+            right[j] ^= confusion[j];
         }
+        right[ctx->nb_right - 1] ^= (confusion[ctx->nb_right - 1] & ctx->mask_last_byte);
+
         ptls_cipher_init(ctx->enc_ctx, right);
         ptls_cipher_encrypt(ctx->enc_ctx, confusion, zero16, 16);
-        /* We could use a mask to guarantee
-         * that some bits are unchanged */
-        for (int j = 0; j < ctx->nb_left; j++) {
-            left[j] ^= (confusion[j] & ctx->mask_left[j]);
+        for (size_t j = 0; j < ctx->nb_left; j++) {
+            left[j] ^= confusion[j];
         }
     }
 
     /* Copy the decrypted result to the output */
     memcpy(output, left, ctx->nb_left);
+
+    right[ctx->nb_right - 1] &= ctx->mask_last_byte;
+    right[ctx->nb_right - 1] |= (last_byte & ~ctx->mask_last_byte);
+
     memcpy(((uint8_t *)output) + ctx->nb_left, right, ctx->nb_right);
 }
