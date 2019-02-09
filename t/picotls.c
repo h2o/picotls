@@ -28,6 +28,7 @@
 #include "picotls.h"
 #include "picotls/minicrypto.h"
 #include "picotls/pembase64.h"
+#include "picotls/ffx.h"
 #include "../deps/picotest/picotest.h"
 #include "../lib/picotls.c"
 #include "test.h"
@@ -251,6 +252,49 @@ static void test_chacha20poly1305(void)
     if (cs != NULL && cs_peer != NULL) {
         test_ciphersuite(cs, cs_peer);
         test_aad_ciphersuite(cs, cs_peer);
+    }
+}
+
+static void test_ffx(void)
+{
+    static uint8_t ffx_test_source[32] = {
+        '0', '1', '2', '3', '4', '5', '6', '7',
+        '8', '9', 'a', 'b', 'c', 'd', 'e', 'f', 
+        'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n',
+        'o', 'p', 'q', 'r', 's', 't', 'u', 'v'
+    };
+    static uint8_t ffx_test_key[16] = {
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16
+    };
+    static uint8_t ffx_test_mask[32] = {
+        0x3F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 
+        0x7F, 0xF7, 0x3F, 0xF3, 0x1F, 0x1F, 0xFF, 0xFF,
+        0x7F, 0xF7, 0x3F, 0xF3, 0x1F, 0x1F, 0xFF, 0xFF 
+    };
+    char const *names[2] = {"CHACHA20", "AES128"};
+
+    for (int i_name = 0; i_name < 2; i_name++) {
+        for (size_t len = 4; len <= 32; len++) {
+            ptls_ffx_state_t *ctx = ptls_ffx_get_context(names[i_name], 4, ffx_test_mask, len, ffx_test_key);
+            ok(ctx != NULL);
+            if (ctx != NULL){
+                uint8_t encrypted[32];
+                uint8_t result[32];
+                int is_same_under_mask = 1;
+                ptls_ffx_encrypt(ctx, encrypted, ffx_test_source, len);
+
+                for (size_t i = 0; is_same_under_mask && i < len; i++) {
+                    is_same_under_mask &= ((encrypted[i] | ffx_test_mask[i]) ==
+                                        ((ffx_test_source)[i] | ffx_test_mask[i]));
+                }
+                ok(is_same_under_mask);
+                ptls_ffx_decrypt(ctx, result, encrypted, len);
+                ok(memcmp(result, ffx_test_source, len) == 0);
+
+                ptls_ffx_delete_context(ctx);
+            }
+        }
     }
 }
 
@@ -1162,6 +1206,7 @@ void test_picotls(void)
     subtest("chacha20poly1305", test_chacha20poly1305);
     subtest("aes128ctr", test_aes128ctr);
     subtest("chacha20", test_chacha20);
+    subtest("ffx", test_ffx);
     subtest("base64-decode", test_base64_decode);
     subtest("fragmented-message", test_fragmented_message);
     subtest("handshake", test_all_handshakes);
