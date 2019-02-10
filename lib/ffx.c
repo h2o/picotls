@@ -25,29 +25,29 @@
 #include "picotls/minicrypto.h"
 #include "picotls/ffx.h"
 
-int ptls_ffx_setup_crypto(ptls_cipher_context_t *_ctx, char const *alg_name, int is_enc, int nb_rounds, size_t bit_length,
-                                     void *key)
+int ptls_ffx_setup_crypto(ptls_cipher_context_t *_ctx, ptls_cipher_algorithm_t * algo,
+    int is_enc, int nb_rounds, size_t bit_length, const void *key)
 {
     int ret = 0;
-    ptls_ffx_state_t *ctx = (ptls_ffx_state_t *)_ctx;
+    ptls_ffx_context_t *ctx = (ptls_ffx_context_t *)_ctx;
     ptls_cipher_context_t *enc_ctx = NULL;
     size_t len = (bit_length + 7) / 8;
     uint8_t last_byte_mask[8] = { 
         0xFF, 0xFE, 0xFC, 0xF8, 0xF0, 0xE0, 0xC0, 0x80};
 
-    if (len <= 32) {
-        /* len must be lower than 32 */
+    assert(len <= 32 && len >= 2);
+    assert(ctx->super.algo == NULL || algo->key_size == ctx->super.algo->key_size);
+    assert(algo->iv_size == 16);
 
-        if (strcmp(alg_name, "CHACHA20") == 0) {
-            enc_ctx = ptls_cipher_new(&ptls_minicrypto_chacha20, 1, key);
-        } else if (strcmp(alg_name, "AES128") == 0 || strcmp(alg_name, "AES128-CTR") == 0) {
-            enc_ctx = ptls_cipher_new(&ptls_minicrypto_aes128ctr, 1, key);
-        }
+    if (len <= 32 && len >= 2) {
+        /* len must be lower than 32 */
+        enc_ctx = ptls_cipher_new(algo, 1, key);
+
         if (enc_ctx == NULL) {
-            ret = -1;
+            ret = PTLS_ERROR_LIBRARY;
         }
     } else {
-        ret = -1;
+        ret = PTLS_ERROR_LIBRARY;
     }
 
     if (ret == 0) {
@@ -57,6 +57,7 @@ int ptls_ffx_setup_crypto(ptls_cipher_context_t *_ctx, char const *alg_name, int
         ctx->nb_left = (int)len / 2;
         ctx->nb_right = (int)len - ctx->nb_left;
         ctx->mask_last_byte = last_byte_mask[bit_length % 8];
+        ptls_clear_memory(ctx->tweaks, 16);
 
         ctx->super.do_dispose = ptls_ffx_dispose;
         ctx->super.do_init = ptls_ffx_init;
@@ -70,7 +71,7 @@ int ptls_ffx_setup_crypto(ptls_cipher_context_t *_ctx, char const *alg_name, int
 
 void ptls_ffx_dispose(ptls_cipher_context_t *_ctx)
 {
-    ptls_ffx_state_t *ctx = (ptls_ffx_state_t *)_ctx;
+    ptls_ffx_context_t *ctx = (ptls_ffx_context_t *)_ctx;
 
     if (ctx->enc_ctx != NULL) {
         ptls_cipher_free(ctx->enc_ctx);
@@ -88,23 +89,65 @@ void ptls_ffx_dispose(ptls_cipher_context_t *_ctx)
     ctx->super.do_transform = NULL;
 }
 
+ptls_cipher_context_t * ptls_ffx_new(ptls_cipher_algorithm_t *algo, int is_enc, int nb_rounds, size_t bit_length, const void *key)
+{
+    ptls_cipher_context_t *ctx = (ptls_cipher_context_t *)malloc(sizeof(ptls_ffx_context_t));
+
+    if (ctx != NULL) {
+        ptls_clear_memory(ctx, sizeof(ptls_ffx_context_t));
+
+        if (ptls_ffx_setup_crypto(ctx, algo, is_enc, nb_rounds, bit_length, key) != 0) {
+            free(ctx);
+            ctx = NULL;
+        }
+    }
+
+    return ctx;
+}
+
+void ptls_ffx_free(ptls_cipher_context_t * ctx)
+{
+    ptls_ffx_dispose(ctx);
+    ptls_clear_memory(ctx, sizeof(ptls_ffx_context_t));
+    free(ctx);
+}
+
+static void ptls_ffx_one_pass(ptls_cipher_context_t *enc_ctx, uint8_t * source, size_t source_size,
+    uint8_t *target, size_t target_size, uint8_t mask_last_byte, uint8_t *confusion, uint8_t * iv,
+    uint8_t * tweaks, uint8_t round, uint8_t nb_rounds)
+{
+    static const uint8_t zeros[16] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+
+    memcpy(iv, tweaks, 16);
+    iv[round & 15] ^= nb_rounds;
+    for (size_t i = 0; i < source_size; i++) {
+        iv[i] ^= source[i];
+    }
+    ptls_cipher_init(enc_ctx, source);
+    ptls_cipher_encrypt(enc_ctx, confusion, zeros, 16);
+    for (size_t j = 0; j < target_size - 1; j++) {
+        target[j] ^= confusion[j];
+    }
+    target[target_size - 1] ^= (confusion[target_size - 1] & mask_last_byte);
+}
+
 void ptls_ffx_encrypt(ptls_cipher_context_t *_ctx, void *output, const void *input, size_t len)
 {
-    ptls_ffx_state_t *ctx = (ptls_ffx_state_t *)_ctx;
-    uint8_t left[16], right[16], confusion[32];
-    uint8_t zero16[16] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    ptls_ffx_context_t *ctx = (ptls_ffx_context_t *)_ctx;
+    uint8_t left[16], right[16], confusion[32], iv[16];
     uint8_t last_byte;
 
     /* len must match context definition */
-    if (len != ctx->byte_length || len < 2) {
+    assert(len == ctx->byte_length);
+    if (len != ctx->byte_length) {
         return;
     }
 
     /* Split the input in two halves */
     memcpy(left, input, ctx->nb_left);
     memcpy(right, ((uint8_t *)input) + ctx->nb_left, ctx->nb_right);
-    memset(left + ctx->nb_left, 0, 16 - ctx->nb_left);
-    memset(right + ctx->nb_right, 0, 16 - ctx->nb_right);
+    ptls_clear_memory(left + ctx->nb_left, 16 - ctx->nb_left);
+    ptls_clear_memory(right + ctx->nb_right, 16 - ctx->nb_right);
     last_byte = right[ctx->nb_right - 1];
     right[ctx->nb_right - 1] &= ctx->mask_last_byte;
 
@@ -113,19 +156,9 @@ void ptls_ffx_encrypt(ptls_cipher_context_t *_ctx, void *output, const void *inp
         /* Each pass encrypts a zero field with a cipher using one
          * half of the message as IV. This construct lets us use
          * either AES or chacha 20 */
-        ptls_cipher_init(ctx->enc_ctx, right);
-        ptls_cipher_encrypt(ctx->enc_ctx, confusion, zero16, 16);
-        for (size_t j = 0; j < ctx->nb_left; j++) {
-            left[j] ^= confusion[j];
-        }
-
-        memset(confusion, 0, 16);
-        ptls_cipher_init(ctx->enc_ctx, left);
-        ptls_cipher_encrypt(ctx->enc_ctx, confusion, zero16, 16);
-        for (size_t j = 0; j < ctx->nb_right-1; j++) {
-            right[j] ^= confusion[j];
-        }
-        right[ctx->nb_right - 1] ^= (confusion[ctx->nb_right - 1] & ctx->mask_last_byte);
+        ptls_ffx_one_pass(ctx->enc_ctx, right, ctx->nb_right, left, ctx->nb_left, 0xFF, confusion, iv, ctx->tweaks, i, ctx->nb_rounds);
+        ptls_ffx_one_pass(ctx->enc_ctx, left, ctx->nb_left, right, ctx->nb_right, ctx->mask_last_byte, confusion, iv, ctx->tweaks,
+                          i + 1, ctx->nb_rounds);
     }
 
     /* After enough passes, we have a very strong length preserving
@@ -137,16 +170,20 @@ void ptls_ffx_encrypt(ptls_cipher_context_t *_ctx, void *output, const void *inp
     right[ctx->nb_right - 1] |= (last_byte & ~ctx->mask_last_byte);
 
     memcpy(((uint8_t *)output) + ctx->nb_left, right, ctx->nb_right);
+
+    ptls_clear_memory(left, sizeof(left));
+    ptls_clear_memory(right, sizeof(right));
+    ptls_clear_memory(confusion, sizeof(confusion));
 }
 
 void ptls_ffx_decrypt(ptls_cipher_context_t * _ctx, void *output, const void *input, size_t len)
 {
-    ptls_ffx_state_t *ctx = (ptls_ffx_state_t *)_ctx;
-    uint8_t left[16], right[16], confusion[16];
-    uint8_t zero16[16] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    ptls_ffx_context_t *ctx = (ptls_ffx_context_t *)_ctx;
+    uint8_t left[16], right[16], confusion[16], iv[16];
     uint8_t last_byte;
 
     /* len must be lower than 31 */
+    assert(len == ctx->byte_length);
     if (len != ctx->byte_length) {
         return;
     }
@@ -154,8 +191,8 @@ void ptls_ffx_decrypt(ptls_cipher_context_t * _ctx, void *output, const void *in
     /* Split the input in two halves */
     memcpy(left, input, ctx->nb_left);
     memcpy(right, ((uint8_t *)input) + ctx->nb_left, ctx->nb_right);
-    memset(left + ctx->nb_left, 0, 16 - ctx->nb_left);
-    memset(right + ctx->nb_right, 0, 16 - ctx->nb_right);
+    ptls_clear_memory(left + ctx->nb_left, 16 - ctx->nb_left);
+    ptls_clear_memory(right + ctx->nb_right, 16 - ctx->nb_right);
     last_byte = right[ctx->nb_right - 1];
     right[ctx->nb_right - 1] &= ctx->mask_last_byte;
 
@@ -166,18 +203,11 @@ void ptls_ffx_decrypt(ptls_cipher_context_t * _ctx, void *output, const void *in
         /* Each pass encrypts a zero field with a cipher using one
          * half of the message as IV. This construct lets us use
          * either AES or chacha 20 */
-        ptls_cipher_init(ctx->enc_ctx, left);
-        ptls_cipher_encrypt(ctx->enc_ctx, confusion, zero16, 16);
-        for (size_t j = 0; j < ctx->nb_right - 1; j++) {
-            right[j] ^= confusion[j];
-        }
-        right[ctx->nb_right - 1] ^= (confusion[ctx->nb_right - 1] & ctx->mask_last_byte);
 
-        ptls_cipher_init(ctx->enc_ctx, right);
-        ptls_cipher_encrypt(ctx->enc_ctx, confusion, zero16, 16);
-        for (size_t j = 0; j < ctx->nb_left; j++) {
-            left[j] ^= confusion[j];
-        }
+        ptls_ffx_one_pass(ctx->enc_ctx, left, ctx->nb_left, right, ctx->nb_right, ctx->mask_last_byte, confusion, iv, ctx->tweaks,
+                          ctx->nb_rounds - 1 - i, ctx->nb_rounds);
+        ptls_ffx_one_pass(ctx->enc_ctx, right, ctx->nb_right, left, ctx->nb_left, 0xFF, confusion, iv, ctx->tweaks,
+                          ctx->nb_rounds - 2 - i, ctx->nb_rounds);
     }
 
     /* Copy the decrypted result to the output */
@@ -187,9 +217,15 @@ void ptls_ffx_decrypt(ptls_cipher_context_t * _ctx, void *output, const void *in
     right[ctx->nb_right - 1] |= (last_byte & ~ctx->mask_last_byte);
 
     memcpy(((uint8_t *)output) + ctx->nb_left, right, ctx->nb_right);
+
+    ptls_clear_memory(left, sizeof(left));
+    ptls_clear_memory(right, sizeof(right));
+    ptls_clear_memory(confusion, sizeof(confusion));
+    ptls_clear_memory(iv, sizeof(iv));
 }
 
-void ptls_ffx_init(struct st_ptls_cipher_context_t *ctx, const void *iv)
+void ptls_ffx_init(struct st_ptls_cipher_context_t *_ctx, const void *iv)
 {
-    /* TODO ! */
+    ptls_ffx_context_t *ctx = (ptls_ffx_context_t *)_ctx;
+    memcpy(ctx->tweaks, iv, 16);
 }

@@ -60,14 +60,22 @@
  * required number of passes varies with the application's
  * constraints. The practical minimum is 4 passes. Demanding
  * applications can use 8 passes, and the practical conservative
- * value is 10, as specified by NISt for the FF1 variant of
+ * value is 10, as specified by NIST for the FF1 variant of
  * the same algorithm. This choice between 4, 8 or 10 is
  * based on "Luby-Rackoff: 7 Rounds are Enough
  * for 2^n(1-epsilon) Security" by Jacques Patarin, 2003 --
  * https://www.iacr.org/archive/crypto2003/27290510/27290510.pdf
+ *
+ * Encrypting short numbers, by nature, produces a codebook
+ * of limited size. In many applications, the short number is
+ * part of a larger object that is passed in clear text. In that
+ * case, NIST recommends using as much as possible of that clear
+ * text as an initialization vector, used as "tweak" in the
+ * FFX algorithm. See:
+ * https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-38G.pdf
  */
 
-typedef struct st_ptls_ffx_state_t {
+typedef struct st_ptls_ffx_context_t {
     ptls_cipher_context_t super;
     ptls_cipher_context_t *enc_ctx;
     int nb_rounds;
@@ -75,24 +83,28 @@ typedef struct st_ptls_ffx_state_t {
     size_t nb_left;
     size_t nb_right;
     uint8_t mask_last_byte;
-} ptls_ffx_state_t;
+    uint8_t tweaks[16];
+} ptls_ffx_context_t;
 
-int ptls_ffx_setup_crypto(ptls_cipher_context_t *_ctx, char const *alg_name, int is_enc, int nb_rounds, size_t bit_length,
-                          void *key);
+int ptls_ffx_setup_crypto(ptls_cipher_context_t *_ctx, ptls_cipher_algorithm_t *algo, int is_enc, int nb_rounds,
+                          size_t bit_length, const void *key);
 void ptls_ffx_dispose(ptls_cipher_context_t *_ctx);
 void ptls_ffx_encrypt(ptls_cipher_context_t *_ctx, void *output, const void *input, size_t len);
 void ptls_ffx_decrypt(ptls_cipher_context_t *_ctx, void *output, const void *input, size_t len);
 void ptls_ffx_init(struct st_ptls_cipher_context_t *ctx, const void *iv);
 
-#define PTLS_FFX_CIPHER_ALGO_NAME(base, bitlength, nbrounds) "FFX-" #base "-" #bitlength "-" #nbrounds
+ptls_cipher_context_t *ptls_ffx_new(ptls_cipher_algorithm_t *algo, int is_enc, int nb_rounds, size_t bit_length, const void *key);
+void ptls_ffx_free(ptls_cipher_context_t *ctx);
 
-#define PTLS_FFX_CIPHER_ALGO(base, bitlength, nbrounds)                                                                            \
-    static int ffx_##base##_##bitlength##_##nbrounds##_setup_crypto(ptls_cipher_context_t *ctx, int is_enc, const void *key)       \
-    {                                                                                                                              \
-        return ptls_ffx_setup_crypto(ctx, #base, is_enc, nbrounds, bitlength, key);                                                \
-    }                                                                                                                              \
-    ptls_cipher_algorithm_t ptls_minicrypto_ffx_##base##_##bitlength##_##nbrounds = {                                              \
-        PTLS_FFX_CIPHER_ALGO_NAME(base, bitlength, nbrounds), PTLS_##base##_KEY_SIZE, 16, sizeof(ptls_ffx_state_t),                \
-        ffx_##base##_##bitlength##_##nbrounds##_setup_crypto};
+#define PTLS_FFX_CIPHER_ALGO_NAME(base, bitlength, nbrounds) #base "-ffx-b" #bitlength "-r" #nbrounds
+
+#define PTLS_FFX_CIPHER_ALGO(base, bitlength, nbrounds, keysize)                                                             \
+    static int ptls_ffx_##base##_b##bitlength##_r##nbrounds##_setup(ptls_cipher_context_t *ctx, int is_enc, const void *key) \
+    {                                                                                                                        \
+        return ptls_ffx_setup_crypto(ctx, &base, is_enc, nbrounds, bitlength, key);                                          \
+    }                                                                                                                        \
+    ptls_cipher_algorithm_t ptls_ffx_##base##_b##bitlength##_r##nbrounds## = {                                               \
+        PTLS_FFX_CIPHER_ALGO_NAME(base, bitlength, nbrounds), keysize, 16, sizeof(ptls_ffx_context_t),                       \
+         ptls_ffx_##base##_b##bitlength##_r##nbrounds##_setup};
 
 #endif /* PTLS_FFX_H */

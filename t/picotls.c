@@ -255,7 +255,7 @@ static void test_chacha20poly1305(void)
     }
 }
 
-PTLS_FFX_CIPHER_ALGO(AES128, 57, 6);
+PTLS_FFX_CIPHER_ALGO(ptls_minicrypto_chacha20, 57, 6, 32);
 
 static void test_ffx(void)
 {
@@ -265,14 +265,17 @@ static void test_ffx(void)
         'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n',
         'o', 'p', 'q', 'r', 's', 't', 'u', 'v'
     };
-    static uint8_t ffx_test_key[16] = {
-        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16
+
+    static uint8_t ffx_test_key[32] = {
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+        17, 18, 19, 20, 21, 22, 23, 24, 25, 27, 28, 29, 30, 31, 32
     };
+
     static uint8_t ffx_test_mask[8] = {
         0x00, 0x01, 0x03, 0x07, 0x0F, 0x1F, 0x3F, 0x7F
     };
-    static char const *names[2] = {"CHACHA20", "AES128"};
-    ptls_ffx_state_t ctx;
+    static ptls_cipher_algorithm_t *algo[2] = {&ptls_minicrypto_chacha20, &ptls_minicrypto_aes128ctr};
+    ptls_ffx_context_t ctx;
     ptls_cipher_context_t *ffx_enc = NULL;
     ptls_cipher_context_t *ffx_dec = NULL;
     uint8_t encrypted[32];
@@ -280,9 +283,11 @@ static void test_ffx(void)
 
     /* First test a variety of sizes */
 
-    for (int i_name = 0; i_name < 2; i_name++) {
+    for (int i_algo = 0; i_algo < 2; i_algo++) {
         for (size_t bit_length = 32; bit_length <= 256; bit_length += 11) {
-            int ret = ptls_ffx_setup_crypto((ptls_cipher_context_t *)&ctx, names[i_name], 1, 4, bit_length, ffx_test_key);
+            int ret;
+            memset(&ctx, 0, sizeof(ptls_ffx_context_t));
+            ret = ptls_ffx_setup_crypto((ptls_cipher_context_t *)&ctx, algo[i_algo], 1, 4, bit_length, ffx_test_key);
             ok(ret == 0);
             if (ret == 0){
                 size_t len = (bit_length + 7) / 8;
@@ -300,9 +305,9 @@ static void test_ffx(void)
         }
     }
 
-    /* Then test the API, as defined by the macro */
-    ffx_enc = ptls_cipher_new(&ptls_minicrypto_ffx_AES128_57_6, 1, ffx_test_key);
-    ffx_dec = ptls_cipher_new(&ptls_minicrypto_ffx_AES128_57_6, 0, ffx_test_key);
+    /* Then test the new and free API */
+    ffx_enc = ptls_cipher_new(&ptls_ffx_ptls_minicrypto_chacha20_b57_r6, 1, ffx_test_key);
+    ffx_dec = ptls_cipher_new(&ptls_ffx_ptls_minicrypto_chacha20_b57_r6, 0, ffx_test_key);
     ok(ffx_enc != NULL && ffx_dec != NULL);
     if (ffx_enc != NULL && ffx_dec != NULL) {
         ptls_cipher_encrypt(ffx_enc, encrypted, ffx_test_source, 8);
@@ -314,6 +319,22 @@ static void test_ffx(void)
     }
     if (ffx_dec != NULL) {
         ptls_cipher_free(ffx_dec);
+    }
+
+    /* And finally test the direct usage of the API with the "new" and "free" constructs */
+    ffx_enc = ptls_ffx_new(&ptls_minicrypto_aes128ctr, 1, 8, 61, ffx_test_key);
+    ffx_dec = ptls_ffx_new(&ptls_minicrypto_aes128ctr, 0, 8, 61, ffx_test_key);
+    ok(ffx_enc != NULL && ffx_dec != NULL);
+    if (ffx_enc != NULL && ffx_dec != NULL) {
+        ptls_cipher_encrypt(ffx_enc, encrypted, ffx_test_source, 8);
+        ptls_cipher_encrypt(ffx_dec, result, encrypted, 8);
+        ok(memcmp(ffx_test_source, result, 8) == 0);
+    }
+    if (ffx_enc != NULL) {
+        ptls_ffx_free(ffx_enc);
+    }
+    if (ffx_dec != NULL) {
+        ptls_ffx_free(ffx_dec);
     }
 }
 
