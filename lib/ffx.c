@@ -123,7 +123,7 @@ static void ptls_ffx_one_pass(ptls_cipher_context_t *enc_ctx, uint8_t * source, 
     for (size_t i = 0; i < source_size; i++) {
         iv[i] ^= source[i];
     }
-    ptls_cipher_init(enc_ctx, source);
+    ptls_cipher_init(enc_ctx, iv);
     ptls_cipher_encrypt(enc_ctx, confusion, zeros, 16);
     for (size_t j = 0; j < target_size - 1; j++) {
         target[j] ^= confusion[j];

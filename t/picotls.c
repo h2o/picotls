@@ -271,6 +271,9 @@ static void test_ffx(void)
         17, 18, 19, 20, 21, 22, 23, 24, 25, 27, 28, 29, 30, 31, 32
     };
 
+    static uint8_t ffx_test_iv[16] = { 
+        10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25 };
+
     static uint8_t ffx_test_mask[8] = {
         0x00, 0x01, 0x03, 0x07, 0x0F, 0x1F, 0x3F, 0x7F
     };
@@ -310,7 +313,9 @@ static void test_ffx(void)
     ffx_dec = ptls_cipher_new(&ptls_ffx_ptls_minicrypto_chacha20_b57_r6, 0, ffx_test_key);
     ok(ffx_enc != NULL && ffx_dec != NULL);
     if (ffx_enc != NULL && ffx_dec != NULL) {
+        ptls_cipher_init(ffx_enc, ffx_test_iv);
         ptls_cipher_encrypt(ffx_enc, encrypted, ffx_test_source, 8);
+        ptls_cipher_init(ffx_dec, ffx_test_iv);
         ptls_cipher_encrypt(ffx_dec, result, encrypted, 8);
         ok(memcmp(ffx_test_source, result, 8) == 0);
     }
@@ -326,8 +331,10 @@ static void test_ffx(void)
     ffx_dec = ptls_ffx_new(&ptls_minicrypto_aes128ctr, 0, 8, 61, ffx_test_key);
     ok(ffx_enc != NULL && ffx_dec != NULL);
     if (ffx_enc != NULL && ffx_dec != NULL) {
-        ptls_cipher_encrypt(ffx_enc, encrypted, ffx_test_source, 8);
-        ptls_cipher_encrypt(ffx_dec, result, encrypted, 8);
+        ptls_ffx_init(ffx_enc, ffx_test_iv);
+        ptls_ffx_encrypt(ffx_enc, encrypted, ffx_test_source, 8);
+        ptls_cipher_init(ffx_dec, ffx_test_iv);
+        ptls_cipher_encrypt(ffx_dec, result, encrypted, 8); /* use different API on purpose, for checks */
         ok(memcmp(ffx_test_source, result, 8) == 0);
     }
     if (ffx_enc != NULL) {

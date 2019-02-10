@@ -103,7 +103,7 @@ void ptls_ffx_free(ptls_cipher_context_t *ctx);
     {                                                                                                                        \
         return ptls_ffx_setup_crypto(ctx, &base, is_enc, nbrounds, bitlength, key);                                          \
     }                                                                                                                        \
-    ptls_cipher_algorithm_t ptls_ffx_##base##_b##bitlength##_r##nbrounds## = {                                               \
+    ptls_cipher_algorithm_t ptls_ffx_##base##_b##bitlength##_r##nbrounds = {                                               \
         PTLS_FFX_CIPHER_ALGO_NAME(base, bitlength, nbrounds), keysize, 16, sizeof(ptls_ffx_context_t),                       \
          ptls_ffx_##base##_b##bitlength##_r##nbrounds##_setup};
 
