@@ -17,7 +17,7 @@
 #ifndef PTLS_FFX_H
 #define PTLS_FFX_H
 
- /*
+/*
  * Format preserving encryption using the FFX algorithm.
  *
  * We demonstrate here a simple encryption process derived
@@ -49,7 +49,7 @@
  * not be recommended.
  *
  * The block to be encrypted is passed as a byte array of size
- * (block_length + 7)/8. When the block_length is not a 
+ * (block_length + 7)/8. When the block_length is not a
  * multiple of 8, the algorithm guarantees that the extra bits
  * in the last byte are left untouched. For example, if the
  * block length is 39, the least significant bit of the
@@ -68,6 +68,7 @@
  */
 
 typedef struct st_ptls_ffx_state_t {
+    ptls_cipher_context_t super;
     ptls_cipher_context_t *enc_ctx;
     int nb_rounds;
     size_t byte_length;
@@ -76,10 +77,22 @@ typedef struct st_ptls_ffx_state_t {
     uint8_t mask_last_byte;
 } ptls_ffx_state_t;
 
-ptls_ffx_state_t *ptls_ffx_get_context(char const *alg_name, int nb_rounds, size_t bit_length, void *key);
+int ptls_ffx_setup_crypto(ptls_cipher_context_t *_ctx, char const *alg_name, int is_enc, int nb_rounds, size_t bit_length,
+                          void *key);
+void ptls_ffx_dispose(ptls_cipher_context_t *_ctx);
+void ptls_ffx_encrypt(ptls_cipher_context_t *_ctx, void *output, const void *input, size_t len);
+void ptls_ffx_decrypt(ptls_cipher_context_t *_ctx, void *output, const void *input, size_t len);
+void ptls_ffx_init(struct st_ptls_cipher_context_t *ctx, const void *iv);
 
-void ptls_ffx_delete_context(ptls_ffx_state_t *ctx);
-void ptls_ffx_encrypt(ptls_ffx_state_t *ctx, void *output, const void *input, size_t len);
-void ptls_ffx_decrypt(ptls_ffx_state_t *ctx, void *output, const void *input, size_t len);
+#define PTLS_FFX_CIPHER_ALGO_NAME(base, bitlength, nbrounds) "FFX-" #base "-" #bitlength "-" #nbrounds
+
+#define PTLS_FFX_CIPHER_ALGO(base, bitlength, nbrounds)                                                                            \
+    static int ffx_##base##_##bitlength##_##nbrounds##_setup_crypto(ptls_cipher_context_t *ctx, int is_enc, const void *key)       \
+    {                                                                                                                              \
+        return ptls_ffx_setup_crypto(ctx, #base, is_enc, nbrounds, bitlength, key);                                                \
+    }                                                                                                                              \
+    ptls_cipher_algorithm_t ptls_minicrypto_ffx_##base##_##bitlength##_##nbrounds = {                                              \
+        PTLS_FFX_CIPHER_ALGO_NAME(base, bitlength, nbrounds), PTLS_##base##_KEY_SIZE, 16, sizeof(ptls_ffx_state_t),                \
+        ffx_##base##_##bitlength##_##nbrounds##_setup_crypto};
 
 #endif /* PTLS_FFX_H */
