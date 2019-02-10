@@ -79,6 +79,7 @@ typedef struct st_ptls_ffx_context_t {
     ptls_cipher_context_t super;
     ptls_cipher_context_t *enc_ctx;
     int nb_rounds;
+    int is_enc;
     size_t byte_length;
     size_t nb_left;
     size_t nb_right;
@@ -86,15 +87,31 @@ typedef struct st_ptls_ffx_context_t {
     uint8_t tweaks[16];
 } ptls_ffx_context_t;
 
-int ptls_ffx_setup_crypto(ptls_cipher_context_t *_ctx, ptls_cipher_algorithm_t *algo, int is_enc, int nb_rounds,
-                          size_t bit_length, const void *key);
-void ptls_ffx_dispose(ptls_cipher_context_t *_ctx);
-void ptls_ffx_encrypt(ptls_cipher_context_t *_ctx, void *output, const void *input, size_t len);
-void ptls_ffx_decrypt(ptls_cipher_context_t *_ctx, void *output, const void *input, size_t len);
-void ptls_ffx_init(struct st_ptls_cipher_context_t *ctx, const void *iv);
 
-ptls_cipher_context_t *ptls_ffx_new(ptls_cipher_algorithm_t *algo, int is_enc, int nb_rounds, size_t bit_length, const void *key);
-void ptls_ffx_free(ptls_cipher_context_t *ctx);
+/*
+ * The PTLS_FFX_CIPHER_ALGO macro will define a variant of the FFX algorithm by specifying
+ * the base algorithm (vraiable name of type ptls_cipher_algorithm_t), the bit length
+ * of the block, the selected number of blocks and the key size of the base algorithm,
+ * in bytes.
+ *
+ * The macro will automatically generate an algorithm name, of the form:
+ *    ptls_ffx_<base algorithm name>_b<bit length>_r<number of rounds>
+ * For example, selecting the algorithm "ptls_minicrypto_chacha20" with a block
+ * size of 53 bits and 8 rounds will generate the name:
+ *    ptls_ffx_ptls_minicrypto_chacha20_b53_r8
+ * This name is declared as a static variable.
+ *
+ * Once the FFX variant is defined, the name can be used to create a
+ * cipher context using ptls_cipher_new. The context can then be used 
+ * through the function ptls_cipher_init, ptls_cipher_encrypt, and
+ * can be freed by calling ptls_cipher_free.
+ *
+ * The ptls_cipher_encrypt will encrypt a code word of the specified
+ * bit length, or decrypt it if the context was created with the 
+ * option "is_enc = 0". The code word is represented as an array of
+ * bytes. If the bit length is not a multiple of 8, the remaining
+ * low level bits in the last byte will be left unchanged.
+ */
 
 #define PTLS_FFX_CIPHER_ALGO_NAME(base, bitlength, nbrounds) #base "-ffx-b" #bitlength "-r" #nbrounds
 
@@ -103,8 +120,24 @@ void ptls_ffx_free(ptls_cipher_context_t *ctx);
     {                                                                                                                        \
         return ptls_ffx_setup_crypto(ctx, &base, is_enc, nbrounds, bitlength, key);                                          \
     }                                                                                                                        \
-    ptls_cipher_algorithm_t ptls_ffx_##base##_b##bitlength##_r##nbrounds = {                                               \
+    static ptls_cipher_algorithm_t ptls_ffx_##base##_b##bitlength##_r##nbrounds = {                                          \
         PTLS_FFX_CIPHER_ALGO_NAME(base, bitlength, nbrounds), keysize, 16, sizeof(ptls_ffx_context_t),                       \
          ptls_ffx_##base##_b##bitlength##_r##nbrounds##_setup};
 
+/*
+ * The function ptls_ffx_new creates a cipher context for a specific FFX variant.
+ * It is equivalent to defining the variant with the PTLS_FFX_CIPHER_ALGO macro,
+ * then creating the context using ptls_cipher_new.
+ */
+
+ptls_cipher_context_t *ptls_ffx_new(ptls_cipher_algorithm_t *algo, int is_enc, int nb_rounds, size_t bit_length, const void *key);
+
+/*
+ * The function ptls_ffx_setup_crypto is called by ptls_cipher_new  or
+ * ptls_ffx_new when initializing an FFX variant. It should not be
+ * called directly.
+ */
+
+int ptls_ffx_setup_crypto(ptls_cipher_context_t *_ctx, ptls_cipher_algorithm_t *algo, int is_enc, int nb_rounds, size_t bit_length,
+                          const void *key);
 #endif /* PTLS_FFX_H */
