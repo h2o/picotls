@@ -25,9 +25,9 @@
 #include "picotls/minicrypto.h"
 #include "picotls/ffx.h"
 
-static void ptls_ffx_dispose(ptls_cipher_context_t *_ctx);
-static void ptls_ffx_encrypt(ptls_cipher_context_t *_ctx, void *output, const void *input, size_t len);
-static void ptls_ffx_init(struct st_ptls_cipher_context_t *ctx, const void *iv);
+static void ffx_dispose(ptls_cipher_context_t *_ctx);
+static void ffx_encrypt(ptls_cipher_context_t *_ctx, void *output, const void *input, size_t len);
+static void ffx_init(struct st_ptls_cipher_context_t *ctx, const void *iv);
 
 int ptls_ffx_setup_crypto(ptls_cipher_context_t *_ctx, ptls_cipher_algorithm_t * algo,
     int is_enc, int nb_rounds, size_t bit_length, const void *key)
@@ -68,21 +68,21 @@ int ptls_ffx_setup_crypto(ptls_cipher_context_t *_ctx, ptls_cipher_algorithm_t *
         ctx->mask_last_byte = last_byte_mask[bit_length % 8];
         ptls_clear_memory(ctx->tweaks, 16);
 
-        ctx->super.do_dispose = ptls_ffx_dispose;
-        ctx->super.do_init = ptls_ffx_init;
-        ctx->super.do_transform = ptls_ffx_encrypt;
+        ctx->super.do_dispose = ffx_dispose;
+        ctx->super.do_init = ffx_init;
+        ctx->super.do_transform = ffx_encrypt;
     } else {
-        ptls_ffx_dispose(_ctx);
+        ffx_dispose(_ctx);
     }
 
     return ret;
 }
 
-static void ptls_ffx_dispose(ptls_cipher_context_t *_ctx)
+static void ffx_dispose(ptls_cipher_context_t *_ctx)
 {
     ptls_ffx_context_t *ctx = (ptls_ffx_context_t *)_ctx;
 
-    assert(ctx->super.do_dispose == ptls_ffx_dispose);
+    assert(ctx->super.do_dispose == ffx_dispose);
 
     if (ctx->enc_ctx != NULL) {
         ptls_cipher_free(ctx->enc_ctx);
@@ -136,13 +136,13 @@ static void ptls_ffx_one_pass(ptls_cipher_context_t *enc_ctx, uint8_t * source, 
     target[target_size - 1] ^= (confusion[target_size - 1] & mask_last_byte);
 }
 
-static void ptls_ffx_encrypt(ptls_cipher_context_t *_ctx, void *output, const void *input, size_t len)
+static void ffx_encrypt(ptls_cipher_context_t *_ctx, void *output, const void *input, size_t len)
 {
     ptls_ffx_context_t *ctx = (ptls_ffx_context_t *)_ctx;
     uint8_t left[16], right[16], confusion[32], iv[16];
     uint8_t last_byte;
 
-    assert(ctx->super.do_transform == ptls_ffx_encrypt);
+    assert(ctx->super.do_transform == ffx_encrypt);
 
     /* len must match context definition */
     assert(len == ctx->byte_length);
@@ -200,9 +200,9 @@ static void ptls_ffx_encrypt(ptls_cipher_context_t *_ctx, void *output, const vo
     ptls_clear_memory(confusion, sizeof(confusion));
 }
 
-static void ptls_ffx_init(struct st_ptls_cipher_context_t *_ctx, const void *iv)
+static void ffx_init(struct st_ptls_cipher_context_t *_ctx, const void *iv)
 {
     ptls_ffx_context_t *ctx = (ptls_ffx_context_t *)_ctx;
-    assert(ctx->super.do_init == ptls_ffx_init);
+    assert(ctx->super.do_init == ffx_init);
     memcpy(ctx->tweaks, iv, 16);
 }
