@@ -147,6 +147,7 @@ static void ptls_ffx_encrypt(ptls_cipher_context_t *_ctx, void *output, const vo
     /* len must match context definition */
     assert(len == ctx->byte_length);
     if (len != ctx->byte_length) {
+        memset(output, 0, len); /* so that we do not leak anything in production mode */
         return;
     }
 
