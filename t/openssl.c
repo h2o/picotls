@@ -229,6 +229,11 @@ static int verify_cert_cb(int ok, X509_STORE_CTX *ctx)
     return 1;
 }
 
+DEFINE_FFX_AES128_ALGORITHMS(openssl);
+#if PTLS_OPENSSL_HAVE_CHACHA20_POLY1305
+DEFINE_FFX_CHACHA20_ALGORITHMS(openssl);
+#endif
+
 int main(int argc, char **argv)
 {
     ptls_openssl_sign_certificate_t openssl_sign_certificate;
@@ -270,6 +275,10 @@ int main(int argc, char **argv)
 
     ctx = ctx_peer = &openssl_ctx;
     verify_certificate = &openssl_verify_certificate.super;
+    ADD_FFX_AES128_ALGORITHMS(openssl);
+#if PTLS_OPENSSL_HAVE_CHACHA20_POLY1305
+    ADD_FFX_CHACHA20_ALGORITHMS(openssl);
+#endif
 
     subtest("rsa-sign", test_rsa_sign);
     subtest("ecdsa-sign", test_ecdsa_sign);
