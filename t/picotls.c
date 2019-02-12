@@ -273,7 +273,7 @@ static void test_ffx(void)
     static uint8_t ffx_test_key[32] = {1,  2,  3,  4,  5,  6,  7,  8,  9,  10, 11, 12, 13, 14, 15, 16,
                                        17, 18, 19, 20, 21, 22, 23, 24, 25, 27, 28, 29, 30, 31, 32};
     static uint8_t ffx_test_bad_key[32] = {0,  1,  2,  3,  4,  5,  6,  7,  8,  9,  10, 11, 12, 13, 14, 15,
-                                          16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 27, 28, 29, 30, 31};
+                                           16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 27, 28, 29, 30, 31};
 
     static uint8_t ffx_test_iv[16] = {10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25};
     static uint8_t ffx_test_bad_iv[16] = {11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26};
@@ -283,7 +283,7 @@ static void test_ffx(void)
         &ptls_ffx_ptls_minicrypto_aes128ctr_b125_r8, &ptls_ffx_ptls_minicrypto_aes128ctr_b31_r6,
         &ptls_ffx_ptls_minicrypto_aes128ctr_b53_r4,  &ptls_ffx_ptls_minicrypto_chacha20_b256_r8,
         &ptls_ffx_ptls_minicrypto_chacha20_b32_r6,   &ptls_ffx_ptls_minicrypto_chacha20_b57_r4};
-    static int ffx_variant_bit_length[6] = { 125, 31, 53, 256, 32, 57};
+    static int ffx_variant_bit_length[6] = {125, 31, 53, 256, 32, 57};
     ptls_cipher_context_t *ffx_enc = NULL;
     ptls_cipher_context_t *ffx_dec = NULL;
     ptls_cipher_context_t *ffx_dec_bad = NULL;
