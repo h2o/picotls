@@ -30,6 +30,10 @@ extern "C" {
 #include <inttypes.h>
 #include <sys/types.h>
 
+#ifndef PTLS_FUZZ_HANDSHAKE
+#define PTLS_FUZZ_HANDSHAKE 0
+#endif
+
 #define PTLS_AES128_KEY_SIZE 16
 #define PTLS_AES256_KEY_SIZE 32
 #define PTLS_AES_IV_SIZE 16
@@ -165,9 +169,6 @@ extern "C" {
             0xfb, 0xd5, 0x1a, 0xd2, 0xf1, 0x48, 0x98, 0xb9, 0x5b                                                                   \
     }
 
-#ifndef PTLS_FUZZ_HANDSHAKE
-#define PTLS_FUZZ_HANDSHAKE 0
-#endif
 typedef struct st_ptls_t ptls_t;
 typedef struct st_ptls_context_t ptls_context_t;
 typedef struct st_ptls_key_schedule_t ptls_key_schedule_t;
