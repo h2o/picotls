@@ -106,8 +106,7 @@ ptls_cipher_context_t * ptls_ffx_new(ptls_cipher_algorithm_t *algo, int is_enc, 
     ptls_cipher_context_t *ctx = (ptls_cipher_context_t *)malloc(sizeof(ptls_ffx_context_t));
 
     if (ctx != NULL) {
-        ptls_clear_memory(ctx, sizeof(ptls_ffx_context_t));
-
+        memset(ctx, 0, sizeof(ptls_ffx_context_t));
         if (ptls_ffx_setup_crypto(ctx, algo, is_enc, nb_rounds, bit_length, key) != 0) {
             free(ctx);
             ctx = NULL;
@@ -154,8 +153,8 @@ static void ffx_encrypt(ptls_cipher_context_t *_ctx, void *output, const void *i
     /* Split the input in two halves */
     memcpy(left, input, ctx->nb_left);
     memcpy(right, ((uint8_t *)input) + ctx->nb_left, ctx->nb_right);
-    ptls_clear_memory(left + ctx->nb_left, 16 - ctx->nb_left);
-    ptls_clear_memory(right + ctx->nb_right, 16 - ctx->nb_right);
+    memset(left + ctx->nb_left, 0, 16 - ctx->nb_left);
+    memset(right + ctx->nb_right, 0, 16 - ctx->nb_right);
     last_byte = right[ctx->nb_right - 1];
     right[ctx->nb_right - 1] &= ctx->mask_last_byte;
 
