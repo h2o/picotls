@@ -42,6 +42,19 @@ subtest "early-data" => sub {
         $resp = `$cli -e -s $tempdir/session 127.0.0.1 $port`;
         is $resp, "hello";
         is 2, (() = slurp_file("$tempdir/events") =~ /^CLIENT_EARLY_TRAFFIC_SECRET /mg);
+        # check +15 seconds jitter
+        $resp = `faketime -f +15 $cli -e -s $tempdir/session 127.0.0.1 $port`;
+        is $resp, "hello";
+        is 2, (() = slurp_file("$tempdir/events") =~ /^CLIENT_EARLY_TRAFFIC_SECRET /mg);
+        # re-fetch the ticket
+        unlink "$tempdir/session";
+        $resp = `$cli -e -s $tempdir/session 127.0.0.1 $port`;
+        is $resp, "hello";
+        is 2, (() = slurp_file("$tempdir/events") =~ /^CLIENT_EARLY_TRAFFIC_SECRET /mg);
+        # check -15 seconds jitter
+        $resp = `faketime -f -15 $cli -e -s $tempdir/session 127.0.0.1 $port`;
+        is $resp, "hello";
+        is 2, (() = slurp_file("$tempdir/events") =~ /^CLIENT_EARLY_TRAFFIC_SECRET /mg);
     };
 };
 

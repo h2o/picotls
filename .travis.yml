@@ -12,7 +12,7 @@ matrix:
           sources: ['ubuntu-toolchain-r-test']
           packages: ['gcc-8']
       before_install: &bs_linux
-        - sudo apt-get install libscope-guard-perl libtest-tcp-perl
+        - sudo apt-get install faketime libscope-guard-perl libtest-tcp-perl
     - name: Linux (clang)
       os: linux
       compiler: clang
@@ -25,6 +25,7 @@ matrix:
         - curl -L https://cpanmin.us | sudo perl - App::cpanminus
         - sudo cpanm --notest Scope::Guard
         - sudo cpanm --notest Test::TCP
+        - brew install libfaketime
     - name: macOS (Xcode 10.1/clang-10)
       os: osx
       osx_image: xcode10.1
