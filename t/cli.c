@@ -180,7 +180,7 @@ static int handle_connection(int sockfd, ptls_context_t *ctx, const char *server
                 ptls_buffer_pushv(&ptbuf, bytebuf, ioret);
                 if (state == IN_HANDSHAKE) {
                     size_t send_amount = 0;
-                    if (hsprop->client.max_early_data_size != NULL) {
+                    if (server_name != NULL && hsprop->client.max_early_data_size != NULL) {
                         size_t max_can_be_sent = *hsprop->client.max_early_data_size;
                         if (max_can_be_sent > ptbuf.off)
                             max_can_be_sent = ptbuf.off;
