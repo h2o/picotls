@@ -555,6 +555,28 @@ Exit:
     return ret;
 }
 
+#if PTLS_FUZZ_HANDSHAKE
+
+static size_t aead_encrypt(struct st_ptls_traffic_protection_t *ctx, void *output, const void *input, size_t inlen,
+                           uint8_t content_type)
+{
+    memcpy(output, input, inlen);
+    memcpy(output + inlen, &content_type, 1);
+    return inlen + 1 + 16;
+}
+
+static int aead_decrypt(struct st_ptls_traffic_protection_t *ctx, void *output, size_t *outlen, const void *input, size_t inlen)
+{
+    if (inlen < 16) {
+        return PTLS_ALERT_BAD_RECORD_MAC;
+    }
+    memcpy(output, input, inlen - 16);
+    *outlen = inlen - 16; /* removing the 16 bytes of tag */
+    return 0;
+}
+
+#else
+
 static void build_aad(uint8_t aad[5], size_t reclen)
 {
     aad[0] = PTLS_CONTENT_TYPE_APPDATA;
@@ -589,6 +611,8 @@ static int aead_decrypt(struct st_ptls_traffic_protection_t *ctx, void *output, 
     ++ctx->seq;
     return 0;
 }
+
+#endif /* #if PTLS_FUZZ_HANDSHAKE */
 
 #define buffer_push_record(buf, type, block)                                                                                       \
     do {                                                                                                                           \
