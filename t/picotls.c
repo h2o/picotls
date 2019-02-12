@@ -26,9 +26,9 @@
 #include <string.h>
 #include <stdio.h>
 #include "picotls.h"
+#include "picotls/ffx.h"
 #include "picotls/minicrypto.h"
 #include "picotls/pembase64.h"
-#include "picotls/ffx.h"
 #include "../deps/picotest/picotest.h"
 #include "../lib/picotls.c"
 #include "test.h"
@@ -46,6 +46,7 @@ static void test_is_ipaddr(void)
 
 ptls_context_t *ctx, *ctx_peer;
 ptls_verify_certificate_t *verify_certificate;
+struct st_ptls_ffx_test_variants_t ffx_variants[7];
 
 static ptls_cipher_suite_t *find_cipher(ptls_context_t *ctx, uint16_t id)
 {
@@ -258,13 +259,6 @@ static void test_chacha20poly1305(void)
     }
 }
 
-PTLS_FFX_CIPHER_ALGO(ptls_minicrypto_chacha20, 32, 6, 32);
-PTLS_FFX_CIPHER_ALGO(ptls_minicrypto_chacha20, 57, 4, 32);
-PTLS_FFX_CIPHER_ALGO(ptls_minicrypto_chacha20, 256, 8, 32);
-PTLS_FFX_CIPHER_ALGO(ptls_minicrypto_aes128ctr, 31, 6, 16);
-PTLS_FFX_CIPHER_ALGO(ptls_minicrypto_aes128ctr, 53, 4, 16);
-PTLS_FFX_CIPHER_ALGO(ptls_minicrypto_aes128ctr, 125, 8, 16);
-
 static void test_ffx(void)
 {
     static uint8_t ffx_test_source[32] = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
@@ -279,24 +273,19 @@ static void test_ffx(void)
     static uint8_t ffx_test_bad_iv[16] = {11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26};
 
     static uint8_t ffx_test_mask[8] = {0x00, 0x01, 0x03, 0x07, 0x0F, 0x1F, 0x3F, 0x7F};
-    static ptls_cipher_algorithm_t *ffx_variant[6] = {
-        &ptls_ffx_ptls_minicrypto_aes128ctr_b125_r8, &ptls_ffx_ptls_minicrypto_aes128ctr_b31_r6,
-        &ptls_ffx_ptls_minicrypto_aes128ctr_b53_r4,  &ptls_ffx_ptls_minicrypto_chacha20_b256_r8,
-        &ptls_ffx_ptls_minicrypto_chacha20_b32_r6,   &ptls_ffx_ptls_minicrypto_chacha20_b57_r4};
-    static int ffx_variant_bit_length[6] = {125, 31, 53, 256, 32, 57};
     ptls_cipher_context_t *ffx_enc = NULL;
     ptls_cipher_context_t *ffx_dec = NULL;
     ptls_cipher_context_t *ffx_dec_bad = NULL;
     uint8_t encrypted[32];
     uint8_t result[32];
 
-    for (int i = 0; i < 6; i++) {
-        ffx_enc = ptls_cipher_new(ffx_variant[i], 1, ffx_test_key);
-        ffx_dec = ptls_cipher_new(ffx_variant[i], 0, ffx_test_key);
-        ffx_dec_bad = ptls_cipher_new(ffx_variant[i], 0, ffx_test_bad_key);
+    for (int i = 0; ffx_variants[i].algo != NULL; i++) {
+        ffx_enc = ptls_cipher_new(ffx_variants[i].algo, 1, ffx_test_key);
+        ffx_dec = ptls_cipher_new(ffx_variants[i].algo, 0, ffx_test_key);
+        ffx_dec_bad = ptls_cipher_new(ffx_variants[i].algo, 0, ffx_test_bad_key);
         ok(ffx_enc != NULL && ffx_dec != NULL && ffx_dec_bad != NULL);
         if (ffx_enc != NULL && ffx_dec != NULL && ffx_dec_bad != NULL) {
-            int bit_length = ffx_variant_bit_length[i];
+            int bit_length = ffx_variants[i].bit_length;
             int len = (bit_length + 7) / 8;
             /* test that encoding works and last byte is correct */
             ptls_cipher_init(ffx_enc, ffx_test_iv);
@@ -327,8 +316,9 @@ static void test_ffx(void)
      * The test verifies that ptls_ffx_new is compatible with
      * creating an ffx variant with the macro, then creating the cipher.
      */
+    assert(ffx_variants[2].bit_length == 53); /* assumes that ffx_variants[0] is ffx_aes128ctr_b53_r4 */
     ffx_enc = ptls_ffx_new(&ptls_minicrypto_aes128ctr, 1, 4, 53, ffx_test_key);
-    ffx_dec = ptls_cipher_new(&ptls_ffx_ptls_minicrypto_aes128ctr_b53_r4, 0, ffx_test_key);
+    ffx_dec = ptls_cipher_new(ffx_variants[2].algo, 0, ffx_test_key);
     ok(ffx_enc != NULL && ffx_dec != NULL);
     if (ffx_enc != NULL && ffx_dec != NULL) {
         ptls_cipher_init(ffx_enc, ffx_test_iv);
