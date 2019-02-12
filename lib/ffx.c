@@ -66,7 +66,7 @@ int ptls_ffx_setup_crypto(ptls_cipher_context_t *_ctx, ptls_cipher_algorithm_t *
         ctx->nb_left = (int)len / 2;
         ctx->nb_right = (int)len - ctx->nb_left;
         ctx->mask_last_byte = last_byte_mask[bit_length % 8];
-        ptls_clear_memory(ctx->tweaks, 16);
+        ptls_clear_memory(ctx->tweaks, sizeof(ctx->tweaks));
 
         ctx->super.do_dispose = ffx_dispose;
         ctx->super.do_init = ffx_init;
