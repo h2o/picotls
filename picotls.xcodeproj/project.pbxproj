@@ -240,6 +240,7 @@
 		E949EF272073629300511ECA /* minicrypto-pem.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = "minicrypto-pem.c"; sourceTree = "<group>"; };
 		E97577002212405300D1EF74 /* ffx.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ffx.h; sourceTree = "<group>"; };
 		E97577022212405D00D1EF74 /* ffx.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = ffx.c; sourceTree = "<group>"; };
+		E97577072213148800D1EF74 /* e2e.t */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.script.perl; path = e2e.t; sourceTree = "<group>"; };
 		E992F79A20E99A6B0008154D /* esni.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = esni.c; sourceTree = "<group>"; };
 		E992F7A920E99A7C0008154D /* picotls-esni */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = "picotls-esni"; sourceTree = BUILT_PRODUCTS_DIR; };
 		E99B75DE1F5CDDB500CF503E /* asn1.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = asn1.c; sourceTree = "<group>"; };
@@ -415,6 +416,7 @@
 			isa = PBXGroup;
 			children = (
 				106530FE1DAD8A3C005B2C60 /* cli.c */,
+				E97577072213148800D1EF74 /* e2e.t */,
 				106530E91D9B7C13005B2C60 /* picotls.c */,
 				1059003D1DC8D4E300FB4085 /* minicrypto.c */,
 				106530C51D9B1A98005B2C60 /* openssl.c */,
