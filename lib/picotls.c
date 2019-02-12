@@ -38,7 +38,6 @@
 #define PTLS_RECORD_VERSION_MAJOR 3
 #define PTLS_RECORD_VERSION_MINOR 3
 
-#define PTLS_HELLO_RANDOM_SIZE 32
 #define PTLS_ESNI_NONCE_SIZE 16
 
 #define PTLS_CONTENT_TYPE_CHANGE_CIPHER_SPEC 20
@@ -755,6 +754,15 @@ int ptls_decode64(uint64_t *value, const uint8_t **src, const uint8_t *end)
     return 0;
 }
 
+static void log_secret(ptls_t *tls, const char *type, ptls_iovec_t secret)
+{
+    if (tls->ctx->log_event != NULL) {
+        char hexbuf[PTLS_MAX_DIGEST_SIZE * 2 + 1];
+        ptls_hexdump(hexbuf, secret.base, secret.len);
+        tls->ctx->log_event->cb(tls->ctx->log_event, tls, type, "%s", hexbuf);
+    }
+}
+
 static void key_schedule_free(ptls_key_schedule_t *sched)
 {
     size_t i;
@@ -943,11 +951,8 @@ static int derive_exporter_secret(ptls_t *tls, int is_early)
     if ((ret = derive_secret(tls->key_schedule, *slot, is_early ? "e exp master" : "exp master")) != 0)
         return ret;
 
-    if (tls->ctx->log_secret != NULL) {
-        const char *log_label = is_early ? "EARLY_EXPORTER_SECRET" : "EXPORTER_SECRET";
-        tls->ctx->log_secret->cb(tls->ctx->log_secret, tls, log_label,
-                                 ptls_iovec_init(*slot, tls->key_schedule->hashes[0].algo->digest_size));
-    }
+    log_secret(tls, is_early ? "EARLY_EXPORTER_SECRET" : "EXPORTER_SECRET",
+               ptls_iovec_init(*slot, tls->key_schedule->hashes[0].algo->digest_size));
 
     return 0;
 }
@@ -1120,9 +1125,8 @@ static int setup_traffic_protection(ptls_t *tls, int is_enc, const char *secret_
         return PTLS_ERROR_NO_MEMORY; /* TODO obtain error from ptls_aead_new */
     ctx->seq = 0;
 
-    if (tls->ctx->log_secret != NULL)
-        tls->ctx->log_secret->cb(tls->ctx->log_secret, tls, log_labels[ptls_is_server(tls) == is_enc][epoch],
-                                 ptls_iovec_init(ctx->secret, tls->key_schedule->hashes[0].algo->digest_size));
+    log_secret(tls, log_labels[ptls_is_server(tls) == is_enc][epoch],
+               ptls_iovec_init(ctx->secret, tls->key_schedule->hashes[0].algo->digest_size));
     PTLS_DEBUGF("[%s] %02x%02x,%02x%02x\n", log_labels[ptls_is_server(tls)][epoch], (unsigned)ctx->secret[0],
                 (unsigned)ctx->secret[1], (unsigned)ctx->aead->static_iv[0], (unsigned)ctx->aead->static_iv[1]);
 
@@ -5081,4 +5085,16 @@ int ptls_server_name_is_ipaddr(const char *name)
         return 1;
 #endif
     return 0;
+}
+
+void ptls_hexdump(char *dst, const void *_src, size_t len)
+{
+    const uint8_t *src = _src;
+    size_t i;
+
+    for (i = 0; i != len; ++i) {
+        *dst++ = "0123456789abcdef"[src[i] >> 4];
+        *dst++ = "0123456789abcdef"[src[i] & 0xf];
+    }
+    *dst++ = '\0';
 }
