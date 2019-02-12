@@ -55,8 +55,10 @@ extern ptls_key_exchange_algorithm_t ptls_openssl_x25519;
 
 extern ptls_key_exchange_algorithm_t *ptls_openssl_key_exchanges[];
 
+extern ptls_cipher_algorithm_t ptls_openssl_aes128ecb;
 extern ptls_cipher_algorithm_t ptls_openssl_aes128ctr;
 extern ptls_aead_algorithm_t ptls_openssl_aes128gcm;
+extern ptls_cipher_algorithm_t ptls_openssl_aes256ecb;
 extern ptls_cipher_algorithm_t ptls_openssl_aes256ctr;
 extern ptls_aead_algorithm_t ptls_openssl_aes256gcm;
 extern ptls_hash_algorithm_t ptls_openssl_sha256;
@@ -72,6 +74,10 @@ extern ptls_cipher_suite_t ptls_openssl_chacha20poly1305sha256;
 #endif
 
 void ptls_openssl_random_bytes(void *buf, size_t len);
+/**
+ * constructs a key exchange context. pkey's reference count is incremented.
+ */
+int ptls_openssl_create_key_exchange(ptls_key_exchange_context_t **ctx, EVP_PKEY *pkey);
 
 struct st_ptls_openssl_signature_scheme_t {
     uint16_t scheme_id;
