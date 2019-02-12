@@ -1747,7 +1747,7 @@ static int emit_esni_extension(struct st_ptls_esni_secret_t *esni, ptls_buffer_t
         if ((ret = emit_server_name_extension(buf, server_name)) != 0)
             goto Exit;
         /* pad */
-        if (buf->off - start_off < esni->client.padded_length + PTLS_ESNI_NONCE_SIZE) {
+        if (buf->off - start_off < (size_t)(esni->client.padded_length + PTLS_ESNI_NONCE_SIZE)) {
             size_t bytes_to_pad = esni->client.padded_length + PTLS_ESNI_NONCE_SIZE - (buf->off - start_off);
             if ((ret = ptls_buffer_reserve(buf, bytes_to_pad)) != 0)
                 goto Exit;

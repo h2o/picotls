@@ -26,6 +26,7 @@
 #include <string.h>
 #include <stdio.h>
 #include "picotls.h"
+#include "picotls/ffx.h"
 #include "picotls/minicrypto.h"
 #include "picotls/pembase64.h"
 #include "../deps/picotest/picotest.h"
@@ -45,6 +46,7 @@ static void test_is_ipaddr(void)
 
 ptls_context_t *ctx, *ctx_peer;
 ptls_verify_certificate_t *verify_certificate;
+struct st_ptls_ffx_test_variants_t ffx_variants[7];
 
 static ptls_cipher_suite_t *find_cipher(ptls_context_t *ctx, uint16_t id)
 {
@@ -86,8 +88,9 @@ static void test_hmac_sha256(void)
     hctx->update(hctx, message, strlen(message));
     hctx->final(hctx, digest, 0);
 
-    ok(memcmp(digest, "\xb0\x34\x4c\x61\xd8\xdb\x38\x53\x5c\xa8\xaf\xce\xaf\x0b\xf1\x2b\x88\x1d\xc2\x00\xc9\x83\x3d\xa7\x26\xe9\x37"
-                      "\x6c\x2e\x32\xcf\xf7",
+    ok(memcmp(digest,
+              "\xb0\x34\x4c\x61\xd8\xdb\x38\x53\x5c\xa8\xaf\xce\xaf\x0b\xf1\x2b\x88\x1d\xc2\x00\xc9\x83\x3d\xa7\x26\xe9\x37"
+              "\x6c\x2e\x32\xcf\xf7",
               32) == 0);
 }
 
@@ -101,13 +104,15 @@ static void test_hkdf(void)
     uint8_t okm[42];
 
     ptls_hkdf_extract(sha256, prk, ptls_iovec_init(salt, sizeof(salt) - 1), ptls_iovec_init(ikm, sizeof(ikm) - 1));
-    ok(memcmp(prk, "\x07\x77\x09\x36\x2c\x2e\x32\xdf\x0d\xdc\x3f\x0d\xc4\x7b\xba\x63\x90\xb6\xc7\x3b\xb5\x0f\x9c\x31\x22\xec\x84"
-                   "\x4a\xd7\xc2\xb3\xe5",
+    ok(memcmp(prk,
+              "\x07\x77\x09\x36\x2c\x2e\x32\xdf\x0d\xdc\x3f\x0d\xc4\x7b\xba\x63\x90\xb6\xc7\x3b\xb5\x0f\x9c\x31\x22\xec\x84"
+              "\x4a\xd7\xc2\xb3\xe5",
               32) == 0);
 
     ptls_hkdf_expand(sha256, okm, sizeof(okm), ptls_iovec_init(prk, sha256->digest_size), ptls_iovec_init(info, sizeof(info) - 1));
-    ok(memcmp(okm, "\x3c\xb2\x5f\x25\xfa\xac\xd5\x7a\x90\x43\x4f\x64\xd0\x36\x2f\x2a\x2d\x2d\x0a\x90\xcf\x1a\x5a\x4c\x5d\xb0\x2d"
-                   "\x56\xec\xc4\xc5\xbf\x34\x00\x72\x08\xd5\xb8\x87\x18\x58\x65",
+    ok(memcmp(okm,
+              "\x3c\xb2\x5f\x25\xfa\xac\xd5\x7a\x90\x43\x4f\x64\xd0\x36\x2f\x2a\x2d\x2d\x0a\x90\xcf\x1a\x5a\x4c\x5d\xb0\x2d"
+              "\x56\xec\xc4\xc5\xbf\x34\x00\x72\x08\xd5\xb8\x87\x18\x58\x65",
               sizeof(okm)) == 0);
 }
 
@@ -182,8 +187,9 @@ static void test_ecb(ptls_cipher_algorithm_t *algo, const void *expected, size_t
                                   16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31},
                          plaintext[] = {0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
                                         0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff};
-    uint8_t *actual = alloca(expected_len);
 
+    uint8_t *actual = malloc(expected_len);
+    assert(actual != NULL);
     /* encrypt */
     memset(actual, 0, expected_len);
     ptls_cipher_context_t *ctx = ptls_cipher_new(algo, 1, key);
@@ -196,6 +202,8 @@ static void test_ecb(ptls_cipher_algorithm_t *algo, const void *expected, size_t
     ptls_cipher_encrypt(ctx, actual, actual, expected_len);
     ptls_cipher_free(ctx);
     ok(memcmp(actual, plaintext, expected_len) == 0);
+
+    free(actual);
 }
 
 static void test_aes128ecb(void)
@@ -294,6 +302,85 @@ static void test_chacha20poly1305(void)
     }
 }
 
+static void test_ffx(void)
+{
+    static uint8_t ffx_test_source[32] = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
+                                          'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v'};
+
+    static uint8_t ffx_test_key[32] = {1,  2,  3,  4,  5,  6,  7,  8,  9,  10, 11, 12, 13, 14, 15, 16,
+                                       17, 18, 19, 20, 21, 22, 23, 24, 25, 27, 28, 29, 30, 31, 32};
+    static uint8_t ffx_test_bad_key[32] = {0,  1,  2,  3,  4,  5,  6,  7,  8,  9,  10, 11, 12, 13, 14, 15,
+                                           16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 27, 28, 29, 30, 31};
+
+    static uint8_t ffx_test_iv[16] = {10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25};
+    static uint8_t ffx_test_bad_iv[16] = {11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26};
+
+    static uint8_t ffx_test_mask[8] = {0x00, 0x01, 0x03, 0x07, 0x0F, 0x1F, 0x3F, 0x7F};
+    ptls_cipher_context_t *ffx_enc = NULL;
+    ptls_cipher_context_t *ffx_dec = NULL;
+    ptls_cipher_context_t *ffx_dec_bad = NULL;
+    uint8_t encrypted[32];
+    uint8_t result[32];
+
+    for (int i = 0; ffx_variants[i].algo != NULL; i++) {
+        ffx_enc = ptls_cipher_new(ffx_variants[i].algo, 1, ffx_test_key);
+        ffx_dec = ptls_cipher_new(ffx_variants[i].algo, 0, ffx_test_key);
+        ffx_dec_bad = ptls_cipher_new(ffx_variants[i].algo, 0, ffx_test_bad_key);
+        ok(ffx_enc != NULL && ffx_dec != NULL && ffx_dec_bad != NULL);
+        if (ffx_enc != NULL && ffx_dec != NULL && ffx_dec_bad != NULL) {
+            int bit_length = ffx_variants[i].bit_length;
+            int len = (bit_length + 7) / 8;
+            /* test that encoding works and last byte is correct */
+            ptls_cipher_init(ffx_enc, ffx_test_iv);
+            ptls_cipher_encrypt(ffx_enc, encrypted, ffx_test_source, len);
+            ok((encrypted[len - 1] & ffx_test_mask[bit_length % 8]) == (ffx_test_source[len - 1] & ffx_test_mask[bit_length % 8]));
+            /* Test that decoding with good key and IV works*/
+            ptls_cipher_init(ffx_dec, ffx_test_iv);
+            ptls_cipher_encrypt(ffx_dec, result, encrypted, len);
+            ok(memcmp(ffx_test_source, result, len) == 0);
+            /* Test that decoding with bad IV fails */
+            ptls_cipher_init(ffx_dec, ffx_test_bad_iv);
+            ptls_cipher_encrypt(ffx_dec, result, encrypted, len);
+            ok(memcmp(ffx_test_source, result, len) != 0);
+            /* Test that decoding with bad key fails */
+            ptls_cipher_init(ffx_dec_bad, ffx_test_iv);
+            ptls_cipher_encrypt(ffx_dec_bad, result, encrypted, len);
+            ok(memcmp(ffx_test_source, result, len) != 0);
+        }
+        if (ffx_enc != NULL) {
+            ptls_cipher_free(ffx_enc);
+        }
+        if (ffx_dec != NULL) {
+            ptls_cipher_free(ffx_dec);
+        }
+        if (ffx_dec_bad != NULL) {
+            ptls_cipher_free(ffx_dec_bad);
+        }
+    }
+
+    /* Test the direct usage of the API with the "ptls_ffx_new" function.
+     * The test verifies that ptls_ffx_new is compatible with
+     * creating an ffx variant with the macro, then creating the cipher.
+     */
+    assert(ffx_variants[2].bit_length == 53); /* assumes that ffx_variants[0] is ffx_aes128ctr_b53_r4 */
+    ffx_enc = ptls_ffx_new(&ptls_minicrypto_aes128ctr, 1, 4, 53, ffx_test_key);
+    ffx_dec = ptls_cipher_new(ffx_variants[2].algo, 0, ffx_test_key);
+    ok(ffx_enc != NULL && ffx_dec != NULL);
+    if (ffx_enc != NULL && ffx_dec != NULL) {
+        ptls_cipher_init(ffx_enc, ffx_test_iv);
+        ptls_cipher_encrypt(ffx_enc, encrypted, ffx_test_source, 7);
+        ptls_cipher_init(ffx_dec, ffx_test_iv);
+        ptls_cipher_encrypt(ffx_dec, result, encrypted, 7);
+        ok(memcmp(ffx_test_source, result, 7) == 0);
+    }
+    if (ffx_enc != NULL) {
+        ptls_cipher_free(ffx_enc);
+    }
+    if (ffx_dec != NULL) {
+        ptls_cipher_free(ffx_dec);
+    }
+}
+
 static void test_base64_decode(void)
 {
     ptls_base64_decode_state_t state;
@@ -384,13 +471,15 @@ static void test_fragmented_message(void)
     ok(ret == PTLS_ERROR_IN_PROGRESS);
     ok(test_fragmented_message_queue.count == 2);
     ok(test_fragmented_message_queue.vec[0].len == 7);
-    ok(memcmp(test_fragmented_message_queue.vec[0].buf, "\x01\x00\x00\x03"
-                                                        "abc",
+    ok(memcmp(test_fragmented_message_queue.vec[0].buf,
+              "\x01\x00\x00\x03"
+              "abc",
               7) == 0);
     ok(!test_fragmented_message_queue.vec[0].is_end_of_record);
     ok(test_fragmented_message_queue.vec[1].len == 6);
-    ok(memcmp(test_fragmented_message_queue.vec[1].buf, "\x02\x00\x00\x02"
-                                                        "de",
+    ok(memcmp(test_fragmented_message_queue.vec[1].buf,
+              "\x02\x00\x00\x02"
+              "de",
               6) == 0);
     ok(!test_fragmented_message_queue.vec[1].is_end_of_record);
     SET_RECORD("\x00\x00\x03"
@@ -400,8 +489,9 @@ static void test_fragmented_message(void)
     ok(tls.recvbuf.mess.base == NULL);
     ok(test_fragmented_message_queue.count == 3);
     ok(test_fragmented_message_queue.vec[2].len == 7);
-    ok(memcmp(test_fragmented_message_queue.vec[2].buf, "\x03\x00\x00\x03"
-                                                        "end",
+    ok(memcmp(test_fragmented_message_queue.vec[2].buf,
+              "\x03\x00\x00\x03"
+              "end",
               7) == 0);
     ok(test_fragmented_message_queue.vec[2].is_end_of_record);
 
@@ -1204,6 +1294,7 @@ void test_picotls(void)
     subtest("aes256ecb", test_aes256ecb);
     subtest("aes128ctr", test_aes128ctr);
     subtest("chacha20", test_chacha20);
+    subtest("ffx", test_ffx);
     subtest("base64-decode", test_base64_decode);
     subtest("fragmented-message", test_fragmented_message);
     subtest("handshake", test_all_handshakes);
