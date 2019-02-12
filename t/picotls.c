@@ -187,12 +187,9 @@ static void test_ecb(ptls_cipher_algorithm_t *algo, const void *expected, size_t
                                   16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31},
                          plaintext[] = {0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
                                         0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff};
-#ifdef _WINDOWS
-    uint8_t *actual = _malloca(expected_len);
-#else 
-    uint8_t *actual = alloca(expected_len);
-#endif
 
+    uint8_t *actual = malloc(expected_len);
+    assert(actual != NULL);
     /* encrypt */
     memset(actual, 0, expected_len);
     ptls_cipher_context_t *ctx = ptls_cipher_new(algo, 1, key);
@@ -205,9 +202,8 @@ static void test_ecb(ptls_cipher_algorithm_t *algo, const void *expected, size_t
     ptls_cipher_encrypt(ctx, actual, actual, expected_len);
     ptls_cipher_free(ctx);
     ok(memcmp(actual, plaintext, expected_len) == 0);
-#ifdef _WINDOWS
-    _freea(actual);
-#endif
+
+    free(actual);
 }
 
 static void test_aes128ecb(void)
