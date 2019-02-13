@@ -746,6 +746,15 @@ static int chacha20_setup_crypto(ptls_cipher_context_t *ctx, int is_enc, const v
 
 #endif
 
+#if PTLS_OPENSSL_HAVE_BF
+
+static int bfecb_setup_crypto(ptls_cipher_context_t *ctx, int is_enc, const void *key)
+{
+    return cipher_setup_crypto(ctx, is_enc, key, EVP_bf_ecb(), is_enc ? cipher_encrypt : cipher_decrypt);
+}
+
+#endif
+
 struct aead_crypto_context_t {
     ptls_aead_context_t super;
     EVP_CIPHER_CTX *evp_ctx;
@@ -1455,3 +1464,8 @@ ptls_cipher_suite_t *ptls_openssl_cipher_suites[] = {&ptls_openssl_aes256gcmsha3
                                                      &ptls_openssl_chacha20poly1305sha256,
 #endif
                                                      NULL};
+
+#if PTLS_OPENSSL_HAVE_BF
+ptls_cipher_algorithm_t ptls_openssl_bfecb = {"BF-ECB", PTLS_BLOWFISH_KEY_SIZE, 0, sizeof(struct cipher_context_t),
+                                              bfecb_setup_crypto};
+#endif

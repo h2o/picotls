@@ -52,6 +52,9 @@ extern ptls_key_exchange_algorithm_t ptls_openssl_secp521r1;
 #define PTLS_OPENSSL_HAS_X25519 1  /* deprecated; use HAVE_ */
 extern ptls_key_exchange_algorithm_t ptls_openssl_x25519;
 #endif
+#ifndef OPENSSL_NO_BF
+#define PTLS_OPENSSL_HAVE_BF 1
+#endif
 
 extern ptls_key_exchange_algorithm_t *ptls_openssl_key_exchanges[];
 
@@ -71,6 +74,10 @@ extern ptls_cipher_suite_t *ptls_openssl_cipher_suites[];
 extern ptls_cipher_algorithm_t ptls_openssl_chacha20;
 extern ptls_aead_algorithm_t ptls_openssl_chacha20poly1305;
 extern ptls_cipher_suite_t ptls_openssl_chacha20poly1305sha256;
+#endif
+
+#if PTLS_OPENSSL_HAVE_BF
+extern ptls_cipher_algorithm_t ptls_openssl_bfecb;
 #endif
 
 void ptls_openssl_random_bytes(void *buf, size_t len);
