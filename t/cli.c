@@ -305,7 +305,7 @@ static void usage(const char *cmd)
            "  -c certificate-file  certificate chain used for server authentication\n"
            "  -i file              a file to read from and send to the peer (default: stdin)\n"
            "  -k key-file          specifies the credentials for signing the certificate\n"
-           "  -l log-file          file to log traffic secrets\n"
+           "  -l log-file          file to log events (incl. traffic secrets)\n"
            "  -n                   negotiates the key exchange method (i.e. wait for HRR)\n"
            "  -N named-group       named group to be used (default: secp256r1)\n"
            "  -s session-file      file to read/write the session ticket\n"
@@ -426,7 +426,7 @@ int main(int argc, char **argv)
             fclose(fp);
         } break;
         case 'l':
-            setup_log_secret(&ctx, optarg);
+            setup_log_event(&ctx, optarg);
             break;
         case 'v':
             setup_verify_certificate(&ctx);
