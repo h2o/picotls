@@ -30,10 +30,15 @@ extern "C" {
 #include <inttypes.h>
 #include <sys/types.h>
 
+#ifndef PTLS_FUZZ_HANDSHAKE
+#define PTLS_FUZZ_HANDSHAKE 0
+#endif
+
 #define PTLS_HELLO_RANDOM_SIZE 32
 
 #define PTLS_AES128_KEY_SIZE 16
 #define PTLS_AES256_KEY_SIZE 32
+#define PTLS_AES_BLOCK_SIZE 16
 #define PTLS_AES_IV_SIZE 16
 #define PTLS_AESGCM_IV_SIZE 12
 #define PTLS_AESGCM_TAG_SIZE 16
@@ -42,6 +47,9 @@ extern "C" {
 #define PTLS_CHACHA20_IV_SIZE 16
 #define PTLS_CHACHA20POLY1305_IV_SIZE 12
 #define PTLS_CHACHA20POLY1305_TAG_SIZE 16
+
+#define PTLS_BLOWFISH_KEY_SIZE 16
+#define PTLS_BLOWFISH_BLOCK_SIZE 8
 
 #define PTLS_SHA256_BLOCK_SIZE 64
 #define PTLS_SHA256_DIGEST_SIZE 32
@@ -248,6 +256,7 @@ typedef struct st_ptls_cipher_context_t {
 typedef const struct st_ptls_cipher_algorithm_t {
     const char *name;
     size_t key_size;
+    size_t block_size;
     size_t iv_size;
     size_t context_size;
     int (*setup_crypto)(ptls_cipher_context_t *ctx, int is_enc, const void *key);

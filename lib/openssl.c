@@ -746,6 +746,15 @@ static int chacha20_setup_crypto(ptls_cipher_context_t *ctx, int is_enc, const v
 
 #endif
 
+#if PTLS_OPENSSL_HAVE_BF
+
+static int bfecb_setup_crypto(ptls_cipher_context_t *ctx, int is_enc, const void *key)
+{
+    return cipher_setup_crypto(ctx, is_enc, key, EVP_bf_ecb(), is_enc ? cipher_encrypt : cipher_decrypt);
+}
+
+#endif
+
 struct aead_crypto_context_t {
     ptls_aead_context_t super;
     EVP_CIPHER_CTX *evp_ctx;
@@ -1404,10 +1413,11 @@ ptls_key_exchange_algorithm_t ptls_openssl_secp521r1 = {PTLS_GROUP_SECP521R1, x9
 ptls_key_exchange_algorithm_t ptls_openssl_x25519 = {PTLS_GROUP_X25519, evp_keyex_create, evp_keyex_exchange, NID_X25519};
 #endif
 ptls_key_exchange_algorithm_t *ptls_openssl_key_exchanges[] = {&ptls_openssl_secp256r1, NULL};
-ptls_cipher_algorithm_t ptls_openssl_aes128ecb = {"AES128-ECB", PTLS_AES128_KEY_SIZE, 0, sizeof(struct cipher_context_t),
-                                                  aes128ecb_setup_crypto};
-ptls_cipher_algorithm_t ptls_openssl_aes128ctr = {"AES128-CTR", PTLS_AES128_KEY_SIZE, PTLS_AES_IV_SIZE,
-                                                  sizeof(struct cipher_context_t), aes128ctr_setup_crypto};
+ptls_cipher_algorithm_t ptls_openssl_aes128ecb = {
+    "AES128-ECB",          PTLS_AES128_KEY_SIZE, PTLS_AES_BLOCK_SIZE, 0 /* iv size */, sizeof(struct cipher_context_t),
+    aes128ecb_setup_crypto};
+ptls_cipher_algorithm_t ptls_openssl_aes128ctr = {
+    "AES128-CTR", PTLS_AES128_KEY_SIZE, 1, PTLS_AES_IV_SIZE, sizeof(struct cipher_context_t), aes128ctr_setup_crypto};
 ptls_aead_algorithm_t ptls_openssl_aes128gcm = {"AES128-GCM",
                                                 &ptls_openssl_aes128ctr,
                                                 &ptls_openssl_aes128ecb,
@@ -1416,10 +1426,12 @@ ptls_aead_algorithm_t ptls_openssl_aes128gcm = {"AES128-GCM",
                                                 PTLS_AESGCM_TAG_SIZE,
                                                 sizeof(struct aead_crypto_context_t),
                                                 aead_aes128gcm_setup_crypto};
-ptls_cipher_algorithm_t ptls_openssl_aes256ctr = {"AES256-CTR", PTLS_AES256_KEY_SIZE, PTLS_AES_IV_SIZE,
-                                                  sizeof(struct cipher_context_t), aes256ctr_setup_crypto};
-ptls_cipher_algorithm_t ptls_openssl_aes256ecb = {"AES256-ECB", PTLS_AES256_KEY_SIZE, 0, sizeof(struct cipher_context_t),
-                                                  aes256ecb_setup_crypto};
+ptls_cipher_algorithm_t ptls_openssl_aes256ecb = {
+    "AES256-ECB",          PTLS_AES256_KEY_SIZE, PTLS_AES_BLOCK_SIZE, 0 /* iv size */, sizeof(struct cipher_context_t),
+    aes256ecb_setup_crypto};
+ptls_cipher_algorithm_t ptls_openssl_aes256ctr = {
+    "AES256-CTR",          PTLS_AES256_KEY_SIZE, 1 /* block size */, PTLS_AES_IV_SIZE, sizeof(struct cipher_context_t),
+    aes256ctr_setup_crypto};
 ptls_aead_algorithm_t ptls_openssl_aes256gcm = {"AES256-GCM",
                                                 &ptls_openssl_aes256ctr,
                                                 &ptls_openssl_aes256ecb,
@@ -1437,8 +1449,9 @@ ptls_cipher_suite_t ptls_openssl_aes128gcmsha256 = {PTLS_CIPHER_SUITE_AES_128_GC
 ptls_cipher_suite_t ptls_openssl_aes256gcmsha384 = {PTLS_CIPHER_SUITE_AES_256_GCM_SHA384, &ptls_openssl_aes256gcm,
                                                     &ptls_openssl_sha384};
 #if PTLS_OPENSSL_HAVE_CHACHA20_POLY1305
-ptls_cipher_algorithm_t ptls_openssl_chacha20 = {"CHACHA20", PTLS_CHACHA20_KEY_SIZE, PTLS_CHACHA20_IV_SIZE,
-                                                 sizeof(struct cipher_context_t), chacha20_setup_crypto};
+ptls_cipher_algorithm_t ptls_openssl_chacha20 = {
+    "CHACHA20",           PTLS_CHACHA20_KEY_SIZE, 1 /* block size */, PTLS_CHACHA20_IV_SIZE, sizeof(struct cipher_context_t),
+    chacha20_setup_crypto};
 ptls_aead_algorithm_t ptls_openssl_chacha20poly1305 = {"CHACHA20-POLY1305",
                                                        &ptls_openssl_chacha20,
                                                        NULL,
@@ -1455,3 +1468,8 @@ ptls_cipher_suite_t *ptls_openssl_cipher_suites[] = {&ptls_openssl_aes256gcmsha3
                                                      &ptls_openssl_chacha20poly1305sha256,
 #endif
                                                      NULL};
+
+#if PTLS_OPENSSL_HAVE_BF
+ptls_cipher_algorithm_t ptls_openssl_bfecb = {"BF-ECB",        PTLS_BLOWFISH_KEY_SIZE,          PTLS_BLOWFISH_BLOCK_SIZE,
+                                              0 /* iv size */, sizeof(struct cipher_context_t), bfecb_setup_crypto};
+#endif

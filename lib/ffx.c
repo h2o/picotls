@@ -44,6 +44,7 @@ int ptls_ffx_setup_crypto(ptls_cipher_context_t *_ctx, ptls_cipher_algorithm_t *
     assert(ctx->super.do_transform == NULL);
     assert(ctx->super.algo == NULL || algo->key_size == ctx->super.algo->key_size);
     assert(ctx->super.algo == NULL || algo->iv_size == ctx->super.algo->iv_size);
+    assert(ctx->super.algo == NULL || ctx->super.algo->block_size == len);
     assert(algo->iv_size == 16);
 
     if (len <= 32 && len >= 2) {
