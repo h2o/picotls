@@ -459,8 +459,10 @@ int main(int argc, char **argv)
         case 'u':
             request_key_update = 1;
             break;
-        default:
+        case 'h':
             usage(argv[0]);
+            exit(0);
+        default:
             exit(1);
         }
     }
