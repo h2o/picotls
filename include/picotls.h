@@ -254,6 +254,7 @@ typedef struct st_ptls_cipher_context_t {
 typedef const struct st_ptls_cipher_algorithm_t {
     const char *name;
     size_t key_size;
+    size_t block_size;
     size_t iv_size;
     size_t context_size;
     int (*setup_crypto)(ptls_cipher_context_t *ctx, int is_enc, const void *key);
