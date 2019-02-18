@@ -459,8 +459,10 @@ int main(int argc, char **argv)
         case 'u':
             request_key_update = 1;
             break;
-        default:
+        case 'h':
             usage(argv[0]);
+            exit(0);
+        default:
             exit(1);
         }
     }
@@ -478,8 +480,8 @@ int main(int argc, char **argv)
 #if PICOTLS_USE_BROTLI
         if (ctx.decompress_certificate != NULL) {
             static ptls_emit_compressed_certificate_t ecc;
-            if (ptls_init_compressed_certificate(&ecc, PTLS_CERTIFICATE_COMPRESSION_ALGORITHM_BROTLI, ctx.certificates.list,
-                                                 ctx.certificates.count, ptls_iovec_init(NULL, 0)) != 0) {
+            if (ptls_init_compressed_certificate(&ecc, ctx.certificates.list, ctx.certificates.count, ptls_iovec_init(NULL, 0)) !=
+                0) {
                 fprintf(stderr, "failed to create a brotli-compressed version of the certificate chain.\n");
                 exit(1);
             }
