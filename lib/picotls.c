@@ -2075,6 +2075,8 @@ static int decode_server_hello(ptls_t *tls, struct st_ptls_server_hello_t *sh, c
 
     uint16_t exttype, found_version = UINT16_MAX, selected_psk_identity = UINT16_MAX;
     decode_extensions(src, end, PTLS_HANDSHAKE_TYPE_SERVER_HELLO, &exttype, {
+        if (tls->ctx->on_new_client_extension != NULL)
+            tls->ctx->on_new_client_extension->cb(tls->ctx->on_new_client_extension, tls, exttype);
         switch (exttype) {
         case PTLS_EXTENSION_TYPE_SUPPORTED_VERSIONS:
             if ((ret = ptls_decode16(&found_version, &src, end)) != 0)
@@ -2279,6 +2281,8 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
     unknown_extensions[0].type = UINT16_MAX;
 
     decode_extensions(src, end, PTLS_HANDSHAKE_TYPE_ENCRYPTED_EXTENSIONS, &type, {
+        if (tls->ctx->on_new_client_extension != NULL)
+            tls->ctx->on_new_client_extension->cb(tls->ctx->on_new_client_extension, tls, type);
         switch (type) {
         case PTLS_EXTENSION_TYPE_SERVER_NAME:
             if (src != end) {
