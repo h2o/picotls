@@ -80,18 +80,29 @@ static void test_sha384(void)
 static void test_hmac_sha256(void)
 {
     /* test vector from RFC 4231 */
-    const char *secret = "\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b", *message = "Hi There";
+    const char *secret = "\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b", *message = "Hi There",
+               *expected =
+                   "\xb0\x34\x4c\x61\xd8\xdb\x38\x53\x5c\xa8\xaf\xce\xaf\x0b\xf1\x2b\x88\x1d\xc2\x00\xc9\x83\x3d\xa7\x26\xe9\x37"
+                   "\x6c\x2e\x32\xcf\xf7";
     uint8_t digest[32];
 
     ptls_hash_context_t *hctx =
         ptls_hmac_create(find_cipher(ctx, PTLS_CIPHER_SUITE_AES_128_GCM_SHA256)->hash, secret, strlen(secret));
-    hctx->update(hctx, message, strlen(message));
-    hctx->final(hctx, digest, 0);
 
-    ok(memcmp(digest,
-              "\xb0\x34\x4c\x61\xd8\xdb\x38\x53\x5c\xa8\xaf\xce\xaf\x0b\xf1\x2b\x88\x1d\xc2\x00\xc9\x83\x3d\xa7\x26\xe9\x37"
-              "\x6c\x2e\x32\xcf\xf7",
-              32) == 0);
+    memset(digest, 0, sizeof(digest));
+    hctx->update(hctx, message, strlen(message));
+    hctx->final(hctx, digest, PTLS_HASH_FINAL_MODE_RESET);
+    ok(memcmp(digest, expected, 32) == 0);
+
+    memset(digest, 0, sizeof(digest));
+    hctx->update(hctx, message, strlen(message));
+    hctx->final(hctx, digest, PTLS_HASH_FINAL_MODE_RESET);
+    ok(memcmp(digest, expected, 32) == 0);
+
+    memset(digest, 0, sizeof(digest));
+    hctx->update(hctx, message, strlen(message));
+    hctx->final(hctx, digest, PTLS_HASH_FINAL_MODE_FREE);
+    ok(memcmp(digest, expected, 32) == 0);
 }
 
 static void test_hkdf(void)

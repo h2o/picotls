@@ -118,7 +118,7 @@ typedef struct st_ptls_ffx_context_t {
         return ptls_ffx_setup_crypto(ctx, &base, is_enc, nbrounds, bitlength, key);                                                \
     }                                                                                                                              \
     static ptls_cipher_algorithm_t ptls_ffx_##base##_b##bitlength##_r##nbrounds = {                                                \
-        PTLS_FFX_CIPHER_ALGO_NAME(base, bitlength, nbrounds), keysize, 16, sizeof(ptls_ffx_context_t),                             \
+        PTLS_FFX_CIPHER_ALGO_NAME(base, bitlength, nbrounds), keysize, (bitlength + 7) / 8, 16, sizeof(ptls_ffx_context_t),        \
         ptls_ffx_##base##_b##bitlength##_r##nbrounds##_setup};
 
 /*

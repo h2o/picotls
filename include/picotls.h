@@ -30,8 +30,15 @@ extern "C" {
 #include <inttypes.h>
 #include <sys/types.h>
 
+#ifndef PTLS_FUZZ_HANDSHAKE
+#define PTLS_FUZZ_HANDSHAKE 0
+#endif
+
+#define PTLS_HELLO_RANDOM_SIZE 32
+
 #define PTLS_AES128_KEY_SIZE 16
 #define PTLS_AES256_KEY_SIZE 32
+#define PTLS_AES_BLOCK_SIZE 16
 #define PTLS_AES_IV_SIZE 16
 #define PTLS_AESGCM_IV_SIZE 12
 #define PTLS_AESGCM_TAG_SIZE 16
@@ -40,6 +47,9 @@ extern "C" {
 #define PTLS_CHACHA20_IV_SIZE 16
 #define PTLS_CHACHA20POLY1305_IV_SIZE 12
 #define PTLS_CHACHA20POLY1305_TAG_SIZE 16
+
+#define PTLS_BLOWFISH_KEY_SIZE 16
+#define PTLS_BLOWFISH_BLOCK_SIZE 8
 
 #define PTLS_SHA256_BLOCK_SIZE 64
 #define PTLS_SHA256_DIGEST_SIZE 32
@@ -246,6 +256,7 @@ typedef struct st_ptls_cipher_context_t {
 typedef const struct st_ptls_cipher_algorithm_t {
     const char *name;
     size_t key_size;
+    size_t block_size;
     size_t iv_size;
     size_t context_size;
     int (*setup_crypto)(ptls_cipher_context_t *ctx, int is_enc, const void *key);
@@ -471,9 +482,11 @@ PTLS_CALLBACK_TYPE(int, encrypt_ticket, ptls_t *tls, int is_encrypt, ptls_buffer
  */
 PTLS_CALLBACK_TYPE(int, save_ticket, ptls_t *tls, ptls_iovec_t input);
 /**
- * secret logginng
+ * event logging (incl. secret logging)
  */
-PTLS_CALLBACK_TYPE(void, log_secret, ptls_t *tls, const char *label, ptls_iovec_t secret);
+typedef struct st_ptls_log_event_t {
+    void (*cb)(struct st_ptls_log_event_t *self, ptls_t *tls, const char *type, const char *fmt, ...) __attribute__((format(printf, 4, 5)));
+} ptls_log_event_t;
 /**
  * reference counting
  */
@@ -595,7 +608,7 @@ struct st_ptls_context_t {
     /**
      *
      */
-    ptls_log_secret_t *log_secret;
+    ptls_log_event_t *log_event;
     /**
      *
      */
@@ -1118,6 +1131,10 @@ int ptls_esni_init_context(ptls_context_t *ctx, ptls_esni_context_t *esni, ptls_
  *
  */
 void ptls_esni_dispose_context(ptls_esni_context_t *esni);
+/**
+ *
+ */
+void ptls_hexdump(char *dst, const void *src, size_t len);
 /**
  * the default get_time callback
  */
