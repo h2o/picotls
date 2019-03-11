@@ -87,8 +87,6 @@ IF (BUILD_FUZZER)
     IF (OSS_FUZZ)
         # Use https://github.com/google/oss-fuzz compatible options
         SET(LIB_FUZZER FuzzingEngine)
-        SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fno-omit-frame-pointer")
-        SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c-fno-omit-frame-pointer")
         SET_TARGET_PROPERTIES(fuzz-asn1-validation
             fuzz-asn1-type-and-length
             fuzz-server-hello
@@ -96,6 +94,8 @@ IF (BUILD_FUZZER)
             PROPERTIES
             LINKER_LANGUAGE CXX)
     ELSE()
+        SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=fuzzer-no-link")
+        SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=fuzzer-no-link")
         SET_TARGET_PROPERTIES(fuzz-asn1-validation
             fuzz-asn1-type-and-length
             fuzz-server-hello
