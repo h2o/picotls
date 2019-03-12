@@ -45,20 +45,31 @@ int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size)
     uint8_t *bytes, expected_type;
     size_t last_byte, bytes_max, byte_index;
     uint32_t length;
+    uint8_t ret;
 
     feeder_init(Data, Size);
+
     bytes_max = ((size_t)feeder_next_byte() << 16) + (feeder_next_byte() << 8) + feeder_next_byte();
     if (bytes_max == 0)
         return 0;
-    byte_index = ((size_t)feeder_next_byte() << 16) + (feeder_next_byte() << 8) + feeder_next_byte();
-    byte_index = byte_index % bytes_max;
+
+    /* fill the test buffer */
     bytes = malloc(bytes_max);
     for (i = 0; i < bytes_max; i++) {
         bytes[i] = feeder_next_byte();
     }
-    expected_type = feeder_next_byte();
-    ptls_asn1_get_expected_type_and_length(bytes, bytes_max, byte_index, expected_type, &length, &indefinite_length, &last_byte,
-                                           &decode_error, &ctx);
+
+    ret = feeder_next_byte();
+    /* fuzz either ptls_asn1_validation or ptls_asn1_get_expected_type_and_length */
+    if (ret & 1) {
+        ptls_asn1_validation(Data, Size, &ctx);
+    } else {
+        byte_index = ((size_t)feeder_next_byte() << 16) + (feeder_next_byte() << 8) + feeder_next_byte();
+        byte_index = byte_index % bytes_max;
+        expected_type = feeder_next_byte();
+        ptls_asn1_get_expected_type_and_length(bytes, bytes_max, byte_index, expected_type, &length, &indefinite_length, &last_byte,
+                &decode_error, &ctx);
+    }
     free(bytes);
     return 0;
 }
