@@ -76,7 +76,7 @@ IF (BUILD_FUZZER)
         MESSAGE(FATAL ERROR "The fuzzer needs clang as a compiler")
     ENDIF()
 
-    ADD_EXECUTABLE(fuzz-asn1 fuzz/fuzz-asn1.c lib/asn1.c)
+    ADD_EXECUTABLE(fuzz-asn1 fuzz/fuzz-asn1.c)
     SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D_GNU_SOURCE")
     INCLUDE_DIRECTORIES(t include ${OPENSSL_INCLUDE_DIR})
     ADD_DEFINITIONS(-DPTLS_FUZZ_HANDSHAKE=1)
@@ -102,7 +102,7 @@ IF (BUILD_FUZZER)
             LINK_FLAGS "-fsanitize=fuzzer")
     ENDIF (OSS_FUZZ)
 
-    TARGET_LINK_LIBRARIES(fuzz-asn1 ${LIB_FUZZER})
+    TARGET_LINK_LIBRARIES(fuzz-asn1 picotls-minicrypto picotls-core picotls-openssl ${OPENSSL_LIBRARIES} ${LIB_FUZZER})
     TARGET_LINK_LIBRARIES(fuzz-server-hello picotls-core picotls-openssl ${OPENSSL_LIBRARIES} ${LIB_FUZZER})
     TARGET_LINK_LIBRARIES(fuzz-client-hello picotls-core picotls-openssl ${OPENSSL_LIBRARIES} ${LIB_FUZZER})
 

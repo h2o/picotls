@@ -1,9 +1,12 @@
 #include <stdint.h>
+#include <unistd.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <stddef.h>
 #include <stdarg.h>
+#include "picotls.h"
 #include "picotls/asn1.h"
+#include "picotls/minicrypto.h"
 
 static struct feeder {
     const uint8_t *data;
@@ -59,17 +62,43 @@ int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size)
         bytes[i] = feeder_next_byte();
     }
 
-    ret = feeder_next_byte();
+    ret = feeder_next_byte() % 4;
     /* fuzz either ptls_asn1_validation or ptls_asn1_get_expected_type_and_length */
-    if (ret & 1) {
-        ptls_asn1_validation(Data, Size, &ctx);
-    } else {
+    if (ret == 0) {
+        ptls_asn1_validation(bytes, bytes_max, &ctx);
+    } else if (ret == 1) {
         byte_index = ((size_t)feeder_next_byte() << 16) + (feeder_next_byte() << 8) + feeder_next_byte();
         byte_index = byte_index % bytes_max;
         expected_type = feeder_next_byte();
         ptls_asn1_get_expected_type_and_length(bytes, bytes_max, byte_index, expected_type, &length, &indefinite_length, &last_byte,
                 &decode_error, &ctx);
+    } else if (ret == 2 || ret == 3) {
+        ptls_context_t ctx = {};
+        char fname[] = "/tmp/XXXXXXXX";
+        int fd, ret;
+        fd = mkstemp(fname);
+        if (fd < 0) {
+            goto out;
+        }
+        ret = write(fd, bytes, bytes_max);
+        if (ret != bytes_max) {
+            goto out2;
+        }
+        ctx.random_bytes = ptls_minicrypto_random_bytes;
+        ctx.get_time = &ptls_get_time;
+        ctx.key_exchanges = ptls_minicrypto_key_exchanges;
+        ctx.cipher_suites = ptls_minicrypto_cipher_suites;
+
+	    if (ret == 2) {
+            ptls_load_certificates(&ctx, fname);
+        } else {
+		    ptls_minicrypto_load_private_key(&ctx, fname);
+        }
+out2:
+        close(fd);
+        unlink(fname);
     }
+out:
     free(bytes);
     return 0;
 }
