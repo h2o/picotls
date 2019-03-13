@@ -91,6 +91,14 @@ int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size)
 
 	    if (ret == 2) {
             ptls_load_certificates(&ctx, fname);
+            if (ctx.certificates.list) {
+                for (i = 0; i < ctx.certificates.count; i++) {
+                    if (ctx.certificates.list[i].base)
+                        free(ctx.certificates.list[i].base);
+                }
+                free(ctx.certificates.list);
+
+            }
         } else {
 		    ptls_minicrypto_load_private_key(&ctx, fname);
         }
