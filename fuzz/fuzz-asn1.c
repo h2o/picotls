@@ -40,7 +40,6 @@ void count_printf(void *ctx, const char *format, ...)
     return;
 }
 
-int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size);
 int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size)
 {
     int i, counter, indefinite_length, decode_error;
