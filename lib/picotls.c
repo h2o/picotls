@@ -2301,7 +2301,7 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
             ptls_decode_block(src, end, 2, {
                 ptls_decode_open_block(src, end, 1, {
                     if (src == end) {
-                        ret = PTLS_ALERT_HANDSHAKE_FAILURE;
+                        ret = PTLS_ALERT_DECODE_ERROR;
                         goto Exit;
                     }
                     if ((ret = ptls_set_negotiated_protocol(tls, (const char *)src, end - src)) != 0)
@@ -3075,7 +3075,7 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
                     ptls_decode_open_block(src, end, 1, {
                         /* rfc7301 3.1: empty strings MUST NOT be included */
                         if (src == end) {
-                            ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+                            ret = PTLS_ALERT_DECODE_ERROR;
                             goto Exit;
                         }
                         if (ch->alpn.count < sizeof(ch->alpn.list) / sizeof(ch->alpn.list[0]))
