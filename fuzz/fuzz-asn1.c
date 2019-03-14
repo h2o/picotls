@@ -51,7 +51,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size)
 
     feeder_init(Data, Size);
 
-    bytes_max = ((size_t)feeder_next_byte() << 16) + (feeder_next_byte() << 8) + feeder_next_byte();
+    bytes_max = (feeder_next_byte() << 8) + feeder_next_byte();
     if (bytes_max == 0)
         return 0;
 
@@ -66,7 +66,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size)
     if (ret == 0) {
         ptls_asn1_validation(bytes, bytes_max, &ctx);
     } else if (ret == 1) {
-        byte_index = ((size_t)feeder_next_byte() << 16) + (feeder_next_byte() << 8) + feeder_next_byte();
+        byte_index = (feeder_next_byte() << 8) + feeder_next_byte();
         byte_index = byte_index % bytes_max;
         expected_type = feeder_next_byte();
         ptls_asn1_get_expected_type_and_length(bytes, bytes_max, byte_index, expected_type, &length, &indefinite_length, &last_byte,
