@@ -625,6 +625,10 @@ struct st_ptls_context_t {
      *
      */
     ptls_update_esni_key_t *update_esni_key;
+    /**
+     *
+     */
+    ptls_iovec_t pkey_buf;
 };
 
 typedef struct st_ptls_raw_extension_t {
