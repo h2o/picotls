@@ -2222,6 +2222,20 @@ static int client_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
         goto Exit;
     if ((ret = setup_traffic_protection(tls, 0, "s hs traffic", 2, 0)) != 0)
         goto Exit;
+    if (tls->client.using_early_data) {
+        if ((tls->pending_handshake_secret = malloc(PTLS_MAX_DIGEST_SIZE)) == NULL) {
+            ret = PTLS_ERROR_NO_MEMORY;
+            goto Exit;
+        }
+        if ((ret = derive_secret(tls->key_schedule, tls->pending_handshake_secret, "c hs traffic")) != 0)
+            goto Exit;
+        if (tls->ctx->update_traffic_key != NULL &&
+            (ret = tls->ctx->update_traffic_key->cb(tls->ctx->update_traffic_key, tls, 1, 2, tls->pending_handshake_secret)) != 0)
+            goto Exit;
+    } else {
+        if ((ret = setup_traffic_protection(tls, 1, "c hs traffic", 2, 0)) != 0)
+            goto Exit;
+    }
 
     tls->state = PTLS_STATE_CLIENT_EXPECT_ENCRYPTED_EXTENSIONS;
     ret = PTLS_ERROR_IN_PROGRESS;
@@ -2340,18 +2354,6 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
         tls->client.early_data_skipped = skip_early_data;
         if (properties != NULL && !skip_early_data)
             properties->client.early_data_accepted_by_peer = 1;
-        if ((tls->pending_handshake_secret = malloc(PTLS_MAX_DIGEST_SIZE)) == NULL) {
-            ret = PTLS_ERROR_NO_MEMORY;
-            goto Exit;
-        }
-        if ((ret = derive_secret(tls->key_schedule, tls->pending_handshake_secret, "c hs traffic")) != 0)
-            goto Exit;
-        if (tls->ctx->update_traffic_key != NULL &&
-            (ret = tls->ctx->update_traffic_key->cb(tls->ctx->update_traffic_key, tls, 1, 2, tls->pending_handshake_secret)) != 0)
-            goto Exit;
-    } else {
-        if ((ret = setup_traffic_protection(tls, 1, "c hs traffic", 2, 0)) != 0)
-            goto Exit;
     }
     if ((ret = report_unknown_extensions(tls, properties, unknown_extensions)) != 0)
         goto Exit;
