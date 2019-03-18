@@ -1835,8 +1835,13 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
                 resumption_secret = ptls_iovec_init(NULL, 0);
             }
         }
-        if (properties->client.max_early_data_size != NULL && !tls->client.using_early_data)
-            *properties->client.max_early_data_size = 0;
+        if (tls->client.using_early_data) {
+            properties->client.early_data_acceptance = PTLS_EARLY_DATA_ACCEPTANCE_UNKNOWN;
+        } else {
+            if (properties->client.max_early_data_size != NULL)
+                *properties->client.max_early_data_size = 0;
+            properties->client.early_data_acceptance = PTLS_EARLY_DATA_REJECTED;
+        }
     }
 
     /* use the default key share if still not undetermined */
@@ -2352,8 +2357,8 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
 
     if (tls->client.using_early_data) {
         tls->client.early_data_skipped = skip_early_data;
-        if (properties != NULL && !skip_early_data)
-            properties->client.early_data_accepted_by_peer = 1;
+        if (properties != NULL)
+            properties->client.early_data_acceptance = skip_early_data ? PTLS_EARLY_DATA_REJECTED : PTLS_EARLY_DATA_ACCEPTED;
     }
     if ((ret = report_unknown_extensions(tls, properties, unknown_extensions)) != 0)
         goto Exit;
