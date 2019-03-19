@@ -671,9 +671,9 @@ typedef struct st_ptls_handshake_properties_t {
              */
             size_t *max_early_data_size;
             /**
-             * if early-data has been accepted by peer. The state changes anytime after handshake keys become available.
-             * Applications can peek the tri-state variable every time it calls `ptls_hanshake` or `ptls_handle_message` to
-             * determine the result at the earliest moment.
+             * If early-data has been accepted by peer, or if the state is still unknown. The state changes anytime after handshake
+             * keys become available. Applications can peek the tri-state variable every time it calls `ptls_hanshake` or
+             * `ptls_handle_message` to determine the result at the earliest moment. This is an output parameter.
              */
             ptls_early_data_acceptance_t early_data_acceptance;
             /**
