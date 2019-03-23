@@ -713,7 +713,6 @@ static void cipher_encrypt(ptls_cipher_context_t *_ctx, void *output, const void
 static void cipher_decrypt(ptls_cipher_context_t *_ctx, void *output, const void *input, size_t _len)
 {
     struct cipher_context_t *ctx = (struct cipher_context_t *)_ctx;
-    /* EVP_DecryptUpdate tries to retain the last block, while EncryptUpdate does not */
     int len = (int)_len, ret = EVP_DecryptUpdate(ctx->evp, output, &len, input, len);
     assert(ret);
     assert(len == (int)_len);
