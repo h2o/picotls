@@ -693,6 +693,7 @@ static int cipher_setup_crypto(ptls_cipher_context_t *_ctx, int is_enc, const vo
     } else {
         if (!EVP_DecryptInit_ex(ctx->evp, cipher, NULL, key, NULL))
             goto Error;
+        EVP_CIPHER_CTX_set_padding(ctx->evp, 0); /* required to disable one block buffering in ECB mode */
     }
 
     return 0;
@@ -713,7 +714,7 @@ static void cipher_decrypt(ptls_cipher_context_t *_ctx, void *output, const void
 {
     struct cipher_context_t *ctx = (struct cipher_context_t *)_ctx;
     /* EVP_DecryptUpdate tries to retain the last block, while EncryptUpdate does not */
-    int len = (int)_len, ret = EVP_EncryptUpdate(ctx->evp, output, &len, input, len);
+    int len = (int)_len, ret = EVP_DecryptUpdate(ctx->evp, output, &len, input, len);
     assert(ret);
     assert(len == (int)_len);
 }
