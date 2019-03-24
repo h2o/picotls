@@ -3010,8 +3010,10 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
                 goto Exit;
             id++;
             ch->client_ciphers.count++;
-            if (id >= ch->client_ciphers.list + MAX_CLIENT_CIPHERS)
+            if (id >= ch->client_ciphers.list + MAX_CLIENT_CIPHERS) {
+                src = end;
                 break;
+            }
         } while (src != end);
     });
 
