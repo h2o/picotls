@@ -1996,15 +1996,17 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
     }
     ptls__key_schedule_update_hash(tls->key_schedule, emitter->buf->base + msghash_off, emitter->buf->off - msghash_off);
 
-    if (tls->client.using_early_data) {
-        if ((ret = setup_traffic_protection(tls, 1, "c e traffic", 1, 0)) != 0)
-            goto Exit;
-        if ((ret = push_change_cipher_spec(tls, emitter->buf)) != 0)
-            goto Exit;
-    }
-    if (resumption_secret.base != NULL && !is_second_flight) {
-        if ((ret = derive_exporter_secret(tls, 1)) != 0)
-            goto Exit;
+    if (!is_second_flight) {
+        if (tls->client.using_early_data) {
+            if ((ret = setup_traffic_protection(tls, 1, "c e traffic", 1, 0)) != 0)
+                goto Exit;
+            if ((ret = push_change_cipher_spec(tls, emitter->buf)) != 0)
+                goto Exit;
+        }
+        if (resumption_secret.base != NULL) {
+            if ((ret = derive_exporter_secret(tls, 1)) != 0)
+                goto Exit;
+        }
     }
     tls->state = cookie == NULL ? PTLS_STATE_CLIENT_EXPECT_SERVER_HELLO : PTLS_STATE_CLIENT_EXPECT_SECOND_SERVER_HELLO;
     ret = PTLS_ERROR_IN_PROGRESS;
