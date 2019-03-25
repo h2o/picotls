@@ -234,7 +234,6 @@ struct st_ptls_t {
             ptls_key_exchange_context_t *key_share_ctx;
             unsigned offered_psk : 1;
             unsigned using_early_data : 1;
-            unsigned early_data_skipped : 1;
             struct st_ptls_certificate_request_t certificate_request;
         } client;
         struct {
@@ -1996,17 +1995,16 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
     }
     ptls__key_schedule_update_hash(tls->key_schedule, emitter->buf->base + msghash_off, emitter->buf->off - msghash_off);
 
-    if (!is_second_flight) {
-        if (tls->client.using_early_data) {
-            if ((ret = setup_traffic_protection(tls, 1, "c e traffic", 1, 0)) != 0)
-                goto Exit;
-            if ((ret = push_change_cipher_spec(tls, emitter->buf)) != 0)
-                goto Exit;
-        }
-        if (resumption_secret.base != NULL) {
-            if ((ret = derive_exporter_secret(tls, 1)) != 0)
-                goto Exit;
-        }
+    if (tls->client.using_early_data) {
+        assert(!is_second_flight);
+        if ((ret = setup_traffic_protection(tls, 1, "c e traffic", 1, 0)) != 0)
+            goto Exit;
+        if ((ret = push_change_cipher_spec(tls, emitter->buf)) != 0)
+            goto Exit;
+    }
+    if (resumption_secret.base != NULL && !is_second_flight) {
+        if ((ret = derive_exporter_secret(tls, 1)) != 0)
+            goto Exit;
     }
     tls->state = cookie == NULL ? PTLS_STATE_CLIENT_EXPECT_SERVER_HELLO : PTLS_STATE_CLIENT_EXPECT_SECOND_SERVER_HELLO;
     ret = PTLS_ERROR_IN_PROGRESS;
@@ -2165,6 +2163,17 @@ static int handle_hello_retry_request(ptls_t *tls, ptls_message_emitter_t *emitt
     if (tls->client.key_share_ctx != NULL) {
         tls->client.key_share_ctx->on_exchange(&tls->client.key_share_ctx, 1, NULL, ptls_iovec_init(NULL, 0));
         tls->client.key_share_ctx = NULL;
+    }
+    if (tls->client.using_early_data) {
+        if (tls->ctx->update_traffic_key != NULL) {
+            /* nothing to do */
+        } else {
+            /* release keys, but keep the epoch at 1 because we've always called derive-secret */
+            assert(tls->traffic_protection.enc.aead != NULL);
+            ptls_aead_free(tls->traffic_protection.enc.aead);
+            tls->traffic_protection.enc.aead = NULL;
+        }
+        tls->client.using_early_data = 0;
     }
 
     if (sh->retry_request.selected_group != UINT16_MAX) {
@@ -2358,7 +2367,8 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
     }
 
     if (tls->client.using_early_data) {
-        tls->client.early_data_skipped = skip_early_data;
+        if (skip_early_data)
+            tls->client.using_early_data = 0;
         if (properties != NULL)
             properties->client.early_data_acceptance = skip_early_data ? PTLS_EARLY_DATA_REJECTED : PTLS_EARLY_DATA_ACCEPTED;
     }
@@ -2735,8 +2745,9 @@ static int client_handle_finished(ptls_t *tls, ptls_message_emitter_t *emitter, 
     /* if sending early data, emit EOED and commision the client handshake traffic secret */
     if (tls->pending_handshake_secret != NULL) {
         assert(tls->traffic_protection.enc.aead != NULL || tls->ctx->update_traffic_key != NULL);
-        if (!tls->client.early_data_skipped && !tls->ctx->omit_end_of_early_data)
+        if (tls->client.using_early_data && !tls->ctx->omit_end_of_early_data)
             ptls_push_message(emitter, tls->key_schedule, PTLS_HANDSHAKE_TYPE_END_OF_EARLY_DATA, {});
+        tls->client.using_early_data = 0;
         if ((ret = commission_handshake_secret(tls)) != 0)
             goto Exit;
     }

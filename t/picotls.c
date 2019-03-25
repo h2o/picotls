@@ -1308,7 +1308,7 @@ static void test_handshake_api(void)
     ok(ret == PTLS_ERROR_IN_PROGRESS);
     ok(cbuf.off != 0);
     ok(!ptls_handshake_is_complete(client));
-    ok(client_hs_prop.client.early_data_acceptance == PTLS_EARLY_DATA_ACCEPTANCE_UNKNOWN);
+    ok(client_hs_prop.client.early_data_acceptance == PTLS_EARLY_DATA_REJECTED);
     ret = feed_messages(server, &sbuf, soffs, cbuf.base, coffs, &server_hs_prop); /* CH -> SH..SF */
     ok(ret == 0);
     ok(!ptls_handshake_is_complete(server));
@@ -1317,11 +1317,65 @@ static void test_handshake_api(void)
     ret = feed_messages(client, &cbuf, coffs, sbuf.base, soffs, &client_hs_prop); /* SH..SF -> CF */
     ok(ret == 0);
     ok(ptls_handshake_is_complete(client));
-    ok(client_hs_prop.client.early_data_acceptance == PTLS_EARLY_DATA_REJECTED); /* TODO detect this when receiving HRR */
     ok(cbuf.off != 0);
     ret = feed_messages(server, &sbuf, soffs, cbuf.base, coffs, &server_hs_prop); /* CF -> */
     ok(ret == 0);
     ok(ptls_handshake_is_complete(server));
+
+    ptls_free(client);
+    ptls_free(server);
+
+    cbuf.off = 0;
+    sbuf.off = 0;
+
+    /* shamelessly reuse this subtest for testing ordinary TLS 0-RTT with HRR rejection */
+    ctx->update_traffic_key = NULL;
+    ctx->omit_end_of_early_data = 0;
+    ctx_peer->update_traffic_key = NULL;
+    ctx_peer->omit_end_of_early_data = 0;
+    client_hs_prop = (ptls_handshake_properties_t){{{{NULL}, saved_ticket, &max_early_data_size}}};
+    server_hs_prop = (ptls_handshake_properties_t){{{{NULL}}}};
+    server_hs_prop.server.enforce_retry = 1;
+    client = ptls_new(ctx, 0);
+    server = ptls_new(ctx_peer, 1);
+    ret = ptls_handshake(client, &cbuf, NULL, NULL, &client_hs_prop); /* -> CH */
+    ok(ret == PTLS_ERROR_IN_PROGRESS);
+    ok(client_hs_prop.client.max_early_data_size != 0);
+    ok(client_hs_prop.client.early_data_acceptance == PTLS_EARLY_DATA_ACCEPTANCE_UNKNOWN);
+    ok(cbuf.off != 0);
+    ret = ptls_send(client, &cbuf, "hello world", 11); /* send 0-RTT data that'll be rejected */
+    ok(ret == 0);
+    size_t inlen = cbuf.off;
+    ret = ptls_handshake(server, &sbuf, cbuf.base, &inlen, &server_hs_prop); /* CH -> HRR */
+    ok(ret == PTLS_ERROR_IN_PROGRESS);
+    ok(cbuf.off == inlen);
+    cbuf.off = 0;
+    ok(sbuf.off != 0);
+    inlen = sbuf.off;
+    ret = ptls_handshake(client, &cbuf, sbuf.base, &inlen, &client_hs_prop); /* HRR -> CH */
+    ok(ret == PTLS_ERROR_IN_PROGRESS);
+    ok(client_hs_prop.client.early_data_acceptance == PTLS_EARLY_DATA_REJECTED);
+    ok(sbuf.off == inlen);
+    sbuf.off = 0;
+    ok(cbuf.off != 0);
+    inlen = cbuf.off;
+    ret = ptls_handshake(server, &sbuf, cbuf.base, &inlen, &server_hs_prop); /* CH -> SH..SF,NST */
+    ok(ret == 0);
+    ok(!ptls_handshake_is_complete(server));
+    ok(cbuf.off == inlen);
+    cbuf.off = 0;
+    ok(sbuf.off != 0);
+    inlen = sbuf.off;
+    ret = ptls_handshake(client, &cbuf, sbuf.base, &inlen, &client_hs_prop); /* SH..SF -> CF */
+    ok(ret == 0);
+    ok(ptls_handshake_is_complete(client));
+    ok(inlen < sbuf.off); /* ignore NST */
+    sbuf.off = 0;
+    inlen = cbuf.off;
+    ret = ptls_handshake(server, &sbuf, cbuf.base, &inlen, &server_hs_prop); /* CF -> */
+    ok(ret == 0);
+    ok(ptls_handshake_is_complete(server));
+    ok(sbuf.off == 0);
 
     ptls_free(client);
     ptls_free(server);
