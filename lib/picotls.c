@@ -4935,21 +4935,34 @@ int ptls_is_server(ptls_t *tls)
 
 struct st_ptls_raw_message_emitter_t {
     ptls_message_emitter_t super;
+    size_t start_off;
     size_t *epoch_offsets;
 };
 
 static int begin_raw_message(ptls_message_emitter_t *_self)
 {
+    struct st_ptls_raw_message_emitter_t *self = (void *)_self;
+
+    self->start_off = self->super.buf->off;
     return 0;
 }
 
 static int commit_raw_message(ptls_message_emitter_t *_self)
 {
     struct st_ptls_raw_message_emitter_t *self = (void *)_self;
-    size_t i;
+    size_t epoch;
 
-    for (i = self->super.enc->epoch + 1; i < 5; ++i)
-        self->epoch_offsets[i] = self->super.buf->off;
+    /* epoch is the key epoch, with the only exception being 2nd CH generated after 0-RTT key */
+    epoch = self->super.enc->epoch;
+    if (epoch == 1 && self->super.buf->base[self->start_off] == PTLS_HANDSHAKE_TYPE_CLIENT_HELLO)
+        epoch = 0;
+
+    for (++epoch; epoch < 5; ++epoch) {
+        assert(self->epoch_offsets[epoch] == self->start_off);
+        self->epoch_offsets[epoch] = self->super.buf->off;
+    }
+
+    self->start_off = SIZE_MAX;
 
     return 0;
 }
@@ -4988,7 +5001,7 @@ int ptls_handle_message(ptls_t *tls, ptls_buffer_t *sendbuf, size_t epoch_offset
                         size_t inlen, ptls_handshake_properties_t *properties)
 {
     struct st_ptls_raw_message_emitter_t emitter = {
-        {sendbuf, &tls->traffic_protection.enc, 0, begin_raw_message, commit_raw_message}, epoch_offsets};
+        {sendbuf, &tls->traffic_protection.enc, 0, begin_raw_message, commit_raw_message}, SIZE_MAX, epoch_offsets};
     struct st_ptls_record_t rec = {PTLS_CONTENT_TYPE_HANDSHAKE, 0, inlen, input};
 
     if (input == NULL)
