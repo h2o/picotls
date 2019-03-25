@@ -1827,7 +1827,9 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
                                              &resumption_ticket, &max_early_data_size, properties->client.session_ticket.base,
                                              properties->client.session_ticket.base + properties->client.session_ticket.len) == 0) {
                 tls->client.offered_psk = 1;
-                tls->key_share = key_share;
+                /* key-share selected by HRR should not be overridden */
+                if (tls->key_share == NULL)
+                    tls->key_share = key_share;
                 tls->cipher_suite = cipher_suite;
                 if (!is_second_flight && max_early_data_size != 0 && properties->client.max_early_data_size != NULL) {
                     tls->client.using_early_data = 1;
