@@ -1214,6 +1214,8 @@ static void test_handshake_api(void)
     server = ptls_new(ctx_peer, 1);
     *ptls_get_data_ptr(server) = &server_secrets;
 
+    ctx->save_ticket = NULL; /* don't allow further test to update the saved ticket */
+
     /* 0-RTT resumption */
     ret = ptls_handle_message(client, &cbuf, coffs, 0, NULL, 0, &client_hs_prop);
     ok(ret == PTLS_ERROR_IN_PROGRESS);
