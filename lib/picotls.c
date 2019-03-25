@@ -233,6 +233,9 @@ struct st_ptls_t {
             uint8_t legacy_session_id[32];
             ptls_key_exchange_context_t *key_share_ctx;
             unsigned offered_psk : 1;
+            /**
+             * if 1-RTT write key is active
+             */
             unsigned using_early_data : 1;
             struct st_ptls_certificate_request_t certificate_request;
         } client;
@@ -2165,10 +2168,9 @@ static int handle_hello_retry_request(ptls_t *tls, ptls_message_emitter_t *emitt
         tls->client.key_share_ctx = NULL;
     }
     if (tls->client.using_early_data) {
-        if (tls->ctx->update_traffic_key != NULL) {
-            /* nothing to do */
-        } else {
-            /* release keys, but keep the epoch at 1 because we've always called derive-secret */
+        /* release traffic encryption key so that 2nd CH goes out in cleartext, but keep the epoch at 1 since we've already called
+         * derive-secret */
+        if (tls->ctx->update_traffic_key == NULL) {
             assert(tls->traffic_protection.enc.aead != NULL);
             ptls_aead_free(tls->traffic_protection.enc.aead);
             tls->traffic_protection.enc.aead = NULL;
