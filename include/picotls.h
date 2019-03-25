@@ -497,9 +497,9 @@ PTLS_CALLBACK_TYPE(void, update_open_count, ssize_t delta);
  */
 PTLS_CALLBACK_TYPE(int, update_traffic_key, ptls_t *tls, int is_enc, size_t epoch, const void *secret);
 /**
- * callback for every new extension detected during decoding of the client hello
+ * callback for every extension detected during decoding
  */
-PTLS_CALLBACK_TYPE(void, on_new_client_extension, ptls_t *tls, uint16_t exttype);
+PTLS_CALLBACK_TYPE(void, on_extension, ptls_t *tls, uint8_t hstype, uint16_t exttype, ptls_iovec_t extdata);
 /**
  *
  */
@@ -636,7 +636,7 @@ struct st_ptls_context_t {
     /**
      *
      */
-    ptls_on_new_client_extension_t *on_new_client_extension;
+    ptls_on_extension_t *on_extension;
 };
 
 typedef struct st_ptls_raw_extension_t {
