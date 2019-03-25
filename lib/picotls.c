@@ -356,7 +356,7 @@ struct st_ptls_extension_bitmap_t {
     uint8_t bits[8]; /* only ids below 64 is tracked */
 };
 
-static uint8_t zeroes_of_max_digest_size[PTLS_MAX_DIGEST_SIZE] = {0};
+static const uint8_t zeroes_of_max_digest_size[PTLS_MAX_DIGEST_SIZE] = {0};
 
 static int hkdf_expand_label(ptls_hash_algorithm_t *algo, void *output, size_t outlen, ptls_iovec_t secret, const char *label,
                              ptls_iovec_t hash_value, const char *label_prefix);
