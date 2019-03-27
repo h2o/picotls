@@ -510,7 +510,6 @@ static void test_fragmented_message(void)
 }
 
 static int was_esni;
-static int debug = 1;
 
 static int save_client_hello(ptls_on_client_hello_t *self, ptls_t *tls, ptls_on_client_hello_parameters_t *params)
 {
@@ -532,9 +531,10 @@ enum {
     TEST_HANDSHAKE_KEY_UPDATE
 };
 
-static void on_extension_cb(ptls_on_extension_t *self, ptls_t *tls, uint8_t hstype, uint16_t exttype, ptls_iovec_t extdata)
+static int on_extension_cb(ptls_on_extension_t *self, ptls_t *tls, uint8_t hstype, uint16_t exttype, ptls_iovec_t extdata)
 {
     assert(extdata.base);
+    return 0;
 }
 
 static void test_handshake(ptls_iovec_t ticket, int mode, int expect_ticket, int check_ch, int require_client_authentication)
@@ -566,10 +566,8 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int expect_ticket, int
         ptls_set_server_name(client, "test.example.com", 0);
     }
 
-    if (debug) {
-        static ptls_on_extension_t cb = {on_extension_cb};
-        ctx_peer->on_extension = &cb;
-    }
+    static ptls_on_extension_t cb = {on_extension_cb};
+    ctx_peer->on_extension = &cb;
 
     if (require_client_authentication) {
         ctx_peer->require_client_authentication = 1;

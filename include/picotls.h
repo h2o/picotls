@@ -499,7 +499,7 @@ PTLS_CALLBACK_TYPE(int, update_traffic_key, ptls_t *tls, int is_enc, size_t epoc
 /**
  * callback for every extension detected during decoding
  */
-PTLS_CALLBACK_TYPE(void, on_extension, ptls_t *tls, uint8_t hstype, uint16_t exttype, ptls_iovec_t extdata);
+PTLS_CALLBACK_TYPE(int, on_extension, ptls_t *tls, uint8_t hstype, uint16_t exttype, ptls_iovec_t extdata);
 /**
  *
  */
