@@ -22,6 +22,9 @@
 
 #ifdef _WINDOWS
 #include "wincompat.h"
+#else
+#include <arpa/inet.h>
+#include <sys/time.h>
 #endif
 #include <assert.h>
 #include <string.h>
@@ -48,7 +51,7 @@
 #endif
 
 /* Time in microseconds */
-static bench_time()
+static uint64_t bench_time()
 {
     struct timeval tv;
     gettimeofday(&tv, NULL);
