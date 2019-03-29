@@ -63,7 +63,7 @@ static uint64_t bench_time()
 
 #define BENCH_BATCH 1000
 
-static bench_run_one(ptls_aead_context_t *e, ptls_aead_context_t *d, size_t n, size_t l, uint64_t *t_enc, uint64_t *t_dec,
+static int bench_run_one(ptls_aead_context_t *e, ptls_aead_context_t *d, size_t n, size_t l, uint64_t *t_enc, uint64_t *t_dec,
                      uint64_t *s)
 {
     int ret = 0;
@@ -212,7 +212,7 @@ static ptls_bench_entry_t aead_list[] = {
 
 static size_t nb_aead_list = sizeof(aead_list) / sizeof(ptls_bench_entry_t);
 
-int bench_basic(uint32_t *x)
+static int bench_basic(uint32_t *x)
 {
     uint32_t s = 0;
     uint64_t t_start = bench_time();
