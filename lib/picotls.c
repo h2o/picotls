@@ -1032,7 +1032,8 @@ static int decode_new_session_ticket(ptls_t *tls, uint32_t *lifetime, uint32_t *
     *max_early_data_size = 0;
     decode_extensions(src, end, PTLS_HANDSHAKE_TYPE_NEW_SESSION_TICKET, &exttype, {
         if (tls->ctx->on_extension != NULL &&
-            (ret = tls->ctx->on_extension->cb(tls->ctx->on_extension, tls, PTLS_HANDSHAKE_TYPE_NEW_SESSION_TICKET, exttype, ptls_iovec_init(src, end - src)) != 0))
+            (ret = tls->ctx->on_extension->cb(tls->ctx->on_extension, tls, PTLS_HANDSHAKE_TYPE_NEW_SESSION_TICKET, exttype,
+                                              ptls_iovec_init(src, end - src)) != 0))
             goto Exit;
         switch (exttype) {
         case PTLS_EXTENSION_TYPE_EARLY_DATA:
@@ -2084,7 +2085,8 @@ static int decode_server_hello(ptls_t *tls, struct st_ptls_server_hello_t *sh, c
     uint16_t exttype, found_version = UINT16_MAX, selected_psk_identity = UINT16_MAX;
     decode_extensions(src, end, PTLS_HANDSHAKE_TYPE_SERVER_HELLO, &exttype, {
         if (tls->ctx->on_extension != NULL &&
-            (ret = tls->ctx->on_extension->cb(tls->ctx->on_extension, tls, PTLS_HANDSHAKE_TYPE_SERVER_HELLO, exttype, ptls_iovec_init(src, end - src)) != 0))
+            (ret = tls->ctx->on_extension->cb(tls->ctx->on_extension, tls, PTLS_HANDSHAKE_TYPE_SERVER_HELLO, exttype,
+                                              ptls_iovec_init(src, end - src)) != 0))
             goto Exit;
         switch (exttype) {
         case PTLS_EXTENSION_TYPE_SUPPORTED_VERSIONS:
@@ -2315,7 +2317,8 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
 
     decode_extensions(src, end, PTLS_HANDSHAKE_TYPE_ENCRYPTED_EXTENSIONS, &type, {
         if (tls->ctx->on_extension != NULL &&
-            (ret = tls->ctx->on_extension->cb(tls->ctx->on_extension, tls, PTLS_HANDSHAKE_TYPE_ENCRYPTED_EXTENSIONS, type, ptls_iovec_init(src, end - src)) != 0))
+            (ret = tls->ctx->on_extension->cb(tls->ctx->on_extension, tls, PTLS_HANDSHAKE_TYPE_ENCRYPTED_EXTENSIONS, type,
+                                              ptls_iovec_init(src, end - src)) != 0))
             goto Exit;
         switch (type) {
         case PTLS_EXTENSION_TYPE_SERVER_NAME:
@@ -2397,7 +2400,8 @@ Exit:
     return ret;
 }
 
-static int decode_certificate_request(ptls_t *tls, struct st_ptls_certificate_request_t *cr, const uint8_t *src, const uint8_t *const end)
+static int decode_certificate_request(ptls_t *tls, struct st_ptls_certificate_request_t *cr, const uint8_t *src,
+                                      const uint8_t *const end)
 {
     int ret;
     uint16_t exttype = 0;
@@ -2421,7 +2425,8 @@ static int decode_certificate_request(ptls_t *tls, struct st_ptls_certificate_re
     /* decode extensions */
     decode_extensions(src, end, PTLS_HANDSHAKE_TYPE_CERTIFICATE_REQUEST, &exttype, {
         if (tls->ctx->on_extension != NULL &&
-            (ret = tls->ctx->on_extension->cb(tls->ctx->on_extension, tls, PTLS_HANDSHAKE_TYPE_CERTIFICATE_REQUEST, exttype, ptls_iovec_init(src, end - src)) != 0))
+            (ret = tls->ctx->on_extension->cb(tls->ctx->on_extension, tls, PTLS_HANDSHAKE_TYPE_CERTIFICATE_REQUEST, exttype,
+                                              ptls_iovec_init(src, end - src)) != 0))
             goto Exit;
         switch (exttype) {
         case PTLS_EXTENSION_TYPE_SIGNATURE_ALGORITHMS:
@@ -2569,7 +2574,8 @@ static int handle_certificate(ptls_t *tls, const uint8_t *src, const uint8_t *en
             uint16_t type;
             decode_open_extensions(src, end, PTLS_HANDSHAKE_TYPE_CERTIFICATE, &type, {
                 if (tls->ctx->on_extension != NULL &&
-                    (ret = tls->ctx->on_extension->cb(tls->ctx->on_extension, tls, PTLS_HANDSHAKE_TYPE_CERTIFICATE, type, ptls_iovec_init(src, end - src)) != 0))
+                    (ret = tls->ctx->on_extension->cb(tls->ctx->on_extension, tls, PTLS_HANDSHAKE_TYPE_CERTIFICATE, type,
+                                                      ptls_iovec_init(src, end - src)) != 0))
                     goto Exit;
                 src = end;
             });
@@ -2812,8 +2818,8 @@ static int client_handle_new_session_ticket(ptls_t *tls, ptls_iovec_t message)
     { /* verify the format */
         uint32_t ticket_lifetime, ticket_age_add, max_early_data_size;
         ptls_iovec_t ticket;
-        if ((ret = decode_new_session_ticket(tls, &ticket_lifetime, &ticket_age_add, &ticket_nonce, &ticket, &max_early_data_size, src,
-                                             end)) != 0)
+        if ((ret = decode_new_session_ticket(tls, &ticket_lifetime, &ticket_age_add, &ticket_nonce, &ticket, &max_early_data_size,
+                                             src, end)) != 0)
             return ret;
     }
 
@@ -3060,7 +3066,8 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
     /* decode extensions */
     decode_extensions(src, end, PTLS_HANDSHAKE_TYPE_CLIENT_HELLO, &exttype, {
         if (tls->ctx->on_extension != NULL &&
-            (ret = tls->ctx->on_extension->cb(tls->ctx->on_extension, tls, PTLS_HANDSHAKE_TYPE_CLIENT_HELLO, exttype, ptls_iovec_init(src, end - src)) != 0))
+            (ret = tls->ctx->on_extension->cb(tls->ctx->on_extension, tls, PTLS_HANDSHAKE_TYPE_CLIENT_HELLO, exttype,
+                                              ptls_iovec_init(src, end - src)) != 0))
             goto Exit;
         switch (exttype) {
         case PTLS_EXTENSION_TYPE_SERVER_NAME:
