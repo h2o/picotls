@@ -25,6 +25,7 @@
 #else
 #include <arpa/inet.h>
 #include <sys/time.h>
+#include <sys/utsname.h>
 #endif
 #include <assert.h>
 #include <string.h>
@@ -33,16 +34,15 @@
 #include "picotls/ffx.h"
 #include "picotls/minicrypto.h"
 #include "picotls/openssl.h"
+#include <openssl/opensslv.h>
 
 #ifdef _WINDOWS
-#define BENCH_OS "windows"
 #ifdef _DEBUG
 #define BENCH_MODE "check"
 #else
 #define BENCH_MODE "release"
 #endif
 #else
-#define BENCH_OS "linux"
 #ifdef NDEBUG
 #define BENCH_MODE "release"
 #else
@@ -156,7 +156,7 @@ static int bench_run_one(ptls_aead_context_t *e, ptls_aead_context_t *d, size_t 
 
 /* Measure one specific aead implementation
  */
-static int bench_run_aead(int basic_ref, uint32_t s0, const char *prefix, const char *algo_name, ptls_aead_algorithm_t *aead, ptls_hash_algorithm_t *hash, size_t n, size_t l, uint64_t *s)
+static int bench_run_aead(char  * OS, int basic_ref, uint32_t s0, const char *provider, const char *algo_name, ptls_aead_algorithm_t *aead, ptls_hash_algorithm_t *hash, size_t n, size_t l, uint64_t *s)
 {
     int ret = 0;
 
@@ -165,6 +165,18 @@ static int bench_run_aead(int basic_ref, uint32_t s0, const char *prefix, const 
     ptls_aead_context_t *d;
     uint64_t t_e = 0;
     uint64_t t_d = 0;
+    char p_version[128];
+
+    /* Document library version as it may have impact on performance */
+    p_version[0] = 0;
+
+    if (strcmp(provider, "openssl") == 0) {
+#ifdef _WINDOWS
+        (void)sprintf_s(p_version, sizeof(p_version), "%x", OPENSSL_VERSION_NUMBER);
+#else
+        (void)sprintf(p_version, "%x", OPENSSL_VERSION_NUMBER);
+#endif
+    }
 
     *s += s0;
 
@@ -177,7 +189,8 @@ static int bench_run_aead(int basic_ref, uint32_t s0, const char *prefix, const 
     } else {
         ret = bench_run_one(e, d, n, l, &t_e, &t_d, s);
         if (ret == 0) {
-            printf("%s, %d, %s, %d, %s, %s, %d, %d, %d, %d,\n", BENCH_OS, (int)(8*sizeof(size_t)), BENCH_MODE, basic_ref, prefix, algo_name, (int)n, (int)l, (int)t_e,
+            printf("%s, %d, %s, %d, %s, %s, %s, %d, %d, %d, %d,\n", OS, (int)(8 * sizeof(size_t)), BENCH_MODE, basic_ref,
+                   provider, p_version, algo_name, (int)n, (int)l, (int)t_e,
                    (int)t_d);
         }
     }
@@ -232,12 +245,28 @@ int main(int argc, char **argv)
     uint32_t x = 0;
     uint64_t s = 0;
     int basic_ref = bench_basic(&x);
+    char OS[128];
+#ifndef _WINDOWS
+    struct utsname uts;
+#endif
+
+#ifdef _WINDOWS
+    (void) strcpy_s(OS, sizeof(OS), "windows");
+#else
+    OS[0] = 0;
+    if (uname(&uts) == 0) {
+        if (strlen(uts.sysname) + 1 < sizeof(OS)){
+            strcpy(OS, uts.sysname);
+        }
+    }
+#endif
+
     
-    printf("OS, cpu bits, mode, 10M ops, package, algorithm, N, L, encrypt us, decrypt us,\n");
+    printf("OS, cpu bits, mode, 10M ops, provider, version, algorithm, N, L, encrypt us, decrypt us,\n");
     
 
     for (size_t i = 0; ret == 0 && i < nb_aead_list; i++) {
-        ret = bench_run_aead(basic_ref, x, aead_list[i].provider, aead_list[i].algo_name, aead_list[i].aead, aead_list[i].hash, 1000,
+        ret = bench_run_aead(OS, basic_ref, x, aead_list[i].provider, aead_list[i].algo_name, aead_list[i].aead, aead_list[i].hash, 1000,
                              1500, &s);
     }
 
