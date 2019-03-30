@@ -154,6 +154,16 @@ static int bench_run_one(ptls_aead_context_t *e, ptls_aead_context_t *d, size_t 
     return ret;
 }
 
+static double bench_mbps(uint64_t t, size_t l, size_t n)
+{
+    double x = (double)l;
+
+    x *= (double)n;
+    x *= 8;
+    x /= (double)t;
+    return x;
+}
+
 /* Measure one specific aead implementation
  */
 static int bench_run_aead(char  * OS, int basic_ref, uint32_t s0, const char *provider, const char *algo_name, ptls_aead_algorithm_t *aead, ptls_hash_algorithm_t *hash, size_t n, size_t l, uint64_t *s)
@@ -171,10 +181,20 @@ static int bench_run_aead(char  * OS, int basic_ref, uint32_t s0, const char *pr
     p_version[0] = 0;
 
     if (strcmp(provider, "openssl") == 0) {
+        /*
+         * OPENSSL_VERSION_NUMBER is a combination of the major, minor and patch version 
+         * into a single integer 0xMNN00PP0L, where M is major, NN is minor, PP is patch
+         */
+        uint32_t combined = OPENSSL_VERSION_NUMBER;
+        int M = combined >> 28;
+        int NN = (combined >> 20) & 0xFF;
+        int PP = (combined >> 4) & 0xFF;
+        char letter = 'a' - 1 + PP;
+
 #ifdef _WINDOWS
-        (void)sprintf_s(p_version, sizeof(p_version), "%x", OPENSSL_VERSION_NUMBER);
+        (void)sprintf_s(p_version, sizeof(p_version), "%d.%d.0%c", M, NN, letter);
 #else
-        (void)sprintf(p_version, "%x", OPENSSL_VERSION_NUMBER);
+        (void)sprintf(p_version, "%x", "%d.%d.0%c", M, NN, letter);
 #endif
     }
 
@@ -189,9 +209,9 @@ static int bench_run_aead(char  * OS, int basic_ref, uint32_t s0, const char *pr
     } else {
         ret = bench_run_one(e, d, n, l, &t_e, &t_d, s);
         if (ret == 0) {
-            printf("%s, %d, %s, %d, %s, %s, %s, %d, %d, %d, %d,\n", OS, (int)(8 * sizeof(size_t)), BENCH_MODE, basic_ref,
-                   provider, p_version, algo_name, (int)n, (int)l, (int)t_e,
-                   (int)t_d);
+            printf("%s, %d, %s, %d, %s, %s, %s, %d, %d, %d, %d, %.2f, %.2f\n", OS, (int)(8 * sizeof(size_t)), BENCH_MODE, basic_ref,
+                   provider, p_version, algo_name, (int)n, (int)l, (int)t_e, (int)t_d, bench_mbps(t_e, l, n),
+                   bench_mbps(t_d, l, n));
         }
     }
 
@@ -227,14 +247,14 @@ static size_t nb_aead_list = sizeof(aead_list) / sizeof(ptls_bench_entry_t);
 
 static int bench_basic(uint32_t *x)
 {
-    uint32_t s = 0;
+    unsigned int s = 0;
     uint64_t t_start = bench_time();
 
     /* Evaluate the current CPU */
-    for (uint32_t i = 0; i < 10000000; i++) {
+    for (unsigned int i = 0; i < 10000000; i++) {
         s += i;
     }
-    *x = s;
+    *x = (uint32_t) s;
 
     return (int)(bench_time() - t_start);
 }
@@ -262,7 +282,7 @@ int main(int argc, char **argv)
 #endif
 
     
-    printf("OS, cpu bits, mode, 10M ops, provider, version, algorithm, N, L, encrypt us, decrypt us,\n");
+    printf("OS, cpu bits, mode, 10M ops, provider, version, algorithm, N, L, encrypt us, decrypt us, encrypt mbps, decrypt mbps,\n");
     
 
     for (size_t i = 0; ret == 0 && i < nb_aead_list; i++) {
