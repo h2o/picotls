@@ -26,6 +26,7 @@
 #include <arpa/inet.h>
 #include <sys/time.h>
 #include <sys/utsname.h>
+#include <time.h>
 #endif
 #include <assert.h>
 #include <string.h>
@@ -54,6 +55,15 @@
 static uint64_t bench_time()
 {
     struct timeval tv;
+#ifdef CLOCK_PROCESS_CPUTIME_ID
+    struct timespec cpu;
+    if (clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &cpu) == 0){
+        uint64_t nanos = (uint64_t) cpu.tv_nsec;
+        uint64_t micros = nanos/1000;
+        micros += (1000000ull)*((uint64_t)cpu.tv_sec);
+        return micros;
+    }
+#endif
     gettimeofday(&tv, NULL);
     return (uint64_t)tv.tv_sec * 1000000 + tv.tv_usec;
 }
@@ -194,7 +204,7 @@ static int bench_run_aead(char  * OS, int basic_ref, uint32_t s0, const char *pr
 #ifdef _WINDOWS
         (void)sprintf_s(p_version, sizeof(p_version), "%d.%d.0%c", M, NN, letter);
 #else
-        (void)sprintf(p_version, "%x", "%d.%d.0%c", M, NN, letter);
+        (void)sprintf(p_version, "%d.%d.0%c", M, NN, letter);
 #endif
     }
 
