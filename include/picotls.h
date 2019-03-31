@@ -497,6 +497,10 @@ PTLS_CALLBACK_TYPE(void, update_open_count, ssize_t delta);
  */
 PTLS_CALLBACK_TYPE(int, update_traffic_key, ptls_t *tls, int is_enc, size_t epoch, const void *secret);
 /**
+ * callback for every extension detected during decoding
+ */
+PTLS_CALLBACK_TYPE(int, on_extension, ptls_t *tls, uint8_t hstype, uint16_t exttype, ptls_iovec_t extdata);
+/**
  *
  */
 typedef struct st_ptls_decompress_certificate_t {
@@ -629,6 +633,10 @@ struct st_ptls_context_t {
      *
      */
     ptls_iovec_t pkey_buf;
+    /**
+     *
+     */
+    ptls_on_extension_t *on_extension;
 };
 
 typedef struct st_ptls_raw_extension_t {
