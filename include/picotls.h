@@ -441,7 +441,7 @@ typedef struct st_ptls_on_client_hello_parameters_t {
     struct {
         const uint16_t *list;
         size_t count;
-    } client_ciphers;
+    } cipher_suites;
     /**
      * if ESNI was used
      */
