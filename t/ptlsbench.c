@@ -44,10 +44,10 @@
 #define BENCH_MODE "release"
 #endif
 #else
-#ifdef NDEBUG
-#define BENCH_MODE "release"
+#ifdef PTLS_DEBUG
+#define BENCH_MODE "debug"
 #else
-#define BENCH_MODE "check"
+#define BENCH_MODE "release"
 #endif
 #endif
 
