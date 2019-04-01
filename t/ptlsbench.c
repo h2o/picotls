@@ -176,7 +176,7 @@ static double bench_mbps(uint64_t t, size_t l, size_t n)
 
 /* Measure one specific aead implementation
  */
-static int bench_run_aead(char  * OS, char * HW, int basic_ref, uint32_t s0, const char *provider, const char *algo_name, ptls_aead_algorithm_t *aead, ptls_hash_algorithm_t *hash, size_t n, size_t l, uint64_t *s)
+static int bench_run_aead(char  * OS, char * HW, int basic_ref, uint64_t s0, const char *provider, const char *algo_name, ptls_aead_algorithm_t *aead, ptls_hash_algorithm_t *hash, size_t n, size_t l, uint64_t *s)
 {
     int ret = 0;
 
@@ -255,16 +255,23 @@ static ptls_bench_entry_t aead_list[] = {
 
 static size_t nb_aead_list = sizeof(aead_list) / sizeof(ptls_bench_entry_t);
 
-static int bench_basic(uint32_t *x)
+static int bench_basic(uint64_t *x)
 {
-    unsigned int s = 0;
     uint64_t t_start = bench_time();
+    uint32_t a = (uint32_t)((*x)&0xFFFFFFFF);
+    uint32_t b = (uint32_t)((*x)>>32);
 
-    /* Evaluate the current CPU */
+    /* Evaluate the current CPU. The benchmark is designed to 
+     * emulate typical encryption operations, hopefully so it
+     * will not be compiled out by the optimizer. */
     for (unsigned int i = 0; i < 10000000; i++) {
-        s += i;
+        uint32_t v = (a >> 3)|(a << 29);
+        v += a;
+        v ^= b;
+        b = a;
+        a = v;
     }
-    *x = (uint32_t) s;
+    *x = (((uint64_t) b)<<32)|a;
 
     return (int)(bench_time() - t_start);
 }
@@ -272,7 +279,7 @@ static int bench_basic(uint32_t *x)
 int main(int argc, char **argv)
 {
     int ret = 0;
-    uint32_t x = 0;
+    uint64_t x = 0xdeadbeef;
     uint64_t s = 0;
     int basic_ref = bench_basic(&x);
     char OS[128];
@@ -305,6 +312,12 @@ int main(int argc, char **argv)
         ret = bench_run_aead(OS, HW, basic_ref, x, aead_list[i].provider, aead_list[i].algo_name, aead_list[i].aead, aead_list[i].hash, 1000,
                              1500, &s);
     }
+
+    /* Gratuitous test, designed to ensure that the initial computation
+     * of the basic reference benchmark is not optimised away. */
+    if (s == 0){
+       printf("Unexpected value of test sum s = %llx\n", (unsigned long long)s);
+    } 
 
     return ret;
 }
