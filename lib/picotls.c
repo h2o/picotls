@@ -276,6 +276,7 @@ struct st_ptls_client_hello_psk_t {
 };
 
 #define MAX_UNKNOWN_EXTENSIONS 16
+#define MAX_CLIENT_CIPHERS 32
 
 struct st_ptls_client_hello_t {
     const uint8_t *random_bytes;
@@ -305,6 +306,10 @@ struct st_ptls_client_hello_t {
         uint16_t list[16];
         size_t count;
     } cert_compression_algos;
+    struct {
+        uint16_t list[MAX_CLIENT_CIPHERS];
+        size_t count;
+    } client_ciphers;
     struct {
         ptls_iovec_t all;
         ptls_iovec_t tbs;
@@ -3049,7 +3054,17 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
     /* decode and select from ciphersuites */
     ptls_decode_open_block(src, end, 2, {
         ch->cipher_suites = ptls_iovec_init(src, end - src);
-        src = end;
+        uint16_t *id = ch->client_ciphers.list;
+        do {
+            if ((ret = ptls_decode16(id, &src, end)) != 0)
+                goto Exit;
+            id++;
+            ch->client_ciphers.count++;
+            if (id >= ch->client_ciphers.list + MAX_CLIENT_CIPHERS) {
+                src = end;
+                break;
+            }
+        } while (src != end);
     });
 
     /* decode legacy_compression_methods */
@@ -3490,9 +3505,8 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
                               additional_extensions                                                                                \
                           } while (0);                                                                                             \
                       })
-
     struct st_ptls_client_hello_t ch = {NULL,   {NULL}, {NULL},     0,     {NULL},   {NULL}, {NULL},        {{0}},
-                                        {NULL}, {NULL}, {{{NULL}}}, {{0}}, {{NULL}}, {NULL}, {{UINT16_MAX}}};
+                                        {NULL}, {NULL}, {{{NULL}}}, {{0}}, {{0}}, {{NULL}}, {NULL}, {{UINT16_MAX}}};
     struct {
         ptls_key_exchange_algorithm_t *algorithm;
         ptls_iovec_t peer_key;
@@ -3532,6 +3546,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
                                                         {ch.alpn.list, ch.alpn.count},
                                                         {ch.signature_algorithms.list, ch.signature_algorithms.count},
                                                         {ch.cert_compression_algos.list, ch.cert_compression_algos.count},
+                                                        {ch.client_ciphers.list, ch.client_ciphers.count},
                                                         is_esni};
             ret = tls->ctx->on_client_hello->cb(tls->ctx->on_client_hello, tls, &params);
         } else {

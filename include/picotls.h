@@ -438,6 +438,10 @@ typedef struct st_ptls_on_client_hello_parameters_t {
         const uint16_t *list;
         size_t count;
     } certificate_compression_algorithms;
+    struct {
+        const uint16_t *list;
+        size_t count;
+    } cipher_suites;
     /**
      * if ESNI was used
      */
