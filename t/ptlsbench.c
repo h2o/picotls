@@ -26,6 +26,7 @@
 #include <arpa/inet.h>
 #include <sys/time.h>
 #include <sys/utsname.h>
+#include <time.h>
 #endif
 #include <assert.h>
 #include <string.h>
@@ -43,10 +44,10 @@
 #define BENCH_MODE "release"
 #endif
 #else
-#ifdef NDEBUG
-#define BENCH_MODE "release"
+#ifdef PTLS_DEBUG
+#define BENCH_MODE "debug"
 #else
-#define BENCH_MODE "check"
+#define BENCH_MODE "release"
 #endif
 #endif
 
@@ -54,6 +55,15 @@
 static uint64_t bench_time()
 {
     struct timeval tv;
+#ifdef CLOCK_PROCESS_CPUTIME_ID
+    struct timespec cpu;
+    if (clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &cpu) == 0){
+        uint64_t nanos = (uint64_t) cpu.tv_nsec;
+        uint64_t micros = nanos/1000;
+        micros += (1000000ull)*((uint64_t)cpu.tv_sec);
+        return micros;
+    }
+#endif
     gettimeofday(&tv, NULL);
     return (uint64_t)tv.tv_sec * 1000000 + tv.tv_usec;
 }
@@ -166,7 +176,7 @@ static double bench_mbps(uint64_t t, size_t l, size_t n)
 
 /* Measure one specific aead implementation
  */
-static int bench_run_aead(char  * OS, int basic_ref, uint32_t s0, const char *provider, const char *algo_name, ptls_aead_algorithm_t *aead, ptls_hash_algorithm_t *hash, size_t n, size_t l, uint64_t *s)
+static int bench_run_aead(char  * OS, char * HW, int basic_ref, uint64_t s0, const char *provider, const char *algo_name, ptls_aead_algorithm_t *aead, ptls_hash_algorithm_t *hash, size_t n, size_t l, uint64_t *s)
 {
     int ret = 0;
 
@@ -194,7 +204,7 @@ static int bench_run_aead(char  * OS, int basic_ref, uint32_t s0, const char *pr
 #ifdef _WINDOWS
         (void)sprintf_s(p_version, sizeof(p_version), "%d.%d.0%c", M, NN, letter);
 #else
-        (void)sprintf(p_version, "%x", "%d.%d.0%c", M, NN, letter);
+        (void)sprintf(p_version, "%d.%d.0%c", M, NN, letter);
 #endif
     }
 
@@ -209,7 +219,7 @@ static int bench_run_aead(char  * OS, int basic_ref, uint32_t s0, const char *pr
     } else {
         ret = bench_run_one(e, d, n, l, &t_e, &t_d, s);
         if (ret == 0) {
-            printf("%s, %d, %s, %d, %s, %s, %s, %d, %d, %d, %d, %.2f, %.2f\n", OS, (int)(8 * sizeof(size_t)), BENCH_MODE, basic_ref,
+            printf("%s, %s, %d, %s, %d, %s, %s, %s, %d, %d, %d, %d, %.2f, %.2f\n", OS, HW, (int)(8 * sizeof(size_t)), BENCH_MODE, basic_ref,
                    provider, p_version, algo_name, (int)n, (int)l, (int)t_e, (int)t_d, bench_mbps(t_e, l, n),
                    bench_mbps(t_d, l, n));
         }
@@ -245,16 +255,23 @@ static ptls_bench_entry_t aead_list[] = {
 
 static size_t nb_aead_list = sizeof(aead_list) / sizeof(ptls_bench_entry_t);
 
-static int bench_basic(uint32_t *x)
+static int bench_basic(uint64_t *x)
 {
-    unsigned int s = 0;
     uint64_t t_start = bench_time();
+    uint32_t a = (uint32_t)((*x)&0xFFFFFFFF);
+    uint32_t b = (uint32_t)((*x)>>32);
 
-    /* Evaluate the current CPU */
+    /* Evaluate the current CPU. The benchmark is designed to 
+     * emulate typical encryption operations, hopefully so it
+     * will not be compiled out by the optimizer. */
     for (unsigned int i = 0; i < 10000000; i++) {
-        s += i;
+        uint32_t v = (a >> 3)|(a << 29);
+        v += a;
+        v ^= b;
+        b = a;
+        a = v;
     }
-    *x = (uint32_t) s;
+    *x = (((uint64_t) b)<<32)|a;
 
     return (int)(bench_time() - t_start);
 }
@@ -262,33 +279,45 @@ static int bench_basic(uint32_t *x)
 int main(int argc, char **argv)
 {
     int ret = 0;
-    uint32_t x = 0;
+    uint64_t x = 0xdeadbeef;
     uint64_t s = 0;
     int basic_ref = bench_basic(&x);
     char OS[128];
+    char HW[128];
 #ifndef _WINDOWS
     struct utsname uts;
 #endif
 
 #ifdef _WINDOWS
     (void) strcpy_s(OS, sizeof(OS), "windows");
+    (void)strcpy_s(HW, sizeof(HW), "x86_64");
 #else
     OS[0] = 0;
+    HW[0] = 0;
     if (uname(&uts) == 0) {
         if (strlen(uts.sysname) + 1 < sizeof(OS)){
             strcpy(OS, uts.sysname);
+        }
+        if (strlen(uts.machine) + 1 < sizeof(HW)){
+            strcpy(HW, uts.machine);
         }
     }
 #endif
 
     
-    printf("OS, cpu bits, mode, 10M ops, provider, version, algorithm, N, L, encrypt us, decrypt us, encrypt mbps, decrypt mbps,\n");
+    printf("OS, HW, bits, mode, 10M ops, provider, version, algorithm, N, L, encrypt us, decrypt us, encrypt mbps, decrypt mbps,\n");
     
 
     for (size_t i = 0; ret == 0 && i < nb_aead_list; i++) {
-        ret = bench_run_aead(OS, basic_ref, x, aead_list[i].provider, aead_list[i].algo_name, aead_list[i].aead, aead_list[i].hash, 1000,
+        ret = bench_run_aead(OS, HW, basic_ref, x, aead_list[i].provider, aead_list[i].algo_name, aead_list[i].aead, aead_list[i].hash, 1000,
                              1500, &s);
     }
+
+    /* Gratuitous test, designed to ensure that the initial computation
+     * of the basic reference benchmark is not optimised away. */
+    if (s == 0){
+       printf("Unexpected value of test sum s = %llx\n", (unsigned long long)s);
+    } 
 
     return ret;
 }
