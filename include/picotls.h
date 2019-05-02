@@ -1157,7 +1157,7 @@ void ptls_esni_dispose_context(ptls_esni_context_t *esni);
 /**
  *
  */
-void ptls_hexdump(char *dst, const void *src, size_t len);
+char *ptls_hexdump(char *dst, const void *src, size_t len);
 /**
  * the default get_time callback
  */
