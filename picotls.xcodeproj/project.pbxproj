@@ -91,6 +91,8 @@
 		10EACB131DCEAF0F00CA0341 /* curve25519.h in Headers */ = {isa = PBXBuildFile; fileRef = 105900361DC8D44E00FB4085 /* curve25519.h */; };
 		10EACB1A1DCEC2A300CA0341 /* libpicotls-core.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 106530DA1D9B3E6F005B2C60 /* libpicotls-core.a */; };
 		E949EF282073629300511ECA /* minicrypto-pem.c in Sources */ = {isa = PBXBuildFile; fileRef = E949EF272073629300511ECA /* minicrypto-pem.c */; };
+		E95EBCC7227E82FF0022C32D /* bpftrace.d in Sources */ = {isa = PBXBuildFile; fileRef = E95EBCC5227E82FF0022C32D /* bpftrace.d */; };
+		E95EBCC8227E82FF0022C32D /* dtrace.d in Sources */ = {isa = PBXBuildFile; fileRef = E95EBCC6227E82FF0022C32D /* dtrace.d */; };
 		E97577012212405300D1EF74 /* ffx.h in Headers */ = {isa = PBXBuildFile; fileRef = E97577002212405300D1EF74 /* ffx.h */; };
 		E97577032212405D00D1EF74 /* ffx.c in Sources */ = {isa = PBXBuildFile; fileRef = E97577022212405D00D1EF74 /* ffx.c */; };
 		E97577042212407900D1EF74 /* ffx.c in Sources */ = {isa = PBXBuildFile; fileRef = E97577022212405D00D1EF74 /* ffx.c */; };
@@ -239,6 +241,9 @@
 		10EACB171DCEAF0F00CA0341 /* libpicotls-minicrypto.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libpicotls-minicrypto.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		E949EF272073629300511ECA /* minicrypto-pem.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = "minicrypto-pem.c"; sourceTree = "<group>"; };
 		E95EBCC0227B71170022C32D /* probes.d */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.dtrace; path = probes.d; sourceTree = "<group>"; };
+		E95EBCC3227E82E00022C32D /* dump-github-repository.pl */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.script.perl; path = "dump-github-repository.pl"; sourceTree = "<group>"; };
+		E95EBCC5227E82FF0022C32D /* bpftrace.d */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.dtrace; path = bpftrace.d; sourceTree = "<group>"; };
+		E95EBCC6227E82FF0022C32D /* dtrace.d */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.dtrace; path = dtrace.d; sourceTree = "<group>"; };
 		E97577002212405300D1EF74 /* ffx.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ffx.h; sourceTree = "<group>"; };
 		E97577022212405D00D1EF74 /* ffx.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = ffx.c; sourceTree = "<group>"; };
 		E97577072213148800D1EF74 /* e2e.t */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.script.perl; path = e2e.t; sourceTree = "<group>"; };
@@ -365,10 +370,11 @@
 			isa = PBXGroup;
 			children = (
 				E9E4B12C2181927900514B47 /* CMakeLists.txt */,
-				E95EBCC0227B71170022C32D /* probes.d */,
 				106530E11D9B4000005B2C60 /* deps */,
 				106530BC1D998616005B2C60 /* include */,
 				106530BD1D998624005B2C60 /* lib */,
+				E95EBCC2227E82BA0022C32D /* misc */,
+				E95EBCC0227B71170022C32D /* probes.d */,
 				E992F79920E99A080008154D /* src */,
 				106530C41D9B1A0E005B2C60 /* t */,
 				106530B31D9985E0005B2C60 /* Products */,
@@ -456,6 +462,24 @@
 				E9E4B1292180514000514B47 /* certificate_compression.h */,
 			);
 			path = picotls;
+			sourceTree = "<group>";
+		};
+		E95EBCC2227E82BA0022C32D /* misc */ = {
+			isa = PBXGroup;
+			children = (
+				E95EBCC4227E82F20022C32D /* dtrace */,
+				E95EBCC3227E82E00022C32D /* dump-github-repository.pl */,
+			);
+			path = misc;
+			sourceTree = "<group>";
+		};
+		E95EBCC4227E82F20022C32D /* dtrace */ = {
+			isa = PBXGroup;
+			children = (
+				E95EBCC5227E82FF0022C32D /* bpftrace.d */,
+				E95EBCC6227E82FF0022C32D /* dtrace.d */,
+			);
+			path = dtrace;
 			sourceTree = "<group>";
 		};
 		E992F79920E99A080008154D /* src */ = {
@@ -763,7 +787,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				E95EBCC8227E82FF0022C32D /* dtrace.d in Sources */,
 				E99B75E01F5CDDB500CF503E /* asn1.c in Sources */,
+				E95EBCC7227E82FF0022C32D /* bpftrace.d in Sources */,
 				E99B75E11F5CDDB500CF503E /* pembase64.c in Sources */,
 				E97577032212405D00D1EF74 /* ffx.c in Sources */,
 				106530EB1D9B7C5C005B2C60 /* picotls.c in Sources */,
