@@ -1,5 +1,5 @@
 usdt::new {
-    printf("{\"addr\": \"%p\", \"event\": \"new\"}\n", arg0);
+    printf("{\"addr\": \"%p\", \"event\": \"new\", \"is_server\": %d}\n", arg0, arg1);
 }
 usdt::free {
     printf("{\"addr\": \"%p\", \"event\": \"free\"}\n", arg0);

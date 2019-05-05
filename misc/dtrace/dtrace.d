@@ -1,5 +1,5 @@
 picotls$target:::new {
-    printf("\n{\"addr\": \"0x%p\", \"event\": \"new\"}", arg0);
+    printf("\n{\"addr\": \"0x%p\", \"event\": \"new\", \"is_server\": %d}", arg0, arg1);
 }
 picotls$target:::free {
     printf("\n{\"addr\": \"0x%p\", \"event\": \"free\"}", arg0);
