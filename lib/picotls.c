@@ -97,7 +97,7 @@
 #if PICOTLS_USE_DTRACE
 #define PTLS_PROBE(LABEL, ...)                                                                                                     \
     do {                                                                                                                           \
-        if (PICOTLS_PICOTLS_##LABEL##_ENABLED()) {                                                                                 \
+        if (PTLS_UNLIKELY(PICOTLS_PICOTLS_##LABEL##_ENABLED())) {                                                                  \
             PICOTLS_PICOTLS_##LABEL(__VA_ARGS__);                                                                                  \
         }                                                                                                                          \
     } while (0)
