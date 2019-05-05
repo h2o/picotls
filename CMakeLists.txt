@@ -4,23 +4,10 @@ CMAKE_POLICY(SET CMP0003 NEW)
 PROJECT(picotls)
 
 FIND_PACKAGE(PkgConfig REQUIRED)
+INCLUDE(cmake/dtrace-utils.cmake)
 
-SET(WITH_DTRACE_DEFAULT "OFF")
-IF ((CMAKE_SYSTEM_NAME STREQUAL "Darwin") OR (CMAKE_SYSTEM_NAME STREQUAL "Linux"))
-    # USDT is not (yet) supported on platforms (e.g., FreeBSD, Solaris) that require pre-link modification of .o files
-    MESSAGE(STATUS "Detecting USDT support")
-    EXECUTE_PROCESS(
-        COMMAND dtrace -o .tmp.dprobes.h -s ${CMAKE_SOURCE_DIR}/probes.d -h
-        RESULT_VARIABLE DTRACE_RESULT)
-    FILE(REMOVE .tmp.dprobes.h)
-    IF (DTRACE_RESULT EQUAL 0)
-        MESSAGE(STATUS "Detecting USDT support - found")
-        SET(WITH_DTRACE_DEFAULT "ON")
-    ELSE ()
-        MESSAGE(STATUS "Detecting USDT support - not found")
-    ENDIF ()
-ENDIF ()
-OPTION(WITH_DTRACE "use USDT (userspace Dtrace probes)" ${WITH_DTRACE_DEFAULT})
+CHECK_DTRACE(${CMAKE_SOURCE_DIR}/probes.d)
+OPTION(WITH_DTRACE "use USDT (userspace Dtrace probes)" ${HAVE_DTRACE})
 IF (WITH_DTRACE)
     MESSAGE(STATUS "Enabling USDT support")
 ENDIF ()
@@ -56,17 +43,10 @@ SET(CORE_TEST_FILES
     t/picotls.c)
 IF (WITH_DTRACE)
     SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DPICOTLS_USE_DTRACE=1")
-    ADD_CUSTOM_COMMAND(
-        OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/picotls-probes.h
-        COMMAND dtrace -o ${CMAKE_CURRENT_BINARY_DIR}/picotls-probes.h -s ${CMAKE_SOURCE_DIR}/probes.d -h
-        DEPENDS ${CMAKE_SOURCE_DIR}/probes.d)
+    DEFINE_DTRACE_DEPENDENCIES(${CMAKE_SOURCE_DIR}/probes.d picotls)
     LIST(APPEND CORE_FILES ${CMAKE_CURRENT_BINARY_DIR}/picotls-probes.h)
     LIST(APPEND CORE_TEST_FILES ${CMAKE_CURRENT_BINARY_DIR}/picotls-probes.h)
-    IF (CMAKE_SYSTEM_NAME STREQUAL "Linux")
-        ADD_CUSTOM_COMMAND(
-            OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/picotls-probes.o
-            COMMAND dtrace -o ${CMAKE_CURRENT_BINARY_DIR}/picotls-probes.o -s ${CMAKE_SOURCE_DIR}/probes.d -G
-            DEPENDS ${CMAKE_SOURCE_DIR}/probes.d)
+    IF (DTRACE_USES_OBJFILE)
         LIST(APPEND CORE_FILES ${CMAKE_CURRENT_BINARY_DIR}/picotls-probes.o)
         LIST(APPEND CORE_TEST_FILES ${CMAKE_CURRENT_BINARY_DIR}/picotls-probes.o)
     ENDIF ()
