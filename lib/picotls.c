@@ -97,8 +97,8 @@
 #if PICOTLS_USE_DTRACE
 #define PTLS_PROBE(LABEL, ...)                                                                                                     \
     do {                                                                                                                           \
-        if (PICOTLS_##LABEL##_ENABLED()) {                                                                                         \
-            PICOTLS_##LABEL(__VA_ARGS__);                                                                                          \
+        if (PICOTLS_PICOTLS_##LABEL##_ENABLED()) {                                                                                 \
+            PICOTLS_PICOTLS_##LABEL(__VA_ARGS__);                                                                                  \
         }                                                                                                                          \
     } while (0)
 #else

@@ -25,17 +25,17 @@
  * % sudo bpftrace -p $(pidof cli) /mydev/picotls/misc/dtrace/bpftrace.d
  */
 
-usdt::new {
+usdt::picotls_new {
     printf("{\"addr\": \"%p\", \"event\": \"new\", \"is_server\": %d}\n", arg0, arg1);
 }
-usdt::free {
+usdt::picotls_free {
     printf("{\"addr\": \"%p\", \"event\": \"free\"}\n", arg0);
 }
-usdt::client_random {
+usdt::picotls_client_random {
     printf("{\"addr\": \"%p\", \"event\": \"client_random\"", arg0);
     printf(", \"bytes\": \"%s\"}\n", str(arg1));
 }
-usdt::new_secret {
+usdt::picotls_new_secret {
     printf("\"addr\": \"%p\", \"event\": \"new_secret\"", arg0);
     printf(", \"label\": \"%s\", \"secret\": \"%s\"}\n", str(arg1), str(arg2));
 }
