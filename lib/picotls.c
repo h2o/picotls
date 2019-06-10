@@ -967,7 +967,7 @@ static int derive_exporter_secret(ptls_t *tls, int is_early)
 {
     int ret;
 
-    if (tls->ctx->use_exporter)
+    if (!tls->ctx->use_exporter)
         return 0;
 
     uint8_t **slot = is_early ? &tls->exporter_master_secret.early : &tls->exporter_master_secret.one_rtt;
