@@ -40,21 +40,37 @@
 #include "picotls/pembase64.h"
 #include "picotls/openssl.h"
 
-static void write_rfc1035_character_string(ptls_buffer_t buf)
+static void write_rfc1035_character_string(ptls_buffer_t buf, char * ascii_output)
 {
+    FILE *fd = NULL;
+
+#ifdef _WINDOWS
+    errno_t err;
+    if ((err = fopen_s(&fd, ascii_output, "w")) != 0) {
+        char error_message[256];
+        char const *err_msg = (strerror_s(error_message, sizeof(error_message), err) == 0) ? error_message : "(unknown error)";
+        fprintf(stderr, "failed to open file:%s:%s\n", ascii_output, err_msg);
+        return;
+    }
+#else
+    if ((fd = fopen(ascii_output, "w")) == NULL) {
+        fprintf(stderr, "failed to open file:%s:%s\n", ascii_output, strerror(errno));
+        return;
+    }
+#endif
     for (size_t x = 0; x < buf.off; x++) {
         uint8_t c = buf.base[x];
         if (c > ' ' && c < 127) {
-            fputc(c, stdout);
+            fputc(c, fd);
         } else {
-            fprintf(stdout, "\\%03d", c);
+            fprintf(fd, "\\%03d", c);
         }
     }
-    fflush(stdout);
+    fclose(fd);
 }
 
 static int emit_esni(ptls_key_exchange_context_t **key_exchanges, ptls_cipher_suite_t **cipher_suites, uint16_t padded_length,
-                     uint64_t not_before, uint64_t lifetime, int ascii_output)
+                     uint64_t not_before, uint64_t lifetime, char const * ascii_output)
 {
     ptls_buffer_t buf;
     ptls_key_exchange_context_t *ctx[256] = {NULL};
@@ -88,11 +104,12 @@ static int emit_esni(ptls_key_exchange_context_t **key_exchanges, ptls_cipher_su
     }
 
     /* emit the structure to stdout */
+    fwrite(buf.base, 1, buf.off, stdout);
+    fflush(stdout);
+    
+        
     if (ascii_output) {
-        write_rfc1035_character_string(buf);
-    } else {
-        fwrite(buf.base, 1, buf.off, stdout);
-        fflush(stdout);
+        write_rfc1035_character_string(buf, ascii_output);
     }
 
     ret = 0;
@@ -116,7 +133,7 @@ static void usage(const char *cmd, int status)
            "  -c <cipher-suite>   aes128-gcm, chacha20-poly1305, ...\n"
            "  -d <days>           number of days until expiration (default: 90)\n"
            "  -p <padded-length>  padded length (default: 260)\n"
-           "  -a                  ascii output as RFC-1035 character string\n"
+           "  -a <txt-file>       Store output as RFC-1035 character string in txt-file\n"
            "  -h                  prints this help\n"
            "\n"
            "-c and -x can be used multiple times.\n"
@@ -127,7 +144,7 @@ static void usage(const char *cmd, int status)
 
 int main(int argc, char **argv)
 {
-    int ascii_output = 0;
+    char const * ascii_output = NULL;
     ERR_load_crypto_strings();
     OpenSSL_add_all_algorithms();
 #if !defined(OPENSSL_NO_ENGINE)
@@ -149,7 +166,7 @@ int main(int argc, char **argv)
     uint64_t lifetime = 90 * 86400;
 
     int ch;
-    while ((ch = getopt(argc, argv, "K:c:d:p:ah")) != -1) {
+    while ((ch = getopt(argc, argv, "K:c:d:p:a:h")) != -1) {
         switch (ch) {
         case 'K': {
             FILE *fp;
@@ -227,7 +244,7 @@ int main(int argc, char **argv)
 #endif
             break;
         case 'a':
-            ascii_output = 1;
+            ascii_output = optarg;
             break;
         case 'h':
             usage(argv[0], 0);
