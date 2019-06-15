@@ -1595,7 +1595,7 @@ static int parse_esni_keys(ptls_context_t *ctx, ptls_key_exchange_algorithm_t **
     /* version */
     if ((ret = ptls_decode16(&version, &src, end)) != 0)
         goto Exit;
-    if (version != PTLS_ESNI_VERSION_DRAFT02) {
+    if (version != PTLS_ESNI_VERSION_DRAFT02 && version != PTLS_ESNI_VERSION_DRAFT03) {
         ret = PTLS_ALERT_DECODE_ERROR;
         goto Exit;
     }
@@ -1620,6 +1620,10 @@ static int parse_esni_keys(ptls_context_t *ctx, ptls_key_exchange_algorithm_t **
             goto Exit;
         }
         src += 4;
+    }
+    /* published sni */
+    if (version != PTLS_ESNI_VERSION_DRAFT02) {
+        ptls_decode_open_block(src, end, 2, { src = end; });
     }
     /* key-shares */
     ptls_decode_open_block(src, end, 2, {
@@ -3505,8 +3509,8 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
                               additional_extensions                                                                                \
                           } while (0);                                                                                             \
                       })
-    struct st_ptls_client_hello_t ch = {NULL,   {NULL}, {NULL},     0,     {NULL},   {NULL}, {NULL},        {{0}},
-                                        {NULL}, {NULL}, {{{NULL}}}, {{0}}, {{0}}, {{NULL}}, {NULL}, {{UINT16_MAX}}};
+    struct st_ptls_client_hello_t ch = {NULL,   {NULL}, {NULL},     0,     {NULL}, {NULL},   {NULL}, {{0}},
+                                        {NULL}, {NULL}, {{{NULL}}}, {{0}}, {{0}},  {{NULL}}, {NULL}, {{UINT16_MAX}}};
     struct {
         ptls_key_exchange_algorithm_t *algorithm;
         ptls_iovec_t peer_key;
@@ -5088,11 +5092,19 @@ int ptls_esni_init_context(ptls_context_t *ctx, ptls_esni_context_t *esni, ptls_
     memcpy(esni->key_exchanges, key_exchanges, sizeof(*esni->key_exchanges) * (num_key_exchanges + 1));
 
     /* ESNIKeys */
-    if (end - src < 6) {
+    if ((ret = ptls_decode16(&esni->version, &src, end)) != 0)
+        goto Exit;
+    /* Skip checksum fields */
+    if (end - src < 4) {
         ret = PTLS_ALERT_DECRYPT_ERROR;
         goto Exit;
     }
-    src += 6;
+    src += 4;
+    /* Skip published SNI field if version 03 or later */
+    if (esni->version != PTLS_ESNI_VERSION_DRAFT02) {
+        ptls_decode_open_block(src, end, 2, { src = end; });
+    }
+    /* Process the list of KeyShareEntries, verify for each of them that the ciphersuite is supported. */
     ptls_decode_open_block(src, end, 2, {
         do {
             /* parse */
@@ -5111,6 +5123,7 @@ int ptls_esni_init_context(ptls_context_t *ctx, ptls_esni_context_t *esni, ptls_
             }
         } while (src != end);
     });
+    /* Process the list of cipher_suites. If they are supported, store in esni context  */
     ptls_decode_open_block(src, end, 2, {
         void *newp;
         do {
@@ -5137,12 +5150,14 @@ int ptls_esni_init_context(ptls_context_t *ctx, ptls_esni_context_t *esni, ptls_
         esni->cipher_suites = newp;
         esni->cipher_suites[num_cipher_suites].cipher_suite = NULL;
     });
+    /* Parse the padded length, not before, not after parameters */
     if ((ret = ptls_decode16(&esni->padded_length, &src, end)) != 0)
         goto Exit;
     if ((ret = ptls_decode64(&esni->not_before, &src, end)) != 0)
         goto Exit;
     if ((ret = ptls_decode64(&esni->not_after, &src, end)) != 0)
         goto Exit;
+    /* Skip the extension fields */
     ptls_decode_block(src, end, 2, {
         while (src != end) {
             uint16_t ext_type;

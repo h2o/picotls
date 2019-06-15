@@ -85,6 +85,7 @@ extern "C" {
 
 /* ESNI */
 #define PTLS_ESNI_VERSION_DRAFT02 0xff01
+#define PTLS_ESNI_VERSION_DRAFT03 0xff02
 
 /* error classes and macros */
 #define PTLS_ERROR_CLASS_SELF_ALERT 0
@@ -403,6 +404,7 @@ typedef struct st_ptls_esni_context_t {
     uint16_t padded_length;
     uint64_t not_before;
     uint64_t not_after;
+    uint16_t version;
 } ptls_esni_context_t;
 
 #define PTLS_CALLBACK_TYPE0(ret, name)                                                                                             \
