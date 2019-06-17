@@ -2377,8 +2377,8 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
                 }
                 esni_nonce = src + 1;
             } else {
-                /* TODO: parse the RETRY REQUEST response */
-                ret = PTLS_ALERT_INTERNAL_ERROR;
+                /* TODO: provide API to parse the RETRY REQUEST response */
+                ret = PTLS_ERROR_ESNI_RETRY;
                 goto Exit;
             }
             break;

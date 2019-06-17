@@ -136,6 +136,7 @@ extern "C" {
 #define PTLS_ERROR_STATELESS_RETRY (PTLS_ERROR_CLASS_INTERNAL + 6)
 #define PTLS_ERROR_NOT_AVAILABLE (PTLS_ERROR_CLASS_INTERNAL + 7)
 #define PTLS_ERROR_COMPRESSION_FAILURE (PTLS_ERROR_CLASS_INTERNAL + 8)
+#define PTLS_ERROR_ESNI_RETRY (PTLS_ERROR_CLASS_INTERNAL + 8)
 
 #define PTLS_ERROR_INCORRECT_BASE64 (PTLS_ERROR_CLASS_INTERNAL + 50)
 #define PTLS_ERROR_PEM_LABEL_NOT_FOUND (PTLS_ERROR_CLASS_INTERNAL + 51)
@@ -350,7 +351,7 @@ typedef struct st_ptls_hash_context_t {
     /**
      * returns the digest and performs necessary operation specified by mode
      */
-    void (* final)(struct st_ptls_hash_context_t *ctx, void *md, ptls_hash_final_mode_t mode);
+    void (*final)(struct st_ptls_hash_context_t *ctx, void *md, ptls_hash_final_mode_t mode);
     /**
      * creates a copy of the hash context
      */
@@ -494,7 +495,8 @@ PTLS_CALLBACK_TYPE(int, save_ticket, ptls_t *tls, ptls_iovec_t input);
  * event logging (incl. secret logging)
  */
 typedef struct st_ptls_log_event_t {
-    void (*cb)(struct st_ptls_log_event_t *self, ptls_t *tls, const char *type, const char *fmt, ...) __attribute__((format(printf, 4, 5)));
+    void (*cb)(struct st_ptls_log_event_t *self, ptls_t *tls, const char *type, const char *fmt, ...)
+        __attribute__((format(printf, 4, 5)));
 } ptls_log_event_t;
 /**
  * reference counting
