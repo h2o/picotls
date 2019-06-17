@@ -2955,8 +2955,8 @@ static int client_hello_decrypt_esni(ptls_context_t *ctx, ptls_iovec_t *server_n
         }
         if (memcmp((*esni)->cipher_suites[i].record_digest, ch->esni.record_digest, ch->esni.cipher->hash->digest_size) == 0) {
             (*secret)->version = (*esni)->version;
+            break;
         }
-        break;
     }
     if (*esni == NULL) {
         ret = PTLS_ALERT_ILLEGAL_PARAMETER;
