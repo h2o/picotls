@@ -44,6 +44,10 @@
 #include "picotls/openssl.h"
 
 #ifdef _WINDOWS
+#ifndef _CRT_SECURE_NO_WARNINGS
+#define _CRT_SECURE_NO_WARNINGS
+#endif
+#pragma warning(disable : 4996)
 #include <ms\applink.c>
 #endif
 

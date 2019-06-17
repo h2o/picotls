@@ -140,6 +140,7 @@ struct st_ptls_esni_secret_t {
             uint16_t padded_length;
         } client;
     };
+    uint16_t version;
 };
 
 struct st_ptls_t {
@@ -1583,9 +1584,9 @@ Exit:
     return ret;
 }
 
-static int parse_esni_keys(ptls_context_t *ctx, ptls_key_exchange_algorithm_t **selected_key_share,
+static int parse_esni_keys(ptls_context_t *ctx, uint16_t *esni_version, ptls_key_exchange_algorithm_t **selected_key_share,
                            ptls_cipher_suite_t **selected_cipher, ptls_iovec_t *peer_key, uint16_t *padded_length,
-                           ptls_iovec_t input)
+                           char **published_sni, ptls_iovec_t input)
 {
     const uint8_t *src = input.base, *const end = input.base + input.len;
     uint16_t version;
@@ -1621,9 +1622,20 @@ static int parse_esni_keys(ptls_context_t *ctx, ptls_key_exchange_algorithm_t **
         }
         src += 4;
     }
+    *esni_version = version;
     /* published sni */
     if (version != PTLS_ESNI_VERSION_DRAFT02) {
-        ptls_decode_open_block(src, end, 2, { src = end; });
+        ptls_decode_open_block(src, end, 2, {
+            size_t len = end - src;
+            *published_sni = malloc(len + 1);
+            if (*published_sni == NULL) {
+                ret = PTLS_ERROR_NO_MEMORY;
+                goto Exit;
+            }
+            memcpy(*published_sni, src, len);
+            *published_sni[len] = 0;
+            src = end;
+        });
     }
     /* key-shares */
     ptls_decode_open_block(src, end, 2, {
@@ -1724,7 +1736,7 @@ static void free_esni_secret(struct st_ptls_esni_secret_t **esni, int is_server)
     *esni = NULL;
 }
 
-static int client_setup_esni(ptls_context_t *ctx, struct st_ptls_esni_secret_t **esni, ptls_iovec_t esni_keys,
+static int client_setup_esni(ptls_context_t *ctx, struct st_ptls_esni_secret_t **esni, ptls_iovec_t esni_keys, char **published_sni,
                              const uint8_t *client_random)
 {
     ptls_iovec_t peer_key;
@@ -1735,8 +1747,8 @@ static int client_setup_esni(ptls_context_t *ctx, struct st_ptls_esni_secret_t *
     memset(*esni, 0, sizeof(**esni));
 
     /* parse ESNI_Keys (and return success while keeping *esni NULL) */
-    if (parse_esni_keys(ctx, &(*esni)->client.key_share, &(*esni)->client.cipher, &peer_key, &(*esni)->client.padded_length,
-                        esni_keys) != 0) {
+    if (parse_esni_keys(ctx, &(*esni)->version, &(*esni)->client.key_share, &(*esni)->client.cipher, &peer_key,
+                        &(*esni)->client.padded_length, published_sni, esni_keys) != 0) {
         free(*esni);
         *esni = NULL;
         return 0;
@@ -1814,6 +1826,7 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
                              ptls_iovec_t *cookie)
 {
     ptls_iovec_t resumption_secret = {NULL}, resumption_ticket;
+    char *published_sni = NULL;
     uint32_t obfuscated_ticket_age = 0;
     size_t msghash_off;
     uint8_t binder_key[PTLS_MAX_DIGEST_SIZE];
@@ -1823,8 +1836,10 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
     if (properties != NULL) {
         /* try to use ESNI */
         if (!is_second_flight && send_sni && properties->client.esni_keys.base != NULL) {
-            if ((ret = client_setup_esni(tls->ctx, &tls->esni, properties->client.esni_keys, tls->client_random)) != 0)
+            if ((ret = client_setup_esni(tls->ctx, &tls->esni, properties->client.esni_keys, &published_sni, tls->client_random)) !=
+                0) {
                 goto Exit;
+            }
             if (tls->ctx->update_esni_key != NULL) {
                 if ((ret = tls->ctx->update_esni_key->cb(tls->ctx->update_esni_key, tls, tls->esni->secret,
                                                          tls->esni->client.cipher->hash, tls->esni->esni_contents_hash)) != 0)
@@ -1909,6 +1924,12 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
             });
             if (send_sni) {
                 if (tls->esni != NULL) {
+                    if (published_sni != NULL) {
+                        buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SERVER_NAME, {
+                            if ((ret = emit_server_name_extension(sendbuf, published_sni)) != 0)
+                                goto Exit;
+                        });
+                    }
                     buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_ENCRYPTED_SERVER_NAME, {
                         if ((ret = emit_esni_extension(tls->esni, sendbuf, properties->client.esni_keys, tls->server_name,
                                                        key_share_client_hello.off, key_share_client_hello.len)) != 0)
@@ -2028,6 +2049,9 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
     ret = PTLS_ERROR_IN_PROGRESS;
 
 Exit:
+    if (published_sni != NULL) {
+        free(published_sni);
+    }
     ptls_clear_memory(binder_key, sizeof(binder_key));
     return ret;
 }
@@ -2187,8 +2211,8 @@ static int handle_hello_retry_request(ptls_t *tls, ptls_message_emitter_t *emitt
         tls->client.key_share_ctx = NULL;
     }
     if (tls->client.using_early_data) {
-        /* release traffic encryption key so that 2nd CH goes out in cleartext, but keep the epoch at 1 since we've already called
-         * derive-secret */
+        /* release traffic encryption key so that 2nd CH goes out in cleartext, but keep the epoch at 1 since we've already
+         * called derive-secret */
         if (tls->ctx->update_traffic_key == NULL) {
             assert(tls->traffic_protection.enc.aead != NULL);
             ptls_aead_free(tls->traffic_protection.enc.aead);
@@ -2288,7 +2312,6 @@ Exit:
 static int handle_unknown_extension(ptls_t *tls, ptls_handshake_properties_t *properties, uint16_t type, const uint8_t *src,
                                     const uint8_t *const end, ptls_raw_extension_t *slots)
 {
-
     if (properties != NULL && properties->collect_extension != NULL && properties->collect_extension(tls, properties, type)) {
         size_t i;
         for (i = 0; slots[i].type != UINT16_MAX; ++i) {
@@ -2317,7 +2340,7 @@ static int report_unknown_extensions(ptls_t *tls, ptls_handshake_properties_t *p
 
 static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message, ptls_handshake_properties_t *properties)
 {
-    const uint8_t *src = message.base + PTLS_HANDSHAKE_HEADER_SIZE, *const end = message.base + message.len, *esni = NULL;
+    const uint8_t *src = message.base + PTLS_HANDSHAKE_HEADER_SIZE, *const end = message.base + message.len, *esni_nonce = NULL;
     uint16_t type;
     ptls_raw_extension_t unknown_extensions[MAX_UNKNOWN_EXTENSIONS + 1];
     int ret, skip_early_data = 1;
@@ -2341,11 +2364,23 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
             }
             break;
         case PTLS_EXTENSION_TYPE_ENCRYPTED_SERVER_NAME:
-            if (end - src != PTLS_ESNI_NONCE_SIZE) {
-                ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+            if (tls->esni != NULL && tls->esni->version == PTLS_ESNI_VERSION_DRAFT02) {
+                if (end - src != PTLS_ESNI_NONCE_SIZE) {
+                    ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+                    goto Exit;
+                }
+                esni_nonce = src;
+            } else if (*src == PTLS_ESNI_RESPONSE_TYPE_ACCEPT) {
+                if (end - src != PTLS_ESNI_NONCE_SIZE + 1) {
+                    ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+                    goto Exit;
+                }
+                esni_nonce = src + 1;
+            } else {
+                /* TODO: parse the RETRY REQUEST response */
+                ret = PTLS_ALERT_INTERNAL_ERROR;
                 goto Exit;
             }
-            esni = src;
             break;
         case PTLS_EXTENSION_TYPE_ALPN:
             ptls_decode_block(src, end, 2, {
@@ -2379,13 +2414,13 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
     });
 
     if (tls->esni != NULL) {
-        if (esni == NULL || !ptls_mem_equal(esni, tls->esni->nonce, PTLS_ESNI_NONCE_SIZE)) {
+        if (esni_nonce == NULL || !ptls_mem_equal(esni_nonce, tls->esni->nonce, PTLS_ESNI_NONCE_SIZE)) {
             ret = PTLS_ALERT_ILLEGAL_PARAMETER;
             goto Exit;
         }
         free_esni_secret(&tls->esni, 0);
     } else {
-        if (esni != NULL) {
+        if (esni_nonce != NULL) {
             ret = PTLS_ALERT_ILLEGAL_PARAMETER;
             goto Exit;
         }
@@ -2918,8 +2953,10 @@ static int client_hello_decrypt_esni(ptls_context_t *ctx, ptls_iovec_t *server_n
             ret = PTLS_ALERT_ILLEGAL_PARAMETER;
             goto Exit;
         }
-        if (memcmp((*esni)->cipher_suites[i].record_digest, ch->esni.record_digest, ch->esni.cipher->hash->digest_size) == 0)
-            break;
+        if (memcmp((*esni)->cipher_suites[i].record_digest, ch->esni.record_digest, ch->esni.cipher->hash->digest_size) == 0) {
+            (*secret)->version = (*esni)->version;
+        }
+        break;
     }
     if (*esni == NULL) {
         ret = PTLS_ALERT_ILLEGAL_PARAMETER;
@@ -3565,14 +3602,14 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
             ret = PTLS_ALERT_DECODE_ERROR;
             goto Exit;
         }
-        /* the following check is necessary so that we would be able to track the connection in SSLKEYLOGFILE, even though it might
-         * not be for the safety of the protocol */
+        /* the following check is necessary so that we would be able to track the connection in SSLKEYLOGFILE, even though it
+         * might not be for the safety of the protocol */
         if (!ptls_mem_equal(tls->client_random, ch.random_bytes, sizeof(tls->client_random))) {
             ret = PTLS_ALERT_HANDSHAKE_FAILURE;
             goto Exit;
         }
-        /* We compare SNI only when the value is saved by the on_client_hello callback. This should be OK because we are ignoring
-         * the value unless the callback saves the server-name. */
+        /* We compare SNI only when the value is saved by the on_client_hello callback. This should be OK because we are
+         * ignoring the value unless the callback saves the server-name. */
         if (tls->server_name != NULL) {
             size_t l = strlen(tls->server_name);
             if (!(ch.server_name.len == l && memcmp(ch.server_name.base, tls->server_name, l) == 0)) {
@@ -3646,7 +3683,8 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
             ptls__key_schedule_update_hash(tls->key_schedule, message.base, message.len);
             assert(tls->key_schedule->generation == 0);
             if (properties != NULL && properties->server.retry_uses_cookie) {
-                /* emit HRR with cookie (note: we MUST omit KeyShare if the client has specified the correct one; see 46554f0) */
+                /* emit HRR with cookie (note: we MUST omit KeyShare if the client has specified the correct one; see 46554f0)
+                 */
                 EMIT_HELLO_RETRY_REQUEST(NULL, key_share.algorithm != NULL ? NULL : negotiated_group, {
                     ptls_buffer_t *sendbuf = emitter->buf;
                     buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_COOKIE, {
@@ -3809,14 +3847,19 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
         ptls_buffer_t *sendbuf = emitter->buf;
         ptls_buffer_push_block(sendbuf, 2, {
             if (tls->esni != NULL) {
-                /* the extension is sent even if the application does not handle server name, because otherwise the handshake would
-                 * fail (FIXME ch.esni.nonce will be zero on HRR) */
-                buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_ENCRYPTED_SERVER_NAME,
-                                      { ptls_buffer_pushv(sendbuf, tls->esni->nonce, PTLS_ESNI_NONCE_SIZE); });
+                /* the extension is sent even if the application does not handle server name, because otherwise the handshake
+                 * would fail (FIXME ch.esni.nonce will be zero on HRR) */
+                buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_ENCRYPTED_SERVER_NAME, {
+                    if (tls->esni->version != PTLS_ESNI_VERSION_DRAFT02) {
+                        uint8_t response_type = PTLS_ESNI_RESPONSE_TYPE_ACCEPT;
+                        ptls_buffer_pushv(sendbuf, &response_type, 1);
+                    }
+                    ptls_buffer_pushv(sendbuf, tls->esni->nonce, PTLS_ESNI_NONCE_SIZE);
+                });
                 free_esni_secret(&tls->esni, 1);
             } else if (tls->server_name != NULL) {
-                /* In this event, the server SHALL include an extension of type "server_name" in the (extended) server hello. The
-                 * "extension_data" field of this extension SHALL be empty. (RFC 6066 section 3) */
+                /* In this event, the server SHALL include an extension of type "server_name" in the (extended) server hello.
+                 * The "extension_data" field of this extension SHALL be empty. (RFC 6066 section 3) */
                 buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SERVER_NAME, {});
             }
             if (tls->negotiated_protocol != NULL) {
@@ -4864,7 +4907,8 @@ Exit:
 int ptls_hkdf_expand_label(ptls_hash_algorithm_t *algo, void *output, size_t outlen, ptls_iovec_t secret, const char *label,
                            ptls_iovec_t hash_value, const char *label_prefix)
 {
-    /* the handshake layer should call hkdf_expand_label directly, always setting key_schedule->hkdf_label_prefix as the argument */
+    /* the handshake layer should call hkdf_expand_label directly, always setting key_schedule->hkdf_label_prefix as the
+     * argument */
     if (label_prefix == NULL)
         label_prefix = PTLS_HKDF_EXPAND_LABEL_PREFIX;
     return hkdf_expand_label(algo, output, outlen, secret, label, hash_value, label_prefix);
