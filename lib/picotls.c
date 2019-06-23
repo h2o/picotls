@@ -38,8 +38,6 @@
 #define PTLS_RECORD_VERSION_MAJOR 3
 #define PTLS_RECORD_VERSION_MINOR 3
 
-#define PTLS_ESNI_NONCE_SIZE 16
-
 #define PTLS_CONTENT_TYPE_CHANGE_CIPHER_SPEC 20
 #define PTLS_CONTENT_TYPE_ALERT 21
 #define PTLS_CONTENT_TYPE_HANDSHAKE 22
@@ -125,22 +123,6 @@ struct st_ptls_certificate_request_t {
      */
     ptls_iovec_t context;
     struct st_ptls_signature_algorithms_t signature_algorithms;
-};
-
-struct st_ptls_esni_secret_t {
-    ptls_iovec_t secret;
-    uint8_t nonce[PTLS_ESNI_NONCE_SIZE];
-    uint8_t esni_contents_hash[PTLS_MAX_DIGEST_SIZE];
-    union {
-        struct {
-            ptls_key_exchange_algorithm_t *key_share;
-            ptls_cipher_suite_t *cipher;
-            ptls_iovec_t pubkey;
-            uint8_t record_digest[PTLS_MAX_DIGEST_SIZE];
-            uint16_t padded_length;
-        } client;
-    };
-    uint16_t version;
 };
 
 struct st_ptls_t {
@@ -5237,6 +5219,14 @@ void ptls_esni_dispose_context(ptls_esni_context_t *esni)
         free(esni->key_exchanges);
     }
     free(esni->cipher_suites);
+}
+
+/**
+ * Obtain the ESNI secrets negotiated during the handshake.
+ */
+struct st_ptls_esni_secret_t * ptls_get_esni_secret(ptls_t * ctx)
+{
+    return ctx->esni;
 }
 
 /**
