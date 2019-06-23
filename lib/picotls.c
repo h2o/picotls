@@ -1633,7 +1633,7 @@ static int parse_esni_keys(ptls_context_t *ctx, uint16_t *esni_version, ptls_key
                 goto Exit;
             }
             memcpy(*published_sni, src, len);
-            *published_sni[len] = 0;
+            (*published_sni)[len] = 0;
             src = end;
         });
     }

@@ -41,7 +41,7 @@
 #include "picotls/pembase64.h"
 #include "picotls/openssl.h"
 
-static void write_rfc1035_character_string(ptls_buffer_t buf, char *ascii_output)
+static void write_rfc1035_character_string(ptls_buffer_t buf, const char *ascii_output)
 {
     FILE *fd = NULL;
 
@@ -62,7 +62,7 @@ static void write_rfc1035_character_string(ptls_buffer_t buf, char *ascii_output
 }
 
 static int emit_esni(ptls_key_exchange_context_t **key_exchanges, ptls_cipher_suite_t **cipher_suites, uint16_t padded_length,
-                     uint64_t not_before, uint64_t lifetime, char const *published_sni, char const *ascii_output)
+                     uint64_t not_before, uint64_t lifetime, char const *published_sni, char const *ascii_output, char const * file_output)
 {
     ptls_buffer_t buf;
     ptls_key_exchange_context_t *ctx[256] = {NULL};
@@ -70,10 +70,9 @@ static int emit_esni(ptls_key_exchange_context_t **key_exchanges, ptls_cipher_su
 
     ptls_buffer_init(&buf, "", 0);
 
-    ptls_buffer_push16(&buf, PTLS_ESNI_VERSION_DRAFT03);
+    ptls_buffer_push16(&buf, (published_sni == NULL) ? PTLS_ESNI_VERSION_DRAFT02 : PTLS_ESNI_VERSION_DRAFT03);
     ptls_buffer_push(&buf, 0, 0, 0, 0); /* checksum, filled later */
-    if (published_sni == NULL) {
-    } else {
+    if (published_sni != NULL) {
         ptls_buffer_push_block(&buf, 2, { ptls_buffer_pushv(&buf, published_sni, strlen(published_sni)); });
     }
     ptls_buffer_push_block(&buf, 2, {
@@ -99,9 +98,20 @@ static int emit_esni(ptls_key_exchange_context_t **key_exchanges, ptls_cipher_su
         memcpy(buf.base + 2, d, 4);
     }
 
-    /* emit the structure to stdout */
-    fwrite(buf.base, 1, buf.off, stdout);
-    fflush(stdout);
+    if (file_output != NULL) {
+        FILE *fo = fopen(file_output, "wb");
+        if (fo == NULL){
+            fprintf(stderr, "failed to open file:%s:%s\n", optarg, strerror(errno));
+            goto Exit;
+        } else {
+            fwrite(buf.base, 1, buf.off, fo);
+            fclose(fo);
+        }
+    } else {
+        /* emit the structure to stdout */
+        fwrite(buf.base, 1, buf.off, stdout);
+        fflush(stdout);
+    }
 
     if (ascii_output) {
         write_rfc1035_character_string(buf, ascii_output);
@@ -142,6 +152,7 @@ int main(int argc, char **argv)
 {
     char const *published_sni = NULL;
     char const *ascii_output = NULL;
+    char const *file_output = NULL;
     ERR_load_crypto_strings();
     OpenSSL_add_all_algorithms();
 #if !defined(OPENSSL_NO_ENGINE)
@@ -163,7 +174,8 @@ int main(int argc, char **argv)
     uint64_t lifetime = 90 * 86400;
 
     int ch;
-    while ((ch = getopt(argc, argv, "n:K:c:d:p:a:h")) != -1) {
+
+    while ((ch = getopt(argc, argv, "n:K:c:d:p:a:o:h")) != -1) {
         switch (ch) {
         case 'n':
             published_sni = optarg;
@@ -222,6 +234,9 @@ int main(int argc, char **argv)
         case 'a':
             ascii_output = optarg;
             break;
+        case 'o':
+            file_output = optarg;
+            break;
         case 'h':
             usage(argv[0], 0);
             break;
@@ -240,7 +255,7 @@ int main(int argc, char **argv)
     argc -= optind;
     argv += optind;
 
-    if (emit_esni(key_exchanges.elements, cipher_suites.elements, padded_length, time(NULL), lifetime, published_sni, ascii_output) != 0) {
+    if (emit_esni(key_exchanges.elements, cipher_suites.elements, padded_length, time(NULL), lifetime, published_sni, ascii_output, file_output) != 0) {
         fprintf(stderr, "failed to generate ESNI private structure.\n");
         exit(1);
     }
