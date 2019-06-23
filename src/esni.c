@@ -41,28 +41,8 @@
 #include "picotls/pembase64.h"
 #include "picotls/openssl.h"
 
-static void write_rfc1035_character_string(ptls_buffer_t buf, const char *ascii_output)
-{
-    FILE *fd = NULL;
-
-    if ((fd = fopen(ascii_output, "w")) == NULL) {
-        fprintf(stderr, "failed to open file:%s:%s\n", ascii_output, strerror(errno));
-        return;
-    }
-
-    for (size_t x = 0; x < buf.off; x++) {
-        uint8_t c = buf.base[x];
-        if (c > ' ' && c < 127) {
-            fputc(c, fd);
-        } else {
-            fprintf(fd, "\\%03d", c);
-        }
-    }
-    fclose(fd);
-}
-
 static int emit_esni(ptls_key_exchange_context_t **key_exchanges, ptls_cipher_suite_t **cipher_suites, uint16_t padded_length,
-                     uint64_t not_before, uint64_t lifetime, char const *published_sni, char const *ascii_output, char const * file_output)
+                     uint64_t not_before, uint64_t lifetime, char const *published_sni, char const * file_output)
 {
     ptls_buffer_t buf;
     ptls_key_exchange_context_t *ctx[256] = {NULL};
@@ -113,10 +93,6 @@ static int emit_esni(ptls_key_exchange_context_t **key_exchanges, ptls_cipher_su
         fflush(stdout);
     }
 
-    if (ascii_output) {
-        write_rfc1035_character_string(buf, ascii_output);
-    }
-
     ret = 0;
 Exit : {
     size_t i;
@@ -139,7 +115,8 @@ static void usage(const char *cmd, int status)
            "  -c <cipher-suite>   aes128-gcm, chacha20-poly1305, ...\n"
            "  -d <days>           number of days until expiration (default: 90)\n"
            "  -p <padded-length>  padded length (default: 260)\n"
-           "  -a <txt-file>       Store output as RFC-1035 character string in txt-file\n"
+           "  -o <output-file>    write output to specified file instead of stdout\n"
+           "                      (use on Windows as stdout is not binary there)\n"
            "  -h                  prints this help\n"
            "\n"
            "-c and -x can be used multiple times.\n"
@@ -151,7 +128,6 @@ static void usage(const char *cmd, int status)
 int main(int argc, char **argv)
 {
     char const *published_sni = NULL;
-    char const *ascii_output = NULL;
     char const *file_output = NULL;
     ERR_load_crypto_strings();
     OpenSSL_add_all_algorithms();
@@ -175,7 +151,7 @@ int main(int argc, char **argv)
 
     int ch;
 
-    while ((ch = getopt(argc, argv, "n:K:c:d:p:a:o:h")) != -1) {
+    while ((ch = getopt(argc, argv, "n:K:c:d:p:o:h")) != -1) {
         switch (ch) {
         case 'n':
             published_sni = optarg;
@@ -231,9 +207,6 @@ int main(int argc, char **argv)
             }
 #endif
             break;
-        case 'a':
-            ascii_output = optarg;
-            break;
         case 'o':
             file_output = optarg;
             break;
@@ -255,7 +228,7 @@ int main(int argc, char **argv)
     argc -= optind;
     argv += optind;
 
-    if (emit_esni(key_exchanges.elements, cipher_suites.elements, padded_length, time(NULL), lifetime, published_sni, ascii_output, file_output) != 0) {
+    if (emit_esni(key_exchanges.elements, cipher_suites.elements, padded_length, time(NULL), lifetime, published_sni, file_output) != 0) {
         fprintf(stderr, "failed to generate ESNI private structure.\n");
         exit(1);
     }
