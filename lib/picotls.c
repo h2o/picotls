@@ -1578,7 +1578,7 @@ static int parse_esni_keys(ptls_context_t *ctx, uint16_t *esni_version, ptls_key
     /* version */
     if ((ret = ptls_decode16(&version, &src, end)) != 0)
         goto Exit;
-    if (version != PTLS_ESNI_VERSION_DRAFT02 && version != PTLS_ESNI_VERSION_DRAFT03) {
+    if (version != PTLS_ESNI_VERSION_DRAFT03) {
         ret = PTLS_ALERT_DECODE_ERROR;
         goto Exit;
     }
@@ -1606,19 +1606,19 @@ static int parse_esni_keys(ptls_context_t *ctx, uint16_t *esni_version, ptls_key
     }
     *esni_version = version;
     /* published sni */
-    if (version != PTLS_ESNI_VERSION_DRAFT02) {
-        ptls_decode_open_block(src, end, 2, {
-            size_t len = end - src;
-            *published_sni = malloc(len + 1);
-            if (*published_sni == NULL) {
-                ret = PTLS_ERROR_NO_MEMORY;
-                goto Exit;
-            }
+    ptls_decode_open_block(src, end, 2, {
+        size_t len = end - src;
+        *published_sni = malloc(len + 1);
+        if (*published_sni == NULL) {
+            ret = PTLS_ERROR_NO_MEMORY;
+            goto Exit;
+        }
+        if (len > 0) {
             memcpy(*published_sni, src, len);
-            (*published_sni)[len] = 0;
-            src = end;
-        });
-    }
+        }
+        (*published_sni)[len] = 0;
+        src = end;
+    });
     /* key-shares */
     ptls_decode_open_block(src, end, 2, {
         if ((ret = select_key_share(selected_key_share, peer_key, ctx->key_exchanges, &src, end, 0)) != 0)
@@ -2346,13 +2346,7 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
             }
             break;
         case PTLS_EXTENSION_TYPE_ENCRYPTED_SERVER_NAME:
-            if (tls->esni != NULL && tls->esni->version == PTLS_ESNI_VERSION_DRAFT02) {
-                if (end - src != PTLS_ESNI_NONCE_SIZE) {
-                    ret = PTLS_ALERT_ILLEGAL_PARAMETER;
-                    goto Exit;
-                }
-                esni_nonce = src;
-            } else if (*src == PTLS_ESNI_RESPONSE_TYPE_ACCEPT) {
+            if (*src == PTLS_ESNI_RESPONSE_TYPE_ACCEPT) {
                 if (end - src != PTLS_ESNI_NONCE_SIZE + 1) {
                     ret = PTLS_ALERT_ILLEGAL_PARAMETER;
                     goto Exit;
@@ -3832,10 +3826,8 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
                 /* the extension is sent even if the application does not handle server name, because otherwise the handshake
                  * would fail (FIXME ch.esni.nonce will be zero on HRR) */
                 buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_ENCRYPTED_SERVER_NAME, {
-                    if (tls->esni->version != PTLS_ESNI_VERSION_DRAFT02) {
-                        uint8_t response_type = PTLS_ESNI_RESPONSE_TYPE_ACCEPT;
-                        ptls_buffer_pushv(sendbuf, &response_type, 1);
-                    }
+                    uint8_t response_type = PTLS_ESNI_RESPONSE_TYPE_ACCEPT;
+                    ptls_buffer_pushv(sendbuf, &response_type, 1);
                     ptls_buffer_pushv(sendbuf, tls->esni->nonce, PTLS_ESNI_NONCE_SIZE);
                 });
                 free_esni_secret(&tls->esni, 1);
@@ -5126,10 +5118,9 @@ int ptls_esni_init_context(ptls_context_t *ctx, ptls_esni_context_t *esni, ptls_
         goto Exit;
     }
     src += 4;
-    /* Skip published SNI field if version 03 or later */
-    if (esni->version != PTLS_ESNI_VERSION_DRAFT02) {
-        ptls_decode_open_block(src, end, 2, { src = end; });
-    }
+    /* Published SNI field */
+    ptls_decode_open_block(src, end, 2, { src = end; });
+
     /* Process the list of KeyShareEntries, verify for each of them that the ciphersuite is supported. */
     ptls_decode_open_block(src, end, 2, {
         do {
@@ -5224,7 +5215,7 @@ void ptls_esni_dispose_context(ptls_esni_context_t *esni)
 /**
  * Obtain the ESNI secrets negotiated during the handshake.
  */
-struct st_ptls_esni_secret_t * ptls_get_esni_secret(ptls_t * ctx)
+struct st_ptls_esni_secret_t *ptls_get_esni_secret(ptls_t *ctx)
 {
     return ctx->esni;
 }

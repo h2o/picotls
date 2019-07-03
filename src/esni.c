@@ -50,10 +50,12 @@ static int emit_esni(ptls_key_exchange_context_t **key_exchanges, ptls_cipher_su
 
     ptls_buffer_init(&buf, "", 0);
 
-    ptls_buffer_push16(&buf, (published_sni == NULL) ? PTLS_ESNI_VERSION_DRAFT02 : PTLS_ESNI_VERSION_DRAFT03);
+    ptls_buffer_push16(&buf, PTLS_ESNI_VERSION_DRAFT03);
     ptls_buffer_push(&buf, 0, 0, 0, 0); /* checksum, filled later */
     if (published_sni != NULL) {
         ptls_buffer_push_block(&buf, 2, { ptls_buffer_pushv(&buf, published_sni, strlen(published_sni)); });
+    } else {
+        ptls_buffer_push16(&buf, 0);
     }
     ptls_buffer_push_block(&buf, 2, {
         size_t i;
