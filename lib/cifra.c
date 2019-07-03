@@ -89,6 +89,8 @@ static void read_entropy(uint8_t *entropy, size_t size)
     }
 }
 #endif
+#elif defined(EXTERNAL_READ_ENTROPY)
+/* read_entropy() provided elsewhere */
 #else
 static void read_entropy(uint8_t *entropy, size_t size)
 {
