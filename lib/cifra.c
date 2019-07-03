@@ -570,7 +570,9 @@ static int aead_chacha20poly1305_setup_crypto(ptls_aead_context_t *_ctx, int is_
 }
 
 ptls_define_hash(sha256, cf_sha256_context, cf_sha256_init, cf_sha256_update, cf_sha256_digest_final);
+#ifndef MINIMAL_CIPHERS
 ptls_define_hash(sha384, cf_sha512_context, cf_sha384_init, cf_sha384_update, cf_sha384_digest_final);
+#endif
 
 ptls_key_exchange_algorithm_t ptls_minicrypto_x25519 = {PTLS_GROUP_X25519, x25519_create_key_exchange, x25519_key_exchange};
 ptls_cipher_algorithm_t ptls_minicrypto_aes128ecb = {
@@ -593,6 +595,7 @@ ptls_aead_algorithm_t ptls_minicrypto_aes256gcm = {
     PTLS_AESGCM_IV_SIZE, PTLS_AESGCM_TAG_SIZE,       sizeof(struct aesgcm_context_t), aead_aes256gcm_setup_crypto};
 ptls_hash_algorithm_t ptls_minicrypto_sha256 = {PTLS_SHA256_BLOCK_SIZE, PTLS_SHA256_DIGEST_SIZE, sha256_create,
                                                 PTLS_ZERO_DIGEST_SHA256};
+#ifndef MINIMAL_CIPHERS
 ptls_hash_algorithm_t ptls_minicrypto_sha384 = {PTLS_SHA384_BLOCK_SIZE, PTLS_SHA384_DIGEST_SIZE, sha384_create,
                                                 PTLS_ZERO_DIGEST_SHA384};
 ptls_cipher_algorithm_t ptls_minicrypto_chacha20 = {
@@ -606,11 +609,22 @@ ptls_aead_algorithm_t ptls_minicrypto_chacha20poly1305 = {"CHACHA20-POLY1305",
                                                           PTLS_CHACHA20POLY1305_TAG_SIZE,
                                                           sizeof(struct chacha20poly1305_context_t),
                                                           aead_chacha20poly1305_setup_crypto};
+#endif
 ptls_cipher_suite_t ptls_minicrypto_aes128gcmsha256 = {PTLS_CIPHER_SUITE_AES_128_GCM_SHA256, &ptls_minicrypto_aes128gcm,
                                                        &ptls_minicrypto_sha256};
+#ifndef MINIMAL_CIPHERS
 ptls_cipher_suite_t ptls_minicrypto_aes256gcmsha384 = {PTLS_CIPHER_SUITE_AES_256_GCM_SHA384, &ptls_minicrypto_aes256gcm,
                                                        &ptls_minicrypto_sha384};
 ptls_cipher_suite_t ptls_minicrypto_chacha20poly1305sha256 = {PTLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256,
                                                               &ptls_minicrypto_chacha20poly1305, &ptls_minicrypto_sha256};
-ptls_cipher_suite_t *ptls_minicrypto_cipher_suites[] = {&ptls_minicrypto_aes256gcmsha384, &ptls_minicrypto_aes128gcmsha256,
-                                                        &ptls_minicrypto_chacha20poly1305sha256, NULL};
+#endif
+ptls_cipher_suite_t *ptls_minicrypto_cipher_suites[] = {
+#ifndef MINIMAL_CIPHERS
+    &ptls_minicrypto_aes256gcmsha384,
+#endif
+    &ptls_minicrypto_aes128gcmsha256,
+#ifndef MINIMAL_CIPHERS
+    &ptls_minicrypto_chacha20poly1305sha256,
+#endif
+    NULL};
+
