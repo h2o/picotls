@@ -42,7 +42,7 @@
 #include "picotls/openssl.h"
 
 static int emit_esni(ptls_key_exchange_context_t **key_exchanges, ptls_cipher_suite_t **cipher_suites, uint16_t padded_length,
-                     uint64_t not_before, uint64_t lifetime, char const *published_sni, char const * file_output)
+                     uint64_t not_before, uint64_t lifetime, char const *published_sni, char const *file_output)
 {
     ptls_buffer_t buf;
     ptls_key_exchange_context_t *ctx[256] = {NULL};
@@ -82,7 +82,7 @@ static int emit_esni(ptls_key_exchange_context_t **key_exchanges, ptls_cipher_su
 
     if (file_output != NULL) {
         FILE *fo = fopen(file_output, "wb");
-        if (fo == NULL){
+        if (fo == NULL) {
             fprintf(stderr, "failed to open file:%s:%s\n", optarg, strerror(errno));
             goto Exit;
         } else {
@@ -230,7 +230,8 @@ int main(int argc, char **argv)
     argc -= optind;
     argv += optind;
 
-    if (emit_esni(key_exchanges.elements, cipher_suites.elements, padded_length, time(NULL), lifetime, published_sni, file_output) != 0) {
+    if (emit_esni(key_exchanges.elements, cipher_suites.elements, padded_length, time(NULL), lifetime, published_sni,
+                  file_output) != 0) {
         fprintf(stderr, "failed to generate ESNI private structure.\n");
         exit(1);
     }

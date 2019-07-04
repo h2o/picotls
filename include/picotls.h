@@ -411,7 +411,7 @@ typedef struct st_ptls_esni_context_t {
 } ptls_esni_context_t;
 
 /**
- * holds the ESNI secret, as exchanged during the handshake 
+ * holds the ESNI secret, as exchanged during the handshake
  */
 
 #define PTLS_ESNI_NONCE_SIZE 16
@@ -1186,7 +1186,7 @@ void ptls_esni_dispose_context(ptls_esni_context_t *esni);
 /**
  * Obtain the ESNI secrets negotiated during the handshake.
  */
-struct st_ptls_esni_secret_t * ptls_get_esni_secret(ptls_t * ctx);
+struct st_ptls_esni_secret_t *ptls_get_esni_secret(ptls_t *ctx);
 
 /**
  *

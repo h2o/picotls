@@ -241,7 +241,7 @@ static int x9_62_setup_pubkey(struct st_x9_62_keyex_context_t *ctx)
 
 static int x9_62_create_key_exchange(ptls_key_exchange_algorithm_t *algo, ptls_key_exchange_context_t **_ctx)
 {
-    EC_GROUP* group = NULL;
+    EC_GROUP *group = NULL;
     struct st_x9_62_keyex_context_t *ctx = NULL;
     int ret;
 
@@ -604,7 +604,6 @@ int ptls_openssl_create_key_exchange(ptls_key_exchange_context_t **ctx, EVP_PKEY
 
     default:
         return PTLS_ERROR_INCOMPATIBLE_KEY;
-
     }
 }
 
@@ -1221,7 +1220,8 @@ Exit:
     return ret;
 }
 
-static void cleanup_cipher_ctx(EVP_CIPHER_CTX *ctx) {
+static void cleanup_cipher_ctx(EVP_CIPHER_CTX *ctx)
+{
     if (!EVP_CIPHER_CTX_cleanup(ctx)) {
         fprintf(stderr, "EVP_CIPHER_CTX_cleanup() failed\n");
         abort();
