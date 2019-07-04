@@ -416,7 +416,7 @@ typedef struct st_ptls_esni_context_t {
 
 #define PTLS_ESNI_NONCE_SIZE 16
 
-struct st_ptls_esni_secret_t {
+typedef struct st_ptls_esni_secret_t {
     ptls_iovec_t secret;
     uint8_t nonce[PTLS_ESNI_NONCE_SIZE];
     uint8_t esni_contents_hash[PTLS_MAX_DIGEST_SIZE];
@@ -430,7 +430,7 @@ struct st_ptls_esni_secret_t {
         } client;
     };
     uint16_t version;
-};
+} ptls_esni_secret_t;
 
 #define PTLS_CALLBACK_TYPE0(ret, name)                                                                                             \
     typedef struct st_ptls_##name##_t {                                                                                            \
@@ -1186,7 +1186,7 @@ void ptls_esni_dispose_context(ptls_esni_context_t *esni);
 /**
  * Obtain the ESNI secrets negotiated during the handshake.
  */
-struct st_ptls_esni_secret_t *ptls_get_esni_secret(ptls_t *ctx);
+ptls_esni_secret_t *ptls_get_esni_secret(ptls_t *ctx);
 
 /**
  *

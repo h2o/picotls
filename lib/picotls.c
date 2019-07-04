@@ -194,7 +194,7 @@ struct st_ptls_t {
     /**
      * esni
      */
-    struct st_ptls_esni_secret_t *esni;
+    ptls_esni_secret_t *esni;
     /**
      * exporter master secret (either 0rtt or 1rtt)
      */
@@ -1704,7 +1704,7 @@ Exit:
     return ret;
 }
 
-static void free_esni_secret(struct st_ptls_esni_secret_t **esni, int is_server)
+static void free_esni_secret(ptls_esni_secret_t **esni, int is_server)
 {
     assert(*esni != NULL);
     if ((*esni)->secret.base != NULL) {
@@ -1718,7 +1718,7 @@ static void free_esni_secret(struct st_ptls_esni_secret_t **esni, int is_server)
     *esni = NULL;
 }
 
-static int client_setup_esni(ptls_context_t *ctx, struct st_ptls_esni_secret_t **esni, ptls_iovec_t esni_keys, char **published_sni,
+static int client_setup_esni(ptls_context_t *ctx, ptls_esni_secret_t **esni, ptls_iovec_t esni_keys, char **published_sni,
                              const uint8_t *client_random)
 {
     ptls_iovec_t peer_key;
@@ -1757,7 +1757,7 @@ Exit:
     return ret;
 }
 
-static int emit_esni_extension(struct st_ptls_esni_secret_t *esni, ptls_buffer_t *buf, ptls_iovec_t esni_keys,
+static int emit_esni_extension(ptls_esni_secret_t *esni, ptls_buffer_t *buf, ptls_iovec_t esni_keys,
                                const char *server_name, size_t key_share_ch_off, size_t key_share_ch_len)
 {
     ptls_aead_context_t *aead = NULL;
@@ -2904,7 +2904,7 @@ Exit:
     return ret;
 }
 
-static int client_hello_decrypt_esni(ptls_context_t *ctx, ptls_iovec_t *server_name, struct st_ptls_esni_secret_t **secret,
+static int client_hello_decrypt_esni(ptls_context_t *ctx, ptls_iovec_t *server_name, ptls_esni_secret_t **secret,
                                      struct st_ptls_client_hello_t *ch)
 {
     ptls_esni_context_t **esni;
@@ -5215,7 +5215,7 @@ void ptls_esni_dispose_context(ptls_esni_context_t *esni)
 /**
  * Obtain the ESNI secrets negotiated during the handshake.
  */
-struct st_ptls_esni_secret_t *ptls_get_esni_secret(ptls_t *ctx)
+ptls_esni_secret_t *ptls_get_esni_secret(ptls_t *ctx)
 {
     return ctx->esni;
 }
