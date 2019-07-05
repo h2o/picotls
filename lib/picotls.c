@@ -458,25 +458,45 @@ static inline void init_extension_bitmap(struct st_ptls_extension_bitmap_t *bitm
 #undef EXT
 }
 
+#ifndef __has_builtin
+#define __has_builtin(x) 0
+#endif
+
 static uint16_t ntoh16(const uint8_t *src)
 {
+#if __has_builtin(__builtin_bswap16) || defined(__GNUC__)
+    return __builtin_bswap16(*src);
+#else
     return (uint16_t)src[0] << 8 | src[1];
+#endif
 }
 
 static uint32_t ntoh24(const uint8_t *src)
 {
+#if __has_builtin(__builtin_bswap16) || defined(__GNUC__)
+    return __builtin_bswap16(*src) << 8 | src[2];
+#else
     return (uint32_t)src[0] << 16 | (uint32_t)src[1] << 8 | src[2];
+#endif
 }
 
 static uint32_t ntoh32(const uint8_t *src)
 {
+#if __has_builtin(__builtin_bswap32) || defined(__GNUC__)
+    return __builtin_bswap32(*src);
+#else
     return (uint32_t)src[0] << 24 | (uint32_t)src[1] << 16 | (uint32_t)src[2] << 8 | src[3];
+#endif
 }
 
 static uint64_t ntoh64(const uint8_t *src)
 {
+#if __has_builtin(__builtin_bswap64) || defined(__GNUC__)
+    return __builtin_bswap64(*src);
+#else
     return (uint64_t)src[0] << 56 | (uint64_t)src[1] << 48 | (uint64_t)src[2] << 40 | (uint64_t)src[3] << 32 |
            (uint64_t)src[4] << 24 | (uint64_t)src[5] << 16 | (uint64_t)src[6] << 8 | src[7];
+#endif
 }
 
 void ptls_buffer__release_memory(ptls_buffer_t *buf)
