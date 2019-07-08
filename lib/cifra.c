@@ -43,6 +43,7 @@
 #include "picotls.h"
 #include "picotls/minicrypto.h"
 
+#ifndef read_entropy
 #ifdef _WINDOWS
 #ifdef _WINDOWS_XP
  /* The modern BCrypt API is only available on Windows Vista and later versions.
@@ -115,6 +116,7 @@ static void read_entropy(uint8_t *entropy, size_t size)
 
     close(fd);
 }
+#endif
 #endif
 
 void ptls_minicrypto_random_bytes(void *buf, size_t len)
