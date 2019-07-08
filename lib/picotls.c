@@ -441,26 +441,35 @@ static inline void init_extension_bitmap(struct st_ptls_extension_bitmap_t *bitm
 #undef EXT
 }
 
+#ifndef ntoh16
 static uint16_t ntoh16(const uint8_t *src)
 {
     return (uint16_t)src[0] << 8 | src[1];
 }
+#endif
 
+
+#ifndef ntoh24
 static uint32_t ntoh24(const uint8_t *src)
 {
     return (uint32_t)src[0] << 16 | (uint32_t)src[1] << 8 | src[2];
 }
+#endif
 
+#ifndef ntoh32
 static uint32_t ntoh32(const uint8_t *src)
 {
     return (uint32_t)src[0] << 24 | (uint32_t)src[1] << 16 | (uint32_t)src[2] << 8 | src[3];
 }
+#endif
 
+#ifndef ntoh64
 static uint64_t ntoh64(const uint8_t *src)
 {
     return (uint64_t)src[0] << 56 | (uint64_t)src[1] << 48 | (uint64_t)src[2] << 40 | (uint64_t)src[3] << 32 |
            (uint64_t)src[4] << 24 | (uint64_t)src[5] << 16 | (uint64_t)src[6] << 8 | src[7];
 }
+#endif
 
 void ptls_buffer__release_memory(ptls_buffer_t *buf)
 {
