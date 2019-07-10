@@ -1658,8 +1658,8 @@ static int parse_esni_keys(ptls_context_t *ctx, uint16_t *esni_version, ptls_key
     });
 
     /* check validity period */
-    now = ctx->get_time->cb(ctx->get_time) / 1000;
-    if (!(not_before <= now && now <= not_after)) {
+    now = ctx->get_time->cb(ctx->get_time);
+    if (!(not_before * 1000 <= now && now <= not_after * 1000)) {
         ret = PTLS_ALERT_DECODE_ERROR;
         goto Exit;
     }
