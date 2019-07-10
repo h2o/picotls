@@ -254,7 +254,7 @@ uECC_VLI_API bitcount_t uECC_vli_numBits(const uECC_word_t *vli, const wordcount
         digit >>= 1;
     }
 
-    return (((bitcount_t)(num_digits - 1) << uECC_WORD_BITS_SHIFT) + i);
+    return (uint8_t)(((bitcount_t)(num_digits - 1) << uECC_WORD_BITS_SHIFT) + i);
 }
 
 /* Sets dest = src. */
@@ -307,7 +307,7 @@ uECC_VLI_API cmpresult_t uECC_vli_cmp(const uECC_word_t *left,
     uECC_word_t tmp[uECC_MAX_WORDS];
     uECC_word_t neg = !!uECC_vli_sub(tmp, left, right, num_words);
     uECC_word_t equal = uECC_vli_isZero(tmp, num_words);
-    return (!equal - 2 * neg);
+    return (cmpresult_t)(!equal - 2 * neg);
 }
 
 /* Computes vli = vli >> 1. */
@@ -957,7 +957,7 @@ uECC_VLI_API void uECC_vli_nativeToBytes(uint8_t *bytes,
     wordcount_t i;
     for (i = 0; i < num_bytes; ++i) {
         unsigned b = num_bytes - 1 - i;
-        bytes[i] = native[b / uECC_WORD_SIZE] >> (8 * (b % uECC_WORD_SIZE));
+        bytes[i] = (uint8_t)(native[b / uECC_WORD_SIZE] >> (8 * (b % uECC_WORD_SIZE)));
     }
 }
 
