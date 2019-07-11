@@ -6,7 +6,7 @@ PROJECT(picotls)
 FIND_PACKAGE(PkgConfig REQUIRED)
 
 SET(CMAKE_C_FLAGS "-std=c99 -Wall -O2 -g ${CC_WARNING_FLAGS} ${CMAKE_C_FLAGS}")
-INCLUDE_DIRECTORIES(${OPENSSL_INCLUDE_DIR} deps/cifra/src/ext deps/cifra/src deps/micro-ecc deps/picotest include)
+INCLUDE_DIRECTORIES(deps/cifra/src/ext deps/cifra/src deps/micro-ecc deps/picotest include)
 SET(MINICRYPTO_LIBRARY_FILES
     deps/micro-ecc/uECC.c
     deps/cifra/src/aes.c
@@ -78,7 +78,7 @@ ELSEIF ("${CMAKE_SYSTEM_NAME}" MATCHES "SunOS")
 ENDIF ()
 
 FIND_LIBRARY(LIBC_RESOLV_LIB "resolv")
-IF (LIBC_RESOLV_LIB)
+IF (OPENSSL_FOUND AND LIBC_RESOLV_LIB)
     TARGET_LINK_LIBRARIES(cli ${LIBC_RESOLV_LIB})
 ENDIF ()
 
