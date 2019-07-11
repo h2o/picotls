@@ -254,7 +254,7 @@ uECC_VLI_API bitcount_t uECC_vli_numBits(const uECC_word_t *vli, const wordcount
         digit >>= 1;
     }
 
-    return (uint8_t)(((bitcount_t)(num_digits - 1) << uECC_WORD_BITS_SHIFT) + i);
+    return (((bitcount_t)(num_digits - 1) << uECC_WORD_BITS_SHIFT) + i);
 }
 
 /* Sets dest = src. */
