@@ -26,9 +26,15 @@
 extern "C" {
 #endif
 
+#ifdef _WINDOWS
+#include "wincompat.h"
+#endif
+
 #include <assert.h>
 #include <inttypes.h>
 #include <sys/types.h>
+
+
 
 #ifndef PTLS_FUZZ_HANDSHAKE
 #define PTLS_FUZZ_HANDSHAKE 0
