@@ -47,5 +47,8 @@
     <ClCompile Include="..\..\lib\uecc.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\lib\cifra\random.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
 </Project>

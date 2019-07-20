@@ -159,6 +159,7 @@
     <ClCompile Include="..\..\lib\cifra\aes128.c" />
     <ClCompile Include="..\..\lib\cifra\aes256.c" />
     <ClCompile Include="..\..\lib\cifra\chacha20.c" />
+    <ClCompile Include="..\..\lib\cifra\random.c" />
     <ClCompile Include="..\..\lib\cifra\x25519.c" />
     <ClCompile Include="..\..\lib\ffx.c" />
     <ClCompile Include="..\..\lib\minicrypto-pem.c" />
