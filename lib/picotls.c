@@ -93,14 +93,25 @@
 #endif
 
 #if PICOTLS_USE_DTRACE
-#define PTLS_PROBE(LABEL, ...)                                                                                                     \
+#define PTLS_PROBE0(LABEL, tls)                                                                                                    \
     do {                                                                                                                           \
-        if (PTLS_UNLIKELY(PICOTLS_PICOTLS_##LABEL##_ENABLED())) {                                                                  \
+        ptls_t *_tls = (tls);                                                                                                      \
+        if (PTLS_UNLIKELY(PICOTLS_PICOTLS_##LABEL##_ENABLED()) && _tls->ctx->is_traced != NULL &&                                  \
+            _tls->ctx->is_traced->cb(_tls->ctx->is_traced, _tls)) {                                                                \
+            PICOTLS_PICOTLS_##LABEL(_tls);                                                                                         \
+        }                                                                                                                          \
+    } while (0)
+#define PTLS_PROBE(LABEL, _tls, ...)                                                                                               \
+    do {                                                                                                                           \
+        ptls_t *_tls = (tls);                                                                                                      \
+        if (PTLS_UNLIKELY(PICOTLS_PICOTLS_##LABEL##_ENABLED()) && _tls->ctx->is_traced != NULL &&                                  \
+            _tls->ctx->is_traced->cb(_tls->ctx->is_traced, _tls)) {                                                                \
             PICOTLS_PICOTLS_##LABEL(__VA_ARGS__);                                                                                  \
         }                                                                                                                          \
     } while (0)
 #else
-#define PTLS_PROBE(LABEL, ...)
+#define PTLS_PROBE0(LABEL, tls)
+#define PTLS_PROBE(LABEL, tls, ...)
 #endif
 
 /**
@@ -4143,7 +4154,7 @@ ptls_t *ptls_new(ptls_context_t *ctx, int is_server)
 
 void ptls_free(ptls_t *tls)
 {
-    PTLS_PROBE(FREE, tls);
+    PTLS_PROBE0(FREE, tls);
     ptls_buffer_dispose(&tls->recvbuf.rec);
     ptls_buffer_dispose(&tls->recvbuf.mess);
     free_exporter_master_secret(tls, 1);

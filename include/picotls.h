@@ -563,6 +563,10 @@ typedef struct st_ptls_decompress_certificate_t {
  */
 PTLS_CALLBACK_TYPE(int, update_esni_key, ptls_t *tls, ptls_iovec_t secret, ptls_hash_algorithm_t *hash,
                    const void *hashed_esni_contents);
+/**
+ * return if USDT probes should be activated for the connection
+ */
+PTLS_CALLBACK_TYPE(int, is_traced, ptls_t *tls);
 
 /**
  * the configuration
@@ -673,6 +677,10 @@ struct st_ptls_context_t {
      *
      */
     ptls_update_esni_key_t *update_esni_key;
+    /**
+     *
+     */
+    ptls_is_traced_t *is_traced;
     /**
      *
      */
