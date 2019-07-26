@@ -106,7 +106,7 @@
         ptls_t *_tls = (tls);                                                                                                      \
         if (PTLS_UNLIKELY(PICOTLS_PICOTLS_##LABEL##_ENABLED()) && _tls->ctx->is_traced != NULL &&                                  \
             _tls->ctx->is_traced->cb(_tls->ctx->is_traced, _tls)) {                                                                \
-            PICOTLS_PICOTLS_##LABEL(__VA_ARGS__);                                                                                  \
+            PICOTLS_PICOTLS_##LABEL(_tls, __VA_ARGS__);                                                                            \
         }                                                                                                                          \
     } while (0)
 #else
