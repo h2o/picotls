@@ -93,21 +93,21 @@
 #endif
 
 #if PICOTLS_USE_DTRACE
+#define PTLS_SHOULD_PROBE(LABEL, tls)                                                                                              \
+    (PTLS_UNLIKELY(PICOTLS_PICOTLS_##LABEL##_ENABLED()) &&                                                                         \
+     (tls->ctx->is_traced == NULL || tls->ctx->is_traced->cb(tls->ctx->is_traced, tls)))
+
 #define PTLS_PROBE0(LABEL, tls)                                                                                                    \
     do {                                                                                                                           \
         ptls_t *_tls = (tls);                                                                                                      \
-        if (PTLS_UNLIKELY(PICOTLS_PICOTLS_##LABEL##_ENABLED()) && _tls->ctx->is_traced != NULL &&                                  \
-            _tls->ctx->is_traced->cb(_tls->ctx->is_traced, _tls)) {                                                                \
+        if (PTLS_SHOULD_PROBE(LABEL, _tls))                                                                                        \
             PICOTLS_PICOTLS_##LABEL(_tls);                                                                                         \
-        }                                                                                                                          \
     } while (0)
 #define PTLS_PROBE(LABEL, tls, ...)                                                                                                \
     do {                                                                                                                           \
         ptls_t *_tls = (tls);                                                                                                      \
-        if (PTLS_UNLIKELY(PICOTLS_PICOTLS_##LABEL##_ENABLED()) && _tls->ctx->is_traced != NULL &&                                  \
-            _tls->ctx->is_traced->cb(_tls->ctx->is_traced, _tls)) {                                                                \
+        if (PTLS_SHOULD_PROBE(LABEL, _tls))                                                                                        \
             PICOTLS_PICOTLS_##LABEL(_tls, __VA_ARGS__);                                                                            \
-        }                                                                                                                          \
     } while (0)
 #else
 #define PTLS_PROBE0(LABEL, tls)
