@@ -101,7 +101,7 @@
             PICOTLS_PICOTLS_##LABEL(_tls);                                                                                         \
         }                                                                                                                          \
     } while (0)
-#define PTLS_PROBE(LABEL, _tls, ...)                                                                                               \
+#define PTLS_PROBE(LABEL, tls, ...)                                                                                                \
     do {                                                                                                                           \
         ptls_t *_tls = (tls);                                                                                                      \
         if (PTLS_UNLIKELY(PICOTLS_PICOTLS_##LABEL##_ENABLED()) && _tls->ctx->is_traced != NULL &&                                  \
