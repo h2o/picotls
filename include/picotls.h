@@ -276,6 +276,8 @@ typedef struct st_ptls_aead_context_t {
     size_t (*do_encrypt_final)(struct st_ptls_aead_context_t *ctx, void *output);
     size_t (*do_decrypt)(struct st_ptls_aead_context_t *ctx, void *output, const void *input, size_t inlen, const void *iv,
                          const void *aad, size_t aadlen);
+    size_t (*do_encrypt)(struct st_ptls_aead_context_t *ctx, void *output, const void *input, size_t inlen, uint64_t seq,
+                         const void *iv, const void *aad, size_t aadlen);
 } ptls_aead_context_t;
 
 /**
