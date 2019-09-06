@@ -1014,11 +1014,11 @@ void **ptls_get_data_ptr(ptls_t *tls);
 /**
  *
  */
-int ptls_is_traced(ptls_t *tls);
+int ptls_skip_tracing(ptls_t *tls);
 /**
  *
  */
-void ptls_set_is_traced(ptls_t *tls, int is_traced);
+void ptls_set_skip_tracing(ptls_t *tls, int skip_tracing);
 /**
  * proceeds with the handshake, optionally taking some input from peer. The function returns zero in case the handshake completed
  * successfully. PTLS_ERROR_IN_PROGRESS is returned in case the handshake is incomplete. Otherwise, an error value is returned. The

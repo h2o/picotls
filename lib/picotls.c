@@ -93,7 +93,7 @@
 #endif
 
 #if PICOTLS_USE_DTRACE
-#define PTLS_SHOULD_PROBE(LABEL, tls) (PTLS_UNLIKELY(PICOTLS_##LABEL##_ENABLED()) && (tls)->is_traced)
+#define PTLS_SHOULD_PROBE(LABEL, tls) (PTLS_UNLIKELY(PICOTLS_##LABEL##_ENABLED()) && !(tls)->skip_tracing)
 #define PTLS_PROBE0(LABEL, tls)                                                                                                    \
     do {                                                                                                                           \
         ptls_t *_tls = (tls);                                                                                                      \
@@ -230,7 +230,7 @@ struct st_ptls_t {
     unsigned send_change_cipher_spec : 1;
     unsigned needs_key_update : 1;
     unsigned key_update_send_request : 1;
-    unsigned is_traced : 1;
+    unsigned skip_tracing : 1;
     /**
      * misc.
      */
@@ -4272,14 +4272,14 @@ void **ptls_get_data_ptr(ptls_t *tls)
     return &tls->data_ptr;
 }
 
-int ptls_is_traced(ptls_t *tls)
+int ptls_skip_tracing(ptls_t *tls)
 {
-    return tls->is_traced;
+    return tls->skip_tracing;
 }
 
-void ptls_set_is_traced(ptls_t *tls, int is_traced)
+void ptls_set_skip_tracing(ptls_t *tls, int skip_tracing)
 {
-    tls->is_traced = is_traced;
+    tls->skip_tracing = skip_tracing;
 }
 
 static int handle_handshake_message(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_iovec_t message, int is_end_of_record,
