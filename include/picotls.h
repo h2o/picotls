@@ -469,6 +469,10 @@ typedef struct st_ptls_on_client_hello_parameters_t {
      */
     ptls_iovec_t server_name;
     /**
+     * Raw value of the client_hello message.
+     */
+    ptls_iovec_t raw_message;
+    /**
      *
      */
     struct {

@@ -3599,7 +3599,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
             server_name = ch.server_name;
         }
         if (tls->ctx->on_client_hello != NULL) {
-            ptls_on_client_hello_parameters_t params = {server_name,
+            ptls_on_client_hello_parameters_t params = {server_name, message,
                                                         {ch.alpn.list, ch.alpn.count},
                                                         {ch.signature_algorithms.list, ch.signature_algorithms.count},
                                                         {ch.cert_compression_algos.list, ch.cert_compression_algos.count},
