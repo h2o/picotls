@@ -493,7 +493,7 @@ typedef struct st_ptls_on_client_hello_parameters_t {
     /**
      * if ESNI was used
      */
-    uint8_t esni : 1;
+    unsigned int esni : 1;
 } ptls_on_client_hello_parameters_t;
 
 /**
