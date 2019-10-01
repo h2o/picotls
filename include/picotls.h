@@ -439,15 +439,13 @@ typedef struct st_ptls_esni_secret_t {
     ptls_iovec_t secret;
     uint8_t nonce[PTLS_ESNI_NONCE_SIZE];
     uint8_t esni_contents_hash[PTLS_MAX_DIGEST_SIZE];
-    union {
-        struct {
-            ptls_key_exchange_algorithm_t *key_share;
-            ptls_cipher_suite_t *cipher;
-            ptls_iovec_t pubkey;
-            uint8_t record_digest[PTLS_MAX_DIGEST_SIZE];
-            uint16_t padded_length;
-        } client;
-    };
+    struct {
+        ptls_key_exchange_algorithm_t *key_share;
+        ptls_cipher_suite_t *cipher;
+        ptls_iovec_t pubkey;
+        uint8_t record_digest[PTLS_MAX_DIGEST_SIZE];
+        uint16_t padded_length;
+    } client;
     uint16_t version;
 } ptls_esni_secret_t;
 
