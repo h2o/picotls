@@ -1222,10 +1222,14 @@ char *ptls_hexdump(char *dst, const void *src, size_t len);
  * the default get_time callback
  */
 extern ptls_get_time_t ptls_get_time;
+#if PICOTLS_USE_DTRACE
 /**
  *
  */
 extern PTLS_THREADLOCAL unsigned ptls_default_skip_tracing;
+#else
+#define ptls_default_skip_tracing 0
+#endif
 
 /* inline functions */
 
