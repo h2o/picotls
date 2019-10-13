@@ -1107,7 +1107,9 @@ void ptls_cipher_free(ptls_cipher_context_t *ctx);
  */
 static void ptls_cipher_init(ptls_cipher_context_t *ctx, const void *iv);
 /**
- * encrypts given text
+ * Encrypts given text. The function must be used in a way that the output length would be equal to the input length. For example,
+ * when using a block cipher in ECB mode, `len` must be a multiple of the block size when using a block cipher. The length can be
+ * of any value when using a stream cipher or a block cipher in CTR mode.
  */
 static void ptls_cipher_encrypt(ptls_cipher_context_t *ctx, void *output, const void *input, size_t len);
 /**
