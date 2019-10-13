@@ -66,7 +66,7 @@ static void shift_buffer(ptls_buffer_t *buf, size_t delta)
 static int handle_connection(int sockfd, ptls_context_t *ctx, const char *server_name, const char *input_file,
                              ptls_handshake_properties_t *hsprop, int request_key_update, int keep_sender_open)
 {
-    ptls_t *tls = ptls_new(ctx, server_name == NULL);
+    ptls_t *tls = server_name == NULL ? ptls_server_new(ctx) : ptls_client_new(ctx);
     ptls_buffer_t rbuf, encbuf, ptbuf;
     char bytebuf[16384];
     enum { IN_HANDSHAKE, IN_1RTT, IN_SHUTDOWN } state = IN_HANDSHAKE;
