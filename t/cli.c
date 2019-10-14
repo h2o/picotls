@@ -66,7 +66,7 @@ static void shift_buffer(ptls_buffer_t *buf, size_t delta)
 static int handle_connection(int sockfd, ptls_context_t *ctx, const char *server_name, const char *input_file,
                              ptls_handshake_properties_t *hsprop, int request_key_update, int keep_sender_open)
 {
-    ptls_t *tls = server_name == NULL ? ptls_server_new(ctx) : ptls_client_new(ctx);
+    ptls_t *tls = ptls_new(ctx, server_name == NULL);
     ptls_buffer_t rbuf, encbuf, ptbuf;
     char bytebuf[16384];
     enum { IN_HANDSHAKE, IN_1RTT, IN_SHUTDOWN } state = IN_HANDSHAKE;
@@ -228,7 +228,8 @@ static int handle_connection(int sockfd, ptls_context_t *ctx, const char *server
                 ptls_buffer_t wbuf;
                 uint8_t wbuf_small[32];
                 ptls_buffer_init(&wbuf, wbuf_small, sizeof(wbuf_small));
-                if ((ret = ptls_send_alert(tls, &wbuf, PTLS_ALERT_LEVEL_WARNING, PTLS_ALERT_CLOSE_NOTIFY)) != 0) {
+                if ((ret = ptls_send_alert(tls, &wbuf,
+                           PTLS_ALERT_LEVEL_WARNING, PTLS_ALERT_CLOSE_NOTIFY)) != 0) {
                     fprintf(stderr, "ptls_send_alert:%d\n", ret);
                 }
                 if (wbuf.off != 0)
@@ -274,7 +275,7 @@ static int run_server(struct sockaddr *sa, socklen_t salen, ptls_context_t *ctx,
         return 1;
     }
 
-    fprintf(stderr, "server started on port %d\n", ntohs(((struct sockaddr_in *)sa)->sin_port));
+    fprintf(stderr, "server started on port %d\n", ntohs(((struct sockaddr_in *) sa)->sin_port));
     while (1) {
         fprintf(stderr, "waiting for connections\n");
         if ((conn_fd = accept(listen_fd, NULL, 0)) != -1)
