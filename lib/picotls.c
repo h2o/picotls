@@ -4609,7 +4609,7 @@ ServerSkipEarlyData:
     goto NextRecord;
 }
 
-static void init_record_message_emmitter(ptls_t *tls, struct st_ptls_record_message_emitter_t *emitter, ptls_buffer_t *sendbuf)
+static void init_record_message_emitter(ptls_t *tls, struct st_ptls_record_message_emitter_t *emitter, ptls_buffer_t *sendbuf)
 {
     *emitter = (struct st_ptls_record_message_emitter_t){
         {sendbuf, &tls->traffic_protection.enc, 5, begin_record_message, commit_record_message}};
@@ -4622,7 +4622,7 @@ int ptls_handshake(ptls_t *tls, ptls_buffer_t *_sendbuf, const void *input, size
 
     assert(tls->state < PTLS_STATE_POST_HANDSHAKE_MIN);
 
-    init_record_message_emmitter(tls, &emitter, _sendbuf);
+    init_record_message_emitter(tls, &emitter, _sendbuf);
     size_t sendbuf_orig_off = emitter.super.buf->off;
 
     /* special handlings */
@@ -4715,7 +4715,7 @@ static int update_send_key(ptls_t *tls, ptls_buffer_t *_sendbuf, int request_upd
     struct st_ptls_record_message_emitter_t emitter;
     int ret;
 
-    init_record_message_emmitter(tls, &emitter, _sendbuf);
+    init_record_message_emitter(tls, &emitter, _sendbuf);
     size_t sendbuf_orig_off = emitter.super.buf->off;
 
     ptls_push_message(&emitter.super, NULL, PTLS_HANDSHAKE_TYPE_KEY_UPDATE,
