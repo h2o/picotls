@@ -4156,7 +4156,7 @@ ptls_t *ptls_client_new(ptls_context_t *ctx)
     log_client_random(tls);
     tls->ctx->random_bytes(tls->client.legacy_session_id, sizeof(tls->client.legacy_session_id));
 
-    PTLS_PROBE(NEW, tls, 0); /* not quite sure this makes sense */
+    PTLS_PROBE(NEW, tls, 0);
     return tls;
 }
 
@@ -4166,7 +4166,7 @@ ptls_t *ptls_server_new(ptls_context_t *ctx)
     tls->state = PTLS_STATE_SERVER_EXPECT_CLIENT_HELLO;
     tls->server.early_data_skipped_bytes = UINT32_MAX;
 
-    PTLS_PROBE(NEW, tls, 1); /* not quite sure this makes sense */
+    PTLS_PROBE(NEW, tls, 1);
     return tls;
 }
 
