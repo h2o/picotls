@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio 15
-VisualStudioVersion = 15.0.26228.9
+# Visual Studio Version 16
+VisualStudioVersion = 16.0.29230.47
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "picotlsvs", "picotlsvs\picotlsvs.vcxproj", "{D0265367-FCCF-47A4-95FD-C33BECAB3486}"
 	ProjectSection(ProjectDependencies) = postProject
@@ -42,6 +42,8 @@ EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "picotls-openssl", "picotls-openssl\picotls-openssl.vcxproj", "{56C264BF-822B-4F29-B512-5B26157CA2EC}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "picotls-minicrypto-deps", "picotls-minicrypto-deps\picotls-minicrypto-deps.vcxproj", "{499B82B3-F5A5-4C2E-91EF-A2F77CBC33F5}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "picotls-bcrypt", "picotls-bcrypt\picotls-bcrypt.vcxproj", "{0A0E7AF2-05C8-488B-867C-D83B776B8BF4}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -115,6 +117,14 @@ Global
 		{499B82B3-F5A5-4C2E-91EF-A2F77CBC33F5}.Release|x64.Build.0 = Release|x64
 		{499B82B3-F5A5-4C2E-91EF-A2F77CBC33F5}.Release|x86.ActiveCfg = Release|Win32
 		{499B82B3-F5A5-4C2E-91EF-A2F77CBC33F5}.Release|x86.Build.0 = Release|Win32
+		{0A0E7AF2-05C8-488B-867C-D83B776B8BF4}.Debug|x64.ActiveCfg = Debug|x64
+		{0A0E7AF2-05C8-488B-867C-D83B776B8BF4}.Debug|x64.Build.0 = Debug|x64
+		{0A0E7AF2-05C8-488B-867C-D83B776B8BF4}.Debug|x86.ActiveCfg = Debug|Win32
+		{0A0E7AF2-05C8-488B-867C-D83B776B8BF4}.Debug|x86.Build.0 = Debug|Win32
+		{0A0E7AF2-05C8-488B-867C-D83B776B8BF4}.Release|x64.ActiveCfg = Release|x64
+		{0A0E7AF2-05C8-488B-867C-D83B776B8BF4}.Release|x64.Build.0 = Release|x64
+		{0A0E7AF2-05C8-488B-867C-D83B776B8BF4}.Release|x86.ActiveCfg = Release|Win32
+		{0A0E7AF2-05C8-488B-867C-D83B776B8BF4}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
