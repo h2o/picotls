@@ -975,6 +975,10 @@ ptls_t *ptls_client_new(ptls_context_t *ctx);
  */
 ptls_t *ptls_server_new(ptls_context_t *ctx);
 /**
+ * creates a object handle new TLS connection
+ */
+static ptls_t *ptls_new(ptls_context_t *ctx, int is_server);
+/**
  * releases all resources associated to the object
  */
 void ptls_free(ptls_t *tls);
@@ -1239,6 +1243,11 @@ extern PTLS_THREADLOCAL unsigned ptls_default_skip_tracing;
 #endif
 
 /* inline functions */
+
+inline ptls_t *ptls_new(ptls_context_t *ctx, int is_server)
+{
+    return is_server ? ptls_server_new(ctx) : ptls_client_new(ctx);
+}
 
 inline ptls_iovec_t ptls_iovec_init(const void *p, size_t len)
 {
