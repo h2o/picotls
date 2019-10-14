@@ -967,10 +967,17 @@ int ptls_decode64(uint64_t *value, const uint8_t **src, const uint8_t *end);
     } while (0)
 
 /**
- * create a object to handle new TLS connection. Client-side of a TLS connection is created if server_name is non-NULL. Otherwise,
- * a server-side connection is created.
+ * create a client object to handle new TLS connection
  */
-ptls_t *ptls_new(ptls_context_t *ctx, int is_server);
+ptls_t *ptls_client_new(ptls_context_t *ctx);
+/**
+ * create a server object to handle new TLS connection
+ */
+ptls_t *ptls_server_new(ptls_context_t *ctx);
+/**
+ * creates a object handle new TLS connection
+ */
+static ptls_t *ptls_new(ptls_context_t *ctx, int is_server);
 /**
  * releases all resources associated to the object
  */
@@ -1174,6 +1181,10 @@ size_t ptls_get_read_epoch(ptls_t *tls);
  */
 int ptls_handle_message(ptls_t *tls, ptls_buffer_t *sendbuf, size_t epoch_offsets[5], size_t in_epoch, const void *input,
                         size_t inlen, ptls_handshake_properties_t *properties);
+int ptls_client_handle_message(ptls_t *tls, ptls_buffer_t *sendbuf, size_t epoch_offsets[5], size_t in_epoch, const void *input,
+                               size_t inlen, ptls_handshake_properties_t *properties);
+int ptls_server_handle_message(ptls_t *tls, ptls_buffer_t *sendbuf, size_t epoch_offsets[5], size_t in_epoch, const void *input,
+                               size_t inlen, ptls_handshake_properties_t *properties);
 /**
  * internal
  */
@@ -1234,6 +1245,11 @@ extern PTLS_THREADLOCAL unsigned ptls_default_skip_tracing;
 #endif
 
 /* inline functions */
+
+inline ptls_t *ptls_new(ptls_context_t *ctx, int is_server)
+{
+    return is_server ? ptls_server_new(ctx) : ptls_client_new(ctx);
+}
 
 inline ptls_iovec_t ptls_iovec_init(const void *p, size_t len)
 {
