@@ -4306,7 +4306,7 @@ static int handle_client_handshake_message(ptls_t *tls, ptls_message_emitter_t *
                                            ptls_handshake_properties_t *properties)
 {
     uint8_t type = message.base[0];
-    int ret = 0;
+    int ret;
 
     switch (tls->state) {
     case PTLS_STATE_CLIENT_EXPECT_SERVER_HELLO:
@@ -4372,6 +4372,7 @@ static int handle_client_handshake_message(ptls_t *tls, ptls_message_emitter_t *
         break;
     default:
         assert(!"unexpected state");
+        ret = PTLS_ALERT_INTERNAL_ERROR;
         break;
     }
 
@@ -4385,7 +4386,7 @@ static int handle_server_handshake_message(ptls_t *tls, ptls_message_emitter_t *
                                            ptls_handshake_properties_t *properties)
 {
     uint8_t type = message.base[0];
-    int ret = 0;
+    int ret;
 
     switch (tls->state) {
     case PTLS_STATE_SERVER_EXPECT_CLIENT_HELLO:
@@ -4437,6 +4438,7 @@ static int handle_server_handshake_message(ptls_t *tls, ptls_message_emitter_t *
         break;
     default:
         assert(!"unexpected state");
+        ret = PTLS_ALERT_INTERNAL_ERROR;
         break;
     }
 
