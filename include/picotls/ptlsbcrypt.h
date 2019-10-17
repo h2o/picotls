@@ -46,44 +46,6 @@ extern ptls_cipher_suite_t ptls_bcrypt_aes128gcmsha256;
 extern ptls_cipher_suite_t ptls_bcrypt_aes256gcmsha384;
 #endif
 
-#if 0
-
-void ptls_openssl_random_bytes(void *buf, size_t len);
-/**
- * constructs a key exchange context. pkey's reference count is incremented.
- */
-int ptls_openssl_create_key_exchange(ptls_key_exchange_context_t **ctx, EVP_PKEY *pkey);
-
-struct st_ptls_openssl_signature_scheme_t {
-    uint16_t scheme_id;
-    const EVP_MD *scheme_md;
-};
-
-typedef struct st_ptls_openssl_sign_certificate_t {
-    ptls_sign_certificate_t super;
-    EVP_PKEY *key;
-    struct st_ptls_openssl_signature_scheme_t schemes[4]; /* terminated by .scheme_id == UINT16_MAX */
-} ptls_openssl_sign_certificate_t;
-
-int ptls_openssl_init_sign_certificate(ptls_openssl_sign_certificate_t *self, EVP_PKEY *key);
-void ptls_openssl_dispose_sign_certificate(ptls_openssl_sign_certificate_t *self);
-int ptls_openssl_load_certificates(ptls_context_t *ctx, X509 *cert, STACK_OF(X509) * chain);
-
-typedef struct st_ptls_openssl_verify_certificate_t {
-    ptls_verify_certificate_t super;
-    X509_STORE *cert_store;
-} ptls_openssl_verify_certificate_t;
-
-int ptls_openssl_init_verify_certificate(ptls_openssl_verify_certificate_t *self, X509_STORE *store);
-void ptls_openssl_dispose_verify_certificate(ptls_openssl_verify_certificate_t *self);
-X509_STORE *ptls_openssl_create_default_certificate_store(void);
-
-int ptls_openssl_encrypt_ticket(ptls_buffer_t *dst, ptls_iovec_t src,
-                                int (*cb)(unsigned char *, unsigned char *, EVP_CIPHER_CTX *, HMAC_CTX *, int));
-int ptls_openssl_decrypt_ticket(ptls_buffer_t *dst, ptls_iovec_t src,
-                                int (*cb)(unsigned char *, unsigned char *, EVP_CIPHER_CTX *, HMAC_CTX *, int));
-#endif
-
 #ifdef __cplusplus
 }
 #endif
