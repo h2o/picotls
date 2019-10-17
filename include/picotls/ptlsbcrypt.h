@@ -19,14 +19,17 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
-#ifndef picotls_openssl_h
-#define picotls_openssl_h
+#ifndef picotls_bcrypt_h
+#define picotls_bcrypt_h
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 #include "../picotls.h"
+
+#ifdef _WINDOWS
+#include <bcrypt.h>
 
 extern ptls_cipher_algorithm_t ptls_bcrypt_aes128ecb;
 extern ptls_cipher_algorithm_t ptls_bcrypt_aes256ecb;
@@ -41,6 +44,7 @@ extern ptls_hash_algorithm_t ptls_bcrypt_sha384;
 
 extern ptls_cipher_suite_t ptls_bcrypt_aes128gcmsha256;
 extern ptls_cipher_suite_t ptls_bcrypt_aes256gcmsha384;
+#endif
 
 #if 0
 
@@ -84,4 +88,4 @@ int ptls_openssl_decrypt_ticket(ptls_buffer_t *dst, ptls_iovec_t src,
 }
 #endif
 
-#endif
+#endif /* picotls_bcrypt_h */
