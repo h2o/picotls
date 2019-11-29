@@ -165,11 +165,11 @@ size_t ptls_minicrypto_asn1_decode_private_key(ptls_asn1_pkcs8_private_key_t *pk
     return byte_index;
 }
 
-static int ptls_pem_parse_private_key(char const *pem_fname, ptls_asn1_pkcs8_private_key_t *pkey,
+static int ptls_pem_parse_private_key_from_memory(ptls_cred_buffer_t *mem, ptls_asn1_pkcs8_private_key_t *pkey,
                                       ptls_minicrypto_log_ctx_t *log_ctx)
 {
     size_t nb_keys = 0;
-    int ret = ptls_load_pem_objects(pem_fname, "PRIVATE KEY", &pkey->vec, 1, &nb_keys);
+    int ret = ptls_load_pem_objects_from_memory(mem, "PRIVATE KEY", &pkey->vec, 1, &nb_keys);
 
     if (ret == 0) {
         if (nb_keys != 1) {
@@ -191,6 +191,44 @@ static int ptls_pem_parse_private_key(char const *pem_fname, ptls_asn1_pkcs8_pri
         }
     }
 
+    return ret;
+}
+
+static int ptls_pem_parse_private_key(char const *pem_fname, ptls_asn1_pkcs8_private_key_t *pkey,
+                                      ptls_minicrypto_log_ctx_t *log_ctx)
+{
+    size_t nb_keys = 0;
+    int ret;
+    ptls_cred_buffer_t mem;
+
+    if ((ret = ptls_cred_buffer_set_from_file(&mem, pem_fname)) != 0) {
+        goto end;
+    }
+
+    ret = ptls_load_pem_objects_from_memory(&mem, "PRIVATE KEY", &pkey->vec, 1, &nb_keys);
+    if (ret == 0) {
+        if (nb_keys != 1) {
+            ret = PTLS_ERROR_PEM_LABEL_NOT_FOUND;
+        }
+    }
+
+    if (ret == 0 && nb_keys == 1) {
+        int decode_error = 0;
+
+        if (log_ctx != NULL) {
+            log_ctx->fn(log_ctx->ctx, "\nFound PRIVATE KEY, length = %d bytes\n", (int)pkey->vec.len);
+        }
+
+        (void)ptls_minicrypto_asn1_decode_private_key(pkey, &decode_error, log_ctx);
+
+        if (decode_error != 0) {
+            ret = decode_error;
+        }
+    }
+
+    /* Fallthrough */
+end:
+    ptls_cred_buffer_dispose(&mem);
     return ret;
 }
 
@@ -319,6 +357,34 @@ static int ptls_set_ecdsa_private_key(ptls_context_t *ctx, ptls_asn1_pkcs8_priva
     }
 
     return decode_error;
+}
+
+int ptls_minicrypto_load_private_key_from_memory(ptls_context_t *ctx, ptls_cred_buffer_t *mem)
+{
+    ptls_asn1_pkcs8_private_key_t pkey = {{0}};
+    int ret = ptls_pem_parse_private_key_from_memory(mem, &pkey, NULL);
+
+    if (ret != 0)
+        goto err;
+
+    /* Check that this is the expected key type.
+     * At this point, the minicrypto library only supports ECDSA keys.
+     * In theory, we could add support for RSA keys at some point.
+     */
+    if (pkey.algorithm_length != sizeof(ptls_asn1_algorithm_ecdsa) ||
+        memcmp(pkey.vec.base + pkey.algorithm_index, ptls_asn1_algorithm_ecdsa, sizeof(ptls_asn1_algorithm_ecdsa)) != 0) {
+        ret = -1;
+        goto err;
+    }
+
+    ret = ptls_set_ecdsa_private_key(ctx, &pkey, NULL);
+
+err:
+    if (pkey.vec.base) {
+        ptls_clear_memory(pkey.vec.base, pkey.vec.len);
+        free(pkey.vec.base);
+    }
+    return ret;
 }
 
 int ptls_minicrypto_load_private_key(ptls_context_t *ctx, char const *pem_fname)

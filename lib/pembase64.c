@@ -27,7 +27,9 @@
 #include <string.h>
 #include <stdio.h>
 #include "picotls.h"
+#include "picotls/cred_buffer.h"
 #include "picotls/pembase64.h"
+
 
 static char ptls_base64_alphabet[] = {'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P',
                                       'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', 'a', 'b', 'c', 'd', 'e', 'f',
@@ -265,14 +267,14 @@ static int ptls_compare_separator_line(const char *line, const char *begin_or_en
     return ret;
 }
 
-static int ptls_get_pem_object(FILE *F, const char *label, ptls_buffer_t *buf)
+static int ptls_get_pem_object_from_memory(ptls_cred_buffer_t *mem, const char *label, ptls_buffer_t *buf)
 {
     int ret = PTLS_ERROR_PEM_LABEL_NOT_FOUND;
     char line[256];
     ptls_base64_decode_state_t state;
 
     /* Get the label on a line by itself */
-    while (fgets(line, 256, F)) {
+    while (ptls_cred_buffer_gets(line, 256, mem)) {
         if (ptls_compare_separator_line(line, "BEGIN", label) == 0) {
             ret = 0;
             ptls_base64_decode_init(&state);
@@ -280,7 +282,7 @@ static int ptls_get_pem_object(FILE *F, const char *label, ptls_buffer_t *buf)
         }
     }
     /* Get the data in the buffer */
-    while (ret == 0 && fgets(line, 256, F)) {
+    while (ret == 0 && ptls_cred_buffer_gets(line, 256, mem)) {
         if (ptls_compare_separator_line(line, "END", label) == 0) {
             if (state.status == PTLS_BASE64_DECODE_DONE || (state.status == PTLS_BASE64_DECODE_IN_PROGRESS && state.nbc == 0)) {
                 ret = 0;
@@ -296,22 +298,12 @@ static int ptls_get_pem_object(FILE *F, const char *label, ptls_buffer_t *buf)
     return ret;
 }
 
-int ptls_load_pem_objects(char const *pem_fname, const char *label, ptls_iovec_t *list, size_t list_max, size_t *nb_objects)
+
+
+int ptls_load_pem_objects_from_memory(ptls_cred_buffer_t *mem, const char *label, ptls_iovec_t *list, size_t list_max, size_t *nb_objects)
 {
-    FILE *F;
     int ret = 0;
     size_t count = 0;
-#ifdef _WINDOWS
-    errno_t err = fopen_s(&F, pem_fname, "r");
-    if (err != 0) {
-        ret = -1;
-    }
-#else
-    F = fopen(pem_fname, "r");
-    if (F == NULL) {
-        ret = -1;
-    }
-#endif
 
     *nb_objects = 0;
 
@@ -321,7 +313,7 @@ int ptls_load_pem_objects(char const *pem_fname, const char *label, ptls_iovec_t
 
             ptls_buffer_init(&buf, "", 0);
 
-            ret = ptls_get_pem_object(F, label, &buf);
+            ret = ptls_get_pem_object_from_memory(mem, label, &buf);
 
             if (ret == 0) {
                 if (buf.off > 0 && buf.is_allocated) {
@@ -344,9 +336,25 @@ int ptls_load_pem_objects(char const *pem_fname, const char *label, ptls_iovec_t
 
     *nb_objects = count;
 
-    if (F != NULL) {
-        fclose(F);
+    return ret;
+}
+
+int ptls_load_pem_objects(char const *pem_fname, const char *label, ptls_iovec_t *list, size_t list_max, size_t *nb_objects)
+{
+    int ret = 0;
+    ptls_cred_buffer_t mem = {0};
+
+    if ((ret = ptls_cred_buffer_set_from_file(&mem, pem_fname)) != 0) {
+        goto err;
     }
+
+    ret = ptls_load_pem_objects_from_memory(&mem, label, list, list_max, nb_objects);
+
+    ptls_cred_buffer_dispose(&mem);
+
+    return ret;
+err:
+    ptls_cred_buffer_dispose(&mem);
 
     return ret;
 }
@@ -363,6 +371,22 @@ int ptls_load_certificates(ptls_context_t *ctx, char const *cert_pem_file)
         ret = PTLS_ERROR_NO_MEMORY;
     } else {
         ret = ptls_load_pem_objects(cert_pem_file, "CERTIFICATE", ctx->certificates.list, PTLS_MAX_CERTS_IN_CONTEXT,
+                                    &ctx->certificates.count);
+    }
+
+    return ret;
+}
+
+int ptls_load_certificates_from_memory(ptls_context_t *ctx, ptls_cred_buffer_t *mem)
+{
+    int ret = 0;
+
+    ctx->certificates.list = (ptls_iovec_t *)malloc(PTLS_MAX_CERTS_IN_CONTEXT * sizeof(ptls_iovec_t));
+
+    if (ctx->certificates.list == NULL) {
+        ret = PTLS_ERROR_NO_MEMORY;
+    } else {
+        ret = ptls_load_pem_objects_from_memory(mem, "CERTIFICATE", ctx->certificates.list, PTLS_MAX_CERTS_IN_CONTEXT,
                                     &ctx->certificates.count);
     }
 

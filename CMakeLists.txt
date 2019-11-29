@@ -37,6 +37,7 @@ SET(MINICRYPTO_LIBRARY_FILES
     deps/cifra/src/sha512.c)
 SET(CORE_FILES
     lib/picotls.c
+    lib/cred_buffer.c
     lib/pembase64.c)
 SET(CORE_TEST_FILES
     t/picotls.c)
@@ -83,7 +84,9 @@ ADD_EXECUTABLE(test-minicrypto.t
     ${CORE_TEST_FILES}
     t/minicrypto.c
     lib/asn1.c
+    lib/cred_buffer.c
     lib/pembase64.c
+    lib/minicrypto-pem.c
     lib/ffx.c
     lib/cifra/x25519.c
     lib/cifra/chacha20.c
@@ -99,7 +102,7 @@ IF (OPENSSL_FOUND AND NOT (OPENSSL_VERSION VERSION_LESS "1.0.1"))
     INCLUDE_DIRECTORIES(${OPENSSL_INCLUDE_DIR})
     ADD_LIBRARY(picotls-openssl lib/openssl.c)
     TARGET_LINK_LIBRARIES(picotls-openssl ${OPENSSL_LIBRARIES} picotls-core ${CMAKE_DL_LIBS})
-    ADD_EXECUTABLE(cli t/cli.c lib/pembase64.c)
+    ADD_EXECUTABLE(cli t/cli.c lib/cred_buffer.c lib/pembase64.c)
     TARGET_LINK_LIBRARIES(cli picotls-openssl picotls-core)
     ADD_EXECUTABLE(picotls-esni src/esni.c)
     TARGET_LINK_LIBRARIES(picotls-esni picotls-openssl picotls-core ${OPENSSL_LIBRARIES} ${CMAKE_DL_LIBS})
@@ -114,6 +117,7 @@ IF (OPENSSL_FOUND AND NOT (OPENSSL_VERSION VERSION_LESS "1.0.1"))
         lib/cifra/random.c
         lib/uecc.c
         lib/asn1.c
+        lib/cred_buffer.c
         lib/pembase64.c
         lib/ffx.c
         deps/picotest/picotest.c
