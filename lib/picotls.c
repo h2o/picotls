@@ -4461,9 +4461,9 @@ static int handle_alert(ptls_t *tls, const uint8_t *src, size_t len)
 
 static int message_buffer_is_overflow(ptls_context_t *ctx, size_t size)
 {
-    if (ctx->max_message_buffer_size == 0)
+    if (ctx->max_buffer_size == 0)
         return 0;
-    if (size <= ctx->max_message_buffer_size)
+    if (size <= ctx->max_buffer_size)
         return 0;
     return 1;
 }

@@ -450,7 +450,7 @@ static void test_fragmented_message(void)
     struct st_ptls_record_t rec = {PTLS_CONTENT_TYPE_HANDSHAKE, 0x0301};
     int ret;
 
-    tlsctx.max_message_buffer_size = 14;
+    tlsctx.max_buffer_size = 14;
 
 #define SET_RECORD(lit)                                                                                                            \
     do {                                                                                                                           \
