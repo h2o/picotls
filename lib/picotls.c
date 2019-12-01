@@ -4459,6 +4459,15 @@ static int handle_alert(ptls_t *tls, const uint8_t *src, size_t len)
     return PTLS_ALERT_TO_PEER_ERROR(desc);
 }
 
+static int message_buffer_is_overflow(ptls_context_t *ctx, size_t size)
+{
+    if (ctx->max_buffer_size == 0)
+        return 0;
+    if (size <= ctx->max_buffer_size)
+        return 0;
+    return 1;
+}
+
 static int handle_handshake_record(ptls_t *tls,
                                    int (*cb)(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_iovec_t message,
                                              int is_end_of_record, ptls_handshake_properties_t *properties),
@@ -4477,6 +4486,8 @@ static int handle_handshake_record(ptls_t *tls,
         src = rec->fragment;
         src_end = src + rec->length;
     } else {
+        if (message_buffer_is_overflow(tls->ctx, tls->recvbuf.mess.off + rec->length))
+            return PTLS_ALERT_HANDSHAKE_FAILURE;
         if ((ret = ptls_buffer_reserve(&tls->recvbuf.mess, rec->length)) != 0)
             return ret;
         memcpy(tls->recvbuf.mess.base + tls->recvbuf.mess.off, rec->fragment, rec->length);
@@ -4505,15 +4516,18 @@ static int handle_handshake_record(ptls_t *tls,
 
     /* keep last partial message in buffer */
     if (src != src_end) {
+        size_t new_size = src_end - src;
+        if (message_buffer_is_overflow(tls->ctx, new_size))
+            return PTLS_ALERT_HANDSHAKE_FAILURE;
         if (tls->recvbuf.mess.base == NULL) {
             ptls_buffer_init(&tls->recvbuf.mess, "", 0);
-            if ((ret = ptls_buffer_reserve(&tls->recvbuf.mess, src_end - src)) != 0)
+            if ((ret = ptls_buffer_reserve(&tls->recvbuf.mess, new_size)) != 0)
                 return ret;
-            memcpy(tls->recvbuf.mess.base, src, src_end - src);
+            memcpy(tls->recvbuf.mess.base, src, new_size);
         } else {
-            memmove(tls->recvbuf.mess.base, src, src_end - src);
+            memmove(tls->recvbuf.mess.base, src, new_size);
         }
-        tls->recvbuf.mess.off = src_end - src;
+        tls->recvbuf.mess.off = new_size;
         ret = PTLS_ERROR_IN_PROGRESS;
     } else {
         ptls_buffer_dispose(&tls->recvbuf.mess);
