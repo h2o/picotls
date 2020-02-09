@@ -877,9 +877,8 @@ static uint8_t *ptls_encode_quicint(uint8_t *p, uint64_t v);
                          (uint8_t)(_v >> 24), (uint8_t)(_v >> 16), (uint8_t)(_v >> 8), (uint8_t)_v);                               \
     } while (0)
 
-#define ptls_buffer_pushquicint(buf, v)                                                                                            \
+#define ptls_buffer_push_quicint(buf, v)                                                                                           \
     do {                                                                                                                           \
-        uint64_t _v = (v);                                                                                                         \
         if ((ret = ptls_buffer_reserve((buf), PTLS_ENCODE_QUICINT_CAPACITY)) != 0)                                                 \
             goto Exit;                                                                                                             \
         uint8_t *d = ptls_encode_quicint((buf)->base + (buf)->off, (v));                                                           \
