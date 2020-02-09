@@ -1457,6 +1457,53 @@ static void test_all_handshakes(void)
         ctx->sign_certificate = second_sc_orig;
 }
 
+static void test_quicint(void)
+{
+    static uint64_t inputs[] = {0, 1, 63, 64, 16383, 16384, 1073741823, 1073741824, UINT64_MAX};
+    size_t i;
+
+    for (i = 0; inputs[i] != UINT64_MAX; ++i) {
+        uint8_t buf[PTLS_ENCODE_QUICINT_CAPACITY + 1];
+        memset(buf, 123, sizeof(buf));
+        uint8_t *enc_end = ptls_encode_quicint(buf, inputs[i]);
+        assert(enc_end - buf <= PTLS_ENCODE_QUICINT_CAPACITY);
+        const uint8_t *src = buf;
+        uint64_t decoded = ptls_decode_quicint(&src, buf + sizeof(buf));
+        ok(inputs[i] == decoded);
+        ok(src == enc_end);
+        ok(*src == 123);
+    }
+}
+
+static void test_quicblock(void)
+{
+    ptls_buffer_t buf;
+    int ret;
+
+    ptls_buffer_init(&buf, "", 0);
+
+    ptls_buffer_push_block(&buf, -1, {
+        ptls_buffer_pushv(&buf, "abc", 3);
+    });
+    const uint8_t *src = buf.base, *end = buf.base + buf.off;
+    ptls_decode_block(src, end, -1, {
+        ok(end - src == 3);
+        ok(memcmp(src, "abc", 3) == 0);
+        src += 3;
+    });
+
+Exit:
+    if (ret != 0)
+        ok(!"fail");
+    ptls_buffer_dispose(&buf);
+}
+
+static void test_quic(void)
+{
+    subtest("varint", test_quicint);
+    subtest("block", test_quicblock);
+}
+
 void test_picotls(void)
 {
     subtest("is_ipaddr", test_is_ipaddr);
@@ -1475,6 +1522,7 @@ void test_picotls(void)
     subtest("base64-decode", test_base64_decode);
     subtest("fragmented-message", test_fragmented_message);
     subtest("handshake", test_all_handshakes);
+    subtest("quic", test_quic);
 }
 
 void test_picotls_esni(ptls_key_exchange_context_t **keys)
