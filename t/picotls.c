@@ -1459,6 +1459,28 @@ static void test_all_handshakes(void)
 
 static void test_quicint(void)
 {
+#define CHECK_PATTERN(output, ...)                                                                                                 \
+    do {                                                                                                                           \
+        const uint8_t pat[] = {__VA_ARGS__}, *p = pat;                                                                             \
+        ok(output == ptls_decode_quicint(&p, pat + sizeof(pat)));                                                                  \
+        ok(p == pat + sizeof(pat));                                                                                                \
+    } while (0)
+    CHECK_PATTERN(0, 0);
+    CHECK_PATTERN(0, 0x40, 0);
+    CHECK_PATTERN(0, 0x80, 0, 0, 0);
+    CHECK_PATTERN(0, 0xc0, 0, 0, 0, 0, 0, 0, 0);
+    CHECK_PATTERN(9, 9);
+    CHECK_PATTERN(9, 0x40, 9);
+    CHECK_PATTERN(9, 0x80, 0, 0, 9);
+    CHECK_PATTERN(9, 0xc0, 0, 0, 0, 0, 0, 0, 9);
+    CHECK_PATTERN(0x1234, 0x52, 0x34);
+    CHECK_PATTERN(0x1234, 0x80, 0, 0x12, 0x34);
+    CHECK_PATTERN(0x1234, 0xc0, 0, 0, 0, 0, 0, 0x12, 0x34);
+    CHECK_PATTERN(0x12345678, 0x92, 0x34, 0x56, 0x78);
+    CHECK_PATTERN(0x12345678, 0xc0, 0, 0, 0, 0x12, 0x34, 0x56, 0x78);
+    CHECK_PATTERN(0x123456789abcdef, 0xc1, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef);
+#undef CHECK_PATTERN
+
     static uint64_t inputs[] = {0, 1, 63, 64, 16383, 16384, 1073741823, 1073741824, UINT64_MAX};
     size_t i;
 
