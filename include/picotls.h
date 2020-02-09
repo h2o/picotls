@@ -889,17 +889,17 @@ static uint8_t *ptls_encode_quicint(uint8_t *p, uint64_t v);
 #define ptls_buffer_push_block(buf, _capacity, block)                                                                              \
     do {                                                                                                                           \
         size_t capacity = (_capacity);                                                                                             \
-        ptls_buffer_pushv((buf), (uint8_t *)"\0\0\0\0\0\0\0", capacity >= 0 ? capacity : 1);                                       \
+        ptls_buffer_pushv((buf), (uint8_t *)"\0\0\0\0\0\0\0", capacity != -1 ? capacity : 1);                                      \
         size_t body_start = (buf)->off;                                                                                            \
         do {                                                                                                                       \
             block                                                                                                                  \
         } while (0);                                                                                                               \
         size_t body_size = (buf)->off - body_start;                                                                                \
-        if (capacity >= 0) {                                                                                                       \
+        if (capacity != -1) {                                                                                                      \
             for (; capacity != 0; --capacity)                                                                                      \
                 (buf)->base[body_start - capacity] = (uint8_t)(body_size >> (8 * (capacity - 1)));                                 \
         } else {                                                                                                                   \
-            if (body_size >= 64 && (ret = ptls_buffer__adjust_quic_blocksize((buf), body_size)) != 0)                              \
+            if ((ret = ptls_buffer__adjust_quic_blocksize((buf), body_size)) != 0)                                                 \
                 goto Exit;                                                                                                         \
         }                                                                                                                          \
     } while (0)
@@ -1326,15 +1326,14 @@ inline uint8_t *ptls_encode_quicint(uint8_t *p, uint64_t v)
             if (PTLS_UNLIKELY(v > 1073741823)) {
                 assert(v <= 4611686018427387903);
                 *p++ = 0xc0 | (uint8_t)(v >> 56);
-                sb = 8 * 8;
+                sb = 6 * 8;
             } else {
                 *p++ = 0x80 | (uint8_t)(v >> 24);
-                sb = 4 * 8;
+                sb = 2 * 8;
             }
-            while (sb != 0) {
-                sb -= 8;
+            do {
                 *p++ = (uint8_t)(v >> sb);
-            }
+            } while ((sb -= 8) != 0);
         } else {
             *p++ = 0x40 | (uint8_t)((uint16_t)v >> 8);
         }

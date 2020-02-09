@@ -540,8 +540,13 @@ int ptls_buffer__do_pushv(ptls_buffer_t *buf, const void *src, size_t len)
 
 int ptls_buffer__adjust_quic_blocksize(ptls_buffer_t *buf, size_t body_size)
 {
-    fprintf(stderr, "unimplemented\n");
-    abort();
+    if (body_size < 64) {
+        buf->base[buf->off - body_size - 1] = (uint8_t)body_size;
+    } else {
+        fprintf(stderr, "unimplemented\n");
+        abort();
+    }
+    return 0;
 }
 
 int ptls_buffer__adjust_asn1_blocksize(ptls_buffer_t *buf, size_t body_size)
