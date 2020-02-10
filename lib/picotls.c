@@ -540,12 +540,21 @@ int ptls_buffer__do_pushv(ptls_buffer_t *buf, const void *src, size_t len)
 
 int ptls_buffer__adjust_quic_blocksize(ptls_buffer_t *buf, size_t body_size)
 {
-    if (body_size < 64) {
-        buf->base[buf->off - body_size - 1] = (uint8_t)body_size;
-    } else {
-        fprintf(stderr, "unimplemented\n");
-        abort();
+    uint8_t sizebuf[PTLS_ENCODE_QUICINT_CAPACITY];
+    size_t sizelen = ptls_encode_quicint(sizebuf, body_size) - sizebuf;
+
+    /* adjust amount of space before body_size to `sizelen` bytes */
+    if (sizelen != 1) {
+        int ret;
+        if ((ret = ptls_buffer_reserve(buf, sizelen - 1)) != 0)
+            return ret;
+        memmove(buf->base + buf->off - body_size - 1 + sizelen, buf->base + buf->off - body_size, body_size);
+        buf->off += sizelen - 1;
     }
+
+    /* write the size */
+    memcpy(buf->base + buf->off - body_size - sizelen, sizebuf, sizelen);
+
     return 0;
 }
 

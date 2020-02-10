@@ -511,13 +511,15 @@ static void test_fragmented_message(void)
 
     /* overflow (post-cb) */
     test_fragmented_message_queue.count = 0;
-    SET_RECORD("\x01\x00\x00\xff" "0123456789ab");
+    SET_RECORD("\x01\x00\x00\xff"
+               "0123456789ab");
     ret = handle_handshake_record(&tls, test_fragmented_message_record, NULL, &rec, NULL);
     ok(ret == PTLS_ALERT_HANDSHAKE_FAILURE);
     ok(test_fragmented_message_queue.count == 0);
 
     /* overflow (pre-cb) */
-    SET_RECORD("\x01\x00\x00\xff" "0123456789");
+    SET_RECORD("\x01\x00\x00\xff"
+               "0123456789");
     ret = handle_handshake_record(&tls, test_fragmented_message_record, NULL, &rec, NULL);
     ok(ret == PTLS_ERROR_IN_PROGRESS);
     SET_RECORD("abcdef");
@@ -1500,18 +1502,34 @@ static void test_quicint(void)
 static void test_quicblock(void)
 {
     ptls_buffer_t buf;
+    const uint8_t *src, *end;
     int ret;
 
     ptls_buffer_init(&buf, "", 0);
 
-    ptls_buffer_push_block(&buf, -1, {
-        ptls_buffer_pushv(&buf, "abc", 3);
-    });
-    const uint8_t *src = buf.base, *end = buf.base + buf.off;
+    ptls_buffer_push_block(&buf, -1, { ptls_buffer_pushv(&buf, "abc", 3); });
+    src = buf.base;
+    end = buf.base + buf.off;
     ptls_decode_block(src, end, -1, {
         ok(end - src == 3);
         ok(memcmp(src, "abc", 3) == 0);
         src += 3;
+    });
+
+    buf.off = 0;
+    ptls_buffer_push_block(&buf, -1, {
+        if ((ret = ptls_buffer_reserve(&buf, 123)) != 0)
+            goto Exit;
+        memset(buf.base + buf.off, 0x55, 123);
+        buf.off += 123;
+    });
+    src = buf.base;
+    end = buf.base + buf.off;
+    ptls_decode_block(src, end, -1, {
+        ok(end - src == 123);
+        size_t i;
+        for (i = 0; i != 123; ++i)
+            ok(*src++ == 0x55);
     });
 
 Exit:
