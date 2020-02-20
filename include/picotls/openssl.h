@@ -83,6 +83,14 @@ extern ptls_cipher_suite_t ptls_openssl_chacha20poly1305sha256;
 extern ptls_cipher_algorithm_t ptls_openssl_bfecb;
 #endif
 
+/**
+ * This boolean flag indicates if libcrypto returned an error. When this flag is set, calling OpenSSL functions such as
+ * `ERR_print_errors_fp` might give useful information for debugging and tracing down issues. Note that this flag is never reset by
+ * picotls. It is the user's responsibility to clear the flag (`ptls_openssl_has_error = 0`) before invoking picotls functions.
+ */
+#define ptls_openssl_has_error (*ptls_openssl__get_has_error())
+int *ptls_openssl__get_has_error(void);
+
 void ptls_openssl_random_bytes(void *buf, size_t len);
 /**
  * constructs a key exchange context. pkey's reference count is incremented.
