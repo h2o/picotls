@@ -32,10 +32,10 @@
 #include "picotls.h"
 
 #ifndef TARGET_AEAD
-#error "TARGET_AEAD must be set to one of the AEAD ciphers (e.g, ptls_openssl_aes256gcm)
+#error "TARGET_AEAD must be set to one of the AEAD ciphers (e.g, ptls_openssl_aes256gcm)"
 #endif
 #ifndef TARGET_HASH
-#error "TARGET_HASH must be set to one of the HASH implementations (e.g., ptls_openssl_sha256)
+#error "TARGET_HASH must be set to one of the HASH implementations (e.g., ptls_openssl_sha256)"
 #endif
 #ifndef COUNT
 #define COUNT 10000000
