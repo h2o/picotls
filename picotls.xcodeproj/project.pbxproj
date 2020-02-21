@@ -91,6 +91,9 @@
 		10EACB131DCEAF0F00CA0341 /* curve25519.h in Headers */ = {isa = PBXBuildFile; fileRef = 105900361DC8D44E00FB4085 /* curve25519.h */; };
 		10EACB1A1DCEC2A300CA0341 /* libpicotls-core.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 106530DA1D9B3E6F005B2C60 /* libpicotls-core.a */; };
 		E949EF282073629300511ECA /* minicrypto-pem.c in Sources */ = {isa = PBXBuildFile; fileRef = E949EF272073629300511ECA /* minicrypto-pem.c */; };
+		E95DC448240094EA00EC75ED /* libpicotls-openssl.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 1059008C1DC8E1A300FB4085 /* libpicotls-openssl.a */; };
+		E95DC449240094EA00EC75ED /* libpicotls-core.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 106530DA1D9B3E6F005B2C60 /* libpicotls-core.a */; };
+		E95DC44F2400950200EC75ED /* speed.c in Sources */ = {isa = PBXBuildFile; fileRef = E95DC43F240094B000EC75ED /* speed.c */; };
 		E95E95382290456B00215ACD /* picotls-probes.d in Sources */ = {isa = PBXBuildFile; fileRef = E95EBCC0227B71170022C32D /* picotls-probes.d */; };
 		E97577012212405300D1EF74 /* ffx.h in Headers */ = {isa = PBXBuildFile; fileRef = E97577002212405300D1EF74 /* ffx.h */; };
 		E97577032212405D00D1EF74 /* ffx.c in Sources */ = {isa = PBXBuildFile; fileRef = E97577022212405D00D1EF74 /* ffx.c */; };
@@ -152,6 +155,20 @@
 			remoteGlobalIDString = 106530D91D9B3E6F005B2C60;
 			remoteInfo = "picotls-core";
 		};
+		E95DC442240094EA00EC75ED /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 106530AA1D9985E0005B2C60 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 106530D91D9B3E6F005B2C60;
+			remoteInfo = "picotls-core";
+		};
+		E95DC444240094EA00EC75ED /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 106530AA1D9985E0005B2C60 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 105900701DC8E1A300FB4085;
+			remoteInfo = "picotls-openssl";
+		};
 		E992F79D20E99A7C0008154D /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 106530AA1D9985E0005B2C60 /* Project object */;
@@ -188,6 +205,15 @@
 			runOnlyForDeploymentPostprocessing = 1;
 		};
 		106530F81DAD8985005B2C60 /* CopyFiles */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = /usr/share/man/man1/;
+			dstSubfolderSpec = 0;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 1;
+		};
+		E95DC44A240094EA00EC75ED /* CopyFiles */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
 			dstPath = /usr/share/man/man1/;
@@ -257,6 +283,8 @@
 		106530FE1DAD8A3C005B2C60 /* cli.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = cli.c; sourceTree = "<group>"; };
 		10EACB171DCEAF0F00CA0341 /* libpicotls-minicrypto.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libpicotls-minicrypto.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		E949EF272073629300511ECA /* minicrypto-pem.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = "minicrypto-pem.c"; sourceTree = "<group>"; };
+		E95DC43F240094B000EC75ED /* speed.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = speed.c; sourceTree = "<group>"; };
+		E95DC44E240094EA00EC75ED /* speed */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = speed; sourceTree = BUILT_PRODUCTS_DIR; };
 		E95EBCC0227B71170022C32D /* picotls-probes.d */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.dtrace; path = "picotls-probes.d"; sourceTree = "<group>"; };
 		E95EBCC3227E82E00022C32D /* dump-github-repository.pl */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.script.perl; path = "dump-github-repository.pl"; sourceTree = "<group>"; };
 		E95EBCC5227E82FF0022C32D /* bpftrace.d */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.dtrace; path = bpftrace.d; sourceTree = "<group>"; };
@@ -328,6 +356,15 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E95DC447240094EA00EC75ED /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E95DC448240094EA00EC75ED /* libpicotls-openssl.a in Frameworks */,
+				E95DC449240094EA00EC75ED /* libpicotls-core.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -416,6 +453,7 @@
 				1059008C1DC8E1A300FB4085 /* libpicotls-openssl.a */,
 				10EACB171DCEAF0F00CA0341 /* libpicotls-minicrypto.a */,
 				E992F7A920E99A7C0008154D /* picotls-esni */,
+				E95DC44E240094EA00EC75ED /* speed */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -520,6 +558,7 @@
 			isa = PBXGroup;
 			children = (
 				E992F79A20E99A6B0008154D /* esni.c */,
+				E95DC43F240094B000EC75ED /* speed.c */,
 			);
 			path = src;
 			sourceTree = "<group>";
@@ -707,6 +746,25 @@
 			productReference = 10EACB171DCEAF0F00CA0341 /* libpicotls-minicrypto.a */;
 			productType = "com.apple.product-type.library.static";
 		};
+		E95DC440240094EA00EC75ED /* speed */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E95DC44B240094EA00EC75ED /* Build configuration list for PBXNativeTarget "speed" */;
+			buildPhases = (
+				E95DC445240094EA00EC75ED /* Sources */,
+				E95DC447240094EA00EC75ED /* Frameworks */,
+				E95DC44A240094EA00EC75ED /* CopyFiles */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				E95DC441240094EA00EC75ED /* PBXTargetDependency */,
+				E95DC443240094EA00EC75ED /* PBXTargetDependency */,
+			);
+			name = speed;
+			productName = "test-crypto-openssl";
+			productReference = E95DC44E240094EA00EC75ED /* speed */;
+			productType = "com.apple.product-type.tool";
+		};
 		E992F79B20E99A7C0008154D /* picotls-esni */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = E992F7A620E99A7C0008154D /* Build configuration list for PBXNativeTarget "picotls-esni" */;
@@ -748,6 +806,7 @@
 			developmentRegion = English;
 			hasScannedForEncodings = 0;
 			knownRegions = (
+				English,
 				en,
 			);
 			mainGroup = 106530A91D9985E0005B2C60;
@@ -762,6 +821,7 @@
 				106530CB1D9B3D45005B2C60 /* test-openssl */,
 				105900411DC8D57000FB4085 /* test-minicrypto */,
 				E992F79B20E99A7C0008154D /* picotls-esni */,
+				E95DC440240094EA00EC75ED /* speed */,
 			);
 		};
 /* End PBXProject section */
@@ -893,6 +953,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		E95DC445240094EA00EC75ED /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E95DC44F2400950200EC75ED /* speed.c in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		E992F7A020E99A7C0008154D /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -913,6 +981,16 @@
 			isa = PBXTargetDependency;
 			target = 106530D91D9B3E6F005B2C60 /* picotls-core */;
 			targetProxy = 10EACB181DCEAF4A00CA0341 /* PBXContainerItemProxy */;
+		};
+		E95DC441240094EA00EC75ED /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 106530D91D9B3E6F005B2C60 /* picotls-core */;
+			targetProxy = E95DC442240094EA00EC75ED /* PBXContainerItemProxy */;
+		};
+		E95DC443240094EA00EC75ED /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 105900701DC8E1A300FB4085 /* picotls-openssl */;
+			targetProxy = E95DC444240094EA00EC75ED /* PBXContainerItemProxy */;
 		};
 		E992F79C20E99A7C0008154D /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
@@ -1186,6 +1264,42 @@
 			};
 			name = Release;
 		};
+		E95DC44C240094EA00EC75ED /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"TARGET_AEAD=ptls_openssl_aes128gcm",
+					"TARGET_HASH=ptls_openssl_sha256",
+				);
+				HEADER_SEARCH_PATHS = (
+					"/usr/local/openssl-1.1.0/include",
+					include,
+				);
+				LIBRARY_SEARCH_PATHS = "/usr/local/openssl-1.1.0/lib";
+				OTHER_LDFLAGS = "-lcrypto";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Debug;
+		};
+		E95DC44D240094EA00EC75ED /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"TARGET_AEAD=ptls_openssl_aes128gcm",
+					"TARGET_HASH=ptls_openssl_sha256",
+				);
+				HEADER_SEARCH_PATHS = (
+					"/usr/local/openssl-1.1.0/include",
+					include,
+				);
+				LIBRARY_SEARCH_PATHS = "/usr/local/openssl-1.1.0/lib";
+				OTHER_LDFLAGS = "-lcrypto";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Release;
+		};
 		E992F7A720E99A7C0008154D /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -1276,6 +1390,15 @@
 			buildConfigurations = (
 				10EACB151DCEAF0F00CA0341 /* Debug */,
 				10EACB161DCEAF0F00CA0341 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		E95DC44B240094EA00EC75ED /* Build configuration list for PBXNativeTarget "speed" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E95DC44C240094EA00EC75ED /* Debug */,
+				E95DC44D240094EA00EC75ED /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
