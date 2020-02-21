@@ -57,7 +57,7 @@ int main(int argc, char **argv)
     ptls_aead_context_t *ctx = ptls_aead_new(&TARGET_AEAD, &TARGET_HASH, 1, secret, "foo");
     size_t i;
     for (i = 0; i < COUNT; ++i)
-        ptls_aead_encrypt(ctx, output, input, sizeof(input), 0, "hello", 5);
+        ptls_aead_encrypt(ctx, output, input, sizeof(input), i, "hello", 5);
     ptls_aead_free(ctx);
 
     return 0;
