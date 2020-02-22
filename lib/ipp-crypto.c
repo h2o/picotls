@@ -132,6 +132,8 @@ Error:
     return ret;
 }
 
+extern ptls_cipher_algorithm_t ptls_openssl_aes128ctr, ptls_openssl_aes128ecb;
+
 ptls_aead_algorithm_t ptls_ipp_aes128gcm = {
-    "AES128-GCM",          NULL, NULL, PTLS_AES128_KEY_SIZE, PTLS_AESGCM_IV_SIZE, PTLS_AESGCM_TAG_SIZE, sizeof(struct aead_context),
-    aes128gcm_setup_crypto};
+    "AES128-GCM",        &ptls_openssl_aes128ctr, &ptls_openssl_aes128ecb,     PTLS_AES128_KEY_SIZE,
+    PTLS_AESGCM_IV_SIZE, PTLS_AESGCM_TAG_SIZE,    sizeof(struct aead_context), aes128gcm_setup_crypto};
