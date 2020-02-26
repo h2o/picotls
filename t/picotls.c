@@ -809,20 +809,20 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int expect_ticket, int
 static ptls_sign_certificate_t *sc_orig;
 size_t sc_callcnt;
 
-static int sign_certificate(ptls_sign_certificate_t *self, ptls_t *tls, uint16_t *selected_algorithm, ptls_buffer_t *output,
-                            ptls_iovec_t input, const uint16_t *algorithms, size_t num_algorithms)
+static int sign_certificate(ptls_sign_certificate_t *self, ptls_t *tls, void **sign_ctx, uint16_t *selected_algorithm,
+                            ptls_buffer_t *output, ptls_iovec_t input, const uint16_t *algorithms, size_t num_algorithms)
 {
     ++sc_callcnt;
-    return sc_orig->cb(sc_orig, tls, selected_algorithm, output, input, algorithms, num_algorithms);
+    return sc_orig->cb(sc_orig, tls, sign_ctx, selected_algorithm, output, input, algorithms, num_algorithms);
 }
 
 static ptls_sign_certificate_t *second_sc_orig;
 
-static int second_sign_certificate(ptls_sign_certificate_t *self, ptls_t *tls, uint16_t *selected_algorithm, ptls_buffer_t *output,
-                                   ptls_iovec_t input, const uint16_t *algorithms, size_t num_algorithms)
+static int second_sign_certificate(ptls_sign_certificate_t *self, ptls_t *tls, void **sign_ctx, uint16_t *selected_algorithm,
+                                   ptls_buffer_t *output, ptls_iovec_t input, const uint16_t *algorithms, size_t num_algorithms)
 {
     ++sc_callcnt;
-    return second_sc_orig->cb(second_sc_orig, tls, selected_algorithm, output, input, algorithms, num_algorithms);
+    return second_sc_orig->cb(second_sc_orig, tls, sign_ctx, selected_algorithm, output, input, algorithms, num_algorithms);
 }
 
 static void test_full_handshake_impl(int require_client_authentication)
