@@ -3577,7 +3577,6 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
     enum { HANDSHAKE_MODE_FULL, HANDSHAKE_MODE_PSK, HANDSHAKE_MODE_PSK_DHE } mode;
     size_t psk_index = SIZE_MAX;
     ptls_iovec_t pubkey = {0}, ecdh_secret = {0};
-    uint8_t finished_key[PTLS_MAX_DIGEST_SIZE];
     int accept_early_data = 0, is_second_flight = tls->state == PTLS_STATE_SERVER_EXPECT_SECOND_CLIENT_HELLO, ret;
 
     /* decode ClientHello */
@@ -3972,7 +3971,6 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
 Exit:
     free(pubkey.base);
     free(ecdh_secret.base);
-    ptls_clear_memory(finished_key, sizeof(finished_key));
     return ret;
 
 #undef EMIT_SERVER_HELLO
