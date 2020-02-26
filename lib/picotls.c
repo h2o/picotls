@@ -3971,7 +3971,10 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
 
 Exit:
     free(pubkey.base);
-    free(ecdh_secret.base);
+    if (ecdh_secret.base != NULL) {
+        ptls_clear_memory(ecdh_secret.base, ecdh_secret.len);
+        free(ecdh_secret.base);
+    }
     return ret;
 
 #undef EMIT_SERVER_HELLO
