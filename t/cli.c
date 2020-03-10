@@ -259,6 +259,13 @@ static int handle_connection(int sockfd, ptls_context_t *ctx, const char *server
     }
 
 Exit:
+    if (input_file == input_file_is_benchmark) {
+        double elapsed = (ctx->get_time->cb(ctx->get_time) - start_at) / 1000.0;
+        ptls_cipher_suite_t *cipher_suite = ptls_get_cipher(tls);
+        fprintf(stderr, "received %" PRIu64 " bytes in %.3f seconds (%f.3Mbps); %s\n", data_received, elapsed,
+                data_received * 8 / elapsed / 1000 / 1000, cipher_suite != NULL ? cipher_suite->aead->name : "unknown cipher");
+    }
+
     if (sockfd != -1)
         close(sockfd);
     if (input_file != NULL && input_file != input_file_is_benchmark && inputfd >= 0)
@@ -267,12 +274,6 @@ Exit:
     ptls_buffer_dispose(&encbuf);
     ptls_buffer_dispose(&ptbuf);
     ptls_free(tls);
-
-    if (input_file == input_file_is_benchmark) {
-        double elapsed = (ctx->get_time->cb(ctx->get_time) - start_at) / 1000.0;
-        fprintf(stderr, "received %" PRIu64 " bytes in %.3f seconds (%f.3Mbps)\n", data_received, elapsed,
-                data_received * 8 / elapsed / 1000 / 1000);
-    }
 
     return ret != 0;
 }
@@ -339,8 +340,9 @@ static void usage(const char *cmd)
            "  -6                   force IPv6\n"
            "  -a                   require client authentication\n"
            "  -b                   enable brotli compression\n"
-           "  -B                   benchmark mode, client sends 1e9 bytes of data to server,\n"
-           "                       server discards all input after decrypting them\n"
+           "  -B                   benchmark mode for measuring sustained bandwidth. Run\n"
+           "                       both endpoints with this option for some time, then kill\n"
+           "                       the client. Server will report the ingress bandwidth.\n"
            "  -C certificate-file  certificate chain used for client authentication\n"
            "  -c certificate-file  certificate chain used for server authentication\n"
            "  -i file              a file to read from and send to the peer (default: stdin)\n"
@@ -356,6 +358,8 @@ static void usage(const char *cmd)
            "                       as early data\n"
            "  -u                   update the traffic key when handshake is complete\n"
            "  -v                   verify peer using the default certificates\n"
+           "  -y cipher-suite      cipher-suite to be used, e.g., aes128gcmsha256 (default:\n"
+           "                       all)\n"
            "  -h                   print this help\n"
            "\n"
            "Supported named groups: secp256r1"
@@ -386,7 +390,8 @@ int main(int argc, char **argv)
     res_init();
 
     ptls_key_exchange_algorithm_t *key_exchanges[128] = {NULL};
-    ptls_context_t ctx = {ptls_openssl_random_bytes, &ptls_get_time, key_exchanges, ptls_openssl_cipher_suites};
+    ptls_cipher_suite_t *cipher_suites[128] = {NULL};
+    ptls_context_t ctx = {ptls_openssl_random_bytes, &ptls_get_time, key_exchanges, cipher_suites};
     ptls_handshake_properties_t hsprop = {{{{NULL}}}};
     const char *host, *port, *input_file = NULL, *esni_file = NULL;
     struct {
@@ -398,7 +403,7 @@ int main(int argc, char **argv)
     socklen_t salen;
     int family = 0;
 
-    while ((ch = getopt(argc, argv, "46abBC:c:i:Ik:nN:es:SE:K:l:vh")) != -1) {
+    while ((ch = getopt(argc, argv, "46abBC:c:i:Ik:nN:es:SE:K:l:y:vh")) != -1) {
         switch (ch) {
         case '4':
             family = AF_INET;
@@ -506,6 +511,24 @@ int main(int argc, char **argv)
         case 'u':
             request_key_update = 1;
             break;
+        case 'y': {
+            size_t i;
+            for (i = 0; cipher_suites[i] != NULL; ++i)
+                ;
+#define MATCH(name)                                                                                                                \
+    if (cipher_suites[i] == NULL && strcasecmp(optarg, #name) == 0)                                                                \
+    cipher_suites[i] = &ptls_openssl_##name
+            MATCH(aes128gcmsha256);
+            MATCH(aes256gcmsha384);
+#if PTLS_OPENSSL_HAVE_CHACHA20_POLY1305
+            MATCH(chacha20poly1305sha256);
+#endif
+#undef MATCH
+            if (cipher_suites[i] == NULL) {
+                fprintf(stderr, "unknown cipher-suite: %s\n", optarg);
+                exit(1);
+            }
+        } break;
         case 'h':
             usage(argv[0]);
             exit(0);
@@ -545,6 +568,11 @@ int main(int argc, char **argv)
     }
     if (key_exchanges[0] == NULL)
         key_exchanges[0] = &ptls_openssl_secp256r1;
+    if (cipher_suites[0] == NULL) {
+        size_t i;
+        for (i = 0; ptls_openssl_cipher_suites[i] != NULL; ++i)
+            cipher_suites[i] = ptls_openssl_cipher_suites[i];
+    }
     if (esni_file != NULL) {
         if (esni_key_exchanges.count == 0) {
             fprintf(stderr, "-E must be used together with -K\n");
