@@ -3977,7 +3977,7 @@ int server_complete_handshake(ptls_t *tls, ptls_message_emitter_t *emitter, int 
         if ((ret = send_certificate_verify(tls, emitter, signature_algorithms, PTLS_SERVER_CERTIFICATE_VERIFY_CONTEXT_STRING)) !=
             0) {
             /* signature generation might be an async operation, in that case */
-            if (ret == PTLS_STATE_SERVER_GENERATING_CERTIFICATE_VERIFY)
+            if (ret == PTLS_ERROR_ASYNC_OPERATION)
                 tls->state = PTLS_STATE_SERVER_GENERATING_CERTIFICATE_VERIFY;
             goto Exit;
         }
@@ -4722,6 +4722,7 @@ int ptls_handshake(ptls_t *tls, ptls_buffer_t *_sendbuf, const void *input, size
     case 0:
     case PTLS_ERROR_IN_PROGRESS:
     case PTLS_ERROR_STATELESS_RETRY:
+    case PTLS_ERROR_ASYNC_OPERATION:
         break;
     default:
         /* flush partially written response */
