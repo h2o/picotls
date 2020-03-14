@@ -2594,7 +2594,7 @@ static int send_certificate_verify(ptls_t *tls, ptls_message_emitter_t *emitter,
             if ((ret = tls->ctx->sign_certificate->cb(tls->ctx->sign_certificate, tls, &tls->server.sign_certificate_ctx, &algo,
                                                       sendbuf, ptls_iovec_init(data, datalen),
                                                       signature_algorithms != NULL ? signature_algorithms->list : NULL,
-                                                      signature_algorithms != NULL ? signature_algorithms->count: 0)) != 0) {
+                                                      signature_algorithms != NULL ? signature_algorithms->count : 0)) != 0) {
                 if (ret == PTLS_ERROR_ASYNC_OPERATION) {
                     assert(tls->is_server || !"async operation only supported on the server-side");
                     /* Reset the output to the end of the previous handshake message. CertificateVerify will be rebuilt when the
