@@ -47,7 +47,7 @@ static void test_is_ipaddr(void)
 ptls_context_t *ctx, *ctx_peer;
 ptls_verify_certificate_t *verify_certificate;
 struct st_ptls_ffx_test_variants_t ffx_variants[7];
-static unsigned server_sc_callcnt, client_sc_callcnt;
+static unsigned server_sc_callcnt, client_sc_callcnt, async_sc_callcnt;
 
 static ptls_cipher_suite_t *find_cipher(ptls_context_t *ctx, uint16_t id)
 {
@@ -570,6 +570,7 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int expect_ticket, int
 
     client_sc_callcnt = 0;
     server_sc_callcnt = 0;
+    async_sc_callcnt = 0;
 
     if (check_ch)
         ctx->verify_certificate = verify_certificate;
@@ -653,11 +654,14 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int expect_ticket, int
     consumed = cbuf.off;
     ret = ptls_handshake(server, &sbuf, cbuf.base, &consumed, &server_hs_prop);
 
-    if (require_client_authentication == 1) {
+    if (require_client_authentication) {
+        /* at the moment, async sign-certificate is not supported in this path, neither on the client-side or the server-side */
         ok(ptls_is_psk_handshake(server) == 0);
         ok(ret == PTLS_ERROR_IN_PROGRESS);
-    } else {
+    } else if (mode == TEST_HANDSHAKE_EARLY_DATA) {
         ok(ret == 0);
+    } else {
+        ok(ret == 0 || ret == PTLS_ERROR_ASYNC_OPERATION);
     }
 
     ok(sbuf.off != 0);
@@ -672,7 +676,7 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int expect_ticket, int
         ok(ptls_get_negotiated_protocol(server) == NULL);
     }
 
-    if (mode == TEST_HANDSHAKE_EARLY_DATA && require_client_authentication == 0) {
+    if (mode == TEST_HANDSHAKE_EARLY_DATA && !require_client_authentication) {
         ok(consumed < cbuf.off);
         memmove(cbuf.base, cbuf.base + consumed, cbuf.off - consumed);
         cbuf.off -= consumed;
@@ -692,6 +696,21 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int expect_ticket, int
     } else {
         ok(consumed == cbuf.off);
         cbuf.off = 0;
+    }
+
+    while (ret == PTLS_ERROR_ASYNC_OPERATION) {
+        consumed = sbuf.off;
+        ret = ptls_handshake(client, &cbuf, sbuf.base, &consumed, NULL);
+        ok(ret == PTLS_ERROR_IN_PROGRESS);
+        ok(consumed == sbuf.off);
+        ok(cbuf.off == 0);
+        sbuf.off = 0;
+        ret = ptls_handshake(server, &sbuf, NULL, NULL, &server_hs_prop);
+    }
+    if (require_client_authentication) {
+        ok(ret == PTLS_ERROR_IN_PROGRESS);
+    } else {
+        ok(ret == 0);
     }
 
     consumed = sbuf.off;
@@ -819,6 +838,36 @@ static int sign_certificate(ptls_sign_certificate_t *self, ptls_t *tls, void **s
     return sc_orig->cb(sc_orig, tls, sign_ctx, selected_algorithm, output, input, algorithms, num_algorithms);
 }
 
+static int async_sign_certificate(ptls_sign_certificate_t *self, ptls_t *tls, void **sign_ctx, uint16_t *selected_algorithm,
+                                  ptls_buffer_t *output, ptls_iovec_t input, const uint16_t *algorithms, size_t num_algorithms)
+{
+    if (!ptls_is_server(tls)) {
+        /* do it synchronously, as async mode is only supported on the server-side */
+    } else if (*sign_ctx == NULL) {
+        /* first invocation, make a fake call to the backend and obtain the algorithm, return it, but not the signature */
+        ptls_buffer_t fakebuf;
+        ptls_buffer_init(&fakebuf, "", 0);
+        int ret = sign_certificate(self, tls, NULL /* we know it's not used */, selected_algorithm, &fakebuf, input, algorithms,
+                                   num_algorithms);
+        assert(ret == 0);
+        ptls_buffer_dispose(&fakebuf);
+        static uint16_t selected;
+        selected = *selected_algorithm;
+        *sign_ctx = &selected;
+        --server_sc_callcnt;
+        ++async_sc_callcnt;
+        return PTLS_ERROR_ASYNC_OPERATION;
+    } else {
+        /* second invocation, restore algorithm, and delegate the call */
+        assert(algorithms == NULL);
+        algorithms = *sign_ctx;
+        num_algorithms = 1;
+    }
+
+    return sign_certificate(self, tls, NULL /* we know that it's not used */, selected_algorithm, output, input, algorithms,
+                            num_algorithms);
+}
+
 static ptls_sign_certificate_t *second_sc_orig;
 
 static int second_sign_certificate(ptls_sign_certificate_t *self, ptls_t *tls, void **sign_ctx, uint16_t *selected_algorithm,
@@ -828,29 +877,32 @@ static int second_sign_certificate(ptls_sign_certificate_t *self, ptls_t *tls, v
     return second_sc_orig->cb(second_sc_orig, tls, sign_ctx, selected_algorithm, output, input, algorithms, num_algorithms);
 }
 
-static void test_full_handshake_impl(int require_client_authentication)
+static void test_full_handshake_impl(int require_client_authentication, int is_async)
 {
     test_handshake(ptls_iovec_init(NULL, 0), TEST_HANDSHAKE_1RTT, 0, 0, require_client_authentication);
     ok(server_sc_callcnt == 1);
+    ok(async_sc_callcnt == is_async);
     ok(client_sc_callcnt == require_client_authentication);
 
     test_handshake(ptls_iovec_init(NULL, 0), TEST_HANDSHAKE_1RTT, 0, 0, require_client_authentication);
     ok(server_sc_callcnt == 1);
+    ok(async_sc_callcnt == is_async);
     ok(client_sc_callcnt == require_client_authentication);
 
     test_handshake(ptls_iovec_init(NULL, 0), TEST_HANDSHAKE_1RTT, 0, 1, require_client_authentication);
     ok(server_sc_callcnt == 1);
+    ok(async_sc_callcnt == is_async);
     ok(client_sc_callcnt == require_client_authentication);
 }
 
 static void test_full_handshake(void)
 {
-    test_full_handshake_impl(0);
+    test_full_handshake_impl(0, 0);
 }
 
 static void test_full_handshake_with_client_authentication(void)
 {
-    test_full_handshake_impl(1);
+    test_full_handshake_impl(1, 0);
 }
 
 static void test_key_update(void)
@@ -967,6 +1019,18 @@ static void test_resumption_different_preferred_key_share(void)
 static void test_resumption_with_client_authentication(void)
 {
     test_resumption_impl(0, 1);
+}
+
+static void test_async_sign_certificate(void)
+{
+    assert(ctx_peer->sign_certificate->cb == sign_certificate);
+
+    ptls_sign_certificate_t async_sc = {async_sign_certificate}, *orig_sc = ctx_peer->sign_certificate;
+    ctx_peer->sign_certificate = &async_sc;
+
+    test_full_handshake_impl(0, 1);
+
+    ctx_peer->sign_certificate = orig_sc;
 }
 
 static void test_enforce_retry(int use_cookie)
@@ -1418,6 +1482,8 @@ static void test_all_handshakes(void)
     subtest("resumption", test_resumption);
     subtest("resumption-different-preferred-key-share", test_resumption_different_preferred_key_share);
     subtest("resumption-with-client-authentication", test_resumption_with_client_authentication);
+
+    subtest("async-sign-certificate", test_async_sign_certificate);
 
     subtest("enforce-retry-stateful", test_enforce_retry_stateful);
     subtest("enforce-retry-stateless", test_enforce_retry_stateless);
