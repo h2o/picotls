@@ -33,6 +33,9 @@ extern "C" {
 #include <assert.h>
 #include <inttypes.h>
 #include <sys/types.h>
+#include <stddef.h>
+#include "picotcpls.h"
+
 
 #if __GNUC__ >= 3
 #define PTLS_LIKELY(x) __builtin_expect(!!(x), 1)
@@ -79,19 +82,19 @@ extern "C" {
 #define PTLS_MAX_IV_SIZE 16
 #define PTLS_MAX_DIGEST_SIZE 64
 
-/* cipher-suites */
+  /* cipher-suites */
 #define PTLS_CIPHER_SUITE_AES_128_GCM_SHA256 0x1301
 #define PTLS_CIPHER_SUITE_AES_256_GCM_SHA384 0x1302
 #define PTLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256 0x1303
 
-/* negotiated_groups */
+  /* negotiated_groups */
 #define PTLS_GROUP_SECP256R1 23
 #define PTLS_GROUP_SECP384R1 24
 #define PTLS_GROUP_SECP521R1 25
 #define PTLS_GROUP_X25519 29
 #define PTLS_GROUP_X448 30
 
-/* signature algorithms */
+  /* signature algorithms */
 #define PTLS_SIGNATURE_RSA_PKCS1_SHA1 0x0201
 #define PTLS_SIGNATURE_RSA_PKCS1_SHA256 0x0401
 #define PTLS_SIGNATURE_ECDSA_SECP256R1_SHA256 0x0403
@@ -101,13 +104,13 @@ extern "C" {
 #define PTLS_SIGNATURE_RSA_PSS_RSAE_SHA384 0x0805
 #define PTLS_SIGNATURE_RSA_PSS_RSAE_SHA512 0x0806
 
-/* ESNI */
+  /* ESNI */
 #define PTLS_ESNI_VERSION_DRAFT03 0xff02
 
 #define PTLS_ESNI_RESPONSE_TYPE_ACCEPT 0
 #define PTLS_ESNI_RESPONSE_TYPE_RETRY_REQUEST 1
 
-/* error classes and macros */
+  /* error classes and macros */
 #define PTLS_ERROR_CLASS_SELF_ALERT 0
 #define PTLS_ERROR_CLASS_PEER_ALERT 0x100
 #define PTLS_ERROR_CLASS_INTERNAL 0x200
@@ -117,10 +120,10 @@ extern "C" {
 #define PTLS_ALERT_TO_PEER_ERROR(e) ((e) + PTLS_ERROR_CLASS_PEER_ALERT)
 #define PTLS_ERROR_TO_ALERT(e) ((e)&0xff)
 
-/* the HKDF prefix */
+  /* the HKDF prefix */
 #define PTLS_HKDF_EXPAND_LABEL_PREFIX "tls13 "
 
-/* alerts */
+  /* alerts */
 #define PTLS_ALERT_LEVEL_WARNING 1
 #define PTLS_ALERT_LEVEL_FATAL 2
 
@@ -144,7 +147,7 @@ extern "C" {
 #define PTLS_ALERT_CERTIFICATE_REQUIRED 116
 #define PTLS_ALERT_NO_APPLICATION_PROTOCOL 120
 
-/* internal errors */
+  /* internal errors */
 #define PTLS_ERROR_NO_MEMORY (PTLS_ERROR_CLASS_INTERNAL + 1)
 #define PTLS_ERROR_IN_PROGRESS (PTLS_ERROR_CLASS_INTERNAL + 2)
 #define PTLS_ERROR_LIBRARY (PTLS_ERROR_CLASS_INTERNAL + 3)
@@ -185,45 +188,127 @@ extern "C" {
 #define PTLS_HANDSHAKE_TYPE_COMPRESSED_CERTIFICATE 25
 #define PTLS_HANDSHAKE_TYPE_MESSAGE_HASH 254
 
+
+#define PTLS_MAX_PLAINTEXT_RECORD_SIZE 16384
+#define PTLS_MAX_ENCRYPTED_RECORD_SIZE (16384 + 256)
+
+#define PTLS_RECORD_VERSION_MAJOR 3
+#define PTLS_RECORD_VERSION_MINOR 3
+
+#define PTLS_CONTENT_TYPE_CHANGE_CIPHER_SPEC 20
+#define PTLS_CONTENT_TYPE_ALERT 21
+#define PTLS_CONTENT_TYPE_HANDSHAKE 22
+#define PTLS_CONTENT_TYPE_APPDATA 23
+
+#define PTLS_PSK_KE_MODE_PSK 0
+#define PTLS_PSK_KE_MODE_PSK_DHE 1
+
+#define PTLS_HANDSHAKE_HEADER_SIZE 4
+
+#define PTLS_EXTENSION_TYPE_SERVER_NAME 0
+#define PTLS_EXTENSION_TYPE_STATUS_REQUEST 5
+#define PTLS_EXTENSION_TYPE_SUPPORTED_GROUPS 10
+#define PTLS_EXTENSION_TYPE_SIGNATURE_ALGORITHMS 13
+#define PTLS_EXTENSION_TYPE_ALPN 16
+#define PTLS_EXTENSION_TYPE_COMPRESS_CERTIFICATE 27
+#define PTLS_EXTENSION_TYPE_PRE_SHARED_KEY 41
+#define PTLS_EXTENSION_TYPE_EARLY_DATA 42
+#define PTLS_EXTENSION_TYPE_SUPPORTED_VERSIONS 43
+#define PTLS_EXTENSION_TYPE_COOKIE 44
+#define PTLS_EXTENSION_TYPE_PSK_KEY_EXCHANGE_MODES 45
+#define PTLS_EXTENSION_TYPE_KEY_SHARE 51
+#define PTLS_EXTENSION_TYPE_ENCRYPTED_SERVER_NAME 0xffce
+
+  /** Server to client encrypted extension  */
+#define PTLS_EXTENSION_TYPE_ENCRYPTED_TCP_OPTIONS 100
+  /** Define TCP extensions to be used as TLS extensions during the handshake */
+#define PTLS_EXTENSION_TYPE_ENCRYPTED_TCP_OPTIONS_USERTIMEOUT 101
+
+#define PTLS_PROTOCOL_VERSION_TLS13_FINAL 0x0304
+#define PTLS_PROTOCOL_VERSION_TLS13_DRAFT26 0x7f1a
+#define PTLS_PROTOCOL_VERSION_TLS13_DRAFT27 0x7f1b
+#define PTLS_PROTOCOL_VERSION_TLS13_DRAFT28 0x7f1c
+
+#define PTLS_SERVER_NAME_TYPE_HOSTNAME 0
+
+#define PTLS_SERVER_CERTIFICATE_VERIFY_CONTEXT_STRING "TLS 1.3, server CertificateVerify"
+#define PTLS_CLIENT_CERTIFICATE_VERIFY_CONTEXT_STRING "TLS 1.3, client CertificateVerify"
+#define PTLS_MAX_CERTIFICATE_VERIFY_SIGNDATA_SIZE                                                                                  \
+  (64 + sizeof(PTLS_SERVER_CERTIFICATE_VERIFY_CONTEXT_STRING) + PTLS_MAX_DIGEST_SIZE * 2)
+
+#define PTLS_EARLY_DATA_MAX_DELAY 10000 /* max. RTT (in msec) to permit early data */
+
+#ifndef PTLS_MAX_EARLY_DATA_SKIP_SIZE
+#define PTLS_MAX_EARLY_DATA_SKIP_SIZE 65536
+#endif
+#if defined(PTLS_DEBUG) && PTLS_DEBUG
+#define PTLS_DEBUGF(...) fprintf(stderr, __VA_ARGS__)
+#else
+#define PTLS_DEBUGF(...)
+#endif
+
+#ifndef PTLS_MEMORY_DEBUG
+#define PTLS_MEMORY_DEBUG 0
+#endif
+
+#if PICOTLS_USE_DTRACE
+#define PTLS_SHOULD_PROBE(LABEL, tls) (PTLS_UNLIKELY(PICOTLS_##LABEL##_ENABLED()) && !(tls)->skip_tracing)
+#define PTLS_PROBE0(LABEL, tls)                                                                                                    \
+  do {                                                                                                                           \
+    ptls_t *_tls = (tls);                                                                                                      \
+    if (PTLS_SHOULD_PROBE(LABEL, _tls))                                                                                        \
+    PICOTLS_##LABEL(_tls);                                                                                                 \
+  } while (0)
+#define PTLS_PROBE(LABEL, tls, ...)                                                                                                \
+  do {                                                                                                                           \
+    ptls_t *_tls = (tls);                                                                                                      \
+    if (PTLS_SHOULD_PROBE(LABEL, _tls))                                                                                        \
+    PICOTLS_##LABEL(_tls, __VA_ARGS__);                                                                                    \
+  } while (0)
+#else
+#define PTLS_PROBE0(LABEL, tls)
+#define PTLS_PROBE(LABEL, tls, ...)
+#endif
+
+
+
 #define PTLS_ZERO_DIGEST_SHA256                                                                                                    \
-    {                                                                                                                              \
-        0xe3, 0xb0, 0xc4, 0x42, 0x98, 0xfc, 0x1c, 0x14, 0x9a, 0xfb, 0xf4, 0xc8, 0x99, 0x6f, 0xb9, 0x24, 0x27, 0xae, 0x41, 0xe4,    \
-            0x64, 0x9b, 0x93, 0x4c, 0xa4, 0x95, 0x99, 0x1b, 0x78, 0x52, 0xb8, 0x55                                                 \
-    }
+  {                                                                                                                              \
+    0xe3, 0xb0, 0xc4, 0x42, 0x98, 0xfc, 0x1c, 0x14, 0x9a, 0xfb, 0xf4, 0xc8, 0x99, 0x6f, 0xb9, 0x24, 0x27, 0xae, 0x41, 0xe4,    \
+    0x64, 0x9b, 0x93, 0x4c, 0xa4, 0x95, 0x99, 0x1b, 0x78, 0x52, 0xb8, 0x55                                                 \
+  }
 
 #define PTLS_ZERO_DIGEST_SHA384                                                                                                    \
-    {                                                                                                                              \
-        0x38, 0xb0, 0x60, 0xa7, 0x51, 0xac, 0x96, 0x38, 0x4c, 0xd9, 0x32, 0x7e, 0xb1, 0xb1, 0xe3, 0x6a, 0x21, 0xfd, 0xb7, 0x11,    \
-            0x14, 0xbe, 0x07, 0x43, 0x4c, 0x0c, 0xc7, 0xbf, 0x63, 0xf6, 0xe1, 0xda, 0x27, 0x4e, 0xde, 0xbf, 0xe7, 0x6f, 0x65,      \
-            0xfb, 0xd5, 0x1a, 0xd2, 0xf1, 0x48, 0x98, 0xb9, 0x5b                                                                   \
-    }
+  {                                                                                                                              \
+    0x38, 0xb0, 0x60, 0xa7, 0x51, 0xac, 0x96, 0x38, 0x4c, 0xd9, 0x32, 0x7e, 0xb1, 0xb1, 0xe3, 0x6a, 0x21, 0xfd, 0xb7, 0x11,    \
+    0x14, 0xbe, 0x07, 0x43, 0x4c, 0x0c, 0xc7, 0xbf, 0x63, 0xf6, 0xe1, 0xda, 0x27, 0x4e, 0xde, 0xbf, 0xe7, 0x6f, 0x65,      \
+    0xfb, 0xd5, 0x1a, 0xd2, 0xf1, 0x48, 0x98, 0xb9, 0x5b                                                                   \
+  }
 
-typedef struct st_ptls_t ptls_t;
-typedef struct st_ptls_context_t ptls_context_t;
-typedef struct st_ptls_key_schedule_t ptls_key_schedule_t;
+  typedef struct st_ptls_key_schedule_t ptls_key_schedule_t;
 
-/**
- * represents a sequence of octets
- */
-typedef struct st_ptls_iovec_t {
+  /**
+   * represents a sequence of octets
+   */
+  typedef struct st_ptls_iovec_t {
     uint8_t *base;
     size_t len;
-} ptls_iovec_t;
+  } ptls_iovec_t;
 
-/**
- * used for storing output
- */
-typedef struct st_ptls_buffer_t {
+  /**
+   * used for storing output
+   */
+  typedef struct st_ptls_buffer_t {
     uint8_t *base;
     size_t capacity;
     size_t off;
     int is_allocated;
-} ptls_buffer_t;
+  } ptls_buffer_t;
 
-/**
- * key exchange context built by ptls_key_exchange_algorithm::create.
- */
-typedef struct st_ptls_key_exchange_context_t {
+  /**
+   * key exchange context built by ptls_key_exchange_algorithm::create.
+   */
+  typedef struct st_ptls_key_exchange_context_t {
     /**
      * the underlying algorithm
      */
@@ -236,12 +321,12 @@ typedef struct st_ptls_key_exchange_context_t {
      * If `release` is set, the callee frees resources allocated to the context and set *keyex to NULL
      */
     int (*on_exchange)(struct st_ptls_key_exchange_context_t **keyex, int release, ptls_iovec_t *secret, ptls_iovec_t peerkey);
-} ptls_key_exchange_context_t;
+  } ptls_key_exchange_context_t;
 
-/**
- * A key exchange algorithm.
- */
-typedef const struct st_ptls_key_exchange_algorithm_t {
+  /**
+   * A key exchange algorithm.
+   */
+  typedef const struct st_ptls_key_exchange_algorithm_t {
     /**
      * ID defined by the TLS specification
      */
@@ -255,41 +340,41 @@ typedef const struct st_ptls_key_exchange_algorithm_t {
      * implements synchronous key exchange. Called when receiving a ServerHello.
      */
     int (*exchange)(const struct st_ptls_key_exchange_algorithm_t *algo, ptls_iovec_t *pubkey, ptls_iovec_t *secret,
-                    ptls_iovec_t peerkey);
+        ptls_iovec_t peerkey);
     /**
      * crypto-specific data
      */
     intptr_t data;
-} ptls_key_exchange_algorithm_t;
+  } ptls_key_exchange_algorithm_t;
 
-/**
- * context of a symmetric cipher
- */
-typedef struct st_ptls_cipher_context_t {
+  /**
+   * context of a symmetric cipher
+   */
+  typedef struct st_ptls_cipher_context_t {
     const struct st_ptls_cipher_algorithm_t *algo;
     /* field above this line must not be altered by the crypto binding */
     void (*do_dispose)(struct st_ptls_cipher_context_t *ctx);
     void (*do_init)(struct st_ptls_cipher_context_t *ctx, const void *iv);
     void (*do_transform)(struct st_ptls_cipher_context_t *ctx, void *output, const void *input, size_t len);
-} ptls_cipher_context_t;
+  } ptls_cipher_context_t;
 
-/**
- * a symmetric cipher
- */
-typedef const struct st_ptls_cipher_algorithm_t {
+  /**
+   * a symmetric cipher
+   */
+  typedef const struct st_ptls_cipher_algorithm_t {
     const char *name;
     size_t key_size;
     size_t block_size;
     size_t iv_size;
     size_t context_size;
     int (*setup_crypto)(ptls_cipher_context_t *ctx, int is_enc, const void *key);
-} ptls_cipher_algorithm_t;
+  } ptls_cipher_algorithm_t;
 
-/**
- * AEAD context. AEAD implementations are allowed to stuff data at the end of the struct. The size of the memory allocated for the
- * struct is governed by ptls_aead_algorithm_t::context_size.
- */
-typedef struct st_ptls_aead_context_t {
+  /**
+   * AEAD context. AEAD implementations are allowed to stuff data at the end of the struct. The size of the memory allocated for the
+   * struct is governed by ptls_aead_algorithm_t::context_size.
+   */
+  typedef struct st_ptls_aead_context_t {
     const struct st_ptls_aead_algorithm_t *algo;
     uint8_t static_iv[PTLS_MAX_IV_SIZE];
     /* field above this line must not be altered by the crypto binding */
@@ -298,13 +383,13 @@ typedef struct st_ptls_aead_context_t {
     size_t (*do_encrypt_update)(struct st_ptls_aead_context_t *ctx, void *output, const void *input, size_t inlen);
     size_t (*do_encrypt_final)(struct st_ptls_aead_context_t *ctx, void *output);
     size_t (*do_decrypt)(struct st_ptls_aead_context_t *ctx, void *output, const void *input, size_t inlen, const void *iv,
-                         const void *aad, size_t aadlen);
-} ptls_aead_context_t;
+        const void *aad, size_t aadlen);
+  } ptls_aead_context_t;
 
-/**
- * An AEAD cipher.
- */
-typedef const struct st_ptls_aead_algorithm_t {
+  /**
+   * An AEAD cipher.
+   */
+  typedef const struct st_ptls_aead_algorithm_t {
     /**
      * name (following the convention of `openssl ciphers -v ALL`)
      */
@@ -338,12 +423,12 @@ typedef const struct st_ptls_aead_algorithm_t {
      * callback that sets up the crypto
      */
     int (*setup_crypto)(ptls_aead_context_t *ctx, int is_enc, const void *key);
-} ptls_aead_algorithm_t;
+  } ptls_aead_algorithm_t;
 
-/**
- *
- */
-typedef enum en_ptls_hash_final_mode_t {
+  /**
+   *
+   */
+  typedef enum en_ptls_hash_final_mode_t {
     /**
      * obtains the digest and frees the context
      */
@@ -356,12 +441,12 @@ typedef enum en_ptls_hash_final_mode_t {
      * obtains the digest while leaving the context as-is
      */
     PTLS_HASH_FINAL_MODE_SNAPSHOT = 2
-} ptls_hash_final_mode_t;
+  } ptls_hash_final_mode_t;
 
-/**
- * A hash context.
- */
-typedef struct st_ptls_hash_context_t {
+  /**
+   * A hash context.
+   */
+  typedef struct st_ptls_hash_context_t {
     /**
      * feeds additional data into the hash context
      */
@@ -374,12 +459,12 @@ typedef struct st_ptls_hash_context_t {
      * creates a copy of the hash context
      */
     struct st_ptls_hash_context_t *(*clone_)(struct st_ptls_hash_context_t *src);
-} ptls_hash_context_t;
+  } ptls_hash_context_t;
 
-/**
- * A hash algorithm and its properties.
- */
-typedef const struct st_ptls_hash_algorithm_t {
+  /**
+   * A hash algorithm and its properties.
+   */
+  typedef const struct st_ptls_hash_algorithm_t {
     /**
      * block size
      */
@@ -396,73 +481,73 @@ typedef const struct st_ptls_hash_algorithm_t {
      * digest of zero-length octets
      */
     uint8_t empty_digest[PTLS_MAX_DIGEST_SIZE];
-} ptls_hash_algorithm_t;
+  } ptls_hash_algorithm_t;
 
-typedef const struct st_ptls_cipher_suite_t {
+  typedef const struct st_ptls_cipher_suite_t {
     uint16_t id;
     ptls_aead_algorithm_t *aead;
     ptls_hash_algorithm_t *hash;
-} ptls_cipher_suite_t;
+  } ptls_cipher_suite_t;
 
-struct st_ptls_traffic_protection_t;
+  struct st_ptls_traffic_protection_t;
 
-typedef struct st_ptls_message_emitter_t {
+  typedef struct st_ptls_message_emitter_t {
     ptls_buffer_t *buf;
     struct st_ptls_traffic_protection_t *enc;
     size_t record_header_length;
     int (*begin_message)(struct st_ptls_message_emitter_t *self);
     int (*commit_message)(struct st_ptls_message_emitter_t *self);
-} ptls_message_emitter_t;
+  } ptls_message_emitter_t;
 
-/**
- * holds ESNIKeys and the private key (instantiated by ptls_esni_parse, freed using ptls_esni_dispose)
- */
-typedef struct st_ptls_esni_context_t {
+  /**
+   * holds ESNIKeys and the private key (instantiated by ptls_esni_parse, freed using ptls_esni_dispose)
+   */
+  typedef struct st_ptls_esni_context_t {
     ptls_key_exchange_context_t **key_exchanges;
     struct {
-        ptls_cipher_suite_t *cipher_suite;
-        uint8_t record_digest[PTLS_MAX_DIGEST_SIZE];
+      ptls_cipher_suite_t *cipher_suite;
+      uint8_t record_digest[PTLS_MAX_DIGEST_SIZE];
     } * cipher_suites;
     uint16_t padded_length;
     uint64_t not_before;
     uint64_t not_after;
     uint16_t version;
-} ptls_esni_context_t;
+  } ptls_esni_context_t;
 
-/**
- * holds the ESNI secret, as exchanged during the handshake
- */
+  /**
+   * holds the ESNI secret, as exchanged during the handshake
+   */
 
 #define PTLS_ESNI_NONCE_SIZE 16
 
-typedef struct st_ptls_esni_secret_t {
+  typedef struct st_ptls_esni_secret_t {
     ptls_iovec_t secret;
     uint8_t nonce[PTLS_ESNI_NONCE_SIZE];
     uint8_t esni_contents_hash[PTLS_MAX_DIGEST_SIZE];
     struct {
-        ptls_key_exchange_algorithm_t *key_share;
-        ptls_cipher_suite_t *cipher;
-        ptls_iovec_t pubkey;
-        uint8_t record_digest[PTLS_MAX_DIGEST_SIZE];
-        uint16_t padded_length;
+      ptls_key_exchange_algorithm_t *key_share;
+      ptls_cipher_suite_t *cipher;
+      ptls_iovec_t pubkey;
+      uint8_t record_digest[PTLS_MAX_DIGEST_SIZE];
+      uint16_t padded_length;
     } client;
     uint16_t version;
-} ptls_esni_secret_t;
+  } ptls_esni_secret_t;
 
 #define PTLS_CALLBACK_TYPE0(ret, name)                                                                                             \
-    typedef struct st_ptls_##name##_t {                                                                                            \
-        ret (*cb)(struct st_ptls_##name##_t * self);                                                                               \
-    } ptls_##name##_t
+  typedef struct st_ptls_##name##_t {                                                                                            \
+    ret (*cb)(struct st_ptls_##name##_t * self);                                                                               \
+  } ptls_##name##_t
 
 #define PTLS_CALLBACK_TYPE(ret, name, ...)                                                                                         \
-    typedef struct st_ptls_##name##_t {                                                                                            \
-        ret (*cb)(struct st_ptls_##name##_t * self, __VA_ARGS__);                                                                  \
-    } ptls_##name##_t
+  typedef struct st_ptls_##name##_t {                                                                                            \
+    ret (*cb)(struct st_ptls_##name##_t * self, __VA_ARGS__);                                                                  \
+  } ptls_##name##_t
 
-/**
- * arguments passsed to the on_client_hello callback
- */
-typedef struct st_ptls_on_client_hello_parameters_t {
+  /**
+   * arguments passsed to the on_client_hello callback
+   */
+  typedef struct st_ptls_on_client_hello_parameters_t {
     /**
      * SNI value received from the client. The value is {NULL, 0} if the extension was absent.
      */
@@ -475,91 +560,91 @@ typedef struct st_ptls_on_client_hello_parameters_t {
      *
      */
     struct {
-        ptls_iovec_t *list;
-        size_t count;
+      ptls_iovec_t *list;
+      size_t count;
     } negotiated_protocols;
     struct {
-        const uint16_t *list;
-        size_t count;
+      const uint16_t *list;
+      size_t count;
     } signature_algorithms;
     struct {
-        const uint16_t *list;
-        size_t count;
+      const uint16_t *list;
+      size_t count;
     } certificate_compression_algorithms;
     struct {
-        const uint16_t *list;
-        size_t count;
+      const uint16_t *list;
+      size_t count;
     } cipher_suites;
     /**
      * if ESNI was used
      */
     unsigned esni : 1;
-} ptls_on_client_hello_parameters_t;
+  } ptls_on_client_hello_parameters_t;
 
-/**
- * returns current time in milliseconds (ptls_get_time can be used to return the physical time)
- */
-PTLS_CALLBACK_TYPE0(uint64_t, get_time);
-/**
- * after receiving ClientHello, the core calls the optional callback to give a chance to the swap the context depending on the input
- * values. The callback is required to call `ptls_set_server_name` if an SNI extension needs to be sent to the client.
- */
-PTLS_CALLBACK_TYPE(int, on_client_hello, ptls_t *tls, ptls_on_client_hello_parameters_t *params);
-/**
- * callback to generate the certificate message. `ptls_context::certificates` are set when the callback is set to NULL.
- */
-PTLS_CALLBACK_TYPE(int, emit_certificate, ptls_t *tls, ptls_message_emitter_t *emitter, ptls_key_schedule_t *key_sched,
-                   ptls_iovec_t context, int push_status_request);
-/**
- * when gerenating CertificateVerify, the core calls the callback to sign the handshake context using the certificate.
- */
-PTLS_CALLBACK_TYPE(int, sign_certificate, ptls_t *tls, uint16_t *selected_algorithm, ptls_buffer_t *output, ptls_iovec_t input,
-                   const uint16_t *algorithms, size_t num_algorithms);
-/**
- * after receiving Certificate, the core calls the callback to verify the certificate chain and to obtain a pointer to a
- * callback that should be used for verifying CertificateVerify. If an error occurs between a successful return from this
- * callback to the invocation of the verify_sign callback, verify_sign is called with both data and sign set to an empty buffer.
- * The implementor of the callback should use that as the opportunity to free any temporary data allocated for the verify_sign
- * callback.
- */
-PTLS_CALLBACK_TYPE(int, verify_certificate, ptls_t *tls,
-                   int (**verify_sign)(void *verify_ctx, ptls_iovec_t data, ptls_iovec_t sign), void **verify_data,
-                   ptls_iovec_t *certs, size_t num_certs);
-/**
- * Encrypt-and-signs (or verify-and-decrypts) a ticket (server-only).
- * When used for encryption (i.e., is_encrypt being set), the function should return 0 if successful, or else a non-zero value.
- * When used for decryption, the function should return 0 (successful), PTLS_ERROR_REJECT_EARLY_DATA (successful, but 0-RTT is
- * forbidden), or any other value to indicate failure.
- */
-PTLS_CALLBACK_TYPE(int, encrypt_ticket, ptls_t *tls, int is_encrypt, ptls_buffer_t *dst, ptls_iovec_t src);
-/**
- * saves a ticket (client-only)
- */
-PTLS_CALLBACK_TYPE(int, save_ticket, ptls_t *tls, ptls_iovec_t input);
-/**
- * event logging (incl. secret logging)
- */
-typedef struct st_ptls_log_event_t {
+  /**
+   * returns current time in milliseconds (ptls_get_time can be used to return the physical time)
+   */
+  PTLS_CALLBACK_TYPE0(uint64_t, get_time);
+  /**
+   * after receiving ClientHello, the core calls the optional callback to give a chance to the swap the context depending on the input
+   * values. The callback is required to call `ptls_set_server_name` if an SNI extension needs to be sent to the client.
+   */
+  PTLS_CALLBACK_TYPE(int, on_client_hello, ptls_t *tls, ptls_on_client_hello_parameters_t *params);
+  /**
+   * callback to generate the certificate message. `ptls_context::certificates` are set when the callback is set to NULL.
+   */
+  PTLS_CALLBACK_TYPE(int, emit_certificate, ptls_t *tls, ptls_message_emitter_t *emitter, ptls_key_schedule_t *key_sched,
+      ptls_iovec_t context, int push_status_request);
+  /**
+   * when gerenating CertificateVerify, the core calls the callback to sign the handshake context using the certificate.
+   */
+  PTLS_CALLBACK_TYPE(int, sign_certificate, ptls_t *tls, uint16_t *selected_algorithm, ptls_buffer_t *output, ptls_iovec_t input,
+      const uint16_t *algorithms, size_t num_algorithms);
+  /**
+   * after receiving Certificate, the core calls the callback to verify the certificate chain and to obtain a pointer to a
+   * callback that should be used for verifying CertificateVerify. If an error occurs between a successful return from this
+   * callback to the invocation of the verify_sign callback, verify_sign is called with both data and sign set to an empty buffer.
+   * The implementor of the callback should use that as the opportunity to free any temporary data allocated for the verify_sign
+   * callback.
+   */
+  PTLS_CALLBACK_TYPE(int, verify_certificate, ptls_t *tls,
+      int (**verify_sign)(void *verify_ctx, ptls_iovec_t data, ptls_iovec_t sign), void **verify_data,
+      ptls_iovec_t *certs, size_t num_certs);
+  /**
+   * Encrypt-and-signs (or verify-and-decrypts) a ticket (server-only).
+   * When used for encryption (i.e., is_encrypt being set), the function should return 0 if successful, or else a non-zero value.
+   * When used for decryption, the function should return 0 (successful), PTLS_ERROR_REJECT_EARLY_DATA (successful, but 0-RTT is
+   * forbidden), or any other value to indicate failure.
+   */
+  PTLS_CALLBACK_TYPE(int, encrypt_ticket, ptls_t *tls, int is_encrypt, ptls_buffer_t *dst, ptls_iovec_t src);
+  /**
+   * saves a ticket (client-only)
+   */
+  PTLS_CALLBACK_TYPE(int, save_ticket, ptls_t *tls, ptls_iovec_t input);
+  /**
+   * event logging (incl. secret logging)
+   */
+  typedef struct st_ptls_log_event_t {
     void (*cb)(struct st_ptls_log_event_t *self, ptls_t *tls, const char *type, const char *fmt, ...)
-        __attribute__((format(printf, 4, 5)));
-} ptls_log_event_t;
-/**
- * reference counting
- */
-PTLS_CALLBACK_TYPE(void, update_open_count, ssize_t delta);
-/**
- * applications that have their own record layer can set this function to derive their own traffic keys from the traffic secret.
- * The cipher-suite that is being associated to the connection can be obtained by calling the ptls_get_cipher function.
- */
-PTLS_CALLBACK_TYPE(int, update_traffic_key, ptls_t *tls, int is_enc, size_t epoch, const void *secret);
-/**
- * callback for every extension detected during decoding
- */
-PTLS_CALLBACK_TYPE(int, on_extension, ptls_t *tls, uint8_t hstype, uint16_t exttype, ptls_iovec_t extdata);
-/**
- *
- */
-typedef struct st_ptls_decompress_certificate_t {
+      __attribute__((format(printf, 4, 5)));
+  } ptls_log_event_t;
+  /**
+   * reference counting
+   */
+  PTLS_CALLBACK_TYPE(void, update_open_count, ssize_t delta);
+  /**
+   * applications that have their own record layer can set this function to derive their own traffic keys from the traffic secret.
+   * The cipher-suite that is being associated to the connection can be obtained by calling the ptls_get_cipher function.
+   */
+  PTLS_CALLBACK_TYPE(int, update_traffic_key, ptls_t *tls, int is_enc, size_t epoch, const void *secret);
+  /**
+   * callback for every extension detected during decoding
+   */
+  PTLS_CALLBACK_TYPE(int, on_extension, ptls_t *tls, uint8_t hstype, uint16_t exttype, ptls_iovec_t extdata);
+  /**
+   *
+   */
+  typedef struct st_ptls_decompress_certificate_t {
     /**
      * list of supported algorithms terminated by UINT16_MAX
      */
@@ -568,18 +653,18 @@ typedef struct st_ptls_decompress_certificate_t {
      * callback that decompresses the message
      */
     int (*cb)(struct st_ptls_decompress_certificate_t *self, ptls_t *tls, uint16_t algorithm, ptls_iovec_t output,
-              ptls_iovec_t input);
-} ptls_decompress_certificate_t;
-/**
- * provides access to the ESNI shared secret (Zx).  API is subject to change.
- */
-PTLS_CALLBACK_TYPE(int, update_esni_key, ptls_t *tls, ptls_iovec_t secret, ptls_hash_algorithm_t *hash,
-                   const void *hashed_esni_contents);
+        ptls_iovec_t input);
+  } ptls_decompress_certificate_t;
+  /**
+   * provides access to the ESNI shared secret (Zx).  API is subject to change.
+   */
+  PTLS_CALLBACK_TYPE(int, update_esni_key, ptls_t *tls, ptls_iovec_t secret, ptls_hash_algorithm_t *hash,
+      const void *hashed_esni_contents);
 
-/**
- * the configuration
- */
-struct st_ptls_context_t {
+  /**
+   * the configuration
+   */
+  struct st_ptls_context_t {
     /**
      * PRNG to be used
      */
@@ -600,9 +685,14 @@ struct st_ptls_context_t {
      * list of certificates
      */
     struct {
-        ptls_iovec_t *list;
-        size_t count;
+      ptls_iovec_t *list;
+      size_t count;
     } certificates;
+
+    /**
+     * List of user configured options
+     */
+    ptls_tcpls_t **tcpls_options;
     /**
      * list of ESNI data terminated by NULL
      */
@@ -662,6 +752,17 @@ struct st_ptls_context_t {
      */
     unsigned omit_end_of_early_data : 1;
     /**
+     * if set, we will communicate our ability to send TCP options
+     * at the handshake
+     */
+    unsigned support_tcpls_options : 1;
+
+    /**
+     * Set to 1 if the other peer also announced it supports Encrypted TCP
+     * options
+     */
+    unsigned tcpls_options_confirmed : 1;
+    /**
      *
      */
     ptls_encrypt_ticket_t *encrypt_ticket;
@@ -693,93 +794,93 @@ struct st_ptls_context_t {
      *
      */
     ptls_on_extension_t *on_extension;
-};
+  };
 
-typedef struct st_ptls_raw_extension_t {
+  typedef struct st_ptls_raw_extension_t {
     uint16_t type;
     ptls_iovec_t data;
-} ptls_raw_extension_t;
+  } ptls_raw_extension_t;
 
-typedef enum en_ptls_early_data_acceptance_t {
+  typedef enum en_ptls_early_data_acceptance_t {
     PTLS_EARLY_DATA_ACCEPTANCE_UNKNOWN = 0,
     PTLS_EARLY_DATA_REJECTED,
     PTLS_EARLY_DATA_ACCEPTED
-} ptls_early_data_acceptance_t;
+  } ptls_early_data_acceptance_t;
 
-/**
- * optional arguments to client-driven handshake
- */
+  /**
+   * optional arguments to client-driven handshake
+   */
 #ifdef _WINDOWS
-/* suppress warning C4201: nonstandard extension used: nameless struct/union */
+  /* suppress warning C4201: nonstandard extension used: nameless struct/union */
 #pragma warning(push)
 #pragma warning(disable : 4201)
 #endif
-typedef struct st_ptls_handshake_properties_t {
+  typedef struct st_ptls_handshake_properties_t {
     union {
+      struct {
+        /**
+         * list of protocols offered through ALPN
+         */
         struct {
-            /**
-             * list of protocols offered through ALPN
-             */
-            struct {
-                const ptls_iovec_t *list;
-                size_t count;
-            } negotiated_protocols;
-            /**
-             * session ticket sent to the application via save_ticket callback
-             */
-            ptls_iovec_t session_ticket;
-            /**
-             * pointer to store the maximum size of early-data that can be sent immediately. If set to non-NULL, the first call to
-             * ptls_handshake (or ptls_handle_message) will set `*max_early_data` to the value obtained from the session ticket, or
-             * to zero if early-data cannot be sent. If NULL, early data will not be used.
-             */
-            size_t *max_early_data_size;
-            /**
-             * If early-data has been accepted by peer, or if the state is still unknown. The state changes anytime after handshake
-             * keys become available. Applications can peek the tri-state variable every time it calls `ptls_hanshake` or
-             * `ptls_handle_message` to determine the result at the earliest moment. This is an output parameter.
-             */
-            ptls_early_data_acceptance_t early_data_acceptance;
-            /**
-             * negotiate the key exchange method before sending key_share
-             */
-            unsigned negotiate_before_key_exchange : 1;
-            /**
-             * ESNIKeys (the value of the TXT record, after being base64-"decoded")
-             */
-            ptls_iovec_t esni_keys;
-        } client;
+          const ptls_iovec_t *list;
+          size_t count;
+        } negotiated_protocols;
+        /**
+         * session ticket sent to the application via save_ticket callback
+         */
+        ptls_iovec_t session_ticket;
+        /**
+         * pointer to store the maximum size of early-data that can be sent immediately. If set to non-NULL, the first call to
+         * ptls_handshake (or ptls_handle_message) will set `*max_early_data` to the value obtained from the session ticket, or
+         * to zero if early-data cannot be sent. If NULL, early data will not be used.
+         */
+        size_t *max_early_data_size;
+        /**
+         * If early-data has been accepted by peer, or if the state is still unknown. The state changes anytime after handshake
+         * keys become available. Applications can peek the tri-state variable every time it calls `ptls_hanshake` or
+         * `ptls_handle_message` to determine the result at the earliest moment. This is an output parameter.
+         */
+        ptls_early_data_acceptance_t early_data_acceptance;
+        /**
+         * negotiate the key exchange method before sending key_share
+         */
+        unsigned negotiate_before_key_exchange : 1;
+        /**
+         * ESNIKeys (the value of the TXT record, after being base64-"decoded")
+         */
+        ptls_iovec_t esni_keys;
+      } client;
+      struct {
+        /**
+         * psk binder being selected (len is set to zero if none)
+         */
         struct {
-            /**
-             * psk binder being selected (len is set to zero if none)
-             */
-            struct {
-                uint8_t base[PTLS_MAX_DIGEST_SIZE];
-                size_t len;
-            } selected_psk_binder;
-            /**
-             * parameters related to use of the Cookie extension
-             */
-            struct {
-                /**
-                 * HMAC key to protect the integrity of the cookie. The key should be as long as the digest size of the first
-                 * ciphersuite specified in ptls_context_t (i.e. the hash algorithm of the best ciphersuite that can be chosen).
-                 */
-                const void *key;
-                /**
-                 * additional data to be used for verifying the cookie
-                 */
-                ptls_iovec_t additional_data;
-            } cookie;
-            /**
-             * if HRR should always be sent
-             */
-            unsigned enforce_retry : 1;
-            /**
-             * if retry should be stateless (cookie.key MUST be set when this option is used)
-             */
-            unsigned retry_uses_cookie : 1;
-        } server;
+          uint8_t base[PTLS_MAX_DIGEST_SIZE];
+          size_t len;
+        } selected_psk_binder;
+        /**
+         * parameters related to use of the Cookie extension
+         */
+        struct {
+          /**
+           * HMAC key to protect the integrity of the cookie. The key should be as long as the digest size of the first
+           * ciphersuite specified in ptls_context_t (i.e. the hash algorithm of the best ciphersuite that can be chosen).
+           */
+          const void *key;
+          /**
+           * additional data to be used for verifying the cookie
+           */
+          ptls_iovec_t additional_data;
+        } cookie;
+        /**
+         * if HRR should always be sent
+         */
+        unsigned enforce_retry : 1;
+        /**
+         * if retry should be stateless (cookie.key MUST be set when this option is used)
+         */
+        unsigned retry_uses_cookie : 1;
+      } server;
     };
     /**
      * an optional list of additional extensions to send either in CH or EE, terminated by type == UINT16_MAX
@@ -793,146 +894,147 @@ typedef struct st_ptls_handshake_properties_t {
      * an optional callback that reports the extensions being collected
      */
     int (*collected_extensions)(ptls_t *tls, struct st_ptls_handshake_properties_t *properties, ptls_raw_extension_t *extensions);
-} ptls_handshake_properties_t;
+  } ptls_handshake_properties_t;
 #ifdef _WINDOWS
 #pragma warning(pop)
 #endif
 
-/**
- * builds a new ptls_iovec_t instance using the supplied parameters
- */
-static ptls_iovec_t ptls_iovec_init(const void *p, size_t len);
-/**
- * initializes a buffer, setting the default destination to the small buffer provided as the argument.
- */
-static void ptls_buffer_init(ptls_buffer_t *buf, void *smallbuf, size_t smallbuf_size);
-/**
- * disposes a buffer, freeing resources allocated by the buffer itself (if any)
- */
-static void ptls_buffer_dispose(ptls_buffer_t *buf);
-/**
- * internal
- */
-void ptls_buffer__release_memory(ptls_buffer_t *buf);
-/**
- * reserves space for additional amount of memory
- */
-int ptls_buffer_reserve(ptls_buffer_t *buf, size_t delta);
-/**
- * internal
- */
-int ptls_buffer__do_pushv(ptls_buffer_t *buf, const void *src, size_t len);
-/**
- * internal
- */
-int ptls_buffer__adjust_quic_blocksize(ptls_buffer_t *buf, size_t body_size);
-/**
- * internal
- */
-int ptls_buffer__adjust_asn1_blocksize(ptls_buffer_t *buf, size_t body_size);
-/**
- * pushes an unsigned bigint
- */
-int ptls_buffer_push_asn1_ubigint(ptls_buffer_t *buf, const void *bignum, size_t size);
-/**
- * encodes a quic varint (maximum length is PTLS_ENCODE_QUICINT_CAPACITY)
- */
-static uint8_t *ptls_encode_quicint(uint8_t *p, uint64_t v);
+  /**
+   * builds a new ptls_iovec_t instance using the supplied parameters
+   */
+  static ptls_iovec_t ptls_iovec_init(const void *p, size_t len);
+  /**
+   * initializes a buffer, setting the default destination to the small buffer provided as the argument.
+   */
+  static void ptls_buffer_init(ptls_buffer_t *buf, void *smallbuf, size_t smallbuf_size);
+  /**
+   * disposes a buffer, freeing resources allocated by the buffer itself (if any)
+   */
+  static void ptls_buffer_dispose(ptls_buffer_t *buf);
+  /**
+   * internal
+   */
+
+  void ptls_buffer__release_memory(ptls_buffer_t *buf);
+  /**
+   * reserves space for additional amount of memory
+   */
+  int ptls_buffer_reserve(ptls_buffer_t *buf, size_t delta);
+  /**
+   * internal
+   */
+  int ptls_buffer__do_pushv(ptls_buffer_t *buf, const void *src, size_t len);
+  /**
+   * internal
+   */
+  int ptls_buffer__adjust_quic_blocksize(ptls_buffer_t *buf, size_t body_size);
+  /**
+   * internal
+   */
+  int ptls_buffer__adjust_asn1_blocksize(ptls_buffer_t *buf, size_t body_size);
+  /**
+   * pushes an unsigned bigint
+   */
+  int ptls_buffer_push_asn1_ubigint(ptls_buffer_t *buf, const void *bignum, size_t size);
+  /**
+   * encodes a quic varint (maximum length is PTLS_ENCODE_QUICINT_CAPACITY)
+   */
+  static uint8_t *ptls_encode_quicint(uint8_t *p, uint64_t v);
 #define PTLS_ENCODE_QUICINT_CAPACITY 8
 
 #define ptls_buffer_pushv(buf, src, len)                                                                                           \
-    do {                                                                                                                           \
-        if ((ret = ptls_buffer__do_pushv((buf), (src), (len))) != 0)                                                               \
-            goto Exit;                                                                                                             \
-    } while (0)
+  do {                                                                                                                           \
+    if ((ret = ptls_buffer__do_pushv((buf), (src), (len))) != 0)                                                               \
+    goto Exit;                                                                                                             \
+  } while (0)
 
 #define ptls_buffer_push(buf, ...)                                                                                                 \
-    do {                                                                                                                           \
-        if ((ret = ptls_buffer__do_pushv((buf), (uint8_t[]){__VA_ARGS__}, sizeof((uint8_t[]){__VA_ARGS__}))) != 0)                 \
-            goto Exit;                                                                                                             \
-    } while (0)
+  do {                                                                                                                           \
+    if ((ret = ptls_buffer__do_pushv((buf), (uint8_t[]){__VA_ARGS__}, sizeof((uint8_t[]){__VA_ARGS__}))) != 0)                 \
+    goto Exit;                                                                                                             \
+  } while (0)
 
 #define ptls_buffer_push16(buf, v)                                                                                                 \
-    do {                                                                                                                           \
-        uint16_t _v = (v);                                                                                                         \
-        ptls_buffer_push(buf, (uint8_t)(_v >> 8), (uint8_t)_v);                                                                    \
-    } while (0)
+  do {                                                                                                                           \
+    uint16_t _v = (v);                                                                                                         \
+    ptls_buffer_push(buf, (uint8_t)(_v >> 8), (uint8_t)_v);                                                                    \
+  } while (0)
 
 #define ptls_buffer_push24(buf, v)                                                                                                 \
-    do {                                                                                                                           \
-        uint32_t _v = (v);                                                                                                         \
-        ptls_buffer_push(buf, (uint8_t)(_v >> 16), (uint8_t)(_v >> 8), (uint8_t)_v);                                               \
-    } while (0)
+  do {                                                                                                                           \
+    uint32_t _v = (v);                                                                                                         \
+    ptls_buffer_push(buf, (uint8_t)(_v >> 16), (uint8_t)(_v >> 8), (uint8_t)_v);                                               \
+  } while (0)
 
 #define ptls_buffer_push32(buf, v)                                                                                                 \
-    do {                                                                                                                           \
-        uint32_t _v = (v);                                                                                                         \
-        ptls_buffer_push(buf, (uint8_t)(_v >> 24), (uint8_t)(_v >> 16), (uint8_t)(_v >> 8), (uint8_t)_v);                          \
-    } while (0)
+  do {                                                                                                                           \
+    uint32_t _v = (v);                                                                                                         \
+    ptls_buffer_push(buf, (uint8_t)(_v >> 24), (uint8_t)(_v >> 16), (uint8_t)(_v >> 8), (uint8_t)_v);                          \
+  } while (0)
 
 #define ptls_buffer_push64(buf, v)                                                                                                 \
-    do {                                                                                                                           \
-        uint64_t _v = (v);                                                                                                         \
-        ptls_buffer_push(buf, (uint8_t)(_v >> 56), (uint8_t)(_v >> 48), (uint8_t)(_v >> 40), (uint8_t)(_v >> 32),                  \
-                         (uint8_t)(_v >> 24), (uint8_t)(_v >> 16), (uint8_t)(_v >> 8), (uint8_t)_v);                               \
-    } while (0)
+  do {                                                                                                                           \
+    uint64_t _v = (v);                                                                                                         \
+    ptls_buffer_push(buf, (uint8_t)(_v >> 56), (uint8_t)(_v >> 48), (uint8_t)(_v >> 40), (uint8_t)(_v >> 32),                  \
+        (uint8_t)(_v >> 24), (uint8_t)(_v >> 16), (uint8_t)(_v >> 8), (uint8_t)_v);                               \
+  } while (0)
 
 #define ptls_buffer_push_quicint(buf, v)                                                                                           \
-    do {                                                                                                                           \
-        if ((ret = ptls_buffer_reserve((buf), PTLS_ENCODE_QUICINT_CAPACITY)) != 0)                                                 \
-            goto Exit;                                                                                                             \
-        uint8_t *d = ptls_encode_quicint((buf)->base + (buf)->off, (v));                                                           \
-        (buf)->off = d - (buf)->base;                                                                                              \
-    } while (0)
+  do {                                                                                                                           \
+    if ((ret = ptls_buffer_reserve((buf), PTLS_ENCODE_QUICINT_CAPACITY)) != 0)                                                 \
+    goto Exit;                                                                                                             \
+    uint8_t *d = ptls_encode_quicint((buf)->base + (buf)->off, (v));                                                           \
+    (buf)->off = d - (buf)->base;                                                                                              \
+  } while (0)
 
 #define ptls_buffer_push_block(buf, _capacity, block)                                                                              \
-    do {                                                                                                                           \
-        size_t capacity = (_capacity);                                                                                             \
-        ptls_buffer_pushv((buf), (uint8_t *)"\0\0\0\0\0\0\0", capacity != -1 ? capacity : 1);                                      \
-        size_t body_start = (buf)->off;                                                                                            \
-        do {                                                                                                                       \
-            block                                                                                                                  \
-        } while (0);                                                                                                               \
-        size_t body_size = (buf)->off - body_start;                                                                                \
-        if (capacity != -1) {                                                                                                      \
-            for (; capacity != 0; --capacity)                                                                                      \
-                (buf)->base[body_start - capacity] = (uint8_t)(body_size >> (8 * (capacity - 1)));                                 \
-        } else {                                                                                                                   \
-            if ((ret = ptls_buffer__adjust_quic_blocksize((buf), body_size)) != 0)                                                 \
-                goto Exit;                                                                                                         \
-        }                                                                                                                          \
-    } while (0)
+  do {                                                                                                                           \
+    size_t capacity = (_capacity);                                                                                             \
+    ptls_buffer_pushv((buf), (uint8_t *)"\0\0\0\0\0\0\0", capacity != -1 ? capacity : 1);                                      \
+    size_t body_start = (buf)->off;                                                                                            \
+    do {                                                                                                                       \
+      block                                                                                                                  \
+    } while (0);                                                                                                               \
+    size_t body_size = (buf)->off - body_start;                                                                                \
+    if (capacity != -1) {                                                                                                      \
+      for (; capacity != 0; --capacity)                                                                                      \
+      (buf)->base[body_start - capacity] = (uint8_t)(body_size >> (8 * (capacity - 1)));                                 \
+    } else {                                                                                                                   \
+      if ((ret = ptls_buffer__adjust_quic_blocksize((buf), body_size)) != 0)                                                 \
+      goto Exit;                                                                                                         \
+    }                                                                                                                          \
+  } while (0)
 
 #define ptls_buffer_push_asn1_block(buf, block)                                                                                    \
-    do {                                                                                                                           \
-        ptls_buffer_push((buf), 0xff); /* dummy */                                                                                 \
-        size_t body_start = (buf)->off;                                                                                            \
-        do {                                                                                                                       \
-            block                                                                                                                  \
-        } while (0);                                                                                                               \
-        size_t body_size = (buf)->off - body_start;                                                                                \
-        if (body_size < 128) {                                                                                                     \
-            (buf)->base[body_start - 1] = (uint8_t)body_size;                                                                      \
-        } else {                                                                                                                   \
-            if ((ret = ptls_buffer__adjust_asn1_blocksize((buf), body_size)) != 0)                                                 \
-                goto Exit;                                                                                                         \
-        }                                                                                                                          \
-    } while (0)
+  do {                                                                                                                           \
+    ptls_buffer_push((buf), 0xff); /* dummy */                                                                                 \
+    size_t body_start = (buf)->off;                                                                                            \
+    do {                                                                                                                       \
+      block                                                                                                                  \
+    } while (0);                                                                                                               \
+    size_t body_size = (buf)->off - body_start;                                                                                \
+    if (body_size < 128) {                                                                                                     \
+      (buf)->base[body_start - 1] = (uint8_t)body_size;                                                                      \
+    } else {                                                                                                                   \
+      if ((ret = ptls_buffer__adjust_asn1_blocksize((buf), body_size)) != 0)                                                 \
+      goto Exit;                                                                                                         \
+    }                                                                                                                          \
+  } while (0)
 
 #define ptls_buffer_push_asn1_sequence(buf, block)                                                                                 \
-    do {                                                                                                                           \
-        ptls_buffer_push((buf), 0x30);                                                                                             \
-        ptls_buffer_push_asn1_block((buf), block);                                                                                 \
-    } while (0)
+  do {                                                                                                                           \
+    ptls_buffer_push((buf), 0x30);                                                                                             \
+    ptls_buffer_push_asn1_block((buf), block);                                                                                 \
+  } while (0)
 
 #define ptls_buffer_push_message_body(buf, key_sched, type, block)                                                                 \
-    do {                                                                                                                           \
-        ptls_buffer_t *_buf = (buf);                                                                                               \
-        ptls_key_schedule_t *_key_sched = (key_sched);                                                                             \
-        size_t mess_start = _buf->off;                                                                                             \
-        ptls_buffer_push(_buf, (type));                                                                                            \
-        ptls_buffer_push_block(_buf, 3, block);                                                                                    \
-        if (_key_sched != NULL)                                                                                                    \
+  do {                                                                                                                           \
+    ptls_buffer_t *_buf = (buf);                                                                                               \
+    ptls_key_schedule_t *_key_sched = (key_sched);                                                                             \
+    size_t mess_start = _buf->off;                                                                                             \
+    ptls_buffer_push(_buf, (type));                                                                                            \
+    ptls_buffer_push_block(_buf, 3, block);                                                                                    \
+    if (_key_sched != NULL)                                                                                                    \
             ptls__key_schedule_update_hash(_key_sched, _buf->base + mess_start, _buf->off - mess_start);                           \
     } while (0)
 
@@ -1069,6 +1171,7 @@ int ptls_is_psk_handshake(ptls_t *tls);
 /**
  * returns a pointer to user data pointer (client is reponsible for freeing the associated data prior to calling ptls_free)
  */
+
 void **ptls_get_data_ptr(ptls_t *tls);
 /**
  *
@@ -1095,6 +1198,21 @@ int ptls_receive(ptls_t *tls, ptls_buffer_t *plaintextbuf, const void *input, si
  * encrypts given buffer into multiple TLS records
  */
 int ptls_send(ptls_t *tls, ptls_buffer_t *sendbuf, const void *input, size_t inlen);
+
+
+/**
+ * Application level set of value for a given option to transmit through the TLS
+ * extension handshake mechanism, or throught the connection lifetime
+ */
+void ptls_set_tcpls_option(ptls_cipher_context_t *ctx, const void *data,
+    ptls_tcpls_options_t type);
+
+/**
+ * sends a given tcp option during the connection lifetime
+ *
+ * return -1 if the the option has not been set
+ */
+int ptls_send_tcpoptions(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_tcpls_options_t type);
 /**
  * updates the send traffic key (as well as asks the peer to update)
  */

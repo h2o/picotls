@@ -291,6 +291,7 @@ int main(int argc, char **argv)
                                   NULL,
                                   NULL,
                                   NULL,
+                                  NULL,
                                   &openssl_sign_certificate.super};
     assert(openssl_ctx.cipher_suites[0]->hash->digest_size == 48); /* sha384 */
     ptls_context_t openssl_ctx_sha256only = openssl_ctx;
@@ -332,6 +333,7 @@ int main(int argc, char **argv)
                                      ptls_minicrypto_key_exchanges,
                                      ptls_minicrypto_cipher_suites,
                                      {&minicrypto_certificate, 1},
+                                     NULL,
                                      NULL,
                                      NULL,
                                      NULL,

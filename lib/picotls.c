@@ -31,84 +31,9 @@
 #include <sys/time.h>
 #endif
 #include "picotls.h"
+#include "picotcpls.h"
 #if PICOTLS_USE_DTRACE
 #include "picotls-probes.h"
-#endif
-
-#define PTLS_MAX_PLAINTEXT_RECORD_SIZE 16384
-#define PTLS_MAX_ENCRYPTED_RECORD_SIZE (16384 + 256)
-
-#define PTLS_RECORD_VERSION_MAJOR 3
-#define PTLS_RECORD_VERSION_MINOR 3
-
-#define PTLS_CONTENT_TYPE_CHANGE_CIPHER_SPEC 20
-#define PTLS_CONTENT_TYPE_ALERT 21
-#define PTLS_CONTENT_TYPE_HANDSHAKE 22
-#define PTLS_CONTENT_TYPE_APPDATA 23
-
-#define PTLS_PSK_KE_MODE_PSK 0
-#define PTLS_PSK_KE_MODE_PSK_DHE 1
-
-#define PTLS_HANDSHAKE_HEADER_SIZE 4
-
-#define PTLS_EXTENSION_TYPE_SERVER_NAME 0
-#define PTLS_EXTENSION_TYPE_STATUS_REQUEST 5
-#define PTLS_EXTENSION_TYPE_SUPPORTED_GROUPS 10
-#define PTLS_EXTENSION_TYPE_SIGNATURE_ALGORITHMS 13
-#define PTLS_EXTENSION_TYPE_ALPN 16
-#define PTLS_EXTENSION_TYPE_COMPRESS_CERTIFICATE 27
-#define PTLS_EXTENSION_TYPE_PRE_SHARED_KEY 41
-#define PTLS_EXTENSION_TYPE_EARLY_DATA 42
-#define PTLS_EXTENSION_TYPE_SUPPORTED_VERSIONS 43
-#define PTLS_EXTENSION_TYPE_COOKIE 44
-#define PTLS_EXTENSION_TYPE_PSK_KEY_EXCHANGE_MODES 45
-#define PTLS_EXTENSION_TYPE_KEY_SHARE 51
-#define PTLS_EXTENSION_TYPE_ENCRYPTED_SERVER_NAME 0xffce
-
-#define PTLS_PROTOCOL_VERSION_TLS13_FINAL 0x0304
-#define PTLS_PROTOCOL_VERSION_TLS13_DRAFT26 0x7f1a
-#define PTLS_PROTOCOL_VERSION_TLS13_DRAFT27 0x7f1b
-#define PTLS_PROTOCOL_VERSION_TLS13_DRAFT28 0x7f1c
-
-#define PTLS_SERVER_NAME_TYPE_HOSTNAME 0
-
-#define PTLS_SERVER_CERTIFICATE_VERIFY_CONTEXT_STRING "TLS 1.3, server CertificateVerify"
-#define PTLS_CLIENT_CERTIFICATE_VERIFY_CONTEXT_STRING "TLS 1.3, client CertificateVerify"
-#define PTLS_MAX_CERTIFICATE_VERIFY_SIGNDATA_SIZE                                                                                  \
-    (64 + sizeof(PTLS_SERVER_CERTIFICATE_VERIFY_CONTEXT_STRING) + PTLS_MAX_DIGEST_SIZE * 2)
-
-#define PTLS_EARLY_DATA_MAX_DELAY 10000 /* max. RTT (in msec) to permit early data */
-
-#ifndef PTLS_MAX_EARLY_DATA_SKIP_SIZE
-#define PTLS_MAX_EARLY_DATA_SKIP_SIZE 65536
-#endif
-#if defined(PTLS_DEBUG) && PTLS_DEBUG
-#define PTLS_DEBUGF(...) fprintf(stderr, __VA_ARGS__)
-#else
-#define PTLS_DEBUGF(...)
-#endif
-
-#ifndef PTLS_MEMORY_DEBUG
-#define PTLS_MEMORY_DEBUG 0
-#endif
-
-#if PICOTLS_USE_DTRACE
-#define PTLS_SHOULD_PROBE(LABEL, tls) (PTLS_UNLIKELY(PICOTLS_##LABEL##_ENABLED()) && !(tls)->skip_tracing)
-#define PTLS_PROBE0(LABEL, tls)                                                                                                    \
-    do {                                                                                                                           \
-        ptls_t *_tls = (tls);                                                                                                      \
-        if (PTLS_SHOULD_PROBE(LABEL, _tls))                                                                                        \
-            PICOTLS_##LABEL(_tls);                                                                                                 \
-    } while (0)
-#define PTLS_PROBE(LABEL, tls, ...)                                                                                                \
-    do {                                                                                                                           \
-        ptls_t *_tls = (tls);                                                                                                      \
-        if (PTLS_SHOULD_PROBE(LABEL, _tls))                                                                                        \
-            PICOTLS_##LABEL(_tls, __VA_ARGS__);                                                                                    \
-    } while (0)
-#else
-#define PTLS_PROBE0(LABEL, tls)
-#define PTLS_PROBE(LABEL, tls, ...)
 #endif
 
 /**
@@ -398,7 +323,8 @@ static inline void extension_bitmap_set(struct st_ptls_extension_bitmap_t *bitma
         bitmap->bits[id / 8] |= 1 << (id % 8);
 }
 
-static inline void init_extension_bitmap(struct st_ptls_extension_bitmap_t *bitmap, uint8_t hstype)
+static inline void init_extension_bitmap(struct st_ptls_extension_bitmap_t
+    *bitmap, uint8_t hstype)
 {
     *bitmap = (struct st_ptls_extension_bitmap_t){{0}};
 
@@ -418,6 +344,16 @@ static inline void init_extension_bitmap(struct st_ptls_extension_bitmap_t *bitm
      */
     EXT(SERVER_NAME, {
         ALLOW(CLIENT_HELLO);
+        ALLOW(ENCRYPTED_EXTENSIONS);
+    });
+    EXT(ENCRYPTED_TCP_OPTIONS, {
+        ALLOW(CLIENT_HELLO);
+        ALLOW(SERVER_HELLO);
+        ALLOW(ENCRYPTED_EXTENSIONS);
+    });
+    EXT(ENCRYPTED_TCP_OPTIONS_USERTIMEOUT, {
+        ALLOW(CLIENT_HELLO);
+        ALLOW(SERVER_HELLO);
         ALLOW(ENCRYPTED_EXTENSIONS);
     });
     EXT(STATUS_REQUEST, {
@@ -2002,6 +1938,13 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
                     });
                 }
             }
+            /** Announce we send/receive TCP options */
+            if (tls->ctx->support_tcpls_options) {
+              // Not cool for fingerprintability, not sending the list of
+              // supported TCP options in clear =/ 
+              buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_ENCRYPTED_TCP_OPTIONS, {});
+            }
+
             if (properties != NULL && properties->client.negotiated_protocols.count != 0) {
                 buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_ALPN, {
                     ptls_buffer_push_block(sendbuf, 2, {
@@ -2228,6 +2171,11 @@ static int decode_server_hello(ptls_t *tls, struct st_ptls_server_hello_t *sh, c
                     goto Exit;
             }
             break;
+        /** The server wishes to use encrypted TCP options */
+        case PTLS_EXTENSION_TYPE_ENCRYPTED_TCP_OPTIONS:
+          tls->ctx->tcpls_options_confirmed = 1;
+          break;
+
         default:
             src = end;
             break;
@@ -2398,9 +2346,11 @@ static int report_unknown_extensions(ptls_t *tls, ptls_handshake_properties_t *p
     }
 }
 
-static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message, ptls_handshake_properties_t *properties)
+static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
+    ptls_handshake_properties_t *properties)
 {
-    const uint8_t *src = message.base + PTLS_HANDSHAKE_HEADER_SIZE, *const end = message.base + message.len, *esni_nonce = NULL;
+    const uint8_t *src = message.base + PTLS_HANDSHAKE_HEADER_SIZE, *const end =
+      message.base + message.len, *esni_nonce = NULL;
     uint16_t type;
     ptls_raw_extension_t unknown_extensions[MAX_UNKNOWN_EXTENSIONS + 1];
     int ret, skip_early_data = 1;
@@ -2423,6 +2373,16 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
                 goto Exit;
             }
             break;
+        //TCPLS
+        case PTLS_EXTENSION_TYPE_ENCRYPTED_TCP_OPTIONS_USERTIMEOUT:
+            if (end-src != sizeof(uint16_t)) {
+              ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+              goto Exit;
+            }
+            uint16_t val = (uint16_t) *src;
+            handle_tcpls_extension_option(tls->ctx, USER_TIMEOUT, val);
+            break;
+
         case PTLS_EXTENSION_TYPE_ENCRYPTED_SERVER_NAME:
             if (*src == PTLS_ESNI_RESPONSE_TYPE_ACCEPT) {
                 if (end - src != PTLS_ESNI_NONCE_SIZE + 1) {
@@ -3112,8 +3072,9 @@ Exit:
     return ret;
 }
 
-static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, const uint8_t *src, const uint8_t *const end,
-                               ptls_handshake_properties_t *properties)
+static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch,
+    const uint8_t *src, const uint8_t *const end, ptls_handshake_properties_t
+    *properties)
 {
     uint16_t exttype = 0;
     int ret;
@@ -3883,6 +3844,10 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
                               buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_PRE_SHARED_KEY,
                                                     { ptls_buffer_push16(sendbuf, (uint16_t)psk_index); });
                           }
+                          if (tls->ctx->support_tcpls_options && tls->ctx->tcpls_options_confirmed) {
+                              buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_ENCRYPTED_TCP_OPTIONS,
+                                  {});
+                          }
                       });
     if ((ret = push_change_cipher_spec(tls, emitter->buf)) != 0)
         goto Exit;
@@ -3908,6 +3873,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
     /* send EncryptedExtensions */
     ptls_push_message(emitter, tls->key_schedule, PTLS_HANDSHAKE_TYPE_ENCRYPTED_EXTENSIONS, {
         ptls_buffer_t *sendbuf = emitter->buf;
+        ptls_tcpls_t **tcpls_options;
         ptls_buffer_push_block(sendbuf, 2, {
             if (tls->esni != NULL) {
                 /* the extension is sent even if the application does not handle server name, because otherwise the handshake
@@ -3934,6 +3900,15 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
             }
             if (tls->pending_handshake_secret != NULL)
                 buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_EARLY_DATA, {});
+            /** Push encrypted TCP options if we have some */
+            //TCPLS
+            if (tls->ctx->tcpls_options != NULL) {
+              for (tcpls_options = tls->ctx->tcpls_options; *tcpls_options != NULL; ++tcpls_options) {
+                buffer_push_extension(sendbuf, (*tcpls_options)->type, {
+                  ptls_buffer_pushv(sendbuf, (*tcpls_options)->data, (*tcpls_options)->len);
+                });
+              }
+            }
             if ((ret = push_additional_extensions(properties, sendbuf)) != 0)
                 goto Exit;
         });
@@ -4806,6 +4781,8 @@ int ptls_send(ptls_t *tls, ptls_buffer_t *sendbuf, const void *input, size_t inl
 
     return buffer_push_encrypted_records(sendbuf, PTLS_CONTENT_TYPE_APPDATA, input, inlen, &tls->traffic_protection.enc);
 }
+
+
 
 int ptls_update_key(ptls_t *tls, int request_update)
 {

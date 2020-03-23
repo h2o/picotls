@@ -25,12 +25,15 @@
 #include <assert.h>
 #include <string.h>
 #include <stdio.h>
+#include "picotypes.h"
 #include "picotls.h"
+#include "picotcpls.h"
 #include "picotls/ffx.h"
 #include "picotls/minicrypto.h"
 #include "picotls/pembase64.h"
 #include "../deps/picotest/picotest.h"
 #include "../lib/picotls.c"
+#include "../lib/picotcpls.c"
 #include "test.h"
 
 static void test_is_ipaddr(void)
