@@ -3141,6 +3141,11 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch,
                                               ptls_iovec_init(src, end - src)) != 0))
             goto Exit;
         switch (exttype) {
+        case PTLS_EXTENSION_TYPE_ENCRYPTED_TCP_OPTIONS:
+            if (tls->ctx->support_tcpls_options) {
+              tls->ctx->tcpls_options_confirmed = 1;
+            }
+            break;
         case PTLS_EXTENSION_TYPE_SERVER_NAME:
             if ((ret = client_hello_decode_server_name(&ch->server_name, &src, end)) != 0)
                 goto Exit;

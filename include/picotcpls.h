@@ -19,7 +19,7 @@ struct st_tcpls_t {
 
 
 /** API exposed to the application */
-int ptls_set_user_timeout(ptls_context_t *ctx, int value, uint16_t sec_or_min);
+int ptls_set_user_timeout(ptls_context_t *ctx, uint16_t value, uint16_t sec_or_min);
 
 
 /** Internal to picotls */
