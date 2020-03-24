@@ -71,6 +71,7 @@ int handle_tcpls_extension_option(ptls_context_t *ctx, ptls_tcpls_options_t type
   switch (type) {
     case USER_TIMEOUT:
       printf("Waouh, we just received a timeout value of %u", val);
+      tcpls_init_context(ctx, &val, USER_TIMEOUT);
       break;
     default:
       printf("Unsuported option?");
@@ -86,4 +87,16 @@ int handle_tcpls_extension_option(ptls_context_t *ctx, ptls_tcpls_options_t type
 int handle_tcpls_record(void)
 {
   return 0;
+}
+
+void ptls_tcpls_options_free(ptls_context_t *ctx) {
+  if (!ctx->tcpls_options)
+    return;
+  for (int i = 0; i < NBR_SUPPORTED_TCPLS_OPTIONS; i++) {
+    /*if (ctx->tcpls_options[i]->data) {*/
+      /*free(ctx->tcpls_options[i]->data);*/
+    /*}*/
+    free(ctx->tcpls_options[i]);
+  }
+  free(ctx->tcpls_options);
 }

@@ -2379,8 +2379,11 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
               ret = PTLS_ALERT_ILLEGAL_PARAMETER;
               goto Exit;
             }
-            uint16_t val = (uint16_t) *src;
-            handle_tcpls_extension_option(tls->ctx, USER_TIMEOUT, val);
+            uint16_t val = *(uint16_t *) src;
+            if(handle_tcpls_extension_option(tls->ctx, USER_TIMEOUT, val)) {
+              ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+              goto Exit;
+            }
             break;
 
         case PTLS_EXTENSION_TYPE_ENCRYPTED_SERVER_NAME:
@@ -3909,9 +3912,13 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
             //TCPLS
             if (tls->ctx->tcpls_options != NULL) {
               for (tcpls_options = tls->ctx->tcpls_options; *tcpls_options != NULL; ++tcpls_options) {
-                buffer_push_extension(sendbuf, (*tcpls_options)->type, {
-                  ptls_buffer_pushv(sendbuf, (*tcpls_options)->data, (*tcpls_options)->len);
-                });
+                /** if len is 0, the option has not been initialized yet, and
+                 * might be sent later*/
+                if ((*tcpls_options)->len) {
+                  buffer_push_extension(sendbuf, (*tcpls_options)->type, {
+                    ptls_buffer_pushv(sendbuf, (*tcpls_options)->data, (*tcpls_options)->len);
+                  });
+                }
               }
             }
             if ((ret = push_additional_extensions(properties, sendbuf)) != 0)

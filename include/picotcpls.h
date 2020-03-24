@@ -27,4 +27,6 @@ int handle_tcpls_extension_option(ptls_context_t *ctx, ptls_tcpls_options_t type
 
 int handle_tcpls_record(void);
 
+void ptls_tcpls_options_free(ptls_context_t *ctx);
+
 #endif
