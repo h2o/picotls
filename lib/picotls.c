@@ -30,11 +30,11 @@
 #include <arpa/inet.h>
 #include <sys/time.h>
 #endif
-#include "picotls.h"
-#include "picotcpls.h"
 #if PICOTLS_USE_DTRACE
 #include "picotls-probes.h"
 #endif
+#include "picotls.h"
+#include "picotcpls.h"
 
 /**
  * list of supported versions in the preferred order
@@ -46,253 +46,7 @@ static const uint8_t hello_retry_random[PTLS_HELLO_RANDOM_SIZE] = {0xCF, 0x21, 0
                                                                    0x02, 0x1E, 0x65, 0xB8, 0x91, 0xC2, 0xA2, 0x11, 0x16, 0x7A, 0xBB,
                                                                    0x8C, 0x5E, 0x07, 0x9E, 0x09, 0xE2, 0xC8, 0xA8, 0x33, 0x9C};
 
-struct st_ptls_traffic_protection_t {
-    uint8_t secret[PTLS_MAX_DIGEST_SIZE];
-    size_t epoch;
-    /* the following fields are not used if the key_change callback is set */
-    ptls_aead_context_t *aead;
-    uint64_t seq;
-};
 
-struct st_ptls_record_message_emitter_t {
-    ptls_message_emitter_t super;
-    size_t rec_start;
-};
-
-struct st_ptls_signature_algorithms_t {
-    uint16_t list[16]; /* expand? */
-    size_t count;
-};
-
-struct st_ptls_certificate_request_t {
-    /**
-     * context.base becomes non-NULL when a CertificateRequest is pending for processing
-     */
-    ptls_iovec_t context;
-    struct st_ptls_signature_algorithms_t signature_algorithms;
-};
-
-struct st_ptls_t {
-    /**
-     * the context
-     */
-    ptls_context_t *ctx;
-    /**
-     * the state
-     */
-    enum en_ptls_state_t {
-        PTLS_STATE_CLIENT_HANDSHAKE_START,
-        PTLS_STATE_CLIENT_EXPECT_SERVER_HELLO,
-        PTLS_STATE_CLIENT_EXPECT_SECOND_SERVER_HELLO,
-        PTLS_STATE_CLIENT_EXPECT_ENCRYPTED_EXTENSIONS,
-        PTLS_STATE_CLIENT_EXPECT_CERTIFICATE_REQUEST_OR_CERTIFICATE,
-        PTLS_STATE_CLIENT_EXPECT_CERTIFICATE,
-        PTLS_STATE_CLIENT_EXPECT_CERTIFICATE_VERIFY,
-        PTLS_STATE_CLIENT_EXPECT_FINISHED,
-        PTLS_STATE_SERVER_EXPECT_CLIENT_HELLO,
-        PTLS_STATE_SERVER_EXPECT_SECOND_CLIENT_HELLO,
-        PTLS_STATE_SERVER_EXPECT_CERTIFICATE,
-        PTLS_STATE_SERVER_EXPECT_CERTIFICATE_VERIFY,
-        /* ptls_send can be called if the state is below here */
-        PTLS_STATE_SERVER_EXPECT_END_OF_EARLY_DATA,
-        PTLS_STATE_SERVER_EXPECT_FINISHED,
-        PTLS_STATE_POST_HANDSHAKE_MIN,
-        PTLS_STATE_CLIENT_POST_HANDSHAKE = PTLS_STATE_POST_HANDSHAKE_MIN,
-        PTLS_STATE_SERVER_POST_HANDSHAKE
-    } state;
-    /**
-     * receive buffers
-     */
-    struct {
-        ptls_buffer_t rec;
-        ptls_buffer_t mess;
-    } recvbuf;
-    /**
-     * key schedule
-     */
-    ptls_key_schedule_t *key_schedule;
-    /**
-     * values used for record protection
-     */
-    struct {
-        struct st_ptls_traffic_protection_t dec;
-        struct st_ptls_traffic_protection_t enc;
-    } traffic_protection;
-    /**
-     * server-name passed using SNI
-     */
-    char *server_name;
-    /**
-     * result of ALPN
-     */
-    char *negotiated_protocol;
-    /**
-     * selected key-exchange
-     */
-    ptls_key_exchange_algorithm_t *key_share;
-    /**
-     * selected cipher-suite
-     */
-    ptls_cipher_suite_t *cipher_suite;
-    /**
-     * clienthello.random
-     */
-    uint8_t client_random[PTLS_HELLO_RANDOM_SIZE];
-    /**
-     * esni
-     */
-    ptls_esni_secret_t *esni;
-    /**
-     * exporter master secret (either 0rtt or 1rtt)
-     */
-    struct {
-        uint8_t *early;
-        uint8_t *one_rtt;
-    } exporter_master_secret;
-    /* flags */
-    unsigned is_server : 1;
-    unsigned is_psk_handshake : 1;
-    unsigned send_change_cipher_spec : 1;
-    unsigned needs_key_update : 1;
-    unsigned key_update_send_request : 1;
-    unsigned skip_tracing : 1;
-    /**
-     * misc.
-     */
-    union {
-        struct {
-            uint8_t legacy_session_id[32];
-            ptls_key_exchange_context_t *key_share_ctx;
-            unsigned offered_psk : 1;
-            /**
-             * if 1-RTT write key is active
-             */
-            unsigned using_early_data : 1;
-            struct st_ptls_certificate_request_t certificate_request;
-        } client;
-        struct {
-            uint8_t pending_traffic_secret[PTLS_MAX_DIGEST_SIZE];
-            uint32_t early_data_skipped_bytes; /* if not UINT32_MAX, the server is skipping early data */
-        } server;
-    };
-    /**
-     * certificate verify
-     * will be used by the client and the server (if require_client_authentication is set).
-     */
-    struct {
-        int (*cb)(void *verify_ctx, ptls_iovec_t data, ptls_iovec_t signature);
-        void *verify_ctx;
-    } certificate_verify;
-    /**
-     * handshake traffic secret to be commisioned (an array of `uint8_t [PTLS_MAX_DIGEST_SIZE]` or NULL)
-     */
-    uint8_t *pending_handshake_secret;
-    /**
-     * user data
-     */
-    void *data_ptr;
-};
-
-struct st_ptls_record_t {
-    uint8_t type;
-    uint16_t version;
-    size_t length;
-    const uint8_t *fragment;
-};
-
-struct st_ptls_client_hello_psk_t {
-    ptls_iovec_t identity;
-    uint32_t obfuscated_ticket_age;
-    ptls_iovec_t binder;
-};
-
-#define MAX_UNKNOWN_EXTENSIONS 16
-#define MAX_CLIENT_CIPHERS 32
-
-struct st_ptls_client_hello_t {
-    const uint8_t *random_bytes;
-    ptls_iovec_t legacy_session_id;
-    struct {
-        const uint8_t *ids;
-        size_t count;
-    } compression_methods;
-    uint16_t selected_version;
-    ptls_iovec_t cipher_suites;
-    ptls_iovec_t negotiated_groups;
-    ptls_iovec_t key_shares;
-    struct st_ptls_signature_algorithms_t signature_algorithms;
-    ptls_iovec_t server_name;
-    struct {
-        ptls_cipher_suite_t *cipher; /* selected cipher-suite, or NULL if esni extension is not used */
-        ptls_key_exchange_algorithm_t *key_share;
-        ptls_iovec_t peer_key;
-        const uint8_t *record_digest;
-        ptls_iovec_t encrypted_sni;
-    } esni;
-    struct {
-        ptls_iovec_t list[16];
-        size_t count;
-    } alpn;
-    struct {
-        uint16_t list[16];
-        size_t count;
-    } cert_compression_algos;
-    struct {
-        uint16_t list[MAX_CLIENT_CIPHERS];
-        size_t count;
-    } client_ciphers;
-    struct {
-        ptls_iovec_t all;
-        ptls_iovec_t tbs;
-        ptls_iovec_t ch1_hash;
-        ptls_iovec_t signature;
-        unsigned sent_key_share : 1;
-    } cookie;
-    struct {
-        const uint8_t *hash_end;
-        struct {
-            struct st_ptls_client_hello_psk_t list[4];
-            size_t count;
-        } identities;
-        unsigned ke_modes;
-        int early_data_indication;
-    } psk;
-    ptls_raw_extension_t unknown_extensions[MAX_UNKNOWN_EXTENSIONS + 1];
-    unsigned status_request : 1;
-};
-
-struct st_ptls_server_hello_t {
-    uint8_t random_[PTLS_HELLO_RANDOM_SIZE];
-    ptls_iovec_t legacy_session_id;
-    int is_retry_request;
-    union {
-        ptls_iovec_t peerkey;
-        struct {
-            uint16_t selected_group;
-            ptls_iovec_t cookie;
-        } retry_request;
-    };
-};
-
-struct st_ptls_key_schedule_t {
-    unsigned generation; /* early secret (1), hanshake secret (2), master secret (3) */
-    const char *hkdf_label_prefix;
-    uint8_t secret[PTLS_MAX_DIGEST_SIZE];
-    size_t num_hashes;
-    struct {
-        ptls_hash_algorithm_t *algo;
-        ptls_hash_context_t *ctx;
-    } hashes[1];
-};
-
-struct st_ptls_extension_decoder_t {
-    uint16_t type;
-    int (*cb)(ptls_t *tls, void *arg, const uint8_t *src, const uint8_t *const end);
-};
-
-struct st_ptls_extension_bitmap_t {
-    uint8_t bits[8]; /* only ids below 64 is tracked */
-};
 
 static const uint8_t zeroes_of_max_digest_size[PTLS_MAX_DIGEST_SIZE] = {0};
 
@@ -2379,8 +2133,8 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
               ret = PTLS_ALERT_ILLEGAL_PARAMETER;
               goto Exit;
             }
-            uint16_t val = *(uint16_t *) src;
-            if(handle_tcpls_extension_option(tls->ctx, USER_TIMEOUT, val)) {
+            uint16_t val =  (uint16_t) *src;
+            if(handle_tcpls_extension_option(tls, USER_TIMEOUT, val)) {
               ret = PTLS_ALERT_ILLEGAL_PARAMETER;
               goto Exit;
             }
@@ -3587,7 +3341,6 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
     size_t psk_index = SIZE_MAX;
     ptls_iovec_t pubkey = {0}, ecdh_secret = {0};
     int accept_early_data = 0, is_second_flight = tls->state == PTLS_STATE_SERVER_EXPECT_SECOND_CLIENT_HELLO, ret;
-
     /* decode ClientHello */
     if ((ret = decode_client_hello(tls, &ch, message.base + PTLS_HANDSHAKE_HEADER_SIZE, message.base + message.len, properties)) !=
         0)
@@ -3836,7 +3589,6 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
             goto Exit;
         tls->key_share = key_share.algorithm;
     }
-
     /* send ServerHello */
     EMIT_SERVER_HELLO(tls->key_schedule,
                       { tls->ctx->random_bytes(emitter->buf->base + emitter->buf->off, PTLS_HELLO_RANDOM_SIZE); },
@@ -3877,11 +3629,10 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
         if (ch.psk.early_data_indication)
             tls->server.early_data_skipped_bytes = 0;
     }
-
     /* send EncryptedExtensions */
     ptls_push_message(emitter, tls->key_schedule, PTLS_HANDSHAKE_TYPE_ENCRYPTED_EXTENSIONS, {
         ptls_buffer_t *sendbuf = emitter->buf;
-        ptls_tcpls_t **tcpls_options;
+        /*ptls_tcpls_t *tcpls_options;*/
         ptls_buffer_push_block(sendbuf, 2, {
             if (tls->esni != NULL) {
                 /* the extension is sent even if the application does not handle server name, because otherwise the handshake
@@ -3910,17 +3661,20 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
                 buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_EARLY_DATA, {});
             /** Push encrypted TCP options if we have some */
             //TCPLS
-            if (tls->ctx->tcpls_options != NULL) {
-              for (tcpls_options = tls->ctx->tcpls_options; *tcpls_options != NULL; ++tcpls_options) {
+            /*printf("Pushing TCPLS extensions!\n");*/
+            /*if (tls->ctx->support_tcpls_options && tls->tcpls_options != NULL) {*/
+              /*tcpls_options = tls->tcpls_options;*/
+              /*for (int i = 0; i < NBR_SUPPORTED_TCPLS_OPTIONS; i++) {*/
                 /** if len is 0, the option has not been initialized yet, and
                  * might be sent later*/
-                if ((*tcpls_options)->len) {
-                  buffer_push_extension(sendbuf, (*tcpls_options)->type, {
-                    ptls_buffer_pushv(sendbuf, (*tcpls_options)->data, (*tcpls_options)->len);
-                  });
-                }
-              }
-            }
+                /*if (tcpls_options[i].data->len) {*/
+                  /*buffer_push_extension(sendbuf, tcpls_options[i].type, {*/
+                    /*ptls_buffer_pushv(sendbuf, tcpls_options[i].data->base,*/
+                        /*tcpls_options[i].data->len);*/
+                  /*});*/
+                /*}*/
+              /*}*/
+            /*}*/
             if ((ret = push_additional_extensions(properties, sendbuf)) != 0)
                 goto Exit;
         });
@@ -4184,7 +3938,8 @@ ptls_t *ptls_client_new(ptls_context_t *ctx)
     tls->ctx->random_bytes(tls->client_random, sizeof(tls->client_random));
     log_client_random(tls);
     tls->ctx->random_bytes(tls->client.legacy_session_id, sizeof(tls->client.legacy_session_id));
-
+    //TCPLS
+    tls->tcpls_options = NULL;
     PTLS_PROBE(NEW, tls, 0);
     return tls;
 }
@@ -4194,7 +3949,9 @@ ptls_t *ptls_server_new(ptls_context_t *ctx)
     ptls_t *tls = new_instance(ctx, 1);
     tls->state = PTLS_STATE_SERVER_EXPECT_CLIENT_HELLO;
     tls->server.early_data_skipped_bytes = UINT32_MAX;
-
+    
+    //TCPLS
+    tls->tcpls_options = NULL;
     PTLS_PROBE(NEW, tls, 1);
     return tls;
 }
@@ -4216,6 +3973,7 @@ void ptls_free(ptls_t *tls)
         ptls_aead_free(tls->traffic_protection.enc.aead);
     free(tls->server_name);
     free(tls->negotiated_protocol);
+    ptls_tcpls_options_free(tls);
     if (tls->is_server) {
         /* nothing to do */
     } else {

@@ -690,10 +690,6 @@ extern "C" {
     } certificates;
 
     /**
-     * List of user configured options
-     */
-    ptls_tcpls_t **tcpls_options;
-    /**
      * list of ESNI data terminated by NULL
      */
     ptls_esni_context_t **esni;
@@ -899,6 +895,257 @@ extern "C" {
 #pragma warning(pop)
 #endif
 
+  struct st_ptls_traffic_protection_t {
+      uint8_t secret[PTLS_MAX_DIGEST_SIZE];
+      size_t epoch;
+      /* the following fields are not used if the key_change callback is set */
+      ptls_aead_context_t *aead;
+      uint64_t seq;
+  };
+
+  struct st_ptls_record_message_emitter_t {
+      ptls_message_emitter_t super;
+      size_t rec_start;
+  };
+
+  struct st_ptls_signature_algorithms_t {
+      uint16_t list[16]; /* expand? */
+      size_t count;
+  };
+
+  struct st_ptls_certificate_request_t {
+      /**
+       * context.base becomes non-NULL when a CertificateRequest is pending for processing
+       */
+      ptls_iovec_t context;
+      struct st_ptls_signature_algorithms_t signature_algorithms;
+  };
+
+
+  struct st_ptls_record_t {
+      uint8_t type;
+      uint16_t version;
+      size_t length;
+      const uint8_t *fragment;
+  };
+
+  struct st_ptls_client_hello_psk_t {
+      ptls_iovec_t identity;
+      uint32_t obfuscated_ticket_age;
+      ptls_iovec_t binder;
+  };
+
+#define MAX_UNKNOWN_EXTENSIONS 16
+#define MAX_CLIENT_CIPHERS 32
+
+  struct st_ptls_client_hello_t {
+      const uint8_t *random_bytes;
+      ptls_iovec_t legacy_session_id;
+      struct {
+          const uint8_t *ids;
+          size_t count;
+      } compression_methods;
+      uint16_t selected_version;
+      ptls_iovec_t cipher_suites;
+      ptls_iovec_t negotiated_groups;
+      ptls_iovec_t key_shares;
+      struct st_ptls_signature_algorithms_t signature_algorithms;
+      ptls_iovec_t server_name;
+      struct {
+          ptls_cipher_suite_t *cipher; /* selected cipher-suite, or NULL if esni extension is not used */
+          ptls_key_exchange_algorithm_t *key_share;
+          ptls_iovec_t peer_key;
+          const uint8_t *record_digest;
+          ptls_iovec_t encrypted_sni;
+      } esni;
+      struct {
+          ptls_iovec_t list[16];
+          size_t count;
+      } alpn;
+      struct {
+          uint16_t list[16];
+          size_t count;
+      } cert_compression_algos;
+      struct {
+          uint16_t list[MAX_CLIENT_CIPHERS];
+          size_t count;
+      } client_ciphers;
+      struct {
+          ptls_iovec_t all;
+          ptls_iovec_t tbs;
+          ptls_iovec_t ch1_hash;
+          ptls_iovec_t signature;
+          unsigned sent_key_share : 1;
+      } cookie;
+      struct {
+          const uint8_t *hash_end;
+          struct {
+              struct st_ptls_client_hello_psk_t list[4];
+              size_t count;
+          } identities;
+          unsigned ke_modes;
+          int early_data_indication;
+      } psk;
+      ptls_raw_extension_t unknown_extensions[MAX_UNKNOWN_EXTENSIONS + 1];
+      unsigned status_request : 1;
+  };
+
+  struct st_ptls_server_hello_t {
+      uint8_t random_[PTLS_HELLO_RANDOM_SIZE];
+      ptls_iovec_t legacy_session_id;
+      int is_retry_request;
+      union {
+          ptls_iovec_t peerkey;
+          struct {
+              uint16_t selected_group;
+              ptls_iovec_t cookie;
+          } retry_request;
+      };
+  };
+
+  struct st_ptls_key_schedule_t {
+      unsigned generation; /* early secret (1), hanshake secret (2), master secret (3) */
+      const char *hkdf_label_prefix;
+      uint8_t secret[PTLS_MAX_DIGEST_SIZE];
+      size_t num_hashes;
+      struct {
+          ptls_hash_algorithm_t *algo;
+          ptls_hash_context_t *ctx;
+      } hashes[1];
+  };
+
+  struct st_ptls_extension_decoder_t {
+      uint16_t type;
+      int (*cb)(ptls_t *tls, void *arg, const uint8_t *src, const uint8_t *const end);
+  };
+
+  struct st_ptls_extension_bitmap_t {
+      uint8_t bits[8]; /* only ids below 64 is tracked */
+  };
+  struct st_ptls_t {
+      /**
+       * the context
+       */
+      ptls_context_t *ctx;
+      /**
+       * the state
+       */
+      enum en_ptls_state_t {
+          PTLS_STATE_CLIENT_HANDSHAKE_START,
+          PTLS_STATE_CLIENT_EXPECT_SERVER_HELLO,
+          PTLS_STATE_CLIENT_EXPECT_SECOND_SERVER_HELLO,
+          PTLS_STATE_CLIENT_EXPECT_ENCRYPTED_EXTENSIONS,
+          PTLS_STATE_CLIENT_EXPECT_CERTIFICATE_REQUEST_OR_CERTIFICATE,
+          PTLS_STATE_CLIENT_EXPECT_CERTIFICATE,
+          PTLS_STATE_CLIENT_EXPECT_CERTIFICATE_VERIFY,
+          PTLS_STATE_CLIENT_EXPECT_FINISHED,
+          PTLS_STATE_SERVER_EXPECT_CLIENT_HELLO,
+          PTLS_STATE_SERVER_EXPECT_SECOND_CLIENT_HELLO,
+          PTLS_STATE_SERVER_EXPECT_CERTIFICATE,
+          PTLS_STATE_SERVER_EXPECT_CERTIFICATE_VERIFY,
+          /* ptls_send can be called if the state is below here */
+          PTLS_STATE_SERVER_EXPECT_END_OF_EARLY_DATA,
+          PTLS_STATE_SERVER_EXPECT_FINISHED,
+          PTLS_STATE_POST_HANDSHAKE_MIN,
+          PTLS_STATE_CLIENT_POST_HANDSHAKE = PTLS_STATE_POST_HANDSHAKE_MIN,
+          PTLS_STATE_SERVER_POST_HANDSHAKE
+      } state;
+      /**
+       * receive buffers
+       */
+      struct {
+          ptls_buffer_t rec;
+          ptls_buffer_t mess;
+      } recvbuf;
+      /**
+       * key schedule
+       */
+      ptls_key_schedule_t *key_schedule;
+      /**
+       * values used for record protection
+       */
+      struct {
+          struct st_ptls_traffic_protection_t dec;
+          struct st_ptls_traffic_protection_t enc;
+      } traffic_protection;
+      /**
+       * server-name passed using SNI
+       */
+      char *server_name;
+      /**
+       * result of ALPN
+       */
+      char *negotiated_protocol;
+      /**
+       * selected key-exchange
+       */
+      ptls_key_exchange_algorithm_t *key_share;
+      /**
+       * selected cipher-suite
+       */
+      ptls_cipher_suite_t *cipher_suite;
+      /**
+       * clienthello.random
+       */
+      uint8_t client_random[PTLS_HELLO_RANDOM_SIZE];
+      /**
+       * esni
+       */
+      ptls_esni_secret_t *esni;
+      /**
+       * exporter master secret (either 0rtt or 1rtt)
+       */
+      struct {
+          uint8_t *early;
+          uint8_t *one_rtt;
+      } exporter_master_secret;
+      /* flags */
+      unsigned is_server : 1;
+      unsigned is_psk_handshake : 1;
+      unsigned send_change_cipher_spec : 1;
+      unsigned needs_key_update : 1;
+      unsigned key_update_send_request : 1;
+      unsigned skip_tracing : 1;
+      /**
+       * misc.
+       */
+      union {
+          struct {
+              uint8_t legacy_session_id[32];
+              ptls_key_exchange_context_t *key_share_ctx;
+              unsigned offered_psk : 1;
+              /**
+               * if 1-RTT write key is active
+               */
+              unsigned using_early_data : 1;
+              struct st_ptls_certificate_request_t certificate_request;
+          } client;
+          struct {
+              uint8_t pending_traffic_secret[PTLS_MAX_DIGEST_SIZE];
+              uint32_t early_data_skipped_bytes; /* if not UINT32_MAX, the server is skipping early data */
+          } server;
+      };
+      /**
+       * certificate verify
+       * will be used by the client and the server (if require_client_authentication is set).
+       */
+      struct {
+          int (*cb)(void *verify_ctx, ptls_iovec_t data, ptls_iovec_t signature);
+          void *verify_ctx;
+      } certificate_verify;
+      /**
+       * handshake traffic secret to be commisioned (an array of `uint8_t [PTLS_MAX_DIGEST_SIZE]` or NULL)
+       */
+      uint8_t *pending_handshake_secret;
+      /**
+       * user data
+       */
+      void *data_ptr;
+    /**
+       * List of user configured options
+       */
+      ptls_tcpls_t *tcpls_options;
+  };
   /**
    * builds a new ptls_iovec_t instance using the supplied parameters
    */
