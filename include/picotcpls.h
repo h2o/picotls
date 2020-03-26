@@ -3,7 +3,7 @@
 
 #include "picotypes.h"
 
-#define NBR_SUPPORTED_TCPLS_OPTIONS 1
+#define NBR_SUPPORTED_TCPLS_OPTIONS 5
 
 /** TCP options we would support in the TLS context */
 typedef enum ptls_tcpls_options_t {

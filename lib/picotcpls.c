@@ -16,7 +16,7 @@ int ptls_send_tcpoption(ptls_t *tls, ptls_buffer_t *sendbuf, const void *input,
 }
 
 /**
- * Set a timeout option 
+ * Set a timeout option (i.e., RFC5482) to transport within the TLS connection
  */
 int ptls_set_user_timeout(ptls_t *ptls, uint16_t value, uint16_t sec_or_min) {
   uint16_t *val = malloc(sizeof(uint16_t));
@@ -32,12 +32,11 @@ int ptls_set_faileover(ptls_t *ptls, char *address) {
 static int tcpls_init_context(ptls_t *ptls, const void *data, ptls_tcpls_options_t type) {
   ptls->ctx->support_tcpls_options = 1;
   if (!ptls->tcpls_options) {
-    ptls->tcpls_options = malloc(sizeof(ptls_tcpls_t)*NBR_SUPPORTED_TCPLS_OPTIONS);
+    ptls->tcpls_options = malloc(sizeof(*ptls->tcpls_options)*NBR_SUPPORTED_TCPLS_OPTIONS);
     for (int i = 0; i < NBR_SUPPORTED_TCPLS_OPTIONS; i++) {
       ptls->tcpls_options[i].data = malloc(sizeof(ptls_iovec_t));
       memset(ptls->tcpls_options[i].data, 0, sizeof(ptls_iovec_t));
-      /*ptls->tcpls_options[i].data->len = 0;*/
-      /*ptls->tcpls_options[i].type = 0;*/
+      ptls->tcpls_options[i].type = 0;
     }
   }
   /** Picking up the right slot in the list, i.e;, the first unused should have
@@ -46,8 +45,11 @@ static int tcpls_init_context(ptls_t *ptls, const void *data, ptls_tcpls_options
   ptls_tcpls_t *option = NULL;
   for (int i = 0; i < NBR_SUPPORTED_TCPLS_OPTIONS; i++) {
     /** already set or Not yet set */
-    if (ptls->tcpls_options[i].type == type || !ptls->tcpls_options[i].data->len)
+    if ((ptls->tcpls_options[i].type == type && ptls->tcpls_options[i].data->base)
+        || !ptls->tcpls_options[i].data->base) {
       option = &ptls->tcpls_options[i];
+      break;
+    }
   }
   if (option == NULL)
     return -1;
@@ -76,8 +78,12 @@ int handle_tcpls_extension_option(ptls_t *ptls, ptls_tcpls_options_t type, uint1
 
   switch (type) {
     case USER_TIMEOUT:
-      printf("Waouh, we just received a timeout value of %u", val);
-      tcpls_init_context(ptls, &val, USER_TIMEOUT);
+      {
+        uint16_t *nval = malloc(sizeof(uint16_t));
+        *nval = val;
+        tcpls_init_context(ptls, nval, USER_TIMEOUT);
+        /** TODO handle the extension! */
+      }
       break;
     default:
       printf("Unsuported option?");

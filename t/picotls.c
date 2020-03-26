@@ -1184,11 +1184,24 @@ static void test_server_sends_tcpls_encrypted_extensions(void)
   ptls_buffer_t cbuf, sbuf;
   size_t coffs[5] = {0}, soffs[5];
   ptls_update_traffic_key_t update_traffic_key = {on_update_traffic_key};
-  /*ptls_encrypt_ticket_t encrypt_ticket = {on_copy_ticket};*/
-  /*ptls_save_ticket_t save_ticket = {on_save_ticket};*/
+  ptls_encrypt_ticket_t encrypt_ticket = {on_copy_ticket};
+  ptls_save_ticket_t save_ticket = {on_save_ticket};
+  static ptls_on_extension_t cb = {on_extension_cb};
+  /*ctx_peer->on_extension = &cb;*/
+  ctx->on_extension = &cb;
   int ret;
   ctx->update_traffic_key = &update_traffic_key;
+  ctx->save_ticket = &save_ticket;
   ctx_peer->update_traffic_key = &update_traffic_key;
+  ctx_peer->omit_end_of_early_data = 1;
+  ctx->omit_end_of_early_data = 1;
+  
+  ctx_peer->encrypt_ticket = &encrypt_ticket;
+  ctx_peer->ticket_lifetime = 86400;
+  ctx_peer->max_early_data_size = 8192;
+  
+  saved_ticket = ptls_iovec_init(NULL, 0);
+  
   ptls_buffer_init(&cbuf, "", 0);
   ptls_buffer_init(&sbuf, "", 0);
 
@@ -1197,8 +1210,8 @@ static void test_server_sends_tcpls_encrypted_extensions(void)
   server = ptls_new(ctx_peer, 1);
   *ptls_get_data_ptr(server) = &server_secrets;
   
-  /*ret = ptls_set_user_timeout(server, 5, 0);*/
-  /*ok(ret == 0);*/
+  ret = ptls_set_user_timeout(server, 5, 0);
+  ok(ret == 0);
 
   ret = ptls_handle_message(client, &cbuf, coffs, 0, NULL, 0, NULL);
   
@@ -1219,15 +1232,39 @@ static void test_server_sends_tcpls_encrypted_extensions(void)
     /*if ((*option)->type == USER_TIMEOUT)*/
       /*break;*/
   /*}*/
-  /*ok(*option != NULL);*/
-  /*ok(*((uint16_t*) (*option)->data) == 5);*/
+  /*int i;*/
+  /*for (i = 0; i < NBR_SUPPORTED_TCPLS_OPTIONS; i++); {*/
+    /*if (client->tcpls_options[i].type == USER_TIMEOUT)*/
+      /*break;*/
+  /*}*/
+  /*ok(*((uint16_t*) tls->tcpls_->data) == 5);*/
 
   ptls_free(client);
   ptls_free(server);
+
+  cbuf.off = 0;
+  sbuf.off = 0;
+  memset(client_secrets, 0, sizeof(client_secrets));
+  memset(server_secrets, 0, sizeof(server_secrets));
+  memset(coffs, 0, sizeof(coffs));
+  memset(soffs, 0, sizeof(soffs));
+
+  ctx->save_ticket = NULL; /* don't allow further test to update the saved ticket */
+
   ptls_buffer_dispose(&cbuf);
   ptls_buffer_dispose(&sbuf);
 
-
+  ctx->update_traffic_key = NULL;
+  ctx->omit_end_of_early_data = 0;
+  ctx->save_ticket = NULL;
+  ctx_peer->update_traffic_key = NULL;
+  ctx_peer->omit_end_of_early_data = 0;
+  ctx_peer->encrypt_ticket = NULL;
+  ctx_peer->save_ticket = NULL;
+  ctx_peer->ticket_lifetime = 0;
+  ctx_peer->max_early_data_size = 0;
+  ctx->tcpls_options_confirmed = 0;
+  ctx_peer->tcpls_options_confirmed = 0;
 }
 
 static void test_tcpls_usertimeout(void)
@@ -1246,6 +1283,7 @@ static void test_tcpls_usertimeout(void)
     if (server->tcpls_options[i].type == USER_TIMEOUT)
       break;
   }
+  ok(i==0);
   ptls_tcpls_t option = server->tcpls_options[i];
   ok(*((uint16_t*) option.data->base) == 1);
   /** 1 minute */
@@ -1734,7 +1772,8 @@ static void test_tcpls(void)
     }
     subtest("api", test_tcpls_api);
     subtest("set_usertimeout", test_tcpls_usertimeout);
-    /*subtest("server_sends_tcpls_encrypted_extensions", test_server_sends_tcpls_encrypted_extensions);*/
+    subtest("api", test_tcpls_api);
+    subtest("server_sends_tcpls_encrypted_extensions", test_server_sends_tcpls_encrypted_extensions);
     ctx_peer->sign_certificate = sc_orig;
 
     if (ctx_peer != ctx)

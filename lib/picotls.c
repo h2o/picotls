@@ -2110,7 +2110,6 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
     int ret, skip_early_data = 1;
 
     unknown_extensions[0].type = UINT16_MAX;
-
     decode_extensions(src, end, PTLS_HANDSHAKE_TYPE_ENCRYPTED_EXTENSIONS, &type, {
         if (tls->ctx->on_extension != NULL &&
             (ret = tls->ctx->on_extension->cb(tls->ctx->on_extension, tls, PTLS_HANDSHAKE_TYPE_ENCRYPTED_EXTENSIONS, type,
@@ -3632,7 +3631,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
     /* send EncryptedExtensions */
     ptls_push_message(emitter, tls->key_schedule, PTLS_HANDSHAKE_TYPE_ENCRYPTED_EXTENSIONS, {
         ptls_buffer_t *sendbuf = emitter->buf;
-        /*ptls_tcpls_t *tcpls_options;*/
+        ptls_tcpls_t *tcpls_options;
         ptls_buffer_push_block(sendbuf, 2, {
             if (tls->esni != NULL) {
                 /* the extension is sent even if the application does not handle server name, because otherwise the handshake
@@ -3660,21 +3659,20 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
             if (tls->pending_handshake_secret != NULL)
                 buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_EARLY_DATA, {});
             /** Push encrypted TCP options if we have some */
-            //TCPLS
-            /*printf("Pushing TCPLS extensions!\n");*/
-            /*if (tls->ctx->support_tcpls_options && tls->tcpls_options != NULL) {*/
-              /*tcpls_options = tls->tcpls_options;*/
-              /*for (int i = 0; i < NBR_SUPPORTED_TCPLS_OPTIONS; i++) {*/
-                /** if len is 0, the option has not been initialized yet, and
-                 * might be sent later*/
-                /*if (tcpls_options[i].data->len) {*/
-                  /*buffer_push_extension(sendbuf, tcpls_options[i].type, {*/
-                    /*ptls_buffer_pushv(sendbuf, tcpls_options[i].data->base,*/
-                        /*tcpls_options[i].data->len);*/
-                  /*});*/
-                /*}*/
-              /*}*/
-            /*}*/
+           // TCPLS
+            if (tls->ctx->support_tcpls_options && tls->tcpls_options != NULL) {
+              tcpls_options = tls->tcpls_options;
+              for (int i = 0; i < NBR_SUPPORTED_TCPLS_OPTIONS; i++) {
+                /* if len is 0, the option has not been initialized yet, and
+                 might be sent later */
+                if (tcpls_options[i].data->base) {
+                  buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_ENCRYPTED_TCP_OPTIONS_USERTIMEOUT, {
+                    ptls_buffer_pushv(sendbuf, tcpls_options[i].data->base,
+                        tcpls_options[i].data->len);
+                  });
+                }
+              }
+            }
             if ((ret = push_additional_extensions(properties, sendbuf)) != 0)
                 goto Exit;
         });
