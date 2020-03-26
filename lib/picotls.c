@@ -340,13 +340,8 @@ static int aead_decrypt(struct st_ptls_traffic_protection_t *ctx, void *output, 
 
 #endif /* #if PTLS_FUZZ_HANDSHAKE */
 
-#define buffer_push_record(buf, type, block)                                                                                       \
-    do {                                                                                                                           \
-        ptls_buffer_push((buf), (type), PTLS_RECORD_VERSION_MAJOR, PTLS_RECORD_VERSION_MINOR);                                     \
-        ptls_buffer_push_block((buf), 2, block);                                                                                   \
-    } while (0)
 
-static int buffer_push_encrypted_records(ptls_buffer_t *buf, uint8_t type, const uint8_t *src, size_t len,
+int buffer_push_encrypted_records(ptls_buffer_t *buf, uint8_t type, const uint8_t *src, size_t len,
                                          struct st_ptls_traffic_protection_t *enc)
 {
     int ret = 0;
@@ -4509,7 +4504,7 @@ int ptls_receive(ptls_t *tls, ptls_buffer_t *decryptbuf, const void *_input, siz
     return ret;
 }
 
-static int update_send_key(ptls_t *tls, ptls_buffer_t *_sendbuf, int request_update)
+int update_send_key(ptls_t *tls, ptls_buffer_t *_sendbuf, int request_update)
 {
     struct st_ptls_record_message_emitter_t emitter;
     int ret;
@@ -4547,7 +4542,8 @@ int ptls_send(ptls_t *tls, ptls_buffer_t *sendbuf, const void *input, size_t inl
         tls->key_update_send_request = 0;
     }
 
-    return buffer_push_encrypted_records(sendbuf, PTLS_CONTENT_TYPE_APPDATA, input, inlen, &tls->traffic_protection.enc);
+    return buffer_push_encrypted_records(sendbuf, PTLS_CONTENT_TYPE_APPDATA,
+        input, inlen, &tls->traffic_protection.enc);
 }
 
 

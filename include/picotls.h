@@ -199,6 +199,7 @@ extern "C" {
 #define PTLS_CONTENT_TYPE_ALERT 21
 #define PTLS_CONTENT_TYPE_HANDSHAKE 22
 #define PTLS_CONTENT_TYPE_APPDATA 23
+#define PTLS_CONTENT_TYPE_TCPLS_OPTION 24
 
 #define PTLS_PSK_KE_MODE_PSK 0
 #define PTLS_PSK_KE_MODE_PSK_DHE 1
@@ -758,6 +759,10 @@ extern "C" {
      * options
      */
     unsigned tcpls_options_confirmed : 1;
+    /**
+     * Socket on which eventually applies local and received tcpls_options
+     */
+    int sockfd;
     /**
      *
      */
@@ -1563,6 +1568,18 @@ static size_t ptls_aead_encrypt_final(ptls_aead_context_t *ctx, void *output);
  */
 static size_t ptls_aead_decrypt(ptls_aead_context_t *ctx, void *output, const void *input, size_t inlen, uint64_t seq,
                                 const void *aad, size_t aadlen);
+
+
+#define buffer_push_record(buf, type, block)                                                                                       \
+    do {                                                                                                                           \
+        ptls_buffer_push((buf), (type), PTLS_RECORD_VERSION_MAJOR, PTLS_RECORD_VERSION_MINOR);                                     \
+        ptls_buffer_push_block((buf), 2, block);                                                                                   \
+    } while (0)
+
+int buffer_push_encrypted_records(ptls_buffer_t *buf, uint8_t type, const uint8_t *src, size_t len,
+                                         struct st_ptls_traffic_protection_t *enc);
+
+int update_send_key(ptls_t *tls, ptls_buffer_t *_sendbuf, int request_update);
 /**
  * Return the current read epoch.
  */

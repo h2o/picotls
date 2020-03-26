@@ -10,8 +10,44 @@ static int tcpls_init_context(ptls_t *ptls, const void *data, ptls_tcpls_options
 
 /** Temporary skeletton */
 int ptls_send_tcpoption(ptls_t *tls, ptls_buffer_t *sendbuf, const void *input,
-    size_t inlen, int tcp_option_type)
+    size_t inlen, ptls_tcpls_options_t type)
 {
+  assert(tls->traffic_protection.enc.aead != NULL);
+  
+  if (tls->traffic_protection.enc.seq >= 16777216)
+    tls->needs_key_update = 1;
+
+  if (tls->needs_key_update) {
+        int ret;
+        if ((ret = update_send_key(tls, sendbuf, tls->key_update_send_request)) != 0)
+            return ret;
+        tls->needs_key_update = 0;
+        tls->key_update_send_request = 0;
+  }
+  /** Get the option */
+  ptls_tcpls_t *option;
+  int i;
+  int found = 0;
+  for (i = 0; i < NBR_SUPPORTED_TCPLS_OPTIONS && !found; i++) {
+    if ((tls->tcpls_options[i].type == type && tls->tcpls_options[i].data->base)
+        || !tls->tcpls_options[i].data->base) {
+      option = &tls->tcpls_options[i];
+      found = 1;
+    }
+  }
+  if (!found)
+    return -1;
+  
+  {
+    uint8_t input[option->data->len + 2];
+    memcpy(input, &option->type, 2);
+    memcpy(input+2, option->data->base, option->data->len);
+    
+    return buffer_push_encrypted_records(sendbuf,
+        PTLS_CONTENT_TYPE_TCPLS_OPTION, input, option->data->len+2, &tls->traffic_protection.enc);
+
+  }
+
   return 0;
 }
 
