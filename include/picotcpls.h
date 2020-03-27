@@ -13,15 +13,20 @@ typedef enum ptls_tcpls_options_t {
 
 struct st_tcpls_t {
   ptls_tcpls_options_t type;
+  unsigned setlocal : 1; /** Whether or not we also apply the option locally */
+  unsigned settopeer : 1; /** Whether or not this option might be sent to the peer */
   ptls_iovec_t *data;
 };
 
 struct st_ptls_record_t;
 
+/*=====================================API====================================*/
+
 /** API exposed to the application */
-int ptls_set_user_timeout(ptls_t *ctx, uint16_t value, uint16_t sec_or_min);
+int ptls_set_user_timeout(ptls_t *ctx, uint16_t value, uint16_t sec_or_min,
+    uint8_t setlocal, uint8_t settopeer);
 
-
+/*============================================================================*/
 /** Internal to picotls */
 int handle_tcpls_extension_option(ptls_t *ctx, ptls_tcpls_options_t type,
     const uint8_t *input, size_t len);

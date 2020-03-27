@@ -1210,7 +1210,7 @@ static void test_server_sends_tcpls_encrypted_extensions(void)
   server = ptls_new(ctx_peer, 1);
   *ptls_get_data_ptr(server) = &server_secrets;
   
-  ret = ptls_set_user_timeout(server, 5, 0);
+  ret = ptls_set_user_timeout(server, 5, 0, 1, 1);
   ok(ret == 0);
 
   ret = ptls_handle_message(client, &cbuf, coffs, 0, NULL, 0, NULL);
@@ -1275,7 +1275,7 @@ static void test_tcpls_usertimeout(void)
   client = ptls_new(ctx, 0);
   server = ptls_new(ctx_peer, 1);
   /** 1 second */
-  int ret = ptls_set_user_timeout(server, 1, 0);
+  int ret = ptls_set_user_timeout(server, 1, 0, 1, 1);
   ok(ret == 0);
   /** check whether the timeout has the right value */
   int i;
@@ -1287,7 +1287,7 @@ static void test_tcpls_usertimeout(void)
   ptls_tcpls_t option = server->tcpls_options[i];
   ok(*((uint16_t*) option.data->base) == 1);
   /** 1 minute */
-  ret = ptls_set_user_timeout(server, 1, 1);
+  ret = ptls_set_user_timeout(server, 1, 1, 1, 1);
   ok(ret == 0);
   /*ok(*((uint16_t *) (*option)->data) == 32769);*/
   ok(*((uint16_t *) option.data->base) == 32769);
