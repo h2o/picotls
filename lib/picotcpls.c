@@ -12,7 +12,8 @@ static int tcpls_init_context(ptls_t *ptls, const void *data, ptls_tcpls_options
 int ptls_send_tcpoption(ptls_t *tls, ptls_buffer_t *sendbuf, const void *input,
     size_t inlen, ptls_tcpls_options_t type)
 {
-  assert(tls->traffic_protection.enc.aead != NULL);
+  if(tls->traffic_protection.enc.aead == NULL)
+    return -1;
   
   if (tls->traffic_protection.enc.seq >= 16777216)
     tls->needs_key_update = 1;
@@ -47,8 +48,6 @@ int ptls_send_tcpoption(ptls_t *tls, ptls_buffer_t *sendbuf, const void *input,
         PTLS_CONTENT_TYPE_TCPLS_OPTION, input, option->data->len+2, &tls->traffic_protection.enc);
 
   }
-
-  return 0;
 }
 
 /**
@@ -108,15 +107,16 @@ static int tcpls_init_context(ptls_t *ptls, const void *data, ptls_tcpls_options
 }
 
 /** Temporaty skeletton */
-int handle_tcpls_extension_option(ptls_t *ptls, ptls_tcpls_options_t type, uint16_t val) {
+int handle_tcpls_extension_option(ptls_t *ptls, ptls_tcpls_options_t type,
+    const uint8_t *input, size_t inputlen) {
   if (!ptls->ctx->tcpls_options_confirmed)
     return -1;
 
   switch (type) {
     case USER_TIMEOUT:
       {
-        uint16_t *nval = malloc(sizeof(uint16_t));
-        *nval = val;
+        uint16_t *nval = malloc(inputlen);
+        *nval = (uint16_t) *input;
         tcpls_init_context(ptls, nval, USER_TIMEOUT);
         /** TODO handle the extension! */
       }
@@ -131,10 +131,13 @@ int handle_tcpls_extension_option(ptls_t *ptls, ptls_tcpls_options_t type, uint1
 
 /** TODO call from handle_input */
 /** Temporary skeletton */
-
-int handle_tcpls_record(void)
+struct st_ptls_record_t;
+int handle_tcpls_record(ptls_t *tls, struct st_ptls_record_t *rec)
 {
-  return 0;
+  /** Assumes a TCPLS option holds within 1 record ; else we need to buffer the
+   * option to deliver it to handle_tcpls_extension_option 
+   * */
+  return handle_tcpls_extension_option(tls, rec->type, rec->fragment, rec->length);
 }
 
 void ptls_tcpls_options_free(ptls_t *ptls) {

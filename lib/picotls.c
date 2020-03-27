@@ -363,7 +363,8 @@ Exit:
     return ret;
 }
 
-static int buffer_encrypt_record(ptls_buffer_t *buf, size_t rec_start, struct st_ptls_traffic_protection_t *enc)
+static int buffer_encrypt_record(ptls_buffer_t *buf, size_t rec_start, struct
+    st_ptls_traffic_protection_t *enc)
 {
     size_t bodylen = buf->off - rec_start - 5;
     uint8_t *tmpbuf, type = buf->base[rec_start];
@@ -374,7 +375,8 @@ static int buffer_encrypt_record(ptls_buffer_t *buf, size_t rec_start, struct st
         size_t overhead = 1 + enc->aead->algo->tag_size;
         if ((ret = ptls_buffer_reserve(buf, overhead)) != 0)
             return ret;
-        size_t encrypted_len = aead_encrypt(enc, buf->base + rec_start + 5, buf->base + rec_start + 5, bodylen, type);
+        size_t encrypted_len = aead_encrypt(enc, buf->base + rec_start + 5,
+            buf->base + rec_start + 5, bodylen, type);
         assert(encrypted_len == bodylen + overhead);
         buf->off += overhead;
         buf->base[rec_start] = PTLS_CONTENT_TYPE_APPDATA;
@@ -2127,8 +2129,8 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
               ret = PTLS_ALERT_ILLEGAL_PARAMETER;
               goto Exit;
             }
-            uint16_t val =  (uint16_t) *src;
-            if(handle_tcpls_extension_option(tls, USER_TIMEOUT, val)) {
+            /*uint16_t val =  (uint16_t) *src;*/
+            if(handle_tcpls_extension_option(tls, USER_TIMEOUT, src, sizeof(uint16_t))) {
               ret = PTLS_ALERT_ILLEGAL_PARAMETER;
               goto Exit;
             }
@@ -3841,7 +3843,8 @@ static int parse_record_header(struct st_ptls_record_t *rec, const uint8_t *src)
     return 0;
 }
 
-static int parse_record(ptls_t *tls, struct st_ptls_record_t *rec, const uint8_t *src, size_t *len)
+static int parse_record(ptls_t *tls, struct st_ptls_record_t *rec, const uint8_t
+    *src, size_t *len)
 {
     int ret;
 
@@ -4340,12 +4343,14 @@ static int handle_input(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_buffe
     }
     if (tls->traffic_protection.dec.aead != NULL && rec.type != PTLS_CONTENT_TYPE_ALERT) {
         size_t decrypted_length;
+        /** For middlebox compatibility */
         if (rec.type != PTLS_CONTENT_TYPE_APPDATA)
             return PTLS_ALERT_HANDSHAKE_FAILURE;
         if ((ret = ptls_buffer_reserve(decryptbuf, 5 + rec.length)) != 0)
             return ret;
-        if ((ret = aead_decrypt(&tls->traffic_protection.dec, decryptbuf->base + decryptbuf->off, &decrypted_length, rec.fragment,
-                                rec.length)) != 0) {
+        if ((ret = aead_decrypt(&tls->traffic_protection.dec, decryptbuf->base +
+                decryptbuf->off, &decrypted_length, rec.fragment, rec.length))
+            != 0) {
             if (tls->is_server && tls->server.early_data_skipped_bytes != UINT32_MAX)
                 goto ServerSkipEarlyData;
             return ret;
@@ -4358,6 +4363,7 @@ static int handle_input(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_buffe
                 break;
         if (rec.length == 0)
             return PTLS_ALERT_UNEXPECTED_MESSAGE;
+        /** True record type =) */
         rec.type = rec.fragment[--rec.length];
     } else if (rec.type == PTLS_CONTENT_TYPE_APPDATA && tls->is_server && tls->server.early_data_skipped_bytes != UINT32_MAX) {
         goto ServerSkipEarlyData;
@@ -4368,7 +4374,7 @@ static int handle_input(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_buffe
         ret = handle_handshake_record(tls, tls->is_server ? handle_server_handshake_message : handle_client_handshake_message,
                                       emitter, &rec, properties);
     } else {
-        /* handling of an alert or an application record */
+        /* handling of an alert or an application record, or TCP option */
         switch (rec.type) {
         case PTLS_CONTENT_TYPE_APPDATA:
             if (tls->state >= PTLS_STATE_POST_HANDSHAKE_MIN) {
@@ -4382,6 +4388,13 @@ static int handle_input(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_buffe
                 ret = PTLS_ALERT_UNEXPECTED_MESSAGE;
             }
             break;
+        case PTLS_CONTENT_TYPE_TCPLS_OPTION:
+            if (tls->state < PTLS_STATE_POST_HANDSHAKE_MIN) {
+              ret = PTLS_ALERT_UNEXPECTED_MESSAGE;
+            }
+            else {
+              ret = handle_tcpls_record(tls, &rec);
+            }
         case PTLS_CONTENT_TYPE_ALERT:
             ret = handle_alert(tls, rec.fragment, rec.length);
             break;

@@ -16,15 +16,17 @@ struct st_tcpls_t {
   ptls_iovec_t *data;
 };
 
+struct st_ptls_record_t;
 
 /** API exposed to the application */
 int ptls_set_user_timeout(ptls_t *ctx, uint16_t value, uint16_t sec_or_min);
 
 
 /** Internal to picotls */
-int handle_tcpls_extension_option(ptls_t *ctx, ptls_tcpls_options_t type, uint16_t val);
+int handle_tcpls_extension_option(ptls_t *ctx, ptls_tcpls_options_t type,
+    const uint8_t *input, size_t len);
 
-int handle_tcpls_record(void);
+int handle_tcpls_record(ptls_t *tls, struct st_ptls_record_t *rec);
 
 void ptls_tcpls_options_free(ptls_t *ptls);
 
