@@ -146,6 +146,10 @@ int handle_tcpls_record(ptls_t *tls, struct st_ptls_record_t *rec)
   /** Assumes a TCPLS option holds within 1 record ; else we need to buffer the
    * option to deliver it to handle_tcpls_extension_option 
    * */
+  if (!tls->tcpls_buf) {
+    tls->tcpls_buf = malloc(sizeof(*tls->tcpls_buf));
+  }
+  
   return handle_tcpls_extension_option(tls, rec->type, rec->fragment, rec->length);
 }
 

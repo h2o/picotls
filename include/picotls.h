@@ -1150,6 +1150,12 @@ extern "C" {
        * List of user configured options
        */
       ptls_tcpls_t *tcpls_options;
+
+      /**
+       * Buffer tcpls options that might span over multiple records (e.g., eBPF
+       * bytcode)
+       */
+      ptls_buffer_t *tcpls_buf;
   };
   /**
    * builds a new ptls_iovec_t instance using the supplied parameters

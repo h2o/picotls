@@ -4,6 +4,8 @@
 #include "picotypes.h"
 
 #define NBR_SUPPORTED_TCPLS_OPTIONS 5
+#define VARSIZE_OPTION_MAX_CHUNK_SIZE 4*16384 /* should be able to hold 4 record before needing to be extended */
+
 
 /** TCP options we would support in the TLS context */
 typedef enum ptls_tcpls_options_t {
