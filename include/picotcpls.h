@@ -6,17 +6,18 @@
 #define NBR_SUPPORTED_TCPLS_OPTIONS 5
 #define VARSIZE_OPTION_MAX_CHUNK_SIZE 4*16384 /* should be able to hold 4 record before needing to be extended */
 
-
 /** TCP options we would support in the TLS context */
 typedef enum ptls_tcpls_options_t {
   USER_TIMEOUT,
   FAILOVER,
+  PROTOCOLPLUGIN,
 } ptls_tcpls_options_t;
 
 struct st_tcpls_t {
   ptls_tcpls_options_t type;
   unsigned setlocal : 1; /** Whether or not we also apply the option locally */
   unsigned settopeer : 1; /** Whether or not this option might be sent to the peer */
+  unsigned is_varlen : 1; /** Tell whether this option is of variable length */
   ptls_iovec_t *data;
 };
 

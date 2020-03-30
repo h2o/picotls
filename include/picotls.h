@@ -1153,10 +1153,18 @@ extern "C" {
 
       /**
        * Buffer tcpls options that might span over multiple records (e.g., eBPF
-       * bytcode)
+       * bytcod)
        */
       ptls_buffer_t *tcpls_buf;
   };
+
+
+
+  uint16_t ntoh16(const uint8_t *src);
+  uint32_t ntoh24(const uint8_t *src);
+  uint32_t ntoh32(const uint8_t *src);
+  uint64_t ntoh64(const uint8_t *src);
+
   /**
    * builds a new ptls_iovec_t instance using the supplied parameters
    */

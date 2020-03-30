@@ -41,12 +41,21 @@ int ptls_send_tcpoption(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_tcpls_options_
   }
   if (!found)
     return -1;
-  
-  {
+
+  if (option->is_varlen) {
+    /** We need to send the size of the option, which we might need to buffer */
+    /** 4 bytes for the variable length, 2 bytes for the option value */
+    uint8_t input[option->data->len + 6];
+    memcpy(input, &option->type, 2);
+    memcpy(input+2, &option->data->len, 4);
+    memcpy(input+6, option->data->base, option->data->len);
+    return buffer_push_encrypted_records(sendbuf,
+        PTLS_CONTENT_TYPE_TCPLS_OPTION, input, option->data->len+6, &tls->traffic_protection.enc);
+  }
+  else {
     uint8_t input[option->data->len + 2];
     memcpy(input, &option->type, 2);
     memcpy(input+2, option->data->base, option->data->len);
-    
     return buffer_push_encrypted_records(sendbuf,
         PTLS_CONTENT_TYPE_TCPLS_OPTION, input, option->data->len+2, &tls->traffic_protection.enc);
 
@@ -143,14 +152,61 @@ int handle_tcpls_extension_option(ptls_t *ptls, ptls_tcpls_options_t type,
 /** Temporary skeletton */
 int handle_tcpls_record(ptls_t *tls, struct st_ptls_record_t *rec)
 {
+  int ret = 0;
+  ptls_tcpls_options_t type;
+  uint8_t *init_buf = NULL;
   /** Assumes a TCPLS option holds within 1 record ; else we need to buffer the
    * option to deliver it to handle_tcpls_extension_option 
    * */
   if (!tls->tcpls_buf) {
-    tls->tcpls_buf = malloc(sizeof(*tls->tcpls_buf));
+    if ((tls->tcpls_buf = malloc(sizeof(*tls->tcpls_buf))) == NULL) {
+      ret = PTLS_ERROR_NO_MEMORY;
+      goto Exit;
+    }
+    memset(tls->tcpls_buf, 0, sizeof(*tls->tcpls_buf));
   }
   
-  return handle_tcpls_extension_option(tls, rec->type, rec->fragment, rec->length);
+  type = ntoh16(rec->fragment);
+  /** Check whether type is a variable len option */
+  if (type == PROTOCOLPLUGIN) {
+    size_t optsize = ntoh32(rec->fragment+2);
+    if (optsize > PTLS_MAX_PLAINTEXT_RECORD_SIZE-6) {
+      /** We need to buffer it */
+      /** Check first if the buffer has been initialized */
+      if (!tls->tcpls_buf->base) {
+        if ((init_buf = malloc(VARSIZE_OPTION_MAX_CHUNK_SIZE)) == NULL) {
+          ret = PTLS_ERROR_NO_MEMORY;
+          goto Exit;
+        }
+        ptls_buffer_init(tls->tcpls_buf, init_buf, VARSIZE_OPTION_MAX_CHUNK_SIZE);
+      }
+      /** always reserve memory (won't if enough left) */
+      ptls_buffer_reserve(tls->tcpls_buf, rec->length-6);
+      memcpy(tls->tcpls_buf->base+tls->tcpls_buf->off, rec->fragment+6, rec->length-6);
+      tls->tcpls_buf->off += rec->length - 6;
+      
+      if (ret)
+        goto Exit;
+      if (tls->tcpls_buf->off == optsize) {
+        /** We have all of it */
+        ret = handle_tcpls_extension_option(tls, type, tls->tcpls_buf->base, optsize);
+        ptls_buffer_dispose(tls->tcpls_buf);
+      }
+      else {
+        ret = PTLS_ERROR_IN_PROGRESS;
+        return ret;
+      }
+    }
+    else {
+      return handle_tcpls_extension_option(tls, type, rec->fragment+6, optsize);
+    }
+  }
+  /** We assume that only Variable size options won't hold into 1 record */
+  return handle_tcpls_extension_option(tls, type, rec->fragment+2, rec->length-2);
+
+Exit:
+  ptls_buffer_dispose(tls->tcpls_buf);
+  return ret;
 }
 
 void ptls_tcpls_options_free(ptls_t *ptls) {
