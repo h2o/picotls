@@ -135,10 +135,12 @@ int handle_tcpls_extension_option(ptls_t *ptls, ptls_tcpls_options_t type,
     case USER_TIMEOUT:
       {
         uint16_t *nval = malloc(inputlen);
-        *nval = (uint16_t) *input;
+        *nval = ntoh16(input);
         tcpls_init_context(ptls, nval, USER_TIMEOUT, 1, 0);
         /** TODO handle the extension! */
       }
+      break;
+    case PROTOCOLPLUGIN:
       break;
     default:
       printf("Unsuported option?");
