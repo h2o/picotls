@@ -15,6 +15,7 @@ static int tcpls_init_context(ptls_t *ptls, const void *data,
 /** Temporary skeletton */
 int ptls_send_tcpoption(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_tcpls_options_t type)
 {
+  int ret = 0;
   if(tls->traffic_protection.enc.aead == NULL)
     return -1;
   
@@ -45,20 +46,23 @@ int ptls_send_tcpoption(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_tcpls_options_
   if (option->is_varlen) {
     /** We need to send the size of the option, which we might need to buffer */
     /** 4 bytes for the variable length, 2 bytes for the option value */
-    uint8_t input[option->data->len + 6];
-    memcpy(input, &option->type, 2);
-    memcpy(input+2, &option->data->len, 4);
-    memcpy(input+6, option->data->base, option->data->len);
+    uint8_t input[option->data->len + sizeof(option->type) + 4];
+    memcpy(input, &option->type, sizeof(option->type));
+    memcpy(input+sizeof(option->type), &option->data->len, 4);
+    memcpy(input+sizeof(option->type)+4, option->data->base, option->data->len);
     return buffer_push_encrypted_records(sendbuf,
-        PTLS_CONTENT_TYPE_TCPLS_OPTION, input, option->data->len+6, &tls->traffic_protection.enc);
+        PTLS_CONTENT_TYPE_TCPLS_OPTION, input,
+        option->data->len+sizeof(option->type)+4, &tls->traffic_protection.enc);
   }
   else {
-    uint8_t input[option->data->len + 2];
-    memcpy(input, &option->type, 2);
-    memcpy(input+2, option->data->base, option->data->len);
-    return buffer_push_encrypted_records(sendbuf,
-        PTLS_CONTENT_TYPE_TCPLS_OPTION, input, option->data->len+2, &tls->traffic_protection.enc);
+    uint8_t input[option->data->len + sizeof(option->type)];
+    memcpy(input, &option->type, sizeof(option->type));
+    memcpy(input+sizeof(option->type), option->data->base, option->data->len);
 
+    ret = buffer_push_encrypted_records(sendbuf,
+        PTLS_CONTENT_TYPE_TCPLS_OPTION, input,
+        option->data->len+sizeof(option->type), &tls->traffic_protection.enc);
+    return ret;
   }
 }
 
@@ -88,6 +92,7 @@ static int tcpls_init_context(ptls_t *ptls, const void *data,
       ptls->tcpls_options[i].type = 0;
       ptls->tcpls_options[i].setlocal = 0;
       ptls->tcpls_options[i].settopeer = 0;
+      ptls->tcpls_options[i].is_varlen = 0;
     }
   }
   /** Picking up the right slot in the list, i.e;, the first unused should have
@@ -114,6 +119,7 @@ static int tcpls_init_context(ptls_t *ptls, const void *data,
         /** We already allocated one, free it before getting a new one */
         free(option->data->base);
       }
+      option->is_varlen = 0;
       *option->data = ptls_iovec_init(data, sizeof(uint16_t));
       option->type = USER_TIMEOUT;
   
@@ -135,7 +141,8 @@ int handle_tcpls_extension_option(ptls_t *ptls, ptls_tcpls_options_t type,
     case USER_TIMEOUT:
       {
         uint16_t *nval = malloc(inputlen);
-        *nval = ntoh16(input);
+        *nval = (uint16_t) *input;
+        /**nval = ntoh16(input);*/
         tcpls_init_context(ptls, nval, USER_TIMEOUT, 1, 0);
         /** TODO handle the extension! */
       }
@@ -150,7 +157,6 @@ int handle_tcpls_extension_option(ptls_t *ptls, ptls_tcpls_options_t type,
 }
 
 
-/** TODO call from handle_input */
 /** Temporary skeletton */
 int handle_tcpls_record(ptls_t *tls, struct st_ptls_record_t *rec)
 {
@@ -168,7 +174,7 @@ int handle_tcpls_record(ptls_t *tls, struct st_ptls_record_t *rec)
     memset(tls->tcpls_buf, 0, sizeof(*tls->tcpls_buf));
   }
   
-  type = ntoh16(rec->fragment);
+  type = ntoh32(rec->fragment);
   /** Check whether type is a variable len option */
   if (type == PROTOCOLPLUGIN) {
     size_t optsize = ntoh32(rec->fragment+2);
@@ -204,7 +210,7 @@ int handle_tcpls_record(ptls_t *tls, struct st_ptls_record_t *rec)
     }
   }
   /** We assume that only Variable size options won't hold into 1 record */
-  return handle_tcpls_extension_option(tls, type, rec->fragment+2, rec->length-2);
+  return handle_tcpls_extension_option(tls, type, rec->fragment+sizeof(type), rec->length-sizeof(type));
 
 Exit:
   ptls_buffer_dispose(tls->tcpls_buf);

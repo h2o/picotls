@@ -327,7 +327,8 @@ static size_t aead_encrypt(struct st_ptls_traffic_protection_t *ctx, void *outpu
     return off;
 }
 
-static int aead_decrypt(struct st_ptls_traffic_protection_t *ctx, void *output, size_t *outlen, const void *input, size_t inlen)
+static int aead_decrypt(struct st_ptls_traffic_protection_t *ctx, void *output,
+    size_t *outlen, const void *input, size_t inlen)
 {
     uint8_t aad[5];
 
@@ -363,8 +364,7 @@ Exit:
     return ret;
 }
 
-static int buffer_encrypt_record(ptls_buffer_t *buf, size_t rec_start, struct
-    st_ptls_traffic_protection_t *enc)
+int buffer_encrypt_record(ptls_buffer_t *buf, size_t rec_start, struct st_ptls_traffic_protection_t *enc)
 {
     size_t bodylen = buf->off - rec_start - 5;
     uint8_t *tmpbuf, type = buf->base[rec_start];
@@ -4389,12 +4389,14 @@ static int handle_input(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_buffe
             }
             break;
         case PTLS_CONTENT_TYPE_TCPLS_OPTION:
+            printf("handling TCPLS option!\n");
             if (tls->state < PTLS_STATE_POST_HANDSHAKE_MIN) {
               ret = PTLS_ALERT_UNEXPECTED_MESSAGE;
             }
             else {
               ret = handle_tcpls_record(tls, &rec);
             }
+            break;
         case PTLS_CONTENT_TYPE_ALERT:
             ret = handle_alert(tls, rec.fragment, rec.length);
             break;
@@ -4579,7 +4581,8 @@ int ptls_send_alert(ptls_t *tls, ptls_buffer_t *sendbuf, uint8_t level, uint8_t 
     size_t rec_start = sendbuf->off;
     int ret = 0;
 
-    buffer_push_record(sendbuf, PTLS_CONTENT_TYPE_ALERT, { ptls_buffer_push(sendbuf, level, description); });
+    buffer_push_record(sendbuf, PTLS_CONTENT_TYPE_ALERT, {
+        ptls_buffer_push(sendbuf, level, description); });
     /* encrypt the alert if we have the encryption keys, unless when it is the early data key */
     if (tls->traffic_protection.enc.aead != NULL && !(tls->state <= PTLS_STATE_CLIENT_EXPECT_FINISHED)) {
         if ((ret = buffer_encrypt_record(sendbuf, rec_start, &tls->traffic_protection.enc)) != 0)

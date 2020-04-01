@@ -199,7 +199,7 @@ extern "C" {
 #define PTLS_CONTENT_TYPE_ALERT 21
 #define PTLS_CONTENT_TYPE_HANDSHAKE 22
 #define PTLS_CONTENT_TYPE_APPDATA 23
-#define PTLS_CONTENT_TYPE_TCPLS_OPTION 42
+#define PTLS_CONTENT_TYPE_TCPLS_OPTION 24
 
 #define PTLS_PSK_KE_MODE_PSK 0
 #define PTLS_PSK_KE_MODE_PSK_DHE 1
@@ -1583,6 +1583,8 @@ static size_t ptls_aead_encrypt_final(ptls_aead_context_t *ctx, void *output);
 static size_t ptls_aead_decrypt(ptls_aead_context_t *ctx, void *output, const void *input, size_t inlen, uint64_t seq,
                                 const void *aad, size_t aadlen);
 
+
+int buffer_encrypt_record(ptls_buffer_t *buf, size_t rec_start, struct st_ptls_traffic_protection_t *enc);
 
 #define buffer_push_record(buf, type, block)                                                                                       \
     do {                                                                                                                           \
