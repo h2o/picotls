@@ -37,10 +37,14 @@
 #include "picotcpls.h"
 
 /** Forward declarations */
-static int tcpls_init_context(ptls_t *ptls, const void *data, size_t datalen,
+static ptls_tcpls_t* tcpls_init_context(ptls_t *ptls, const void *data, size_t datalen,
     ptls_tcpls_options_t type, uint8_t setlocal, uint8_t settopeer);
 
 static int is_varlen(ptls_tcpls_options_t type);
+
+static int setlocal_usertimeout(ptls_t *ptls, ptls_tcpls_t *option);
+
+static int setlocal_bpf_sched(ptls_t *plts, ptls_tcpls_t *option);
 
 /**
  * Sends a tcp option which has previously been registered with ptls_set...
@@ -49,7 +53,6 @@ static int is_varlen(ptls_tcpls_options_t type);
  * */
 int ptls_send_tcpoption(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_tcpls_options_t type)
 {
-  int ret = 0;
   if(tls->traffic_protection.enc.aead == NULL)
     return -1;
   
@@ -93,10 +96,9 @@ int ptls_send_tcpoption(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_tcpls_options_
     memcpy(input, &option->type, sizeof(option->type));
     memcpy(input+sizeof(option->type), option->data->base, option->data->len);
 
-    ret = buffer_push_encrypted_records(sendbuf,
+    return buffer_push_encrypted_records(sendbuf,
         PTLS_CONTENT_TYPE_TCPLS_OPTION, input,
         option->data->len+sizeof(option->type), &tls->traffic_protection.enc);
-    return ret;
   }
 }
 
@@ -110,9 +112,16 @@ int ptls_send_tcpoption(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_tcpls_options_
  */
 int ptls_set_user_timeout(ptls_t *ptls, uint16_t value, uint16_t sec_or_min,
     uint8_t setlocal, uint8_t settopeer) {
+  int ret = 0;
+  ptls_tcpls_t *option;
   uint16_t *val = malloc(sizeof(uint16_t));
   *val = value | sec_or_min << 15;
-  int ret = tcpls_init_context(ptls, val, 2, USER_TIMEOUT, setlocal, settopeer);
+  option = tcpls_init_context(ptls, val, 2, USER_TIMEOUT, setlocal, settopeer);
+  if (!option)
+    return -1;
+  if (option->setlocal) {
+    ret = setlocal_usertimeout(ptls, option);
+  }
   return ret;
 }
 
@@ -125,14 +134,22 @@ int ptls_set_faileover(ptls_t *ptls, char *address) {
  */
 int ptls_set_bpf_scheduler(ptls_t *ptls, const uint8_t *bpf_prog_bytecode, size_t bytecodelen,
     int setlocal, int settopeer) {
+  int ret = 0;
+  ptls_tcpls_t *option;
   uint8_t* bpf_scheduler = NULL;
   if ((bpf_scheduler =  malloc(bytecodelen)) == NULL)
     return PTLS_ERROR_NO_MEMORY;
   memcpy(bpf_scheduler, bpf_prog_bytecode, bytecodelen);
-  return tcpls_init_context(ptls, bpf_scheduler, bytecodelen, BPF_SCHED, setlocal, settopeer);
+  option =  tcpls_init_context(ptls, bpf_scheduler, bytecodelen, BPF_SCHED, setlocal, settopeer);
+  if (!option)
+    return -1;
+  if (option->setlocal){
+    ret = setlocal_bpf_sched(ptls, option);
+  }
+  return ret;
 }
 
-static int tcpls_init_context(ptls_t *ptls, const void *data, size_t datalen,
+static ptls_tcpls_t*  tcpls_init_context(ptls_t *ptls, const void *data, size_t datalen,
     ptls_tcpls_options_t type, uint8_t setlocal, uint8_t settopeer) {
   ptls->ctx->support_tcpls_options = 1;
   if (!ptls->tcpls_options) {
@@ -159,7 +176,7 @@ static int tcpls_init_context(ptls_t *ptls, const void *data, size_t datalen,
     }
   }
   if (option == NULL)
-    return -1;
+    return NULL;
 
   option->setlocal = setlocal;
   option->settopeer = settopeer;
@@ -173,10 +190,7 @@ static int tcpls_init_context(ptls_t *ptls, const void *data, size_t datalen,
       option->is_varlen = 0;
       *option->data = ptls_iovec_init(data, sizeof(uint16_t));
       option->type = USER_TIMEOUT;
-      if (option->setlocal) {
-        /** Call setsockopt to set the timer TODO */
-      }
-      return 0;
+      return option;
     case FAILOVER: break;
     case BPF_SCHED:
       if (option->data->len) {
@@ -186,32 +200,32 @@ static int tcpls_init_context(ptls_t *ptls, const void *data, size_t datalen,
       option->is_varlen = 1;
       *option->data = ptls_iovec_init(data, datalen);
       option->type = BPF_SCHED;
-      if (option->setlocal) {
-        /** TODO plug bpf bytecode to the kernel, using ptls->sockfd file
-         * descriptor 
-         * */
-      }
+      return option;
       break;
     default:
         break;
   }
-  return -1;
+  return NULL;
 }
 
 int handle_tcpls_extension_option(ptls_t *ptls, ptls_tcpls_options_t type,
     const uint8_t *input, size_t inputlen) {
   if (!ptls->ctx->tcpls_options_confirmed)
     return -1;
-
+  ptls_tcpls_t *option = NULL;
   switch (type) {
     case USER_TIMEOUT:
       {
         uint16_t *nval = malloc(inputlen);
         *nval = (uint16_t) *input;
         /**nval = ntoh16(input);*/
-        tcpls_init_context(ptls, nval, 2, USER_TIMEOUT, 1, 0);
-        /** TODO handle the extension! */
+        option = tcpls_init_context(ptls, nval, 2, USER_TIMEOUT, 1, 0);
+        if (!option)
+          return -1; /** Should define an appropriate error code */
+        return setlocal_usertimeout(ptls, option);
       }
+      break;
+    case FAILOVER:
       break;
     case BPF_SCHED:
       break;
@@ -282,6 +296,17 @@ Exit:
   ptls_buffer_dispose(tls->tcpls_buf);
   return ret;
 }
+
+
+static int setlocal_usertimeout(ptls_t *ptls, ptls_tcpls_t *option) {
+  return 0;
+}
+
+
+static int setlocal_bpf_sched(ptls_t *ptls, ptls_tcpls_t *option) {
+  return 0;
+}
+
 
 /*=====================================utilities======================================*/
 
