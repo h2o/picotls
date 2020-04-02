@@ -140,7 +140,7 @@ int ptls_set_bpf_scheduler(ptls_t *ptls, const uint8_t *bpf_prog_bytecode, size_
   if ((bpf_scheduler =  malloc(bytecodelen)) == NULL)
     return PTLS_ERROR_NO_MEMORY;
   memcpy(bpf_scheduler, bpf_prog_bytecode, bytecodelen);
-  option =  tcpls_init_context(ptls, bpf_scheduler, bytecodelen, BPF_SCHED, setlocal, settopeer);
+  option = tcpls_init_context(ptls, bpf_scheduler, bytecodelen, BPF_SCHED, setlocal, settopeer);
   if (!option)
     return -1;
   if (option->setlocal){

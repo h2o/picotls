@@ -1184,10 +1184,9 @@ static int feed_messages(ptls_t *tls, ptls_buffer_t *outbuf, size_t *out_epoch_o
 }
 
 
-static void test_sends_tcpls_record(void)
+static void test_sends_varlen_bpf_prog(void)
 {
   ptls_t *client, *server;
-  /*traffic_secrets_t client_secrets = {{{0}}}, server_secrets = {{{0}}};*/
   ctx->support_tcpls_options = 1;
   ctx_peer->support_tcpls_options = 1;
   ctx_peer->tcpls_options_confirmed =0;
@@ -1195,33 +1194,61 @@ static void test_sends_tcpls_record(void)
 
   ptls_buffer_t cbuf, sbuf, decbuf;
   size_t coffs[5] = {0}, soffs[5];
-  /*ptls_update_traffic_key_t update_traffic_key = {on_update_traffic_key};*/
-  /*ptls_encrypt_ticket_t encrypt_ticket = {on_copy_ticket};*/
-  ptls_save_ticket_t save_ticket = {on_save_ticket};
   static ptls_on_extension_t cb = {on_extension_cb};
   ctx_peer->on_extension = &cb;
   ctx->on_extension = &cb;
   int ret;
   size_t consumed;
-  /*ctx->update_traffic_key = &update_traffic_key;*/
-  ctx->save_ticket = &save_ticket;
-  /*ctx_peer->update_traffic_key = &update_traffic_key;*/
-  /*ctx_peer->omit_end_of_early_data = 1;*/
-  /*ctx->omit_end_of_early_data = 1;*/
-  
-  /*ctx_peer->encrypt_ticket = &encrypt_ticket;*/
-  /*ctx_peer->ticket_lifetime = 86400;*/
-  /*ctx_peer->max_early_data_size = 8192;*/
-  
-  saved_ticket = ptls_iovec_init(NULL, 0);
   
   ptls_buffer_init(&cbuf, "", 0);
   ptls_buffer_init(&sbuf, "", 0);
 
   client = ptls_new(ctx, 0);
-  /**ptls_get_data_ptr(client) = &client_secrets;*/
   server = ptls_new(ctx_peer, 1);
-  /**ptls_get_data_ptr(server) = &server_secrets;*/
+  
+  ret = ptls_handle_message(client, &cbuf, coffs, 0, NULL, 0, NULL);
+  ok(ret == PTLS_ERROR_IN_PROGRESS);
+  ret = feed_messages(server, &sbuf, soffs, cbuf.base, coffs, NULL);
+  ok(ret == 0);
+  ok(sbuf.off != 0);
+  ok(!ptls_handshake_is_complete(server));
+  ok(ctx_peer->tcpls_options_confirmed == 1);
+  ret = feed_messages(client, &cbuf, coffs, sbuf.base, soffs, NULL);
+  ok(ret == 0);
+  ok(cbuf.off != 0);
+  ok(ptls_handshake_is_complete(client));
+  ok(ctx->tcpls_options_confirmed == 1);
+  
+  ret = feed_messages(server, &sbuf, soffs, cbuf.base, coffs, NULL);
+  ok(ret == 0);
+  ok(sbuf.off == 0);
+  ok(ptls_handshake_is_complete(server));
+  
+}
+
+
+static void test_sends_tcpls_record(void)
+{
+  ptls_t *client, *server;
+  ctx->support_tcpls_options = 1;
+  ctx_peer->support_tcpls_options = 1;
+  ctx_peer->tcpls_options_confirmed =0;
+  ctx->tcpls_options_confirmed =0;
+
+  ptls_buffer_t cbuf, sbuf, decbuf;
+  size_t coffs[5] = {0}, soffs[5];
+  static ptls_on_extension_t cb = {on_extension_cb};
+  ctx_peer->on_extension = &cb;
+  ctx->on_extension = &cb;
+  int ret;
+  size_t consumed;
+  
+  
+  ptls_buffer_init(&cbuf, "", 0);
+  ptls_buffer_init(&sbuf, "", 0);
+
+  client = ptls_new(ctx, 0);
+  server = ptls_new(ctx_peer, 1);
 
   ret = ptls_handle_message(client, &cbuf, coffs, 0, NULL, 0, NULL);
   
@@ -1245,16 +1272,15 @@ static void test_sends_tcpls_record(void)
   ptls_set_user_timeout(client, 10, 0, 0, 1);
   
   cbuf.off = 0;
-  /*ptls_buffer_dispose(&cbuf);*/
-  /*ptls_buffer_init(&cbuf, "", 0);*/
   ptls_buffer_init(&decbuf, "", 0);
   ret = ptls_send_tcpoption(client, &cbuf, USER_TIMEOUT);
   consumed = cbuf.off;
   ok(ret == 0);
-
+  
   ret = ptls_receive(server, &decbuf, cbuf.base, &consumed);
+  ok(decbuf.off == 0);
   ok(ret==0);
-
+  cbuf.off = 0;
   assert(server->tcpls_options);
   int i;
   for (i = 0; i < NBR_SUPPORTED_TCPLS_OPTIONS; i++) {
@@ -1269,8 +1295,6 @@ static void test_sends_tcpls_record(void)
 
   cbuf.off = 0;
   sbuf.off = 0;
-  /*memset(client_secrets, 0, sizeof(client_secrets));*/
-  /*memset(server_secrets, 0, sizeof(server_secrets));*/
   memset(coffs, 0, sizeof(coffs));
   memset(soffs, 0, sizeof(soffs));
 
@@ -1279,17 +1303,10 @@ static void test_sends_tcpls_record(void)
   ptls_buffer_dispose(&cbuf);
   ptls_buffer_dispose(&sbuf);
 
-  ctx->update_traffic_key = NULL;
-  ctx->omit_end_of_early_data = 0;
-  ctx->save_ticket = NULL;
-  ctx_peer->update_traffic_key = NULL;
-  ctx_peer->omit_end_of_early_data = 0;
-  ctx_peer->encrypt_ticket = NULL;
-  ctx_peer->save_ticket = NULL;
-  ctx_peer->ticket_lifetime = 0;
-  ctx_peer->max_early_data_size = 0;
   ctx->tcpls_options_confirmed = 0;
   ctx_peer->tcpls_options_confirmed = 0;
+  ctx->support_tcpls_options = 0;
+  ctx_peer->support_tcpls_options = 0;
 }
 
 static void test_server_sends_tcpls_encrypted_extensions(void)
