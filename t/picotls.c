@@ -1742,21 +1742,6 @@ static void test_handshake_api(void)
     ok(ret == 0);
     ok(ptls_handshake_is_complete(server));
     ok(sbuf.off == 0);
-    
-    /*ptls_buffer_t decbuf;*/
-    /*size_t consumed;*/
-    /*cbuf.off = 0;*/
-    /*[>ptls_buffer_dispose(&cbuf);<]*/
-    /*[>ptls_buffer_init(&cbuf, "", 0);<]*/
-    /*ptls_set_user_timeout(client, 10, 0, 0, 1);*/
-    /*ptls_buffer_init(&decbuf, "", 0);*/
-    /*ret = ptls_send_tcpoption(client, &cbuf, USER_TIMEOUT);*/
-    /*[>ret = ptls_send(client, &cbuf, "hello", 5);<]*/
-    /*consumed = cbuf.off;*/
-    /*ok(ret == 0);*/
-
-    /*ret = ptls_receive(server, &decbuf, cbuf.base, &consumed);*/
-    /*ok(ret==0);*/
 
     ptls_free(client);
     ptls_free(server);

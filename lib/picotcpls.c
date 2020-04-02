@@ -1,3 +1,33 @@
+/**
+ * \file picotcpls.c
+ *
+ * \brief Implement logic for setting, sending, receiving and processing TCP
+ * options through the TLS layer
+ *
+ * This file defines an API exposed to the application to set localy and/or to the
+ * peer some TCP options. We currently support the following options:
+ *
+ * <ul>
+ *    <li> User Timeout RFC5482 </li>
+ * </ul>
+ * 
+ * To set up a TCP option, the application layer should first turns on 
+ * ctx->support_tcpls_options = 1; which will advertise to the peer the
+ * capability of handling TCPLS. Then, we may set locally or remotly TCP options
+ * by doing: 
+ *
+ * ptls_set_[OPTION]
+ * and then
+ *
+ * ptls_send_tcpotion(...)
+ *
+ * On the receiver side, the application should loop over ptls_receive until the
+ * TLS layer has eventually processed the option. For most of the cases, one
+ * call of ptls_receive is enough, but we expect to support option with variable
+ * lengths which could spawn over multiple TLS records
+ *
+ */
+
 #include <linux/bpf.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -10,9 +40,10 @@ static int tcpls_init_context(ptls_t *ptls, const void *data,
     ptls_tcpls_options_t type, uint8_t setlocal, uint8_t settopeer);
 
 /**
- * ptls_set_[TCPOPTION] needs to have been called first to initialize an option 
- */
-/** Temporary skeletton */
+ * Sends a tcp option which has previously been registered with ptls_set...
+ *
+ * This function should be called after the handshake is complete for both party
+ * */
 int ptls_send_tcpoption(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_tcpls_options_t type)
 {
   int ret = 0;
@@ -65,6 +96,11 @@ int ptls_send_tcpoption(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_tcpls_options_
     return ret;
   }
 }
+
+/**=====================================================================================*/
+/**
+ * ptls_set_[TCPOPTION] needs to have been called first to initialize an option 
+ */
 
 /**
  * Set a timeout option (i.e., RFC5482) to transport within the TLS connection
@@ -131,7 +167,6 @@ static int tcpls_init_context(ptls_t *ptls, const void *data,
   return -1;
 }
 
-/** Temporaty skeletton */
 int handle_tcpls_extension_option(ptls_t *ptls, ptls_tcpls_options_t type,
     const uint8_t *input, size_t inputlen) {
   if (!ptls->ctx->tcpls_options_confirmed)
@@ -157,7 +192,6 @@ int handle_tcpls_extension_option(ptls_t *ptls, ptls_tcpls_options_t type,
 }
 
 
-/** Temporary skeletton */
 int handle_tcpls_record(ptls_t *tls, struct st_ptls_record_t *rec)
 {
   int ret = 0;
