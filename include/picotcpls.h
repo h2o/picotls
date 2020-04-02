@@ -36,6 +36,8 @@ int ptls_set_failover(ptls_t *ptls, char *address);
 int ptls_set_bpf_scheduler(ptls_t *ptls, const uint8_t *bpf_prog_bytecode,
     size_t bytecodelen, int setlocal, int settopeer);
 
+int ptls_send_tcpoption(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_tcpls_options_t type);
+
 /*============================================================================*/
 /** Internal to picotls */
 int handle_tcpls_extension_option(ptls_t *ctx, ptls_tcpls_options_t type,
