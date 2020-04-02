@@ -6,11 +6,13 @@
 #define NBR_SUPPORTED_TCPLS_OPTIONS 5
 #define VARSIZE_OPTION_MAX_CHUNK_SIZE 4*16384 /* should be able to hold 4 record before needing to be extended */
 
+
+
 /** TCP options we would support in the TLS context */
 typedef enum ptls_tcpls_options_t {
   USER_TIMEOUT,
   FAILOVER,
-  PROTOCOLPLUGIN,
+  BPF_SCHED,
 } ptls_tcpls_options_t;
 
 struct st_tcpls_t {
@@ -28,6 +30,11 @@ struct st_ptls_record_t;
 /** API exposed to the application */
 int ptls_set_user_timeout(ptls_t *ctx, uint16_t value, uint16_t sec_or_min,
     uint8_t setlocal, uint8_t settopeer);
+
+int ptls_set_failover(ptls_t *ptls, char *address);
+
+int ptls_set_bpf_scheduler(ptls_t *ptls, const uint8_t *bpf_prog_bytecode,
+    size_t bytecodelen, int setlocal, int settopeer);
 
 /*============================================================================*/
 /** Internal to picotls */

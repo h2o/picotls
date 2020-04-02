@@ -294,7 +294,7 @@ extern "C" {
   typedef struct st_ptls_iovec_t {
     uint8_t *base;
     size_t len;
-  } ptls_iovec_t;
+  }ptls_iovec_t;
 
   /**
    * used for storing output

@@ -36,8 +36,11 @@
 #include "picotls.h"
 #include "picotcpls.h"
 
-static int tcpls_init_context(ptls_t *ptls, const void *data,
+/** Forward declarations */
+static int tcpls_init_context(ptls_t *ptls, const void *data, size_t datalen,
     ptls_tcpls_options_t type, uint8_t setlocal, uint8_t settopeer);
+
+static int is_varlen(ptls_tcpls_options_t type);
 
 /**
  * Sends a tcp option which has previously been registered with ptls_set...
@@ -109,15 +112,27 @@ int ptls_set_user_timeout(ptls_t *ptls, uint16_t value, uint16_t sec_or_min,
     uint8_t setlocal, uint8_t settopeer) {
   uint16_t *val = malloc(sizeof(uint16_t));
   *val = value | sec_or_min << 15;
-  int ret = tcpls_init_context(ptls, val, USER_TIMEOUT, setlocal, settopeer);
+  int ret = tcpls_init_context(ptls, val, 2, USER_TIMEOUT, setlocal, settopeer);
   return ret;
 }
 
 int ptls_set_faileover(ptls_t *ptls, char *address) {
   return 0;
 }
+/**
+ * Copy bpf_prog_bytecode inside ptls->tcpls_options
+ *
+ */
+int ptls_set_bpf_scheduler(ptls_t *ptls, const uint8_t *bpf_prog_bytecode, size_t bytecodelen,
+    int setlocal, int settopeer) {
+  uint8_t* bpf_scheduler = NULL;
+  if ((bpf_scheduler =  malloc(bytecodelen)) == NULL)
+    return PTLS_ERROR_NO_MEMORY;
+  memcpy(bpf_scheduler, bpf_prog_bytecode, bytecodelen);
+  return tcpls_init_context(ptls, bpf_scheduler, bytecodelen, BPF_SCHED, setlocal, settopeer);
+}
 
-static int tcpls_init_context(ptls_t *ptls, const void *data,
+static int tcpls_init_context(ptls_t *ptls, const void *data, size_t datalen,
     ptls_tcpls_options_t type, uint8_t setlocal, uint8_t settopeer) {
   ptls->ctx->support_tcpls_options = 1;
   if (!ptls->tcpls_options) {
@@ -158,9 +173,25 @@ static int tcpls_init_context(ptls_t *ptls, const void *data,
       option->is_varlen = 0;
       *option->data = ptls_iovec_init(data, sizeof(uint16_t));
       option->type = USER_TIMEOUT;
-  
+      if (option->setlocal) {
+        /** Call setsockopt to set the timer TODO */
+      }
       return 0;
     case FAILOVER: break;
+    case BPF_SCHED:
+      if (option->data->len) {
+      /** We already had one bpf scheduler, free it */
+        free(option->data->base);
+      }
+      option->is_varlen = 1;
+      *option->data = ptls_iovec_init(data, datalen);
+      option->type = BPF_SCHED;
+      if (option->setlocal) {
+        /** TODO plug bpf bytecode to the kernel, using ptls->sockfd file
+         * descriptor 
+         * */
+      }
+      break;
     default:
         break;
   }
@@ -178,11 +209,11 @@ int handle_tcpls_extension_option(ptls_t *ptls, ptls_tcpls_options_t type,
         uint16_t *nval = malloc(inputlen);
         *nval = (uint16_t) *input;
         /**nval = ntoh16(input);*/
-        tcpls_init_context(ptls, nval, USER_TIMEOUT, 1, 0);
+        tcpls_init_context(ptls, nval, 2, USER_TIMEOUT, 1, 0);
         /** TODO handle the extension! */
       }
       break;
-    case PROTOCOLPLUGIN:
+    case BPF_SCHED:
       break;
     default:
       printf("Unsuported option?");
@@ -210,7 +241,7 @@ int handle_tcpls_record(ptls_t *tls, struct st_ptls_record_t *rec)
   
   type = ntoh32(rec->fragment);
   /** Check whether type is a variable len option */
-  if (type == PROTOCOLPLUGIN) {
+  if (is_varlen(type)){
     size_t optsize = ntoh32(rec->fragment+2);
     if (optsize > PTLS_MAX_PLAINTEXT_RECORD_SIZE-6) {
       /** We need to buffer it */
@@ -223,9 +254,10 @@ int handle_tcpls_record(ptls_t *tls, struct st_ptls_record_t *rec)
         ptls_buffer_init(tls->tcpls_buf, init_buf, VARSIZE_OPTION_MAX_CHUNK_SIZE);
       }
       /** always reserve memory (won't if enough left) */
-      ptls_buffer_reserve(tls->tcpls_buf, rec->length-6);
-      memcpy(tls->tcpls_buf->base+tls->tcpls_buf->off, rec->fragment+6, rec->length-6);
-      tls->tcpls_buf->off += rec->length - 6;
+      if ((ret = ptls_buffer_reserve(tls->tcpls_buf, rec->length-sizeof(type)-4)) != 0)
+        goto Exit;
+      memcpy(tls->tcpls_buf->base+tls->tcpls_buf->off, rec->fragment+sizeof(type)+4, rec->length-sizeof(type)-4);
+      tls->tcpls_buf->off += rec->length - sizeof(type)-4;
       
       if (ret)
         goto Exit;
@@ -240,7 +272,7 @@ int handle_tcpls_record(ptls_t *tls, struct st_ptls_record_t *rec)
       }
     }
     else {
-      return handle_tcpls_extension_option(tls, type, rec->fragment+6, optsize);
+      return handle_tcpls_extension_option(tls, type, rec->fragment+sizeof(type)+4, optsize);
     }
   }
   /** We assume that only Variable size options won't hold into 1 record */
@@ -249,6 +281,12 @@ int handle_tcpls_record(ptls_t *tls, struct st_ptls_record_t *rec)
 Exit:
   ptls_buffer_dispose(tls->tcpls_buf);
   return ret;
+}
+
+/*=====================================utilities======================================*/
+
+static int is_varlen(ptls_tcpls_options_t type) {
+  return (type == BPF_SCHED);
 }
 
 void ptls_tcpls_options_free(ptls_t *ptls) {
