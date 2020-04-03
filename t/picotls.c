@@ -1224,6 +1224,19 @@ static void test_sends_varlen_bpf_prog(void)
   ok(sbuf.off == 0);
   ok(ptls_handshake_is_complete(server));
   
+  ptls_buffer_init(&decbuf, "", 0);
+  ptls_buffer_dispose(&sbuf);
+  uint8_t input[50000];
+  memset(input, 0, 50000);
+  ptls_buffer_init(&sbuf, input, 50000);
+  ret = ptls_set_bpf_scheduler(server, input, 50000, 1, 1);
+  ok(ret == 0);
+  ret = ptls_send_tcpoption(server, &sbuf, BPF_SCHED);
+  ok(ret == 0);
+  consumed = sbuf.off; 
+  ret = ptls_receive(client, &decbuf, sbuf.base, &consumed);
+  ok(ret == 0);
+
 }
 
 
@@ -1278,8 +1291,8 @@ static void test_sends_tcpls_record(void)
   ok(ret == 0);
   
   ret = ptls_receive(server, &decbuf, cbuf.base, &consumed);
-  ok(decbuf.off == 0);
   ok(ret==0);
+  decbuf.off = 0;
   cbuf.off = 0;
   assert(server->tcpls_options);
   int i;
@@ -1907,6 +1920,7 @@ static void test_tcpls(void)
     subtest("api", test_tcpls_api);
     subtest("server_sends_tcpls_encrypted_extensions", test_server_sends_tcpls_encrypted_extensions);
     subtest("sends_tcpls_record", test_sends_tcpls_record);
+    subtest("sends_varlen_bpf_prog", test_sends_varlen_bpf_prog);
     ctx_peer->sign_certificate = sc_orig;
 
     if (ctx_peer != ctx)

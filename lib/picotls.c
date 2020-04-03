@@ -4389,12 +4389,13 @@ static int handle_input(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_buffe
             }
             break;
         case PTLS_CONTENT_TYPE_TCPLS_OPTION:
-            printf("handling TCPLS option!\n");
             if (tls->state < PTLS_STATE_POST_HANDSHAKE_MIN) {
               ret = PTLS_ALERT_UNEXPECTED_MESSAGE;
             }
             else {
               ret = handle_tcpls_record(tls, &rec);
+              if (!ret)
+                decryptbuf->off += rec.length;
             }
             break;
         case PTLS_CONTENT_TYPE_ALERT:

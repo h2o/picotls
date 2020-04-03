@@ -201,7 +201,6 @@ static ptls_tcpls_t*  tcpls_init_context(ptls_t *ptls, const void *data, size_t 
       *option->data = ptls_iovec_init(data, datalen);
       option->type = BPF_SCHED;
       return option;
-      break;
     default:
         break;
   }
@@ -228,6 +227,14 @@ int handle_tcpls_extension_option(ptls_t *ptls, ptls_tcpls_options_t type,
     case FAILOVER:
       break;
     case BPF_SCHED:
+      {
+        uint8_t *bpf_prog = malloc(inputlen);
+        memcpy(bpf_prog, input, inputlen);
+        option = tcpls_init_context(ptls, bpf_prog, inputlen, BPF_SCHED, 1, 0);
+        if (!option)
+          return -1;
+        return setlocal_bpf_sched(ptls, option);
+      }
       break;
     default:
       printf("Unsuported option?");
@@ -253,11 +260,12 @@ int handle_tcpls_record(ptls_t *tls, struct st_ptls_record_t *rec)
     memset(tls->tcpls_buf, 0, sizeof(*tls->tcpls_buf));
   }
   
-  type = ntoh32(rec->fragment);
+  type = (ptls_tcpls_options_t) *rec->fragment;
   /** Check whether type is a variable len option */
   if (is_varlen(type)){
-    size_t optsize = ntoh32(rec->fragment+2);
-    if (optsize > PTLS_MAX_PLAINTEXT_RECORD_SIZE-6) {
+    /*size_t optsize = ntoh32(rec->fragment+sizeof(type));*/
+    uint32_t optsize = (uint32_t) *(rec->fragment+sizeof(type));
+    if (optsize > PTLS_MAX_PLAINTEXT_RECORD_SIZE-sizeof(type)-4) {
       /** We need to buffer it */
       /** Check first if the buffer has been initialized */
       if (!tls->tcpls_buf->base) {
@@ -280,10 +288,7 @@ int handle_tcpls_record(ptls_t *tls, struct st_ptls_record_t *rec)
         ret = handle_tcpls_extension_option(tls, type, tls->tcpls_buf->base, optsize);
         ptls_buffer_dispose(tls->tcpls_buf);
       }
-      else {
-        ret = PTLS_ERROR_IN_PROGRESS;
-        return ret;
-      }
+      return ret;
     }
     else {
       return handle_tcpls_extension_option(tls, type, rec->fragment+sizeof(type)+4, optsize);
