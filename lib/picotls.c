@@ -538,6 +538,26 @@ int ptls_buffer__do_pushv(ptls_buffer_t *buf, const void *src, size_t len)
     return 0;
 }
 
+int ptls_buffer__adjust_quic_blocksize(ptls_buffer_t *buf, size_t body_size)
+{
+    uint8_t sizebuf[PTLS_ENCODE_QUICINT_CAPACITY];
+    size_t sizelen = ptls_encode_quicint(sizebuf, body_size) - sizebuf;
+
+    /* adjust amount of space before body_size to `sizelen` bytes */
+    if (sizelen != 1) {
+        int ret;
+        if ((ret = ptls_buffer_reserve(buf, sizelen - 1)) != 0)
+            return ret;
+        memmove(buf->base + buf->off - body_size - 1 + sizelen, buf->base + buf->off - body_size, body_size);
+        buf->off += sizelen - 1;
+    }
+
+    /* write the size */
+    memcpy(buf->base + buf->off - body_size - sizelen, sizebuf, sizelen);
+
+    return 0;
+}
+
 int ptls_buffer__adjust_asn1_blocksize(ptls_buffer_t *buf, size_t body_size)
 {
     fprintf(stderr, "unimplemented\n");
@@ -793,6 +813,26 @@ int ptls_decode64(uint64_t *value, const uint8_t **src, const uint8_t *end)
     *value = ntoh64(*src);
     *src += 8;
     return 0;
+}
+
+uint64_t ptls_decode_quicint(const uint8_t **src, const uint8_t *end)
+{
+    if (PTLS_UNLIKELY(*src == end))
+        return UINT64_MAX;
+
+    uint8_t b = *(*src)++;
+
+    if (PTLS_LIKELY(b <= 0x3f))
+        return b;
+
+    uint64_t v = b & 0x3f;
+    unsigned bytes_left = (1 << (b >> 6)) - 1;
+    if (PTLS_UNLIKELY((size_t)(end - *src) < bytes_left))
+        return UINT64_MAX;
+    do {
+        v = (v << 8) | *(*src)++;
+    } while (--bytes_left != 0);
+    return v;
 }
 
 static void log_secret(ptls_t *tls, const char *type, ptls_iovec_t secret)
@@ -2532,7 +2572,8 @@ Exit:
 }
 
 static int default_emit_certificate_cb(ptls_emit_certificate_t *_self, ptls_t *tls, ptls_message_emitter_t *emitter,
-                                       ptls_key_schedule_t *key_sched, ptls_iovec_t context, int push_status_request)
+                                       ptls_key_schedule_t *key_sched, ptls_iovec_t context, int push_status_request,
+                                       const uint16_t *compress_algos, size_t num_compress_algos)
 {
     int ret;
 
@@ -2549,11 +2590,9 @@ Exit:
 
 static int send_certificate_and_certificate_verify(ptls_t *tls, ptls_message_emitter_t *emitter,
                                                    struct st_ptls_signature_algorithms_t *signature_algorithms,
-                                                   ptls_iovec_t context, const char *context_string, int push_status_request)
+                                                   ptls_iovec_t context, const char *context_string, int push_status_request,
+                                                   const uint16_t *compress_algos, size_t num_compress_algos)
 {
-    static ptls_emit_certificate_t default_emit_certificate = {default_emit_certificate_cb};
-    ptls_emit_certificate_t *emit_certificate =
-        tls->ctx->emit_certificate != NULL ? tls->ctx->emit_certificate : &default_emit_certificate;
     int ret;
 
     if (signature_algorithms->count == 0) {
@@ -2561,9 +2600,21 @@ static int send_certificate_and_certificate_verify(ptls_t *tls, ptls_message_emi
         goto Exit;
     }
 
-    /* send Certificate (or the equivalent) */
-    if ((ret = emit_certificate->cb(emit_certificate, tls, emitter, tls->key_schedule, context, push_status_request)) != 0)
-        goto Exit;
+    { /* send Certificate (or the equivalent) */
+        static ptls_emit_certificate_t default_emit_certificate = {default_emit_certificate_cb};
+        ptls_emit_certificate_t *emit_certificate =
+            tls->ctx->emit_certificate != NULL ? tls->ctx->emit_certificate : &default_emit_certificate;
+    Redo:
+        if ((ret = emit_certificate->cb(emit_certificate, tls, emitter, tls->key_schedule, context, push_status_request,
+                                        compress_algos, num_compress_algos)) != 0) {
+            if (ret == PTLS_ERROR_DELEGATE) {
+                assert(emit_certificate != &default_emit_certificate);
+                emit_certificate = &default_emit_certificate;
+                goto Redo;
+            }
+            goto Exit;
+        }
+    }
 
     /* build and send CertificateVerify */
     if (tls->ctx->sign_certificate != NULL) {
@@ -2845,7 +2896,7 @@ static int client_handle_finished(ptls_t *tls, ptls_message_emitter_t *emitter, 
         }
         ret = send_certificate_and_certificate_verify(tls, emitter, &tls->client.certificate_request.signature_algorithms,
                                                       tls->client.certificate_request.context,
-                                                      PTLS_CLIENT_CERTIFICATE_VERIFY_CONTEXT_STRING, 0);
+                                                      PTLS_CLIENT_CERTIFICATE_VERIFY_CONTEXT_STRING, 0, NULL, 0);
         free(tls->client.certificate_request.context.base);
         tls->client.certificate_request.context = ptls_iovec_init(NULL, 0);
         if (ret != 0)
@@ -3577,7 +3628,6 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
     enum { HANDSHAKE_MODE_FULL, HANDSHAKE_MODE_PSK, HANDSHAKE_MODE_PSK_DHE } mode;
     size_t psk_index = SIZE_MAX;
     ptls_iovec_t pubkey = {0}, ecdh_secret = {0};
-    uint8_t finished_key[PTLS_MAX_DIGEST_SIZE];
     int accept_early_data = 0, is_second_flight = tls->state == PTLS_STATE_SERVER_EXPECT_SECOND_CLIENT_HELLO, ret;
 
     /* decode ClientHello */
@@ -3924,14 +3974,16 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
         }
 
         ret = send_certificate_and_certificate_verify(tls, emitter, &ch.signature_algorithms, ptls_iovec_init(NULL, 0),
-                                                      PTLS_SERVER_CERTIFICATE_VERIFY_CONTEXT_STRING, ch.status_request);
+                                                      PTLS_SERVER_CERTIFICATE_VERIFY_CONTEXT_STRING, ch.status_request,
+                                                      ch.cert_compression_algos.list, ch.cert_compression_algos.count);
 
         if (ret != 0) {
             goto Exit;
         }
     }
 
-    send_finished(tls, emitter);
+    if ((ret = send_finished(tls, emitter)) != 0)
+        goto Exit;
 
     assert(tls->key_schedule->generation == 2);
     if ((ret = key_schedule_extract(tls->key_schedule, ptls_iovec_init(NULL, 0))) != 0)
@@ -3971,8 +4023,10 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
 
 Exit:
     free(pubkey.base);
-    free(ecdh_secret.base);
-    ptls_clear_memory(finished_key, sizeof(finished_key));
+    if (ecdh_secret.base != NULL) {
+        ptls_clear_memory(ecdh_secret.base, ecdh_secret.len);
+        free(ecdh_secret.base);
+    }
     return ret;
 
 #undef EMIT_SERVER_HELLO
@@ -4459,6 +4513,15 @@ static int handle_alert(ptls_t *tls, const uint8_t *src, size_t len)
     return PTLS_ALERT_TO_PEER_ERROR(desc);
 }
 
+static int message_buffer_is_overflow(ptls_context_t *ctx, size_t size)
+{
+    if (ctx->max_buffer_size == 0)
+        return 0;
+    if (size <= ctx->max_buffer_size)
+        return 0;
+    return 1;
+}
+
 static int handle_handshake_record(ptls_t *tls,
                                    int (*cb)(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_iovec_t message,
                                              int is_end_of_record, ptls_handshake_properties_t *properties),
@@ -4477,6 +4540,8 @@ static int handle_handshake_record(ptls_t *tls,
         src = rec->fragment;
         src_end = src + rec->length;
     } else {
+        if (message_buffer_is_overflow(tls->ctx, tls->recvbuf.mess.off + rec->length))
+            return PTLS_ALERT_HANDSHAKE_FAILURE;
         if ((ret = ptls_buffer_reserve(&tls->recvbuf.mess, rec->length)) != 0)
             return ret;
         memcpy(tls->recvbuf.mess.base + tls->recvbuf.mess.off, rec->fragment, rec->length);
@@ -4505,15 +4570,18 @@ static int handle_handshake_record(ptls_t *tls,
 
     /* keep last partial message in buffer */
     if (src != src_end) {
+        size_t new_size = src_end - src;
+        if (message_buffer_is_overflow(tls->ctx, new_size))
+            return PTLS_ALERT_HANDSHAKE_FAILURE;
         if (tls->recvbuf.mess.base == NULL) {
             ptls_buffer_init(&tls->recvbuf.mess, "", 0);
-            if ((ret = ptls_buffer_reserve(&tls->recvbuf.mess, src_end - src)) != 0)
+            if ((ret = ptls_buffer_reserve(&tls->recvbuf.mess, new_size)) != 0)
                 return ret;
-            memcpy(tls->recvbuf.mess.base, src, src_end - src);
+            memcpy(tls->recvbuf.mess.base, src, new_size);
         } else {
-            memmove(tls->recvbuf.mess.base, src, src_end - src);
+            memmove(tls->recvbuf.mess.base, src, new_size);
         }
-        tls->recvbuf.mess.off = src_end - src;
+        tls->recvbuf.mess.off = new_size;
         ret = PTLS_ERROR_IN_PROGRESS;
     } else {
         ptls_buffer_dispose(&tls->recvbuf.mess);

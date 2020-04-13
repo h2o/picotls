@@ -37,6 +37,7 @@
 #include <openssl/evp.h>
 #include <openssl/objects.h>
 #include <openssl/rand.h>
+#include <openssl/rsa.h>
 #include <openssl/x509.h>
 #include <openssl/x509v3.h>
 #include <openssl/x509_vfy.h>
@@ -78,6 +79,11 @@ static void HMAC_CTX_free(HMAC_CTX *ctx)
 {
     HMAC_CTX_cleanup(ctx);
     OPENSSL_free(ctx);
+}
+
+static int EVP_CIPHER_CTX_reset(EVP_CIPHER_CTX *ctx)
+{
+    return EVP_CIPHER_CTX_cleanup(ctx);
 }
 
 #endif
@@ -1222,8 +1228,8 @@ Exit:
 
 static void cleanup_cipher_ctx(EVP_CIPHER_CTX *ctx)
 {
-    if (!EVP_CIPHER_CTX_cleanup(ctx)) {
-        fprintf(stderr, "EVP_CIPHER_CTX_cleanup() failed\n");
+    if (!EVP_CIPHER_CTX_reset(ctx)) {
+        fprintf(stderr, "EVP_CIPHER_CTX_reset() failed\n");
         abort();
     }
 }
@@ -1247,7 +1253,6 @@ int ptls_openssl_init_verify_certificate(ptls_openssl_verify_certificate_t *self
 void ptls_openssl_dispose_verify_certificate(ptls_openssl_verify_certificate_t *self)
 {
     X509_STORE_free(self->cert_store);
-    free(self);
 }
 
 X509_STORE *ptls_openssl_create_default_certificate_store(void)
