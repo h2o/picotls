@@ -88,7 +88,7 @@ build_kernel() {
   git checkout ${1}
   make x86_64_defconfig
   make kvmconfig
-  make -j 6
+  make -j ${2}
 	cd ..
 }
 

@@ -19,9 +19,9 @@ This step will prompt you to choose a root password for the vm at the
 end of it.
 
 ## build the linux kernel, v5.6
-build_kernel v5.6
+build_kernel v5.6 6
 
-clone, checkout v5.6 and compile the kernel for kvm usage (with kvm
+clone, checkout v5.6 and compile the kernel with 6 threads for kvm usage (with kvm
 optimizations)
 
 ## Create tap for nw
