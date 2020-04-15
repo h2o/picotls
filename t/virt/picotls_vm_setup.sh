@@ -50,7 +50,7 @@ build_image() {
 	mkdir $DIR
 	sudo mount -o loop $IMG $DIR
 
-  sudo debootstrap --components=main,contrib,non-free --include=firmware-realtek,ssh,vim --arch amd64 buster $DIR
+  sudo debootstrap --components=main,contrib,non-free --include=firmware-realtek,ssh,vim,git,build-essential --arch amd64 buster $DIR
 	
   sudo chroot $DIR passwd root
 
@@ -114,10 +114,6 @@ ssh_vm() {
 	ssh -o "UserKnownHostsFile /dev/null" -o "StrictHostKeyChecking no" -p 6222 root@localhost $@
 }
 
-ssh_vm_pseudoterm() {
-	ssh -t -o "UserKnownHostsFile /dev/null" -o "StrictHostKeyChecking no" -p 6222 root@localhost $@
-}
-
 guest_itf() {
 	echo "enp0s$((4 + ${1:-0}))"
 }
@@ -143,6 +139,11 @@ configure_guest_nw() {
 	ssh_vm ip rule add from $(guest_ip $n) table $table
 	ssh_vm ip route del default table $table
 	ssh_vm ip route add default via $(host_ip $n) table $table
+}
+
+add_picotcpls() {
+  ssh_vm git clone https://github.com/frochet/picotcpls.git
+  ssh_vm cd picotcpls && cmake . && make
 }
 
 configure_host_nat() {

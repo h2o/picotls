@@ -19,7 +19,23 @@ configure_host_tap
 # Nat out the tap
 configure_host_nat
 
+# add picotcpls in /root and compile it
+add_pictocpls
+
 # boot the vm
 boot_vm
 
+# To shutdown the vm:
 
+shutdown -h now
+
+To cleanup:
+
+clean_host_tap
+
+clean_host_nat
+
+# Typical workflow
+
+Doing once build_image, configure_host_tap, configure_host_nat then
+build_kernel and boot_vm each time the kernel code is modified
