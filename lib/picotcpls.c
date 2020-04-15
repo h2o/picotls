@@ -132,15 +132,15 @@ int ptls_set_faileover(ptls_t *ptls, char *address) {
  * Copy bpf_prog_bytecode inside ptls->tcpls_options
  *
  */
-int ptls_set_bpf_scheduler(ptls_t *ptls, const uint8_t *bpf_prog_bytecode, size_t bytecodelen,
+int ptls_set_bpf_cc(ptls_t *ptls, const uint8_t *bpf_prog_bytecode, size_t bytecodelen,
     int setlocal, int settopeer) {
   int ret = 0;
   ptls_tcpls_t *option;
-  uint8_t* bpf_scheduler = NULL;
-  if ((bpf_scheduler =  malloc(bytecodelen)) == NULL)
+  uint8_t* bpf_cc = NULL;
+  if ((bpf_cc =  malloc(bytecodelen)) == NULL)
     return PTLS_ERROR_NO_MEMORY;
-  memcpy(bpf_scheduler, bpf_prog_bytecode, bytecodelen);
-  option = tcpls_init_context(ptls, bpf_scheduler, bytecodelen, BPF_SCHED, setlocal, settopeer);
+  memcpy(bpf_cc, bpf_prog_bytecode, bytecodelen);
+  option = tcpls_init_context(ptls, bpf_cc, bytecodelen, BPF_CC, setlocal, settopeer);
   if (!option)
     return -1;
   if (option->setlocal){
@@ -192,14 +192,14 @@ static ptls_tcpls_t*  tcpls_init_context(ptls_t *ptls, const void *data, size_t 
       option->type = USER_TIMEOUT;
       return option;
     case FAILOVER: break;
-    case BPF_SCHED:
+    case BPF_CC:
       if (option->data->len) {
-      /** We already had one bpf scheduler, free it */
+      /** We already had one bpf cc, free it */
         free(option->data->base);
       }
       option->is_varlen = 1;
       *option->data = ptls_iovec_init(data, datalen);
-      option->type = BPF_SCHED;
+      option->type = BPF_CC;
       return option;
     default:
         break;
@@ -226,11 +226,11 @@ int handle_tcpls_extension_option(ptls_t *ptls, ptls_tcpls_options_t type,
       break;
     case FAILOVER:
       break;
-    case BPF_SCHED:
+    case BPF_CC:
       {
         uint8_t *bpf_prog = malloc(inputlen);
         memcpy(bpf_prog, input, inputlen);
-        option = tcpls_init_context(ptls, bpf_prog, inputlen, BPF_SCHED, 1, 0);
+        option = tcpls_init_context(ptls, bpf_prog, inputlen, BPF_CC, 1, 0);
         if (!option)
           return -1;
         return setlocal_bpf_sched(ptls, option);
@@ -316,7 +316,7 @@ static int setlocal_bpf_sched(ptls_t *ptls, ptls_tcpls_t *option) {
 /*=====================================utilities======================================*/
 
 static int is_varlen(ptls_tcpls_options_t type) {
-  return (type == BPF_SCHED);
+  return (type == BPF_CC);
 }
 
 void ptls_tcpls_options_free(ptls_t *ptls) {

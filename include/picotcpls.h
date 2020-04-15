@@ -12,7 +12,7 @@
 typedef enum ptls_tcpls_options_t {
   USER_TIMEOUT,
   FAILOVER,
-  BPF_SCHED,
+  BPF_CC,
 } ptls_tcpls_options_t;
 
 struct st_tcpls_t {

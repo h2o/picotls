@@ -1229,9 +1229,9 @@ static void test_sends_varlen_bpf_prog(void)
   uint8_t input[50000];
   memset(input, 0, 50000);
   ptls_buffer_init(&sbuf, input, 50000);
-  ret = ptls_set_bpf_scheduler(server, input, 50000, 1, 1);
+  ret = ptls_set_bpf_cc(server, input, 50000, 1, 1);
   ok(ret == 0);
-  ret = ptls_send_tcpoption(server, &sbuf, BPF_SCHED);
+  ret = ptls_send_tcpoption(server, &sbuf, BPF_CC);
   ok(ret == 0);
   consumed = sbuf.off; 
   ret = ptls_receive(client, &decbuf, sbuf.base, &consumed);
