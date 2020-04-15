@@ -50,7 +50,7 @@ build_image() {
 	mkdir $DIR
 	sudo mount -o loop $IMG $DIR
 
-  sudo debootstrap --components=main,contrib,non-free --include=firmware-realtek,ssh,vim,git,build-essential --arch amd64 buster $DIR
+  sudo debootstrap --components=main,contrib,non-free --include=firmware-realtek,ssh,vim,git,build-essential,cmake,libssl-dev,libbrotli-dev,faketime,libscope-guard-perl,libtest-tcp-perl --arch amd64 buster $DIR
 	
   sudo chroot $DIR passwd root
 
@@ -143,7 +143,7 @@ configure_guest_nw() {
 
 add_picotcpls() {
   ssh_vm git clone https://github.com/frochet/picotcpls.git
-  ssh_vm cd picotcpls && cmake . && make
+  ssh_vm "cd picotcpls; git submodule init; git submodule update; cmake .; make"
 }
 
 configure_host_nat() {
