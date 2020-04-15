@@ -45,10 +45,10 @@ To do once.
 ### add picotcpls in /root and compile it
 $ add_picotcpls
 
-## boot the vm
+### boot the vm
 $ boot_vm
 
-## To shutdown the vm:
+### To shutdown the vm:
 
 From the guest
 
@@ -58,13 +58,13 @@ From the host:
 
 $ ssh_vm shutdown -h now
 
-## To cleanup:
+### To cleanup:
 
 $ clean_host_tap
 
 $ clean_host_nat
 
-## Typical workflow
+### Typical workflow
 
 Doing once build_image, configure_host_tap, configure_host_nat then
 build_kernel and boot_vm each time the kernel code is modified
