@@ -2,6 +2,10 @@
 Simply build, setup and run a recent linux kernel within stable debian
 on qemu-kvm.
 
+# Some packages required
+
+qemu-kvm flex bison libelf-dev
+
 This script is borrowed from https://github.com/bhesmans/mpsocks, and
 slightly modified
 
