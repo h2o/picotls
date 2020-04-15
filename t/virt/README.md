@@ -10,8 +10,8 @@ source picotls_vm_setup.sh
 # build a debian image base
 build_image
 
-# build mptcp kernel
-build_kernel
+# build the linux kernel, v5.6
+build_kernel v5.6
 
 # Create tap for nw
 configure_host_tap

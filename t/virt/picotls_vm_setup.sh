@@ -85,7 +85,7 @@ EOF"
 build_kernel() {
   git clone https://github.com/torvalds/linux.git
 	cd linux
-  git checkout v5.6
+  git checkout ${1}
   make x86_64_defconfig
   make kvmconfig
   make -j 6
