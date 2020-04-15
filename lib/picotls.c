@@ -379,7 +379,7 @@ static ptls_aead_context_t *new_aead(ptls_aead_algorithm_t *aead, ptls_hash_algo
 static int is_supported_version(uint16_t v)
 {
     size_t i;
-    for (i = 0; i != sizeof(supported_versions) / sizeof(supported_versions[0]); ++i)
+    for (i = 0; i != PTLS_ELEMENTSOF(supported_versions); ++i)
         if (supported_versions[i] == v)
             return 1;
     return 0;
@@ -1518,7 +1518,7 @@ static int decode_signature_algorithms(struct st_ptls_signature_algorithms_t *sa
             uint16_t id;
             if ((ret = ptls_decode16(&id, src, end)) != 0)
                 goto Exit;
-            if (sa->count < sizeof(sa->list) / sizeof(sa->list[0]))
+            if (sa->count < PTLS_ELEMENTSOF(sa->list))
                 sa->list[sa->count++] = id;
         } while (*src != end);
     });
@@ -2028,7 +2028,7 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
             buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SUPPORTED_VERSIONS, {
                 ptls_buffer_push_block(sendbuf, 1, {
                     size_t i;
-                    for (i = 0; i != sizeof(supported_versions) / sizeof(supported_versions[0]); ++i)
+                    for (i = 0; i != PTLS_ELEMENTSOF(supported_versions); ++i)
                         ptls_buffer_push16(sendbuf, supported_versions[i]);
                 });
             });
@@ -2676,7 +2676,7 @@ static int handle_certificate(ptls_t *tls, const uint8_t *src, const uint8_t *en
     ptls_decode_block(src, end, 3, {
         while (src != end) {
             ptls_decode_open_block(src, end, 3, {
-                if (num_certs < sizeof(certs) / sizeof(certs[0]))
+                if (num_certs < PTLS_ELEMENTSOF(certs))
                     certs[num_certs++] = ptls_iovec_init(src, end - src);
                 src = end;
             });
@@ -3249,7 +3249,7 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
                             ret = PTLS_ALERT_DECODE_ERROR;
                             goto Exit;
                         }
-                        if (ch->alpn.count < sizeof(ch->alpn.list) / sizeof(ch->alpn.list[0]))
+                        if (ch->alpn.count < PTLS_ELEMENTSOF(ch->alpn.list))
                             ch->alpn.list[ch->alpn.count++] = ptls_iovec_init(src, end - src);
                         src = end;
                     });
@@ -3262,8 +3262,7 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
                     uint16_t id;
                     if ((ret = ptls_decode16(&id, &src, end)) != 0)
                         goto Exit;
-                    if (ch->cert_compression_algos.count <
-                        sizeof(ch->cert_compression_algos.list) / sizeof(ch->cert_compression_algos.list[0]))
+                    if (ch->cert_compression_algos.count < PTLS_ELEMENTSOF(ch->cert_compression_algos.list))
                         ch->cert_compression_algos.list[ch->cert_compression_algos.count++] = id;
                 } while (src != end);
             });
@@ -3280,7 +3279,7 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
             break;
         case PTLS_EXTENSION_TYPE_SUPPORTED_VERSIONS:
             ptls_decode_block(src, end, 1, {
-                size_t selected_index = sizeof(supported_versions) / sizeof(supported_versions[0]);
+                size_t selected_index = PTLS_ELEMENTSOF(supported_versions);
                 do {
                     size_t i;
                     uint16_t v;
@@ -3293,7 +3292,7 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
                         }
                     }
                 } while (src != end);
-                if (selected_index != sizeof(supported_versions) / sizeof(supported_versions[0]))
+                if (selected_index != PTLS_ELEMENTSOF(supported_versions))
                     ch->selected_version = supported_versions[selected_index];
             });
             break;
@@ -3344,7 +3343,7 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
                     });
                     if ((ret = ptls_decode32(&psk.obfuscated_ticket_age, &src, end)) != 0)
                         goto Exit;
-                    if (ch->psk.identities.count < sizeof(ch->psk.identities.list) / sizeof(ch->psk.identities.list[0]))
+                    if (ch->psk.identities.count < PTLS_ELEMENTSOF(ch->psk.identities.list))
                         ch->psk.identities.list[ch->psk.identities.count++] = psk;
                     ++num_identities;
                 } while (src != end);
