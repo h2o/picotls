@@ -188,18 +188,20 @@ static int handle_connection(int sockfd, ptls_context_t *ctx, const char *server
 
         /* encrypt data to send, if any is available */
         ioret = 0;
-        if (inputfd >= 0 && (FD_ISSET(inputfd, &readfds) || FD_ISSET(inputfd, &exceptfds))) {
-            while ((ioret = read(inputfd, bytebuf, sizeof(bytebuf))) == -1 && errno == EINTR)
-                ;
-            if (ioret > 0) {
-            } else if (ioret == 0) {
-                /* closed */
-                if (input_file != NULL)
-                    close(inputfd);
-                inputfd = -1;
+        if (encbuf.off == 0) {
+            if (inputfd >= 0 && (FD_ISSET(inputfd, &readfds) || FD_ISSET(inputfd, &exceptfds))) {
+                while ((ioret = read(inputfd, bytebuf, sizeof(bytebuf))) == -1 && errno == EINTR)
+                    ;
+                if (ioret > 0) {
+                } else if (ioret == 0) {
+                    /* closed */
+                    if (input_file != NULL)
+                        close(inputfd);
+                    inputfd = -1;
+                }
+            } else if (inputfd == inputfd_is_benchmark) {
+                ioret = sizeof(bytebuf);
             }
-        } else if (inputfd == inputfd_is_benchmark) {
-            ioret = sizeof(bytebuf);
         }
         if (ioret > 0) {
             ptls_buffer_pushv(&ptbuf, bytebuf, ioret);
