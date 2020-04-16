@@ -180,7 +180,7 @@ static int handle_connection(int sockfd, ptls_context_t *ctx, const char *server
         }
 
         /* encrypt data to send, if any is available */
-        if (encbuf.off == 0) {
+        if (encbuf.off == 0 || state == IN_HANDSHAKE) {
             static const size_t block_size = 16384;
             if (inputfd >= 0 && (FD_ISSET(inputfd, &readfds) || FD_ISSET(inputfd, &exceptfds))) {
                 if ((ret = ptls_buffer_reserve(&ptbuf, block_size)) != 0)
