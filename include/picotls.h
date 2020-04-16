@@ -37,10 +37,16 @@ extern "C" {
 #if __GNUC__ >= 3
 #define PTLS_LIKELY(x) __builtin_expect(!!(x), 1)
 #define PTLS_UNLIKELY(x) __builtin_expect(!!(x), 0)
+#define PTLS_BUILD_ASSERT(cond) ((void)sizeof(char[2 * !!(!__builtin_constant_p(cond) || (cond)) - 1]))
+#define PTLS_ASSERT_IS_ARRAY(a) PTLS_BUILD_ASSERT(__builtin_types_compatible_p(__typeof__(a[0])[], __typeof__(a)))
 #else
 #define PTLS_LIKELY(x) (x)
 #define PTLS_UNLIKELY(x) (x)
+#define PTLS_BUILD_ASSERT(cond) 1
+#define PTLS_ASSERT_IS_ARRAY(a) 1
 #endif
+
+#define PTLS_ELEMENTSOF(x) (PTLS_ASSERT_IS_ARRAY(x), sizeof(x) / sizeof((x)[0]))
 
 #ifdef _WINDOWS
 #define PTLS_THREADLOCAL __declspec(thread)
