@@ -3,14 +3,15 @@ picotls
 
 [![Build Status](https://travis-ci.org/h2o/picotls.svg?branch=master)](https://travis-ci.org/h2o/picotls)
 
-Picotls is a [TLS 1.3 (RFC 8446)](https://tools.ietf.org/html/rfc8446) implementation written in C, with the following features:
+Picotls is a [TLS 1.3 (RFC 8446)](https://tools.ietf.org/html/rfc8446) protocol stack written in C, with the following features:
 * support for two crypto engines
   * "OpenSSL" backend using libcrypto for crypto and X.509 operations
   * "minicrypto" backend using [cifra](https://github.com/ctz/cifra) for most crypto and [micro-ecc](https://github.com/kmackay/micro-ecc) for secp256r1
 * support for PSK, PSK-DHE resumption using 0-RTT
 * API for dealing directly with TLS handshake messages (essential for QUIC)
+* support for new extensions: Encrypted SNI (wg-draft-02), Certificate Compression (wg-draft-10)
 
-Primary goal of the project is to create a fast, tiny TLS 1.3 implementation that can be used with the HTTP/2 protocol stack and possibly the upcoming QUIC stack of the [H2O HTTP/2 server](https://h2o.examp1e.net).
+Primary goal of the project is to create a fast, tiny, low-latency TLS 1.3 implementation that can be used with the HTTP/2 protocol stack and the upcoming QUIC stack of the [H2O HTTP/2 server](https://h2o.examp1e.net).
 
 The TLS protocol implementation of picotls is licensed under the MIT license.
 
