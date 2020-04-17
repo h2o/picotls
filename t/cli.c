@@ -73,7 +73,6 @@ static int handle_connection(int sockfd, ptls_context_t *ctx, const char *server
 
     ptls_t *tls = ptls_new(ctx, server_name == NULL);
     ptls_buffer_t rbuf, encbuf, ptbuf;
-    char bytebuf[16384] = {0};
     enum { IN_HANDSHAKE, IN_1RTT, IN_SHUTDOWN } state = IN_HANDSHAKE;
     int inputfd = 0, ret = 0;
     size_t early_bytes_sent = 0;
@@ -133,6 +132,7 @@ static int handle_connection(int sockfd, ptls_context_t *ctx, const char *server
 
         /* consume incoming messages */
         if (FD_ISSET(sockfd, &readfds) || FD_ISSET(sockfd, &exceptfds)) {
+            char bytebuf[16384];
             size_t off = 0, leftlen;
             while ((ioret = read(sockfd, bytebuf, sizeof(bytebuf))) == -1 && errno == EINTR)
                 ;
@@ -152,13 +152,6 @@ static int handle_connection(int sockfd, ptls_context_t *ctx, const char *server
                             shift_buffer(&ptbuf, early_bytes_sent);
                         if (request_key_update)
                             ptls_update_key(tls, 1);
-                        if (ptbuf.off != 0) {
-                            if ((ret = ptls_send(tls, &encbuf, ptbuf.base, ptbuf.off)) != 0) {
-                                fprintf(stderr, "ptls_send(1rtt):%d\n", ret);
-                                goto Exit;
-                            }
-                            ptbuf.off = 0;
-                        }
                     } else if (ret == PTLS_ERROR_IN_PROGRESS) {
                         /* ok */
                     } else {
@@ -187,12 +180,15 @@ static int handle_connection(int sockfd, ptls_context_t *ctx, const char *server
         }
 
         /* encrypt data to send, if any is available */
-        ioret = 0;
-        if (encbuf.off == 0) {
+        if (encbuf.off == 0 || state == IN_HANDSHAKE) {
+            static const size_t block_size = 16384;
             if (inputfd >= 0 && (FD_ISSET(inputfd, &readfds) || FD_ISSET(inputfd, &exceptfds))) {
-                while ((ioret = read(inputfd, bytebuf, sizeof(bytebuf))) == -1 && errno == EINTR)
+                if ((ret = ptls_buffer_reserve(&ptbuf, block_size)) != 0)
+                    goto Exit;
+                while ((ioret = read(inputfd, ptbuf.base + ptbuf.off, block_size)) == -1 && errno == EINTR)
                     ;
                 if (ioret > 0) {
+                    ptbuf.off += ioret;
                 } else if (ioret == 0) {
                     /* closed */
                     if (input_file != NULL)
@@ -200,11 +196,15 @@ static int handle_connection(int sockfd, ptls_context_t *ctx, const char *server
                     inputfd = -1;
                 }
             } else if (inputfd == inputfd_is_benchmark) {
-                ioret = sizeof(bytebuf);
+                if (ptbuf.capacity < block_size) {
+                    if ((ret = ptls_buffer_reserve(&ptbuf, block_size - ptbuf.capacity)) != 0)
+                        goto Exit;
+                    memset(ptbuf.base + ptbuf.capacity, 0, block_size - ptbuf.capacity);
+                }
+                ptbuf.off = block_size;
             }
         }
-        if (ioret > 0) {
-            ptls_buffer_pushv(&ptbuf, bytebuf, ioret);
+        if (ptbuf.off != 0) {
             if (state == IN_HANDSHAKE) {
                 size_t send_amount = 0;
                 if (server_name != NULL && hsprop->client.max_early_data_size != NULL) {
@@ -221,7 +221,7 @@ static int handle_connection(int sockfd, ptls_context_t *ctx, const char *server
                     early_bytes_sent += send_amount;
                 }
             } else {
-                if ((ret = ptls_send(tls, &encbuf, bytebuf, ioret)) != 0) {
+                if ((ret = ptls_send(tls, &encbuf, ptbuf.base, ptbuf.off)) != 0) {
                     fprintf(stderr, "ptls_send(1rtt):%d\n", ret);
                     goto Exit;
                 }
