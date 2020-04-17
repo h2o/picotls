@@ -50,7 +50,8 @@ build_image() {
 	mkdir $DIR
 	sudo mount -o loop $IMG $DIR
 
-  sudo debootstrap --components=main,contrib,non-free --include=firmware-realtek,ssh,vim,git,build-essential,cmake,libssl-dev,libbrotli-dev,faketime,libscope-guard-perl,libtest-tcp-perl --arch amd64 buster $DIR
+  sudo debootstrap --components=main,contrib,non-free
+  --include=firmware-realtek,ssh,vim,git,build-essential,cmake,libssl-dev,libbrotli-dev,faketime,libscope-guard-perl,libtest-tcp-perl,libbpf-dev,libz-dev --arch amd64 buster $DIR
 	
   sudo chroot $DIR passwd root
 
