@@ -2,7 +2,7 @@
 #define picotcpls_h
 
 #include "picotypes.h"
-
+#include <netinet/in.h>
 #define NBR_SUPPORTED_TCPLS_OPTIONS 5
 #define VARSIZE_OPTION_MAX_CHUNK_SIZE 4*16384 /* should be able to hold 4 record before needing to be extended */
 
@@ -28,6 +28,19 @@ struct st_ptls_record_t;
 /*=====================================API====================================*/
 
 /** API exposed to the application */
+
+void *tcpls_new();
+
+int tcpls_connect(void *tls_info);
+
+int tcpls_add_v4(void *tls_info, struct sockaddr *addr, int is_primary);
+
+int tcpls_add_v6(void *tls_info, struct sockaddr_in6 *addr, int is_primary);
+
+ssize_t tcpls_send(void *tls_info, const void *input, size_t nbytes);
+
+ssize_t tcpls_receive(void *tls_info, const void *input, size_t nbytes);
+
 int ptls_set_user_timeout(ptls_t *ctx, uint16_t value, uint16_t sec_or_min,
     uint8_t setlocal, uint8_t settopeer);
 

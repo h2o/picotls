@@ -44,7 +44,36 @@ static int is_varlen(ptls_tcpls_options_t type);
 
 static int setlocal_usertimeout(ptls_t *ptls, ptls_tcpls_t *option);
 
-static int setlocal_bpf_sched(ptls_t *plts, ptls_tcpls_t *option);
+static int setlocal_bpf_sched(ptls_t *ptls, ptls_tcpls_t *option);
+
+
+void *tcpls_new(void *ctx, int is_server) {
+  ptls_context_t *ptls_ctx = (ptls_context_t *) ctx;
+  return is_server? ptls_server_new(ptls_ctx) : ptls_client_new(ptls_ctx);
+}
+
+int tcpls_add_v4(void *tls_info, struct sockaddr *addr, int is_primary) {
+  return 0;
+}
+int tcpls_add_v6(void *tls_info, struct sockaddr_in6 *addr, int is_primary) {
+  return 0;
+}
+/** For connect-by-name sparing 2-RTT logic! Much much further work */
+int tcpls_add_domain(void *tls_info, char* domain) {
+  return 0;
+}
+
+int tcpls_connect(void *tls_info) {
+  return 0;
+}
+
+ssize_t tcpls_send(void *tls_info, const void *input, size_t nbytes) {
+  return 0;
+}
+
+ssize_t tcpls_receive(void *tls_info, const void *input, size_t nbytes) {
+  return 0;
+}
 
 /**
  * Sends a tcp option which has previously been registered with ptls_set...
