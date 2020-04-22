@@ -37,14 +37,14 @@
 #include "picotcpls.h"
 
 /** Forward declarations */
-static ptls_tcpls_t* tcpls_init_context(ptls_t *ptls, const void *data, size_t datalen,
-    ptls_tcpls_options_t type, uint8_t setlocal, uint8_t settopeer);
+static tcpls_options_t* tcpls_init_context(ptls_t *ptls, const void *data, size_t datalen,
+    tcpls_enum_t type, uint8_t setlocal, uint8_t settopeer);
 
-static int is_varlen(ptls_tcpls_options_t type);
+static int is_varlen(tcpls_enum_t type);
 
-static int setlocal_usertimeout(ptls_t *ptls, ptls_tcpls_t *option);
+static int setlocal_usertimeout(ptls_t *ptls, tcpls_options_t *option);
 
-static int setlocal_bpf_sched(ptls_t *ptls, ptls_tcpls_t *option);
+static int setlocal_bpf_sched(ptls_t *ptls, tcpls_options_t *option);
 
 
 void *tcpls_new(void *ctx, int is_server) {
@@ -63,9 +63,19 @@ int tcpls_add_domain(void *tls_info, char* domain) {
   return 0;
 }
 
+
+/**
+ */
 int tcpls_connect(void *tls_info) {
   return 0;
 }
+
+/**
+ * Encrypts and sends input towards the primary path if available; else sends
+ * towards the fallback path if the option is activated.
+ *
+ * Only send if the socket is within a connected state 
+ */
 
 ssize_t tcpls_send(void *tls_info, const void *input, size_t nbytes) {
   return 0;
@@ -80,7 +90,7 @@ ssize_t tcpls_receive(void *tls_info, const void *input, size_t nbytes) {
  *
  * This function should be called after the handshake is complete for both party
  * */
-int ptls_send_tcpoption(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_tcpls_options_t type)
+int ptls_send_tcpoption(ptls_t *tls, ptls_buffer_t *sendbuf, tcpls_enum_t type)
 {
   if(tls->traffic_protection.enc.aead == NULL)
     return -1;
@@ -96,7 +106,7 @@ int ptls_send_tcpoption(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_tcpls_options_
         tls->key_update_send_request = 0;
   }
   /** Get the option */
-  ptls_tcpls_t *option;
+  tcpls_options_t *option;
   int i;
   int found = 0;
   for (i = 0; i < NBR_SUPPORTED_TCPLS_OPTIONS && !found; i++) {
@@ -142,7 +152,7 @@ int ptls_send_tcpoption(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_tcpls_options_
 int ptls_set_user_timeout(ptls_t *ptls, uint16_t value, uint16_t sec_or_min,
     uint8_t setlocal, uint8_t settopeer) {
   int ret = 0;
-  ptls_tcpls_t *option;
+  tcpls_options_t *option;
   uint16_t *val = malloc(sizeof(uint16_t));
   *val = value | sec_or_min << 15;
   option = tcpls_init_context(ptls, val, 2, USER_TIMEOUT, setlocal, settopeer);
@@ -152,6 +162,19 @@ int ptls_set_user_timeout(ptls_t *ptls, uint16_t value, uint16_t sec_or_min,
     ret = setlocal_usertimeout(ptls, option);
   }
   return ret;
+}
+
+/**
+ *  Notes
+ *
+ *  Needs to make a recv blocking call to multiple threads (as many as we have
+ *  added IPs path to probe)
+ *
+ *  need a muttex for write opererations on the structure
+ */
+
+int ptls_set_happy_eyeball(ptls_t *ptls) {
+  return 0;
 }
 
 int ptls_set_faileover(ptls_t *ptls, char *address) {
@@ -164,7 +187,7 @@ int ptls_set_faileover(ptls_t *ptls, char *address) {
 int ptls_set_bpf_cc(ptls_t *ptls, const uint8_t *bpf_prog_bytecode, size_t bytecodelen,
     int setlocal, int settopeer) {
   int ret = 0;
-  ptls_tcpls_t *option;
+  tcpls_options_t *option;
   uint8_t* bpf_cc = NULL;
   if ((bpf_cc =  malloc(bytecodelen)) == NULL)
     return PTLS_ERROR_NO_MEMORY;
@@ -178,8 +201,8 @@ int ptls_set_bpf_cc(ptls_t *ptls, const uint8_t *bpf_prog_bytecode, size_t bytec
   return ret;
 }
 
-static ptls_tcpls_t*  tcpls_init_context(ptls_t *ptls, const void *data, size_t datalen,
-    ptls_tcpls_options_t type, uint8_t setlocal, uint8_t settopeer) {
+static tcpls_options_t*  tcpls_init_context(ptls_t *ptls, const void *data, size_t datalen,
+    tcpls_enum_t type, uint8_t setlocal, uint8_t settopeer) {
   ptls->ctx->support_tcpls_options = 1;
   if (!ptls->tcpls_options) {
     ptls->tcpls_options = malloc(sizeof(*ptls->tcpls_options)*NBR_SUPPORTED_TCPLS_OPTIONS);
@@ -195,7 +218,7 @@ static ptls_tcpls_t*  tcpls_init_context(ptls_t *ptls, const void *data, size_t 
   /** Picking up the right slot in the list, i.e;, the first unused should have
    * a len of 0
    * */
-  ptls_tcpls_t *option = NULL;
+  tcpls_options_t *option = NULL;
   for (int i = 0; i < NBR_SUPPORTED_TCPLS_OPTIONS; i++) {
     /** already set or Not yet set */
     if ((ptls->tcpls_options[i].type == type && ptls->tcpls_options[i].data->base)
@@ -236,11 +259,11 @@ static ptls_tcpls_t*  tcpls_init_context(ptls_t *ptls, const void *data, size_t 
   return NULL;
 }
 
-int handle_tcpls_extension_option(ptls_t *ptls, ptls_tcpls_options_t type,
+int handle_tcpls_extension_option(ptls_t *ptls, tcpls_enum_t type,
     const uint8_t *input, size_t inputlen) {
   if (!ptls->ctx->tcpls_options_confirmed)
     return -1;
-  ptls_tcpls_t *option = NULL;
+  tcpls_options_t *option = NULL;
   switch (type) {
     case USER_TIMEOUT:
       {
@@ -276,7 +299,7 @@ int handle_tcpls_extension_option(ptls_t *ptls, ptls_tcpls_options_t type,
 int handle_tcpls_record(ptls_t *tls, struct st_ptls_record_t *rec)
 {
   int ret = 0;
-  ptls_tcpls_options_t type;
+  tcpls_enum_t type;
   uint8_t *init_buf = NULL;
   /** Assumes a TCPLS option holds within 1 record ; else we need to buffer the
    * option to deliver it to handle_tcpls_extension_option 
@@ -289,7 +312,7 @@ int handle_tcpls_record(ptls_t *tls, struct st_ptls_record_t *rec)
     memset(tls->tcpls_buf, 0, sizeof(*tls->tcpls_buf));
   }
   
-  type = (ptls_tcpls_options_t) *rec->fragment;
+  type = (tcpls_enum_t) *rec->fragment;
   /** Check whether type is a variable len option */
   if (is_varlen(type)){
     /*size_t optsize = ntoh32(rec->fragment+sizeof(type));*/
@@ -332,19 +355,19 @@ Exit:
 }
 
 
-static int setlocal_usertimeout(ptls_t *ptls, ptls_tcpls_t *option) {
+static int setlocal_usertimeout(ptls_t *ptls, tcpls_options_t *option) {
   return 0;
 }
 
 
-static int setlocal_bpf_sched(ptls_t *ptls, ptls_tcpls_t *option) {
+static int setlocal_bpf_sched(ptls_t *ptls, tcpls_options_t *option) {
   return 0;
 }
 
 
 /*=====================================utilities======================================*/
 
-static int is_varlen(ptls_tcpls_options_t type) {
+static int is_varlen(tcpls_enum_t type) {
   return (type == BPF_CC);
 }
 

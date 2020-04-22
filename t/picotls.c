@@ -1427,7 +1427,7 @@ static void test_tcpls_usertimeout(void)
       break;
   }
   ok(i==0);
-  ptls_tcpls_t option = server->tcpls_options[i];
+  tcpls_options_t option = server->tcpls_options[i];
   ok(*((uint16_t*) option.data->base) == 1);
   /** 1 minute */
   ret = ptls_set_user_timeout(server, 1, 1, 1, 1);

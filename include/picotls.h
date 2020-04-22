@@ -1149,7 +1149,7 @@ extern "C" {
     /**
        * List of user configured options
        */
-      ptls_tcpls_t *tcpls_options;
+      tcpls_options_t *tcpls_options;
 
       /**
        * Buffer tcpls options that might span over multiple records (e.g., eBPF
@@ -1471,14 +1471,14 @@ int ptls_send(ptls_t *tls, ptls_buffer_t *sendbuf, const void *input, size_t inl
  * extension handshake mechanism, or throught the connection lifetime
  */
 void ptls_set_tcpls_option(ptls_cipher_context_t *ctx, const void *data,
-    ptls_tcpls_options_t type);
+    tcpls_enum_t type);
 
 /**
  * sends a given tcp option during the connection lifetime
  *
  * return -1 if the the option has not been set
  */
-int ptls_send_tcpoptions(ptls_t *tls, ptls_buffer_t *sendbuf, ptls_tcpls_options_t type);
+int ptls_send_tcpoptions(ptls_t *tls, ptls_buffer_t *sendbuf, tcpls_enum_t type);
 /**
  * updates the send traffic key (as well as asks the peer to update)
  */
