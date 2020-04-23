@@ -2889,6 +2889,9 @@ static int client_handle_finished(ptls_t *tls, ptls_message_emitter_t *emitter, 
             goto Exit;
     }
 
+    if ((ret = push_change_cipher_spec(tls, emitter->buf)) != 0)
+        goto Exit;
+
     if (tls->client.certificate_request.context.base != NULL) {
         /* If this is a resumed session, the server must not send the certificate request in the handshake */
         if (tls->is_psk_handshake) {
@@ -2904,8 +2907,6 @@ static int client_handle_finished(ptls_t *tls, ptls_message_emitter_t *emitter, 
             goto Exit;
     }
 
-    if ((ret = push_change_cipher_spec(tls, emitter->buf)) != 0)
-        goto Exit;
     ret = send_finished(tls, emitter);
 
     memcpy(tls->traffic_protection.enc.secret, send_secret, sizeof(send_secret));
