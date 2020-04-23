@@ -567,6 +567,7 @@ int main(int argc, char **argv)
             static size_t max_early_data_size;
             hsprop.client.max_early_data_size = &max_early_data_size;
         }
+        ctx.send_change_cipher_spec = 1;
     }
     if (key_exchanges[0] == NULL)
         key_exchanges[0] = &ptls_openssl_secp256r1;
