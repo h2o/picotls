@@ -3638,10 +3638,12 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
     if (tls->ctx->require_dhe_on_psk)
         ch.psk.ke_modes &= ~(1u << PTLS_PSK_KE_MODE_PSK);
 
-    /* handle client_random, SNI, ESNI */
+    /* handle client_random, legacy_session_id, SNI, ESNI */
     if (!is_second_flight) {
         memcpy(tls->client_random, ch.random_bytes, sizeof(tls->client_random));
         log_client_random(tls);
+        if (ch.legacy_session_id.len != 0)
+            tls->send_change_cipher_spec = 1;
         ptls_iovec_t server_name = {NULL};
         int is_esni = 0;
         if (ch.esni.cipher != NULL && tls->ctx->esni != NULL) {
