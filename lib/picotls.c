@@ -236,7 +236,8 @@ struct st_ptls_t {
      */
     union {
         struct {
-            uint8_t legacy_session_id[32];
+            ptls_iovec_t legacy_session_id;
+            uint8_t legacy_session_id_buf[32];
             ptls_key_exchange_context_t *key_share_ctx;
             unsigned offered_psk : 1;
             /**
@@ -1955,7 +1956,7 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
         ptls_buffer_pushv(sendbuf, tls->client_random, sizeof(tls->client_random));
         /* lecagy_session_id */
         ptls_buffer_push_block(
-            sendbuf, 1, { ptls_buffer_pushv(sendbuf, tls->client.legacy_session_id, sizeof(tls->client.legacy_session_id)); });
+            sendbuf, 1, { ptls_buffer_pushv(sendbuf, tls->client.legacy_session_id.base, tls->client.legacy_session_id.len); });
         /* cipher_suites */
         ptls_buffer_push_block(sendbuf, 2, {
             ptls_cipher_suite_t **cs = tls->ctx->cipher_suites;
@@ -2316,8 +2317,8 @@ static int client_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
 
     if ((ret = decode_server_hello(tls, &sh, message.base + PTLS_HANDSHAKE_HEADER_SIZE, message.base + message.len)) != 0)
         goto Exit;
-    if (!(sh.legacy_session_id.len == sizeof(tls->client.legacy_session_id) &&
-          ptls_mem_equal(sh.legacy_session_id.base, tls->client.legacy_session_id, sizeof(tls->client.legacy_session_id)))) {
+    if (!(sh.legacy_session_id.len == tls->client.legacy_session_id.len &&
+          ptls_mem_equal(sh.legacy_session_id.base, tls->client.legacy_session_id.base, tls->client.legacy_session_id.len))) {
         ret = PTLS_ALERT_ILLEGAL_PARAMETER;
         goto Exit;
     }
@@ -4207,7 +4208,11 @@ ptls_t *ptls_client_new(ptls_context_t *ctx)
     tls->state = PTLS_STATE_CLIENT_HANDSHAKE_START;
     tls->ctx->random_bytes(tls->client_random, sizeof(tls->client_random));
     log_client_random(tls);
-    tls->ctx->random_bytes(tls->client.legacy_session_id, sizeof(tls->client.legacy_session_id));
+    if (tls->send_change_cipher_spec) {
+        tls->client.legacy_session_id =
+            ptls_iovec_init(tls->client.legacy_session_id_buf, sizeof(tls->client.legacy_session_id_buf));
+        tls->ctx->random_bytes(tls->client.legacy_session_id.base, tls->client.legacy_session_id.len);
+    }
 
     PTLS_PROBE(NEW, tls, 0);
     return tls;
