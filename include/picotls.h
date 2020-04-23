@@ -662,7 +662,8 @@ struct st_ptls_context_t {
      */
     unsigned use_exporter : 1;
     /**
-     * if ChangeCipherSpec message should be sent during handshake
+     * if ChangeCipherSpec record should be sent during handshake. If the client sends CCS, the server sends one in response
+     * regardless of the value of this flag. See RFC 8446 Appendix D.3.
      */
     unsigned send_change_cipher_spec : 1;
     /**
