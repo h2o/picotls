@@ -1467,14 +1467,27 @@ Exit:
     return ret;
 }
 
-static int push_change_cipher_spec(ptls_t *tls, ptls_buffer_t *sendbuf)
+static int push_change_cipher_spec(ptls_t *tls, ptls_message_emitter_t *emitter)
 {
-    int ret = 0;
+    int ret;
 
-    if (!tls->send_change_cipher_spec)
+    /* check if we are requested to (or still need to) */
+    if (!tls->send_change_cipher_spec) {
+        ret = 0;
         goto Exit;
-    buffer_push_record(sendbuf, PTLS_CONTENT_TYPE_CHANGE_CIPHER_SPEC, { ptls_buffer_push(sendbuf, 1); });
+    }
+
+    /* CCS is a record, can only be sent when using a record-based protocol. */
+    if (emitter->begin_message != begin_record_message) {
+        ret = PTLS_ALERT_UNEXPECTED_MESSAGE;
+        goto Exit;
+    }
+
+    /* emit CCS */
+    buffer_push_record(emitter->buf, PTLS_CONTENT_TYPE_CHANGE_CIPHER_SPEC, { ptls_buffer_push(emitter->buf, 1); });
+
     tls->send_change_cipher_spec = 0;
+    ret = 0;
 Exit:
     return ret;
 }
@@ -2099,7 +2112,7 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
         assert(!is_second_flight);
         if ((ret = setup_traffic_protection(tls, 1, "c e traffic", 1, 0)) != 0)
             goto Exit;
-        if ((ret = push_change_cipher_spec(tls, emitter->buf)) != 0)
+        if ((ret = push_change_cipher_spec(tls, emitter)) != 0)
             goto Exit;
     }
     if (resumption_secret.base != NULL && !is_second_flight) {
@@ -2889,7 +2902,7 @@ static int client_handle_finished(ptls_t *tls, ptls_message_emitter_t *emitter, 
             goto Exit;
     }
 
-    if ((ret = push_change_cipher_spec(tls, emitter->buf)) != 0)
+    if ((ret = push_change_cipher_spec(tls, emitter)) != 0)
         goto Exit;
 
     if (tls->client.certificate_request.context.base != NULL) {
@@ -3796,7 +3809,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
                         });
                     });
                 });
-                if ((ret = push_change_cipher_spec(tls, emitter->buf)) != 0)
+                if ((ret = push_change_cipher_spec(tls, emitter)) != 0)
                     goto Exit;
                 ret = PTLS_ERROR_STATELESS_RETRY;
             } else {
@@ -3804,7 +3817,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
                 key_schedule_transform_post_ch1hash(tls->key_schedule);
                 key_schedule_extract(tls->key_schedule, ptls_iovec_init(NULL, 0));
                 EMIT_HELLO_RETRY_REQUEST(tls->key_schedule, key_share.algorithm != NULL ? NULL : negotiated_group, {});
-                if ((ret = push_change_cipher_spec(tls, emitter->buf)) != 0)
+                if ((ret = push_change_cipher_spec(tls, emitter)) != 0)
                     goto Exit;
                 tls->state = PTLS_STATE_SERVER_EXPECT_SECOND_CLIENT_HELLO;
                 if (ch.psk.early_data_indication)
@@ -3898,7 +3911,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
                                                     { ptls_buffer_push16(sendbuf, (uint16_t)psk_index); });
                           }
                       });
-    if ((ret = push_change_cipher_spec(tls, emitter->buf)) != 0)
+    if ((ret = push_change_cipher_spec(tls, emitter)) != 0)
         goto Exit;
 
     /* create protection contexts for the handshake */
