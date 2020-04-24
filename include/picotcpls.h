@@ -50,12 +50,18 @@ typedef struct st_tcpls_v6_addr_t {
 
 struct st_tcpls_t {
   ptls_t *tls;
-
+  /* Sending buffer */
+  ptls_buffer_t *sendbuf;
+  /* Receiving buffer */
+  ptls_buffer_t *recvbuf;
   /** Linked List of address to be used for happy eyeball 
    * and for failover 
    */
   tcpls_v4_addr_t *v4_addr_llist;
   tcpls_v6_addr_t *v6_addr_llist;
+
+  /** socket of the primary address - must be update at each primary change*/
+  int *socket_ptr;
 };
 
 struct st_ptls_record_t;

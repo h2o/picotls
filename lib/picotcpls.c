@@ -34,6 +34,8 @@
 #include <string.h>
 #include <errno.h>
 #include <sys/select.h>
+#include <sys/socket.h>
+#include <sys/types.h>
 #include <sys/time.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -243,9 +245,40 @@ int tcpls_connect(void *tls_info) {
  * towards the fallback path if the option is activated.
  *
  * Only send if the socket is within a connected state 
+ *
+ * Send through the primary; or switch the primary if some problem occurs
+ * 
  */
 
 ssize_t tcpls_send(void *tls_info, const void *input, size_t nbytes) {
+  tcpls_t *tcpls = (tcpls_t *) tls_info;
+  int ret;
+  int is_failover_enabled = 0;
+  /** Check the state of connections first */
+  //TODO
+  ret = ptls_send(tcpls->tls, tcpls->sendbuf, input, nbytes);
+  
+  if (is_failover_enabled) {
+    //
+  }
+  
+
+  switch (ret) {
+    /** Error in encryption -- TODO document the possibilties */
+    default: return ret;
+  }
+  /** Get the primary address */
+  ret = send(*tcpls->socket_ptr, tcpls->sendbuf->base, tcpls->sendbuf->off, 0);
+  if (ret < 0) {
+    /** The peer reset the connection */
+    if (errno == ECONNRESET) {
+      /** We might still have data in the socket, and we don't how much the
+       * server read */
+    }
+    else if (errno == EPIPE) {
+      /** Normal close (FIN) then RST */
+    }
+  }
   return 0;
 }
 
@@ -568,7 +601,7 @@ static void _set_primary(tcpls_t *tcpls) {
       has_primary = 1;                                                                  \
       break;                                                                            \
     }                                                                                   \
-    if (cmp_times(&primary->connect_time, &current->connect_time) < 0)                    \
+    if (cmp_times(&primary->connect_time, &current->connect_time) < 0)                  \
       primary = current;                                                                \
                                                                                         \
     current = current->next;                                                            \
@@ -585,10 +618,13 @@ static void _set_primary(tcpls_t *tcpls) {
   /* if we hav a v4 and a v6, compare them */
   if (primary_v4 && primary_v6) {
     switch (cmp_times(&primary_v4->connect_time, &primary_v6->connect_time)) {
-      case -1: primary_v4->is_primary = 1; break;
+      case -1: primary_v4->is_primary = 1;
+               tcpls->socket_ptr = &primary_v4->socket; break;
       case 0:
-      case 1: primary_v6->is_primary = 1; break;
-      default: primary_v6->is_primary = 1; break;
+      case 1: primary_v6->is_primary = 1;
+              tcpls->socket_ptr = &primary_v6->socket; break;
+      default: primary_v6->is_primary = 1; 
+               tcpls->socket_ptr = &primary_v6->socket; break;
     }
   } else if (primary_v4) {
     primary_v4->is_primary = 1;
