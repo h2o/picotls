@@ -32,6 +32,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
+#include <sys/select.h>
+#include <sys/time.h>
+#include <unistd.h>
+#include <fcntl.h>
 #include "picotypes.h"
 #include "picotls.h"
 #include "picotcpls.h"
@@ -52,10 +57,60 @@ void *tcpls_new(void *ctx, int is_server) {
   return is_server? ptls_server_new(ptls_ctx) : ptls_client_new(ptls_ctx);
 }
 
-int tcpls_add_v4(void *tls_info, struct sockaddr *addr, int is_primary) {
+
+/** 
+ * Copy Sockaddr_in into our structures. If is_primary is set, flip that bit
+ * from any other v4 address if set.
+ */
+
+int tcpls_add_v4(void *tls_info, struct sockaddr_in *addr, int is_primary) {
+  tcpls_t *tcpls = (tcpls_t*) tls_info;
+  tcpls_v4_addr_t *new_v4 = malloc(sizeof(tcpls_v4_addr_t));
+  if (new_v4 == NULL)
+    return PTLS_ERROR_NO_MEMORY;
+  new_v4->is_primary = is_primary;
+  new_v4->state = CLOSED;
+  new_v4->socket = 0;
+  memcpy(&new_v4->addr, addr, sizeof(*addr));
+  new_v4->next = NULL;
+
+  tcpls_v4_addr_t *current = tcpls->v4_addr_llist;
+  if (!current) {
+    tcpls->v4_addr_llist = new_v4;
+    return 0;
+  }
+  while (current->next) {
+    if (current->is_primary && is_primary) {
+      current->is_primary = 0;
+    }
+    current = current->next;
+  }
+  current->next = new_v4;
   return 0;
 }
 int tcpls_add_v6(void *tls_info, struct sockaddr_in6 *addr, int is_primary) {
+  tcpls_t *tcpls = (tcpls_t*) tls_info;
+  tcpls_v6_addr_t *new_v6 = malloc(sizeof(*new_v6));
+  if (new_v6 == NULL)
+    return PTLS_ERROR_NO_MEMORY;
+  new_v6->is_primary = is_primary;
+  new_v6->state = CLOSED;
+  new_v6->socket = 0;
+  memcpy(&new_v6->addr, addr, sizeof(*addr));
+  new_v6->next = NULL;
+
+  tcpls_v6_addr_t *current = tcpls->v6_addr_llist;
+  if (!current) {
+    tcpls->v6_addr_llist = new_v6;
+    return 0;
+  }
+  while(current->next) {
+    if (current->is_primary && is_primary) {
+      current->is_primary = 0;
+    }
+    current = current->next;
+  }
+  current->next = new_v6;
   return 0;
 }
 /** For connect-by-name sparing 2-RTT logic! Much much further work */
@@ -63,14 +118,120 @@ int tcpls_add_domain(void *tls_info, char* domain) {
   return 0;
 }
 
-
 /**
+ * Makes TCP connections to registered IPs that are in CLOSED state.
+ * 
  */
 int tcpls_connect(void *tls_info) {
+  tcpls_t *tcpls = (tcpls_t*) tls_info;
+  int maxfds = 0;
+  int nfds = 0;
+  fd_set wset;
+  FD_ZERO(&wset);
+#define HANDLE_CONNECTS(current) do {                                               \
+  while (current) {                                                                 \
+    if (current->state == CLOSED){                                                  \
+      if (!current->socket) {                                                       \
+        if ((current->socket = socket(AF_INET, SOCK_STREAM|SOCK_NONBLOCK, 0)) < 0) {\
+          current = current->next;                                                  \
+          continue;                                                                 \
+        }                                                                           \
+        FD_SET(current->socket, &wset);                                             \
+        nfds++;                                                                     \
+        if (current->socket > maxfds)                                               \
+          maxfds = current->socket;                                                 \
+      }                                                                             \
+      if (connect(current->socket, (struct sockaddr*) &current->addr, sizeof(current->addr)) < 0 && errno != EINPROGRESS) {\
+        close(current->socket);                                                     \
+        current = current->next;                                                    \
+        continue;                                                                   \
+      }                                                                             \
+      current->state = CONNECTING;                                                  \
+    }                                                                               \
+    else if (current->state == CONNECTING) {                                        \
+      FD_SET(current->socket, &wset);                                               \
+      nfds++;                                                                       \
+      if (current->socket > maxfds)                                                 \
+        maxfds = current->socket;                                                   \
+    }                                                                               \
+    current = current->next;                                                        \
+  }                                                                                 \
+} while (0)
+
+  // Connect with v4 addresses first
+  tcpls_v4_addr_t *current_v4 = tcpls->v4_addr_llist;
+  HANDLE_CONNECTS(current_v4);
+  tcpls_v6_addr_t *current_v6 = tcpls->v6_addr_llist;
+  // Connect with v6 addresses
+  HANDLE_CONNECTS(current_v6);
+#undef HANDLE_CONNECTS
+
+  /* wait until all connected or the timeout fired */
+  int ret;
+  int remaining_nfds = nfds;
+  current_v4 = tcpls->v4_addr_llist;
+  current_v6 = tcpls->v6_addr_llist;
+  struct timeval t_initial, timeout, t_previous, t_current;
+  gettimeofday(&t_initial, NULL);
+  memcpy(&t_previous, &t_initial, sizeof(t_previous));
+  timeout.tv_sec = 1;
+  timeout.tv_usec = 0;
+
+#define CHECK_WHICH_CONNECTED(current) do {                                         \
+  while (current) {                                                                 \
+    if (current->state == CONNECTING && FD_ISSET(current->socket,                   \
+          &wset)) {                                                                 \
+      current->connect_time.tv_sec = sec;                                           \
+      current->connect_time.tv_usec = rtt - sec*(uint64_t)1000000;                  \
+      current->state = CONNECTED;                                                   \
+      int flags = fcntl(current->socket, F_GETFL);                                  \
+      flags &= ~O_NONBLOCK;                                                         \
+      fcntl(current->socket, F_SETFL, flags);                                       \
+    }                                                                               \
+    current = current->next;                                                        \
+  }                                                                                 \
+} while(0) 
+ 
+  while (remaining_nfds) {
+    if ((ret = select(maxfds+1, NULL, &wset, NULL, &timeout)) < 0) {
+      return -1;
+    }
+    else if (!ret) {
+      /* the timeout fired! */
+      if (remaining_nfds == nfds) {
+        /* None of the addresses connected */
+        return -1;
+      }
+    }
+    else {
+      gettimeofday(&t_current, NULL);
+      
+      int new_val =
+        timeout.tv_sec*(uint64_t)1000000+timeout.tv_usec
+          - (t_current.tv_sec*(uint64_t)1000000+t_current.tv_usec
+              - t_previous.tv_sec*(uint64_t)1000000-t_previous.tv_usec);
+
+      memcpy(&t_previous, &t_current, sizeof(t_previous));
+     
+      int rtt = t_current.tv_sec*(uint64_t)1000000+t_current.tv_usec
+        - t_initial.tv_sec*(uint64_t)1000000-t_initial.tv_usec;
+
+      int sec = new_val / 1000000;
+      timeout.tv_sec = sec;
+      timeout.tv_usec = new_val - timeout.tv_sec*(uint64_t)1000000;
+
+      sec = rtt / 1000000;
+
+      CHECK_WHICH_CONNECTED(current_v4);
+      CHECK_WHICH_CONNECTED(current_v6);
+      remaining_nfds--;
+    }
+  }
+#undef CHECK_WHICH_CONNECTED
   return 0;
 }
 
-/**
+ /**
  * Encrypts and sends input towards the primary path if available; else sends
  * towards the fallback path if the option is activated.
  *
@@ -154,6 +315,8 @@ int ptls_set_user_timeout(ptls_t *ptls, uint16_t value, uint16_t sec_or_min,
   int ret = 0;
   tcpls_options_t *option;
   uint16_t *val = malloc(sizeof(uint16_t));
+  if (val == NULL)
+    return PTLS_ERROR_NO_MEMORY;
   *val = value | sec_or_min << 15;
   option = tcpls_init_context(ptls, val, 2, USER_TIMEOUT, setlocal, settopeer);
   if (!option)
@@ -167,10 +330,9 @@ int ptls_set_user_timeout(ptls_t *ptls, uint16_t value, uint16_t sec_or_min,
 /**
  *  Notes
  *
- *  Needs to make a recv blocking call to multiple threads (as many as we have
+ *  Need to use poll() or select() to the set of fds to read back pong messages
  *  added IPs path to probe)
  *
- *  need a muttex for write opererations on the structure
  */
 
 int ptls_set_happy_eyeball(ptls_t *ptls) {
