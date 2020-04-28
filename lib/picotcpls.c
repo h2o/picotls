@@ -259,7 +259,7 @@ ssize_t tcpls_send(void *tls_info, const void *input, size_t nbytes) {
   ret = ptls_send(tcpls->tls, tcpls->sendbuf, input, nbytes);
   
   if (is_failover_enabled) {
-    //
+    //TODO
   }
   
 
@@ -403,6 +403,8 @@ int ptls_set_bpf_cc(ptls_t *ptls, const uint8_t *bpf_prog_bytecode, size_t bytec
   return ret;
 }
 
+/*===================================Internal========================================*/
+
 static tcpls_options_t*  tcpls_init_context(ptls_t *ptls, const void *data, size_t datalen,
     tcpls_enum_t type, uint8_t setlocal, uint8_t settopeer) {
   ptls->ctx->support_tcpls_options = 1;
@@ -445,7 +447,8 @@ static tcpls_options_t*  tcpls_init_context(ptls_t *ptls, const void *data, size
       *option->data = ptls_iovec_init(data, sizeof(uint16_t));
       option->type = USER_TIMEOUT;
       return option;
-    case FAILOVER: break;
+    case FAILOVER_ADDR4:
+    case FAILOVER_ADDR6: break;
     case BPF_CC:
       if (option->data->len) {
       /** We already had one bpf cc, free it */
@@ -478,7 +481,8 @@ int handle_tcpls_extension_option(ptls_t *ptls, tcpls_enum_t type,
         return setlocal_usertimeout(ptls, option);
       }
       break;
-    case FAILOVER:
+    case FAILOVER_ADDR4:
+    case FAILOVER_ADDR6:
       break;
     case BPF_CC:
       {
@@ -557,6 +561,26 @@ Exit:
 }
 
 
+/**
+ * In case of failover, the peer only switch TCP's connection upon reception of this signal
+ *
+ * Pick the faster non-primary and open TCP connection to send the signal
+ * */
+
+int tcpls_sends_failover_signal(tcpls_t *tcpls, ptls_buffer_t *sendbuf) {
+
+  uint8_t input[TCPLS_SIGNAL_SIZE];
+  tcpls_enum_t f_signal = FAILOVER_SIGNAL;
+  memcpy(input, &f_signal, sizeof(f_signal));
+  memcpy(input+sizeof(f_signal), &tcpls->tls->traffic_protection.enc.seq,
+      sizeof(tcpls->tls->traffic_protection.enc.seq));
+  /** Synchronization problem in sequence number ! */
+  return buffer_push_encrypted_records(sendbuf,
+      PTLS_CONTENT_TYPE_TCPLS_OPTION, input,
+      TCPLS_SIGNAL_SIZE, &tcpls->tls->traffic_protection.enc);
+}
+
+
 static int setlocal_usertimeout(ptls_t *ptls, tcpls_options_t *option) {
   return 0;
 }
@@ -580,7 +604,7 @@ static int cmp_times(struct timeval *t1, struct timeval *t2) {
     return -1;
   else if (val == 0)
     return 0;
-  else 
+  else
     return 1;
 }
 

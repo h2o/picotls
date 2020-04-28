@@ -7,11 +7,14 @@
 #define VARSIZE_OPTION_MAX_CHUNK_SIZE 4*16384 /* should be able to hold 4 record before needing to be extended */
 
 
+#define TCPLS_SIGNAL_SIZE 12
 
 /** TCP options we would support in the TLS context */
 typedef enum tcpls_enum_t {
   USER_TIMEOUT,
-  FAILOVER,
+  FAILOVER_ADDR4,
+  FAILOVER_ADDR6,
+  FAILOVER_SIGNAL,
   BPF_CC,
 } tcpls_enum_t;
 
@@ -98,6 +101,8 @@ int handle_tcpls_extension_option(ptls_t *ctx, tcpls_enum_t type,
     const uint8_t *input, size_t len);
 
 int handle_tcpls_record(ptls_t *tls, struct st_ptls_record_t *rec);
+
+int tcpls_failover_signal(tcpls_t *tcpls, ptls_buffer_t *sendbuf);
 
 void ptls_tcpls_options_free(ptls_t *ptls);
 

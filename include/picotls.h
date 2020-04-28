@@ -40,10 +40,22 @@ extern "C" {
 #if __GNUC__ >= 3
 #define PTLS_LIKELY(x) __builtin_expect(!!(x), 1)
 #define PTLS_UNLIKELY(x) __builtin_expect(!!(x), 0)
+#define PTLS_BUILD_ASSERT_EXPR(cond) (sizeof(char[2 * !!(!__builtin_constant_p(cond) || (cond)) - 1]) != 0)
+#define PTLS_BUILD_ASSERT(cond) ((void)PTLS_BUILD_ASSERT_EXPR(cond))
 #else
 #define PTLS_LIKELY(x) (x)
 #define PTLS_UNLIKELY(x) (x)
+#define PTLS_BUILD_ASSERT(cond) 1
 #endif
+
+/* __builtin_types_compatible_p yields incorrect results when older versions of GCC is used; see #303 */
+#if defined(__clang__) || __GNUC__ >= 6
+#define PTLS_ASSERT_IS_ARRAY_EXPR(a) PTLS_BUILD_ASSERT_EXPR(__builtin_types_compatible_p(__typeof__(a[0])[], __typeof__(a)))
+#else
+#define PTLS_ASSERT_IS_ARRAY_EXPR(a) 1
+#endif
+
+#define PTLS_ELEMENTSOF(x) (PTLS_ASSERT_IS_ARRAY_EXPR(x) * sizeof(x) / sizeof((x)[0]))
 
 #ifdef _WINDOWS
 #define PTLS_THREADLOCAL __declspec(thread)
@@ -158,6 +170,7 @@ extern "C" {
 #define PTLS_ERROR_COMPRESSION_FAILURE (PTLS_ERROR_CLASS_INTERNAL + 8)
 #define PTLS_ERROR_ESNI_RETRY (PTLS_ERROR_CLASS_INTERNAL + 8)
 #define PTLS_ERROR_REJECT_EARLY_DATA (PTLS_ERROR_CLASS_INTERNAL + 9)
+#define PTLS_ERROR_DELEGATE (PTLS_ERROR_CLASS_INTERNAL + 10)
 
 #define PTLS_ERROR_INCORRECT_BASE64 (PTLS_ERROR_CLASS_INTERNAL + 50)
 #define PTLS_ERROR_PEM_LABEL_NOT_FOUND (PTLS_ERROR_CLASS_INTERNAL + 51)
@@ -580,52 +593,52 @@ extern "C" {
      * if ESNI was used
      */
     unsigned esni : 1;
-  } ptls_on_client_hello_parameters_t;
+} ptls_on_client_hello_parameters_t;
 
-  /**
-   * returns current time in milliseconds (ptls_get_time can be used to return the physical time)
-   */
-  PTLS_CALLBACK_TYPE0(uint64_t, get_time);
-  /**
-   * after receiving ClientHello, the core calls the optional callback to give a chance to the swap the context depending on the input
-   * values. The callback is required to call `ptls_set_server_name` if an SNI extension needs to be sent to the client.
-   */
-  PTLS_CALLBACK_TYPE(int, on_client_hello, ptls_t *tls, ptls_on_client_hello_parameters_t *params);
-  /**
-   * callback to generate the certificate message. `ptls_context::certificates` are set when the callback is set to NULL.
-   */
-  PTLS_CALLBACK_TYPE(int, emit_certificate, ptls_t *tls, ptls_message_emitter_t *emitter, ptls_key_schedule_t *key_sched,
-      ptls_iovec_t context, int push_status_request);
-  /**
-   * when gerenating CertificateVerify, the core calls the callback to sign the handshake context using the certificate.
-   */
-  PTLS_CALLBACK_TYPE(int, sign_certificate, ptls_t *tls, uint16_t *selected_algorithm, ptls_buffer_t *output, ptls_iovec_t input,
-      const uint16_t *algorithms, size_t num_algorithms);
-  /**
-   * after receiving Certificate, the core calls the callback to verify the certificate chain and to obtain a pointer to a
-   * callback that should be used for verifying CertificateVerify. If an error occurs between a successful return from this
-   * callback to the invocation of the verify_sign callback, verify_sign is called with both data and sign set to an empty buffer.
-   * The implementor of the callback should use that as the opportunity to free any temporary data allocated for the verify_sign
-   * callback.
-   */
-  PTLS_CALLBACK_TYPE(int, verify_certificate, ptls_t *tls,
-      int (**verify_sign)(void *verify_ctx, ptls_iovec_t data, ptls_iovec_t sign), void **verify_data,
-      ptls_iovec_t *certs, size_t num_certs);
-  /**
-   * Encrypt-and-signs (or verify-and-decrypts) a ticket (server-only).
-   * When used for encryption (i.e., is_encrypt being set), the function should return 0 if successful, or else a non-zero value.
-   * When used for decryption, the function should return 0 (successful), PTLS_ERROR_REJECT_EARLY_DATA (successful, but 0-RTT is
-   * forbidden), or any other value to indicate failure.
-   */
-  PTLS_CALLBACK_TYPE(int, encrypt_ticket, ptls_t *tls, int is_encrypt, ptls_buffer_t *dst, ptls_iovec_t src);
-  /**
-   * saves a ticket (client-only)
-   */
-  PTLS_CALLBACK_TYPE(int, save_ticket, ptls_t *tls, ptls_iovec_t input);
-  /**
-   * event logging (incl. secret logging)
-   */
-  typedef struct st_ptls_log_event_t {
+/**
+ * returns current time in milliseconds (ptls_get_time can be used to return the physical time)
+ */
+PTLS_CALLBACK_TYPE0(uint64_t, get_time);
+/**
+ * after receiving ClientHello, the core calls the optional callback to give a chance to the swap the context depending on the input
+ * values. The callback is required to call `ptls_set_server_name` if an SNI extension needs to be sent to the client.
+ */
+PTLS_CALLBACK_TYPE(int, on_client_hello, ptls_t *tls, ptls_on_client_hello_parameters_t *params);
+/**
+ * callback to generate the certificate message. `ptls_context::certificates` are set when the callback is set to NULL.
+ */
+PTLS_CALLBACK_TYPE(int, emit_certificate, ptls_t *tls, ptls_message_emitter_t *emitter, ptls_key_schedule_t *key_sched,
+                   ptls_iovec_t context, int push_status_request, const uint16_t *compress_algos, size_t num_compress_algos);
+/**
+ * when gerenating CertificateVerify, the core calls the callback to sign the handshake context using the certificate.
+ */
+PTLS_CALLBACK_TYPE(int, sign_certificate, ptls_t *tls, uint16_t *selected_algorithm, ptls_buffer_t *output, ptls_iovec_t input,
+                   const uint16_t *algorithms, size_t num_algorithms);
+/**
+ * after receiving Certificate, the core calls the callback to verify the certificate chain and to obtain a pointer to a
+ * callback that should be used for verifying CertificateVerify. If an error occurs between a successful return from this
+ * callback to the invocation of the verify_sign callback, verify_sign is called with both data and sign set to an empty buffer.
+ * The implementor of the callback should use that as the opportunity to free any temporary data allocated for the verify_sign
+ * callback.
+ */
+PTLS_CALLBACK_TYPE(int, verify_certificate, ptls_t *tls,
+                   int (**verify_sign)(void *verify_ctx, ptls_iovec_t data, ptls_iovec_t sign), void **verify_data,
+                   ptls_iovec_t *certs, size_t num_certs);
+/**
+ * Encrypt-and-signs (or verify-and-decrypts) a ticket (server-only).
+ * When used for encryption (i.e., is_encrypt being set), the function should return 0 if successful, or else a non-zero value.
+ * When used for decryption, the function should return 0 (successful), PTLS_ERROR_REJECT_EARLY_DATA (successful, but 0-RTT is
+ * forbidden), or any other value to indicate failure.
+ */
+PTLS_CALLBACK_TYPE(int, encrypt_ticket, ptls_t *tls, int is_encrypt, ptls_buffer_t *dst, ptls_iovec_t src);
+/**
+ * saves a ticket (client-only)
+ */
+PTLS_CALLBACK_TYPE(int, save_ticket, ptls_t *tls, ptls_iovec_t input);
+/**
+ * event logging (incl. secret logging)
+ */
+typedef struct st_ptls_log_event_t {
     void (*cb)(struct st_ptls_log_event_t *self, ptls_t *tls, const char *type, const char *fmt, ...)
       __attribute__((format(printf, 4, 5)));
   } ptls_log_event_t;
@@ -736,7 +749,8 @@ extern "C" {
      */
     unsigned use_exporter : 1;
     /**
-     * if ChangeCipherSpec message should be sent during handshake
+     * if ChangeCipherSpec record should be sent during handshake. If the client sends CCS, the server sends one in response
+     * regardless of the value of this flag. See RFC 8446 Appendix D.3.
      */
     unsigned send_change_cipher_spec : 1;
     /**
@@ -1027,6 +1041,7 @@ extern "C" {
   struct st_ptls_extension_bitmap_t {
       uint8_t bits[8]; /* only ids below 64 is tracked */
   };
+
   struct st_ptls_t {
       /**
        * the context
@@ -1116,7 +1131,8 @@ extern "C" {
        */
       union {
           struct {
-              uint8_t legacy_session_id[32];
+              ptls_iovec_t legacy_session_id;
+              uint8_t legacy_session_id_buf[32];
               ptls_key_exchange_context_t *key_share_ctx;
               unsigned offered_psk : 1;
               /**
