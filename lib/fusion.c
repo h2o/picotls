@@ -38,6 +38,7 @@
  * IN THE SOFTWARE.
  */
 #include <stdint.h>
+#include <string.h>
 #include <tmmintrin.h>
 #include <wmmintrin.h>
 #include "picotls.h"
@@ -299,9 +300,222 @@ static inline __m128i ghash6(ptls_fusion_aesgcm_context_t *ctx, const __m128i *g
 #undef FUNC
 }
 
+static __m128i ghashn(ptls_fusion_aesgcm_context_t *ctx, const __m128i *src, size_t cnt, __m128i ghash)
+{
+    __m128i hi = _mm_setzero_si128(), lo = _mm_setzero_si128(), mid = _mm_setzero_si128();
+    assert(cnt <= 6);
+
+    for (size_t i = 0; i < cnt; ++i) {
+        __m128i X = _mm_loadu_si128(src + cnt - 1 - i);
+        X = _mm_shuffle_epi8(X, bswap8);
+        if (i == cnt - 1)
+            X = _mm_xor_si128(X, ghash);
+        __m128i t = _mm_clmulepi64_si128(ctx->ghash[i].H, X, 0x00);
+        lo = _mm_xor_si128(lo, t);
+        t = _mm_clmulepi64_si128(ctx->ghash[i].H, X, 0x11);
+        hi = _mm_xor_si128(hi, t);
+        t = _mm_shuffle_epi32(X, 78);
+        t = _mm_xor_si128(t, X);
+        t = _mm_clmulepi64_si128(ctx->ghash[i].r, t, 0x00);
+        mid = _mm_xor_si128(mid, t);
+    }
+
+    mid = _mm_xor_si128(mid, hi);
+    mid = _mm_xor_si128(mid, lo);
+    lo = _mm_xor_si128(lo, _mm_slli_si128(mid, 8));
+    hi = _mm_xor_si128(hi, _mm_srli_si128(mid, 8));
+
+    /* from https://crypto.stanford.edu/RealWorldCrypto/slides/gueron.pdf */
+    __m128i r = _mm_clmulepi64_si128(lo, poly, 0x10);
+    lo = _mm_shuffle_epi32(lo, 78);
+    lo = _mm_xor_si128(lo, r);
+    r = _mm_clmulepi64_si128(lo, poly, 0x10);
+    lo = _mm_shuffle_epi32(lo, 78);
+    lo = _mm_xor_si128(lo, r);
+    ghash = _mm_xor_si128(hi, lo);
+
+    return ghash;
+}
+
 static inline __m128i aesecb6ghash6(ptls_fusion_aesgcm_context_t *ctx, __m128i *data, const __m128i *gdata, __m128i ghash)
 {
     GHASH6(AESECB6);
+}
+
+static inline __m128i loadn(const void *_p, size_t l)
+{
+    const uint8_t *p = _p;
+    uint8_t buf[16] = {};
+
+    for (size_t i = 0; i != l; ++i)
+        buf[i] = p[i];
+    return *(__m128i *)buf;
+}
+
+static inline void storen(void *_p, size_t l, __m128i v)
+{
+    uint8_t buf[16], *p = _p;
+
+    *(__m128i *)buf = v;
+
+    for (size_t i = 0; i != l; ++i)
+        p[i] = buf[i];
+}
+
+static inline void finish_gcm(ptls_fusion_aesgcm_context_t *ctx, __m128i *dst, const __m128i *dst_ghash, const __m128i *aad, size_t aadlen,
+                       __m128i ghash, __m128i ac, __m128i ek0)
+{
+    const __m128i *enc = dst_ghash;
+    size_t enclen = (const uint8_t *)dst - (const uint8_t *)enc;
+    __m128i gdata[6];
+    int gdata_index;
+
+    while (1) {
+        gdata_index = 0;
+        if (aadlen != 0) {
+            while (aadlen >= 16) {
+                gdata[gdata_index++] = *aad++;
+                aadlen -= 16;
+                if (gdata_index == 6)
+                    goto GHASH6;
+            }
+            if (aadlen != 0) {
+                gdata[gdata_index++] = loadn(aad, aadlen);
+                aadlen = 0;
+                if (gdata_index == 6)
+                    goto GHASH6;
+            }
+        }
+        if (enclen != 0) {
+            while (enclen >= 16) {
+                gdata[gdata_index++] = *enc++;
+                enclen -= 16;
+                if (gdata_index == 6)
+                    goto GHASH6;
+            }
+            if (enclen != 0) {
+                gdata[gdata_index++] = loadn(enc, enclen);
+                enclen = 0;
+                if (gdata_index == 6)
+                    goto GHASH6;
+            }
+        }
+        __m128i bswap64 = _mm_set_epi8(8, 9, 10, 11, 12, 13, 14, 15, 0, 1, 2, 3, 4, 5, 6, 7);
+        gdata[gdata_index++] = _mm_shuffle_epi8(ac, bswap64);
+        break;
+
+    GHASH6:
+        ghash = ghash6(ctx, gdata, ghash);
+    }
+
+    /* final */
+#if 0
+    for (int i = 0; i < gdata_index; ++i)
+        ghash = gfmul(_mm_xor_si128(ghash, _mm_shuffle_epi8(gdata[i], bswap8)), ctx->ghash[0].H);
+#else
+    ghash = ghashn(ctx, gdata, gdata_index, ghash);
+#endif
+    __m128i tag = _mm_shuffle_epi8(ghash, bswap8);
+    tag = _mm_xor_si128(tag, ek0);
+    _mm_storeu_si128(dst, tag);
+}
+
+void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, const void *iv, const void *_aad, size_t aadlen, void *_dst,
+                                const void *_src, size_t srclen)
+{
+    __m128i bswap64 = _mm_set_epi8(8, 9, 10, 11, 12, 13, 14, 15, 0, 1, 2, 3, 4, 5, 6, 7), one = _mm_set_epi32(0, 1, 0, 0);
+    __m128i ctr, ek0, bits[6], gdatabuf[6], ghash = _mm_setzero_si128();
+    int ek0_encrypted = 0;
+    __m128i ac = _mm_set_epi32(0, (int)srclen * 8, 0, (int)aadlen * 8);
+
+    // src and dst are updated after the chunk is processed
+    const __m128i *src = _src;
+    __m128i *dst = _dst;
+    // aad and src_ghash are updated before the chunk is processed (i.e., when the pointers are fed indo the processor)
+    const __m128i *aad = _aad, *dst_ghash = dst;
+
+    /* build counter */
+    ctr = loadn(iv, PTLS_AESGCM_IV_SIZE);
+    ctr = _mm_shuffle_epi8(ctr, bswap8);
+    ctr = _mm_add_epi64(ctr, one);
+    ek0 = _mm_shuffle_epi8(ctr, bswap64);
+
+/* setup the counters (we can always run in full), but use the last slot for calculating ek0, if possible */
+#define SETUP_BITS()                                                                                                               \
+    do {                                                                                                                           \
+        for (int i = 0; i < 5; ++i) {                                                                                              \
+            ctr = _mm_add_epi64(ctr, one);                                                                                         \
+            bits[i] = _mm_shuffle_epi8(ctr, bswap64);                                                                              \
+        }                                                                                                                          \
+        if (PTLS_LIKELY(srclen > 16 * 5)) {                                                                                        \
+            ctr = _mm_add_epi64(ctr, one);                                                                                         \
+            bits[5] = _mm_shuffle_epi8(ctr, bswap64);                                                                              \
+        } else {                                                                                                                   \
+            assert(!ek0_encrypted);                                                                                                \
+            bits[5] = ek0;                                                                                                         \
+            ek0_encrypted = 1;                                                                                                     \
+        }                                                                                                                          \
+    } while (0)
+
+    /* build the first AES bits */
+    SETUP_BITS();
+    aesecb6(ctx, bits);
+
+    /* the main loop */
+    while (PTLS_LIKELY(srclen >= 6 * 16)) {
+        /* apply the bits */
+        for (int i = 0; i < 6; ++i)
+            _mm_storeu_si128(dst++, _mm_xor_si128(_mm_loadu_si128(src++), bits[i]));
+        srclen -= 6 * 16;
+
+        /* setup bits */
+        SETUP_BITS();
+
+        /* setup gdata */
+        const __m128i *gdata;
+        if (PTLS_UNLIKELY(aadlen != 0)) {
+            for (int i = 0; i < 6; ++i) {
+                if (aadlen < 16) {
+                    if (aadlen != 0) {
+                        gdatabuf[i++] = loadn(aad, aadlen);
+                        aadlen = 0;
+                    }
+                    while (i < 6)
+                        gdatabuf[i++] = *dst_ghash++;
+                    break;
+                }
+                gdatabuf[i++] = _mm_loadu_si128(aad++);
+                aadlen -= 16;
+            }
+            gdata = gdatabuf;
+        } else {
+            gdata = dst_ghash;
+            dst_ghash += 6;
+        }
+
+        /* doit */
+        ghash = aesecb6ghash6(ctx, bits, gdata, ghash);
+    }
+
+    /* apply the bit stream to the remainder */
+    for (int i = 0; i < 6 && srclen != 0; ++i) {
+        if (srclen < 16) {
+            storen(dst, srclen, _mm_xor_si128(loadn(src, srclen), bits[i]));
+            dst = (__m128i *)((uint8_t *)dst + srclen);
+            srclen = 0;
+            break;
+        }
+        _mm_storeu_si128(dst++, _mm_xor_si128(_mm_loadu_si128(src++), bits[i]));
+        srclen -= 16;
+    }
+
+    if (ek0_encrypted) {
+        ek0 = bits[5];
+    } else {
+        assert(!"FIXME calculate ek0");
+    }
+
+    finish_gcm(ctx, dst, dst_ghash, aad, aadlen, ghash, ac, ek0);
 }
 
 static __m128i expand_key(__m128i key, __m128i t)

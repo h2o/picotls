@@ -26,6 +26,8 @@
 extern "C" {
 #endif
 
+#include <stddef.h>
+#include <emmintrin.h>
 #include "../picotls.h"
 
 #define PTLS_FUSION_AESGCM_ROUNDS 10 /* TODO support AES256 */
@@ -40,6 +42,8 @@ typedef struct ptls_fusion_aesgcm_context_t {
 
 void ptls_fusion_aesgcm_init(ptls_fusion_aesgcm_context_t *ctx, const void *key);
 void ptls_fusion_aesgcm_dispose(ptls_fusion_aesgcm_context_t *ctx);
+void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, const void *iv, const void *_aad, size_t aadlen, void *_dst,
+                                const void *_src, size_t srclen);
 
 extern ptls_aead_algorithm_t ptls_fusion_aes128gcm;
 
