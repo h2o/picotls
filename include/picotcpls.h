@@ -2,6 +2,7 @@
 #define picotcpls_h
 
 #include "picotypes.h"
+#include "fifo.h"
 #include <netinet/in.h>
 #define NBR_SUPPORTED_TCPLS_OPTIONS 5
 #define VARSIZE_OPTION_MAX_CHUNK_SIZE 4*16384 /* should be able to hold 4 record before needing to be extended */
@@ -50,6 +51,16 @@ typedef struct st_tcpls_v6_addr_t {
   struct st_tcpls_v6_addr_t *next;
 } tcpls_v6_addr_t;
 
+typedef struct st_tcpls_stream {
+  tcpls_record_fifo_t *queue;
+  uint32_t streamid;
+  /** Attached to v4_addr or a v6_addr; */
+  tcpls_v4_addr_t *v4_addr;
+  tcpls_v6_addr_t *v6_addr;
+  /** TODO has a crypto context */
+  ptls_aead_context_t *aead;
+} tcpls_stream_t;
+
 
 struct st_tcpls_t {
   ptls_t *tls;
@@ -60,6 +71,7 @@ struct st_tcpls_t {
   /** Linked List of address to be used for happy eyeball 
    * and for failover 
    */
+
   tcpls_v4_addr_t *v4_addr_llist;
   tcpls_v6_addr_t *v6_addr_llist;
 

@@ -388,9 +388,10 @@ extern "C" {
    * AEAD context. AEAD implementations are allowed to stuff data at the end of the struct. The size of the memory allocated for the
    * struct is governed by ptls_aead_algorithm_t::context_size.
    */
-  typedef struct st_ptls_aead_context_t {
+  struct st_ptls_aead_context_t {
     const struct st_ptls_aead_algorithm_t *algo;
     uint8_t static_iv[PTLS_MAX_IV_SIZE];
+    uint64_t seq;
     /* field above this line must not be altered by the crypto binding */
     void (*dispose_crypto)(struct st_ptls_aead_context_t *ctx);
     void (*do_encrypt_init)(struct st_ptls_aead_context_t *ctx, const void *iv, const void *aad, size_t aadlen);
@@ -398,7 +399,7 @@ extern "C" {
     size_t (*do_encrypt_final)(struct st_ptls_aead_context_t *ctx, void *output);
     size_t (*do_decrypt)(struct st_ptls_aead_context_t *ctx, void *output, const void *input, size_t inlen, const void *iv,
         const void *aad, size_t aadlen);
-  } ptls_aead_context_t;
+  };
 
   /**
    * An AEAD cipher.
@@ -920,7 +921,6 @@ typedef struct st_ptls_log_event_t {
       size_t epoch;
       /* the following fields are not used if the key_change callback is set */
       ptls_aead_context_t *aead;
-      uint64_t seq;
   };
 
   struct st_ptls_record_message_emitter_t {
@@ -1602,7 +1602,7 @@ static size_t ptls_aead_decrypt(ptls_aead_context_t *ctx, void *output, const vo
                                 const void *aad, size_t aadlen);
 
 
-int buffer_encrypt_record(ptls_buffer_t *buf, size_t rec_start, struct st_ptls_traffic_protection_t *enc);
+int buffer_encrypt_record(ptls_buffer_t *buf, size_t rec_start, ptls_aead_context_t *aead);
 
 #define buffer_push_record(buf, type, block)                                                                                       \
     do {                                                                                                                           \
@@ -1611,7 +1611,7 @@ int buffer_encrypt_record(ptls_buffer_t *buf, size_t rec_start, struct st_ptls_t
     } while (0)
 
 int buffer_push_encrypted_records(ptls_buffer_t *buf, uint8_t type, const uint8_t *src, size_t len,
-                                         struct st_ptls_traffic_protection_t *enc);
+                                         ptls_aead_context_t *aead);
 
 int update_send_key(ptls_t *tls, ptls_buffer_t *_sendbuf, int request_update);
 /**

@@ -282,7 +282,7 @@ Exit:
 
 #if PTLS_FUZZ_HANDSHAKE
 
-static size_t aead_encrypt(struct st_ptls_traffic_protection_t *ctx,
+static size_t aead_encrypt(ptls_aead_context_t *ctx,
     void *output, const void *input, size_t inlen,
                            uint8_t content_type)
 {
@@ -291,7 +291,7 @@ static size_t aead_encrypt(struct st_ptls_traffic_protection_t *ctx,
     return inlen + 1 + 16;
 }
 
-static int aead_decrypt(struct st_ptls_traffic_protection_t *ctx, void *output, size_t *outlen, const void *input, size_t inlen)
+static int aead_decrypt(ptls_aead_context_t *ctx, void *output, size_t *outlen, const void *input, size_t inlen)
 {
     if (inlen < 16) {
         return PTLS_ALERT_BAD_RECORD_MAC;
@@ -312,29 +312,29 @@ static void build_aad(uint8_t aad[5], size_t reclen)
     aad[4] = (uint8_t)reclen;
 }
 
-static size_t aead_encrypt(struct st_ptls_traffic_protection_t *ctx, void
+static size_t aead_encrypt(ptls_aead_context_t *aead, void
     *output, const void *input, size_t inlen, uint8_t content_type)
 {
     size_t off = 0;
     int aad_length = 5;
 
     uint8_t aad[aad_length];
-    build_aad(aad, inlen + 1 + ctx->aead->algo->tag_size);
-    ptls_aead_encrypt_init(ctx->aead, ctx->seq++, aad, sizeof(aad));
-    off += ptls_aead_encrypt_update(ctx->aead, ((uint8_t *)output) + off, input, inlen);
-    off += ptls_aead_encrypt_update(ctx->aead, ((uint8_t *)output) + off, &content_type, 1);
-    off += ptls_aead_encrypt_final(ctx->aead, ((uint8_t *)output) + off);
+    build_aad(aad, inlen + 1 + aead->algo->tag_size);
+    ptls_aead_encrypt_init(aead, aead->seq++, aad, sizeof(aad));
+    off += ptls_aead_encrypt_update(aead, ((uint8_t *)output) + off, input, inlen);
+    off += ptls_aead_encrypt_update(aead, ((uint8_t *)output) + off, &content_type, 1);
+    off += ptls_aead_encrypt_final(aead, ((uint8_t *)output) + off);
 
     return off;
 }
 
-static int aead_decrypt(struct st_ptls_traffic_protection_t *ctx, uint64_t seq,
+static int aead_decrypt(ptls_aead_context_t *ctx,
     void *output, size_t *outlen, const void *input, size_t inlen)
 {
     uint8_t aad[5];
 
     build_aad(aad, inlen);
-    if ((*outlen = ptls_aead_decrypt(ctx->aead, output, input, inlen, ctx->seq, aad, sizeof(aad))) == SIZE_MAX)
+    if ((*outlen = ptls_aead_decrypt(ctx, output, input, inlen, ctx->seq, aad, sizeof(aad))) == SIZE_MAX)
         return PTLS_ALERT_BAD_RECORD_MAC;
     ++ctx->seq;
     return 0;
@@ -343,8 +343,8 @@ static int aead_decrypt(struct st_ptls_traffic_protection_t *ctx, uint64_t seq,
 #endif /* #if PTLS_FUZZ_HANDSHAKE */
 
 
-int buffer_push_encrypted_records(ptls_buffer_t *buf, uint8_t type,
-    const uint8_t *src, size_t len, struct st_ptls_traffic_protection_t *enc)
+int buffer_push_encrypted_records(ptls_buffer_t *buf, uint8_t type, const
+    uint8_t *src, size_t len, ptls_aead_context_t *ctx)
 {
     int ret = 0;
     
@@ -353,10 +353,12 @@ int buffer_push_encrypted_records(ptls_buffer_t *buf, uint8_t type,
         if (chunk_size > PTLS_MAX_PLAINTEXT_RECORD_SIZE)
             chunk_size = PTLS_MAX_PLAINTEXT_RECORD_SIZE;
         buffer_push_record(buf, PTLS_CONTENT_TYPE_APPDATA, {
-            if ((ret = ptls_buffer_reserve(buf, chunk_size + enc->aead->algo->tag_size + 1)) != 0)
+            if ((ret = ptls_buffer_reserve(buf, chunk_size + ctx->algo->tag_size + 1)) != 0)
                 goto Exit;
-            buf->off += aead_encrypt(enc, buf->base + buf->off, src, chunk_size,
+
+            buf->off += aead_encrypt(ctx, buf->base + buf->off, src, chunk_size,
                 type);
+            // push this record within our buffer TODO
         });
         src += chunk_size;
         len -= chunk_size;
@@ -367,7 +369,7 @@ Exit:
 }
 
 int buffer_encrypt_record(ptls_buffer_t *buf, size_t rec_start,
-    struct st_ptls_traffic_protection_t *enc)
+    ptls_aead_context_t *aead)
 {
     size_t bodylen = buf->off - rec_start - 5;
     uint8_t *tmpbuf, type = buf->base[rec_start];
@@ -376,10 +378,10 @@ int buffer_encrypt_record(ptls_buffer_t *buf, size_t rec_start,
     
     /* fast path: do in-place encryption if only one record needs to be emitted */
     if (bodylen <= PTLS_MAX_PLAINTEXT_RECORD_SIZE) {
-        size_t overhead = 1 + enc->aead->algo->tag_size;
+        size_t overhead = 1 + aead->algo->tag_size;
         if ((ret = ptls_buffer_reserve(buf, overhead)) != 0)
             return ret;
-        size_t encrypted_len = aead_encrypt(enc,
+        size_t encrypted_len = aead_encrypt(aead,
             buf->base + rec_start + offset,
             buf->base + rec_start + offset, bodylen, type);
         assert(encrypted_len == bodylen + overhead);
@@ -400,7 +402,7 @@ int buffer_encrypt_record(ptls_buffer_t *buf, size_t rec_start,
     buf->off = rec_start;
 
     /* push encrypted records */
-    ret = buffer_push_encrypted_records(buf, type, tmpbuf, bodylen, enc);
+    ret = buffer_push_encrypted_records(buf, type, tmpbuf, bodylen, aead);
 
 Exit:
     if (tmpbuf != NULL) {
@@ -428,7 +430,7 @@ static int commit_record_message(ptls_message_emitter_t *_self)
     int ret;
 
     if (self->super.enc->aead != NULL) {
-        ret = buffer_encrypt_record(self->super.buf, self->rec_start, self->super.enc);
+        ret = buffer_encrypt_record(self->super.buf, self->rec_start, self->super.enc->aead);
     } else {
         /* TODO allow CH,SH,HRR above 16KB */
         size_t sz = self->super.buf->off - self->rec_start - 5;
@@ -903,7 +905,7 @@ static int setup_traffic_protection(ptls_t *tls, int is_enc, const char
     if ((ctx->aead = ptls_aead_new(tls->cipher_suite->aead, tls->cipher_suite->hash, is_enc, ctx->secret,
                                    tls->ctx->hkdf_label_prefix__obsolete)) == NULL)
         return PTLS_ERROR_NO_MEMORY; /* TODO obtain error from ptls_aead_new */
-    ctx->seq = 0;
+    ctx->aead->seq = 0;
 
     log_secret(tls, log_labels[ptls_is_server(tls) == is_enc][epoch],
                ptls_iovec_init(ctx->secret, tls->key_schedule->hashes[0].algo->digest_size));
@@ -4387,7 +4389,7 @@ static int handle_input(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_buffe
             return PTLS_ALERT_HANDSHAKE_FAILURE;
         if ((ret = ptls_buffer_reserve(decryptbuf, offset + rec.length)) != 0)
             return ret;
-        if ((ret = aead_decrypt(&tls->traffic_protection.dec, rec.seq, decryptbuf->base +
+        if ((ret = aead_decrypt(tls->traffic_protection.dec.aead, decryptbuf->base +
                 decryptbuf->off, &decrypted_length, rec.fragment, rec.length))
             != 0) {
             if (tls->is_server && tls->server.early_data_skipped_bytes != UINT32_MAX)
@@ -4595,8 +4597,7 @@ int ptls_send(ptls_t *tls, ptls_buffer_t *sendbuf, const void *input, size_t inl
      * Note: using our extended record design with internal seq numbers, the
      * space halved between client and server 
      */
-    if ((!ptls_is_server(tls) && tls->traffic_protection.enc.seq >= 16777216) ||
-        tls->traffic_protection.enc.seq >= (uint64_t)9223372036871553023U)
+    if (tls->traffic_protection.enc.aead->seq >= 16777216)
         tls->needs_key_update = 1;
 
     if (tls->needs_key_update) {
@@ -4608,7 +4609,7 @@ int ptls_send(ptls_t *tls, ptls_buffer_t *sendbuf, const void *input, size_t inl
     }
 
     return buffer_push_encrypted_records(sendbuf, PTLS_CONTENT_TYPE_APPDATA,
-        input, inlen, &tls->traffic_protection.enc);
+        input, inlen, tls->traffic_protection.enc.aead);
 }
 
 
@@ -4635,7 +4636,7 @@ int ptls_send_alert(ptls_t *tls, ptls_buffer_t *sendbuf, uint8_t level, uint8_t 
         ptls_buffer_push(sendbuf, level, description); });
     /* encrypt the alert if we have the encryption keys, unless when it is the early data key */
     if (tls->traffic_protection.enc.aead != NULL && !(tls->state <= PTLS_STATE_CLIENT_EXPECT_FINISHED)) {
-        if ((ret = buffer_encrypt_record(sendbuf, rec_start, &tls->traffic_protection.enc)) != 0)
+        if ((ret = buffer_encrypt_record(sendbuf, rec_start, tls->traffic_protection.enc.aead)) != 0)
             goto Exit;
     }
 

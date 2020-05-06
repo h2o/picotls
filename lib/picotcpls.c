@@ -253,15 +253,10 @@ int tcpls_connect(void *tls_info) {
 ssize_t tcpls_send(void *tls_info, const void *input, size_t nbytes) {
   tcpls_t *tcpls = (tcpls_t *) tls_info;
   int ret;
-  int is_failover_enabled = 0;
+  /*int is_failover_enabled = 0;*/
   /** Check the state of connections first */
   //TODO
   ret = ptls_send(tcpls->tls, tcpls->sendbuf, input, nbytes);
-  
-  if (is_failover_enabled) {
-    //TODO
-  }
-  
 
   switch (ret) {
     /** Error in encryption -- TODO document the possibilties */
@@ -274,6 +269,10 @@ ssize_t tcpls_send(void *tls_info, const void *input, size_t nbytes) {
     if (errno == ECONNRESET) {
       /** We might still have data in the socket, and we don't how much the
        * server read */
+      //TODO send the last unacked records from streamid x the buffer
+      //over the secondary path
+    
+      errno = 0; // reset after the problem is resolved =)
     }
     else if (errno == EPIPE) {
       /** Normal close (FIN) then RST */
@@ -296,7 +295,7 @@ int ptls_send_tcpoption(ptls_t *tls, ptls_buffer_t *sendbuf, tcpls_enum_t type)
   if(tls->traffic_protection.enc.aead == NULL)
     return -1;
   
-  if ((!ptls_is_server(tls) && tls->traffic_protection.enc.seq >= 16777216))
+  if (tls->traffic_protection.enc.aead->seq >= 16777216)
     tls->needs_key_update = 1;
 
   if (tls->needs_key_update) {
@@ -329,7 +328,7 @@ int ptls_send_tcpoption(ptls_t *tls, ptls_buffer_t *sendbuf, tcpls_enum_t type)
     memcpy(input+sizeof(option->type)+4, option->data->base, option->data->len);
     return buffer_push_encrypted_records(sendbuf,
         PTLS_CONTENT_TYPE_TCPLS_OPTION, input,
-        option->data->len+sizeof(option->type)+4, &tls->traffic_protection.enc);
+        option->data->len+sizeof(option->type)+4, tls->traffic_protection.enc.aead);
   }
   else {
     uint8_t input[option->data->len + sizeof(option->type)];
@@ -338,7 +337,7 @@ int ptls_send_tcpoption(ptls_t *tls, ptls_buffer_t *sendbuf, tcpls_enum_t type)
 
     return buffer_push_encrypted_records(sendbuf,
         PTLS_CONTENT_TYPE_TCPLS_OPTION, input,
-        option->data->len+sizeof(option->type), &tls->traffic_protection.enc);
+        option->data->len+sizeof(option->type), tls->traffic_protection.enc.aead);
   }
 }
 
@@ -572,12 +571,12 @@ int tcpls_sends_failover_signal(tcpls_t *tcpls, ptls_buffer_t *sendbuf) {
   uint8_t input[TCPLS_SIGNAL_SIZE];
   tcpls_enum_t f_signal = FAILOVER_SIGNAL;
   memcpy(input, &f_signal, sizeof(f_signal));
-  memcpy(input+sizeof(f_signal), &tcpls->tls->traffic_protection.enc.seq,
-      sizeof(tcpls->tls->traffic_protection.enc.seq));
+  memcpy(input+sizeof(f_signal), &tcpls->tls->traffic_protection.enc.aead->seq,
+      sizeof(tcpls->tls->traffic_protection.enc.aead->seq));
   /** Synchronization problem in sequence number ! */
   return buffer_push_encrypted_records(sendbuf,
       PTLS_CONTENT_TYPE_TCPLS_OPTION, input,
-      TCPLS_SIGNAL_SIZE, &tcpls->tls->traffic_protection.enc);
+      TCPLS_SIGNAL_SIZE, tcpls->tls->traffic_protection.enc.aead);
 }
 
 

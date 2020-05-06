@@ -10,4 +10,5 @@ typedef struct st_tcpls_t tcpls_t;
 typedef struct st_ptls_context_t ptls_context_t;
 typedef struct st_ptls_iovec_t ptls_iovec_t;
 typedef struct st_ptls_buffer_t ptls_buffer_t;
+typedef struct st_ptls_aead_context_t ptls_aead_context_t;
 #endif
