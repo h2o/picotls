@@ -362,8 +362,8 @@ static inline void storen(void *_p, size_t l, __m128i v)
         p[i] = buf[i];
 }
 
-static inline void finish_gcm(ptls_fusion_aesgcm_context_t *ctx, __m128i *dst, const __m128i *dst_ghash, const __m128i *aad, size_t aadlen,
-                       __m128i ghash, __m128i ac, __m128i ek0)
+static inline void finish_gcm(ptls_fusion_aesgcm_context_t *ctx, __m128i *dst, const __m128i *dst_ghash, const __m128i *aad,
+                              size_t aadlen, __m128i ghash, __m128i ac, __m128i ek0)
 {
     const __m128i *enc = dst_ghash;
     size_t enclen = (const uint8_t *)dst - (const uint8_t *)enc;
