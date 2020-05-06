@@ -48,6 +48,10 @@ static const uint64_t poly_[2] __attribute__((aligned(16))) = {1, 0xc20000000000
 #define poly (*(__m128i *)poly_)
 static const uint8_t bswap8_[16] __attribute__((aligned(16))) = {15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0};
 #define bswap8 (*(__m128i *)bswap8_)
+static const uint8_t bswap64_[16] __attribute__((aligned(16))) = {7, 6, 5, 4, 3, 2, 1, 0, 15, 14, 13, 12, 11, 10, 9, 8};
+#define bswap64 (*(__m128i *)bswap64_)
+static const uint8_t one64_[16] __attribute__((aligned(16))) = {0, 0, 0, 0, 0, 0, 0, 0, 1};
+#define one64 (*(__m128i *)one64_)
 
 // This function is covered by the Apache License and the MIT License. See Above.
 static __m128i transformH(__m128i H)
@@ -400,7 +404,6 @@ static inline void finish_gcm(ptls_fusion_aesgcm_context_t *ctx, __m128i *dst, c
                     goto GHASH6;
             }
         }
-        __m128i bswap64 = _mm_set_epi8(8, 9, 10, 11, 12, 13, 14, 15, 0, 1, 2, 3, 4, 5, 6, 7);
         gdata[gdata_index++] = _mm_shuffle_epi8(ac, bswap64);
         break;
 
@@ -418,7 +421,6 @@ static inline void finish_gcm(ptls_fusion_aesgcm_context_t *ctx, __m128i *dst, c
 void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, const void *iv, const void *_aad, size_t aadlen, void *_dst,
                                 const void *_src, size_t srclen)
 {
-    __m128i bswap64 = _mm_set_epi8(8, 9, 10, 11, 12, 13, 14, 15, 0, 1, 2, 3, 4, 5, 6, 7), one = _mm_set_epi32(0, 1, 0, 0);
     __m128i ctr, ek0, bits[6], gdatabuf[6], ghash = _mm_setzero_si128();
     int ek0_encrypted = 0;
     __m128i ac = _mm_set_epi32(0, (int)srclen * 8, 0, (int)aadlen * 8);
@@ -432,18 +434,18 @@ void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, const void *i
     /* build counter */
     ctr = loadn(iv, PTLS_AESGCM_IV_SIZE);
     ctr = _mm_shuffle_epi8(ctr, bswap8);
-    ctr = _mm_add_epi64(ctr, one);
+    ctr = _mm_add_epi64(ctr, one64);
     ek0 = _mm_shuffle_epi8(ctr, bswap64);
 
 /* setup the counters (we can always run in full), but use the last slot for calculating ek0, if possible */
 #define SETUP_BITS()                                                                                                               \
     do {                                                                                                                           \
         for (int i = 0; i < 5; ++i) {                                                                                              \
-            ctr = _mm_add_epi64(ctr, one);                                                                                         \
+            ctr = _mm_add_epi64(ctr, one64);                                                                                       \
             bits[i] = _mm_shuffle_epi8(ctr, bswap64);                                                                              \
         }                                                                                                                          \
         if (PTLS_LIKELY(srclen > 16 * 5)) {                                                                                        \
-            ctr = _mm_add_epi64(ctr, one);                                                                                         \
+            ctr = _mm_add_epi64(ctr, one64);                                                                                       \
             bits[5] = _mm_shuffle_epi8(ctr, bswap64);                                                                              \
         } else {                                                                                                                   \
             assert(!ek0_encrypted);                                                                                                \
