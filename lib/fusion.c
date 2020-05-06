@@ -374,7 +374,7 @@ static inline void finish_gcm(ptls_fusion_aesgcm_context_t *ctx, __m128i *dst, c
         gdata_index = 0;
         if (aadlen != 0) {
             while (aadlen >= 16) {
-                gdata[gdata_index++] = *aad++;
+                gdata[gdata_index++] = _mm_loadu_si128(aad++);
                 aadlen -= 16;
                 if (gdata_index == 6)
                     goto GHASH6;
@@ -388,7 +388,7 @@ static inline void finish_gcm(ptls_fusion_aesgcm_context_t *ctx, __m128i *dst, c
         }
         if (enclen != 0) {
             while (enclen >= 16) {
-                gdata[gdata_index++] = *enc++;
+                gdata[gdata_index++] = _mm_loadu_si128(enc++);
                 enclen -= 16;
                 if (gdata_index == 6)
                     goto GHASH6;
@@ -481,7 +481,7 @@ void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, const void *i
                         aadlen = 0;
                     }
                     while (i < 6)
-                        gdatabuf[i++] = *dst_ghash++;
+                        gdatabuf[i++] = _mm_loadu_si128(dst_ghash++);
                     break;
                 }
                 gdatabuf[i++] = _mm_loadu_si128(aad++);
