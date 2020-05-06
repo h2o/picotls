@@ -773,6 +773,7 @@ typedef struct st_ptls_log_event_t {
      * options
      */
     unsigned tcpls_options_confirmed : 1;
+    
     /**
      * Socket on which eventually applies local and received tcpls_options
      */
@@ -946,6 +947,7 @@ typedef struct st_ptls_log_event_t {
       uint16_t version;
       size_t length;
       const uint8_t *fragment;
+      uint64_t seq;
   };
 
   struct st_ptls_client_hello_psk_t {

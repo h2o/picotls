@@ -296,7 +296,7 @@ int ptls_send_tcpoption(ptls_t *tls, ptls_buffer_t *sendbuf, tcpls_enum_t type)
   if(tls->traffic_protection.enc.aead == NULL)
     return -1;
   
-  if (tls->traffic_protection.enc.seq >= 16777216)
+  if ((!ptls_is_server(tls) && tls->traffic_protection.enc.seq >= 16777216))
     tls->needs_key_update = 1;
 
   if (tls->needs_key_update) {

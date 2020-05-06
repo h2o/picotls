@@ -282,7 +282,8 @@ Exit:
 
 #if PTLS_FUZZ_HANDSHAKE
 
-static size_t aead_encrypt(struct st_ptls_traffic_protection_t *ctx, void *output, const void *input, size_t inlen,
+static size_t aead_encrypt(struct st_ptls_traffic_protection_t *ctx,
+    void *output, const void *input, size_t inlen,
                            uint8_t content_type)
 {
     memcpy(output, input, inlen);
@@ -311,12 +312,13 @@ static void build_aad(uint8_t aad[5], size_t reclen)
     aad[4] = (uint8_t)reclen;
 }
 
-static size_t aead_encrypt(struct st_ptls_traffic_protection_t *ctx, void *output, const void *input, size_t inlen,
-                           uint8_t content_type)
+static size_t aead_encrypt(struct st_ptls_traffic_protection_t *ctx, void
+    *output, const void *input, size_t inlen, uint8_t content_type)
 {
-    uint8_t aad[5];
     size_t off = 0;
+    int aad_length = 5;
 
+    uint8_t aad[aad_length];
     build_aad(aad, inlen + 1 + ctx->aead->algo->tag_size);
     ptls_aead_encrypt_init(ctx->aead, ctx->seq++, aad, sizeof(aad));
     off += ptls_aead_encrypt_update(ctx->aead, ((uint8_t *)output) + off, input, inlen);
@@ -326,8 +328,8 @@ static size_t aead_encrypt(struct st_ptls_traffic_protection_t *ctx, void *outpu
     return off;
 }
 
-static int aead_decrypt(struct st_ptls_traffic_protection_t *ctx, void *output,
-    size_t *outlen, const void *input, size_t inlen)
+static int aead_decrypt(struct st_ptls_traffic_protection_t *ctx, uint64_t seq,
+    void *output, size_t *outlen, const void *input, size_t inlen)
 {
     uint8_t aad[5];
 
@@ -341,11 +343,11 @@ static int aead_decrypt(struct st_ptls_traffic_protection_t *ctx, void *output,
 #endif /* #if PTLS_FUZZ_HANDSHAKE */
 
 
-int buffer_push_encrypted_records(ptls_buffer_t *buf, uint8_t type, const uint8_t *src, size_t len,
-                                         struct st_ptls_traffic_protection_t *enc)
+int buffer_push_encrypted_records(ptls_buffer_t *buf, uint8_t type,
+    const uint8_t *src, size_t len, struct st_ptls_traffic_protection_t *enc)
 {
     int ret = 0;
-
+    
     while (len != 0) {
         size_t chunk_size = len;
         if (chunk_size > PTLS_MAX_PLAINTEXT_RECORD_SIZE)
@@ -353,7 +355,8 @@ int buffer_push_encrypted_records(ptls_buffer_t *buf, uint8_t type, const uint8_
         buffer_push_record(buf, PTLS_CONTENT_TYPE_APPDATA, {
             if ((ret = ptls_buffer_reserve(buf, chunk_size + enc->aead->algo->tag_size + 1)) != 0)
                 goto Exit;
-            buf->off += aead_encrypt(enc, buf->base + buf->off, src, chunk_size, type);
+            buf->off += aead_encrypt(enc, buf->base + buf->off, src, chunk_size,
+                type);
         });
         src += chunk_size;
         len -= chunk_size;
@@ -363,19 +366,22 @@ Exit:
     return ret;
 }
 
-int buffer_encrypt_record(ptls_buffer_t *buf, size_t rec_start, struct st_ptls_traffic_protection_t *enc)
+int buffer_encrypt_record(ptls_buffer_t *buf, size_t rec_start,
+    struct st_ptls_traffic_protection_t *enc)
 {
     size_t bodylen = buf->off - rec_start - 5;
     uint8_t *tmpbuf, type = buf->base[rec_start];
     int ret;
-
+    int offset = 5;
+    
     /* fast path: do in-place encryption if only one record needs to be emitted */
     if (bodylen <= PTLS_MAX_PLAINTEXT_RECORD_SIZE) {
         size_t overhead = 1 + enc->aead->algo->tag_size;
         if ((ret = ptls_buffer_reserve(buf, overhead)) != 0)
             return ret;
-        size_t encrypted_len = aead_encrypt(enc, buf->base + rec_start + 5,
-            buf->base + rec_start + 5, bodylen, type);
+        size_t encrypted_len = aead_encrypt(enc,
+            buf->base + rec_start + offset,
+            buf->base + rec_start + offset, bodylen, type);
         assert(encrypted_len == bodylen + overhead);
         buf->off += overhead;
         buf->base[rec_start] = PTLS_CONTENT_TYPE_APPDATA;
@@ -389,8 +395,8 @@ int buffer_encrypt_record(ptls_buffer_t *buf, size_t rec_start, struct st_ptls_t
         ret = PTLS_ERROR_NO_MEMORY;
         goto Exit;
     }
-    memcpy(tmpbuf, buf->base + rec_start + 5, bodylen);
-    ptls_clear_memory(buf->base + rec_start, bodylen + 5);
+    memcpy(tmpbuf, buf->base + rec_start + offset, bodylen);
+    ptls_clear_memory(buf->base + rec_start, bodylen + offset);
     buf->off = rec_start;
 
     /* push encrypted records */
@@ -868,12 +874,14 @@ static int get_traffic_key(ptls_hash_algorithm_t *algo, void *key, size_t key_si
                                   label_prefix);
 }
 
-static int setup_traffic_protection(ptls_t *tls, int is_enc, const char *secret_label, size_t epoch, int skip_notify)
+static int setup_traffic_protection(ptls_t *tls, int is_enc, const char
+    *secret_label, size_t epoch, int skip_notify)
 {
     static const char *log_labels[2][4] = {
         {NULL, "CLIENT_EARLY_TRAFFIC_SECRET", "CLIENT_HANDSHAKE_TRAFFIC_SECRET", "CLIENT_TRAFFIC_SECRET_0"},
         {NULL, NULL, "SERVER_HANDSHAKE_TRAFFIC_SECRET", "SERVER_TRAFFIC_SECRET_0"}};
-    struct st_ptls_traffic_protection_t *ctx = is_enc ? &tls->traffic_protection.enc : &tls->traffic_protection.dec;
+    struct st_ptls_traffic_protection_t *ctx = is_enc ?
+      &tls->traffic_protection.enc : &tls->traffic_protection.dec;
 
     if (secret_label != NULL) {
         int ret;
@@ -3861,7 +3869,6 @@ static int parse_record_header(struct st_ptls_record_t *rec, const uint8_t *src)
     rec->type = src[0];
     rec->version = ntoh16(src + 1);
     rec->length = ntoh16(src + 3);
-
     if (rec->length >
         (size_t)(rec->type == PTLS_CONTENT_TYPE_APPDATA ? PTLS_MAX_ENCRYPTED_RECORD_SIZE : PTLS_MAX_PLAINTEXT_RECORD_SIZE))
         return PTLS_ALERT_DECODE_ERROR;
@@ -3873,16 +3880,16 @@ static int parse_record(ptls_t *tls, struct st_ptls_record_t *rec, const uint8_t
     *src, size_t *len)
 {
     int ret;
-
-    if (tls->recvbuf.rec.base == NULL && *len >= 5) {
-        /* fast path */
-        if ((ret = parse_record_header(rec, src)) != 0)
-            return ret;
-        if (5 + rec->length <= *len) {
-            rec->fragment = src + 5;
-            *len = rec->length + 5;
-            return 0;
-        }
+    int offset = 5;
+    if (tls->recvbuf.rec.base == NULL && *len >= offset) {
+      /* fast path */
+      if ((ret = parse_record_header(rec, src)) != 0)
+          return ret;
+      if (offset + rec->length <= *len) {
+        rec->fragment = src + offset;
+        *len = rec->length + offset;
+        return 0;
+      }
     }
 
     /* slow path */
@@ -3891,12 +3898,12 @@ static int parse_record(ptls_t *tls, struct st_ptls_record_t *rec, const uint8_t
 
     if (tls->recvbuf.rec.base == NULL) {
         ptls_buffer_init(&tls->recvbuf.rec, "", 0);
-        if ((ret = ptls_buffer_reserve(&tls->recvbuf.rec, 5)) != 0)
+        if ((ret = ptls_buffer_reserve(&tls->recvbuf.rec, offset)) != 0)
             return ret;
     }
 
     /* fill and parse the header */
-    while (tls->recvbuf.rec.off < 5) {
+    while (tls->recvbuf.rec.off < offset) {
         if (src == end)
             return PTLS_ERROR_IN_PROGRESS;
         tls->recvbuf.rec.base[tls->recvbuf.rec.off++] = *src++;
@@ -3905,7 +3912,7 @@ static int parse_record(ptls_t *tls, struct st_ptls_record_t *rec, const uint8_t
         return ret;
 
     /* fill the fragment */
-    size_t addlen = rec->length + 5 - tls->recvbuf.rec.off;
+    size_t addlen = rec->length + offset - tls->recvbuf.rec.off;
     if (addlen != 0) {
         if ((ret = ptls_buffer_reserve(&tls->recvbuf.rec, addlen)) != 0)
             return ret;
@@ -3919,8 +3926,8 @@ static int parse_record(ptls_t *tls, struct st_ptls_record_t *rec, const uint8_t
     }
 
     /* set rec->fragment if a complete record has been parsed */
-    if (tls->recvbuf.rec.off == rec->length + 5) {
-        rec->fragment = tls->recvbuf.rec.base + 5;
+    if (tls->recvbuf.rec.off == rec->length + offset) {
+        rec->fragment = tls->recvbuf.rec.base + offset;
         ret = 0;
     } else {
         ret = PTLS_ERROR_IN_PROGRESS;
@@ -4355,6 +4362,7 @@ static int handle_input(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_buffe
 {
     struct st_ptls_record_t rec;
     int ret;
+    int offset = 5;
 
     /* extract the record */
     if ((ret = parse_record(tls, &rec, input, inlen)) != 0)
@@ -4377,9 +4385,9 @@ static int handle_input(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_buffe
         /** For middlebox compatibility */
         if (rec.type != PTLS_CONTENT_TYPE_APPDATA)
             return PTLS_ALERT_HANDSHAKE_FAILURE;
-        if ((ret = ptls_buffer_reserve(decryptbuf, 5 + rec.length)) != 0)
+        if ((ret = ptls_buffer_reserve(decryptbuf, offset + rec.length)) != 0)
             return ret;
-        if ((ret = aead_decrypt(&tls->traffic_protection.dec, decryptbuf->base +
+        if ((ret = aead_decrypt(&tls->traffic_protection.dec, rec.seq, decryptbuf->base +
                 decryptbuf->off, &decrypted_length, rec.fragment, rec.length))
             != 0) {
             if (tls->is_server && tls->server.early_data_skipped_bytes != UINT32_MAX)
@@ -4450,10 +4458,14 @@ ServerSkipEarlyData:
     goto NextRecord;
 }
 
-static void init_record_message_emitter(ptls_t *tls, struct st_ptls_record_message_emitter_t *emitter, ptls_buffer_t *sendbuf)
+static void init_record_message_emitter(ptls_t *tls, struct
+    st_ptls_record_message_emitter_t *emitter, ptls_buffer_t *sendbuf)
 {
+    int record_header_length;
+    record_header_length = 5;
     *emitter = (struct st_ptls_record_message_emitter_t){
-        {sendbuf, &tls->traffic_protection.enc, 5, begin_record_message, commit_record_message}};
+        {sendbuf, &tls->traffic_protection.enc, record_header_length,
+          begin_record_message, commit_record_message}};
 }
 
 int ptls_handshake(ptls_t *tls, ptls_buffer_t *_sendbuf, const void *input, size_t *inlen, ptls_handshake_properties_t *properties)
@@ -4578,7 +4590,13 @@ int ptls_send(ptls_t *tls, ptls_buffer_t *sendbuf, const void *input, size_t inl
     /* "For AES-GCM, up to 2^24.5 full-size records (about 24 million) may be encrypted on a given connection while keeping a
      * safety margin of approximately 2^-57 for Authenticated Encryption (AE) security." (RFC 8446 section 5.5)
      */
-    if (tls->traffic_protection.enc.seq >= 16777216)
+
+    /**
+     * Note: using our extended record design with internal seq numbers, the
+     * space halved between client and server 
+     */
+    if ((!ptls_is_server(tls) && tls->traffic_protection.enc.seq >= 16777216) ||
+        tls->traffic_protection.enc.seq >= (uint64_t)9223372036871553023U)
         tls->needs_key_update = 1;
 
     if (tls->needs_key_update) {
@@ -4878,8 +4896,9 @@ Exit:
     return ctx;
 }
 
-ptls_aead_context_t *ptls_aead_new(ptls_aead_algorithm_t *aead, ptls_hash_algorithm_t *hash, int is_enc, const void *secret,
-                                   const char *label_prefix)
+ptls_aead_context_t *ptls_aead_new(ptls_aead_algorithm_t *aead,
+    ptls_hash_algorithm_t *hash, int is_enc, const void *secret, const char
+    *label_prefix)
 {
     return new_aead(aead, hash, is_enc, secret, ptls_iovec_init(NULL, 0), label_prefix);
 }
@@ -5035,7 +5054,7 @@ int ptls_client_handle_message(ptls_t *tls, ptls_buffer_t *sendbuf, size_t epoch
 
     struct st_ptls_raw_message_emitter_t emitter = {
         {sendbuf, &tls->traffic_protection.enc, 0, begin_raw_message, commit_raw_message}, SIZE_MAX, epoch_offsets};
-    struct st_ptls_record_t rec = {PTLS_CONTENT_TYPE_HANDSHAKE, 0, inlen, input};
+    struct st_ptls_record_t rec = {PTLS_CONTENT_TYPE_HANDSHAKE, 0, inlen, input, 0};
 
     if (input == NULL)
         return send_client_hello(tls, &emitter.super, properties, NULL);
@@ -5053,7 +5072,7 @@ int ptls_server_handle_message(ptls_t *tls, ptls_buffer_t *sendbuf, size_t epoch
 
     struct st_ptls_raw_message_emitter_t emitter = {
         {sendbuf, &tls->traffic_protection.enc, 0, begin_raw_message, commit_raw_message}, SIZE_MAX, epoch_offsets};
-    struct st_ptls_record_t rec = {PTLS_CONTENT_TYPE_HANDSHAKE, 0, inlen, input};
+    struct st_ptls_record_t rec = {PTLS_CONTENT_TYPE_HANDSHAKE, 0, inlen, input, 0};
 
     assert(input);
 
