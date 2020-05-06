@@ -409,12 +409,7 @@ static inline void finish_gcm(ptls_fusion_aesgcm_context_t *ctx, __m128i *dst, c
     }
 
     /* final */
-#if 0
-    for (int i = 0; i < gdata_index; ++i)
-        ghash = gfmul(_mm_xor_si128(ghash, _mm_shuffle_epi8(gdata[i], bswap8)), ctx->ghash[0].H);
-#else
     ghash = ghashn(ctx, gdata, gdata_index, ghash);
-#endif
     __m128i tag = _mm_shuffle_epi8(ghash, bswap8);
     tag = _mm_xor_si128(tag, ek0);
     _mm_storeu_si128(dst, tag);
