@@ -392,6 +392,7 @@ extern "C" {
     const struct st_ptls_aead_algorithm_t *algo;
     uint8_t static_iv[PTLS_MAX_IV_SIZE];
     uint64_t seq;
+    tcpls_stream_t *stream;
     /* field above this line must not be altered by the crypto binding */
     void (*dispose_crypto)(struct st_ptls_aead_context_t *ctx);
     void (*do_encrypt_init)(struct st_ptls_aead_context_t *ctx, const void *iv, const void *aad, size_t aadlen);

@@ -55,9 +55,32 @@ static int setlocal_bpf_sched(ptls_t *ptls, tcpls_options_t *option);
 
 static void _set_primary(tcpls_t *tcpls);
 
+/*static int setup_new_stream(tcpls_t *tcpls);*/
+
 void *tcpls_new(void *ctx, int is_server) {
   ptls_context_t *ptls_ctx = (ptls_context_t *) ctx;
-  return is_server? ptls_server_new(ptls_ctx) : ptls_client_new(ptls_ctx);
+  ptls_t *tls;
+  uint8_t *smallsendbuf = malloc(256*sizeof(uint8_t));
+  if (smallsendbuf == NULL)
+    return NULL;
+  uint8_t *smallrecvbuf = malloc(256*sizeof(uint8_t));
+  if (smallrecvbuf)
+    return NULL;
+  if (is_server)
+    tls = ptls_server_new(ptls_ctx);
+  else
+    tls = ptls_client_new(ptls_ctx);
+  tcpls_t *tcpls  = malloc(sizeof(*tcpls));
+  if (tcpls == NULL)
+    return NULL;
+  // init tcpls stuffs
+  tcpls->tls = tls;
+  ptls_buffer_init(tcpls->sendbuf, smallsendbuf, sizeof(smallsendbuf));
+  ptls_buffer_init(tcpls->recvbuf, smallrecvbuf, sizeof(smallrecvbuf));
+  tcpls->socket_ptr = NULL;
+  tcpls->v4_addr_llist = NULL;
+  tcpls->v6_addr_llist = NULL;
+  return tcpls;
 }
 
 
@@ -240,6 +263,15 @@ int tcpls_connect(void *tls_info) {
   return 0;
 }
 
+
+/** Create and attach a new stream to the main address if no addr
+ * is provided; else attach to addr if we hae a connection open to it  
+ */
+
+streamid_t tcpls_stream_new(void *tls_info, struct sockaddr *addr) {
+  return 0;
+}
+
  /**
  * Encrypts and sends input towards the primary path if available; else sends
  * towards the fallback path if the option is activated.
@@ -254,7 +286,9 @@ ssize_t tcpls_send(void *tls_info, const void *input, size_t nbytes) {
   tcpls_t *tcpls = (tcpls_t *) tls_info;
   int ret;
   /*int is_failover_enabled = 0;*/
-  /** Check the state of connections first */
+  /** Check the state of connections first do we have our primary connected tcp? */
+  
+
   //TODO
   ret = ptls_send(tcpls->tls, tcpls->sendbuf, input, nbytes);
 
@@ -646,7 +680,7 @@ static void _set_primary(tcpls_t *tcpls) {
       case 0:
       case 1: primary_v6->is_primary = 1;
               tcpls->socket_ptr = &primary_v6->socket; break;
-      default: primary_v6->is_primary = 1; 
+      default: primary_v6->is_primary = 1;
                tcpls->socket_ptr = &primary_v6->socket; break;
     }
   } else if (primary_v4) {
@@ -672,4 +706,9 @@ void ptls_tcpls_options_free(ptls_t *ptls) {
   }
   free(ptls->tcpls_options);
   ptls->tcpls_options = NULL;
+}
+
+/** TODO */
+
+void tcpls_free(void *tls_info) {
 }

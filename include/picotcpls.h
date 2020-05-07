@@ -7,6 +7,13 @@
 #define NBR_SUPPORTED_TCPLS_OPTIONS 5
 #define VARSIZE_OPTION_MAX_CHUNK_SIZE 4*16384 /* should be able to hold 4 record before needing to be extended */
 
+/*
+ * When adding a new stream, we increase the low IV part by 4096 to avoid any
+ * chance (Note, when deriving server_write_iv and client_write_iv; we also
+ * require to check whether the distance between them is at list
+ * 4096*nbr_max_streams
+ */
+#define MIN_LOWIV_STREAM_INCREASE 4096
 
 #define TCPLS_SIGNAL_SIZE 12
 
@@ -53,12 +60,13 @@ typedef struct st_tcpls_v6_addr_t {
 
 typedef struct st_tcpls_stream {
   tcpls_record_fifo_t *queue;
-  uint32_t streamid;
+  streamid_t streamid;
+  /** Buffer for potentially lost records in case of failover, loss of
+   * connection, etc */
+  tcpls_record_fifo_t *buf;
   /** Attached to v4_addr or a v6_addr; */
   tcpls_v4_addr_t *v4_addr;
   tcpls_v6_addr_t *v6_addr;
-  /** TODO has a crypto context */
-  ptls_aead_context_t *aead;
 } tcpls_stream_t;
 
 
@@ -93,6 +101,8 @@ int tcpls_add_v4(void *tls_info, struct sockaddr_in *addr, int is_primary);
 
 int tcpls_add_v6(void *tls_info, struct sockaddr_in6 *addr, int is_primary);
 
+uint32_t tcpls_stream_new(void *tls_info, struct sockaddr *addr);
+
 ssize_t tcpls_send(void *tls_info, const void *input, size_t nbytes);
 
 ssize_t tcpls_receive(void *tls_info, const void *input, size_t nbytes);
@@ -106,6 +116,8 @@ int ptls_set_bpf_scheduler(ptls_t *ptls, const uint8_t *bpf_prog_bytecode,
     size_t bytecodelen, int setlocal, int settopeer);
 
 int ptls_send_tcpoption(ptls_t *tls, ptls_buffer_t *sendbuf, tcpls_enum_t type);
+
+void tcpls_free(void *tls_info);
 
 /*============================================================================*/
 /** Internal to picotls */
