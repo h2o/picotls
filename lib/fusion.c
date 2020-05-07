@@ -115,38 +115,38 @@ static __m128i gfmul(__m128i x, __m128i y)
     return _mm_xor_si128(hi, lo);
 }
 
-#define AESECB6_INIT() \
-    __m128i aes0, aes1, aes2, aes3, aes4, aes5; \
-    do { \
-        __m128i k = ctx->keys[0]; \
-        aes0 = _mm_xor_si128(data[0], k); \
-        aes1 = _mm_xor_si128(data[1], k); \
-        aes2 = _mm_xor_si128(data[2], k); \
-        aes3 = _mm_xor_si128(data[3], k); \
-        aes4 = _mm_xor_si128(data[4], k); \
-        aes5 = _mm_xor_si128(data[5], k); \
+#define AESECB6_INIT()                                                                                                             \
+    __m128i aes0, aes1, aes2, aes3, aes4, aes5;                                                                                    \
+    do {                                                                                                                           \
+        __m128i k = ctx->keys[0];                                                                                                  \
+        aes0 = _mm_xor_si128(data[0], k);                                                                                          \
+        aes1 = _mm_xor_si128(data[1], k);                                                                                          \
+        aes2 = _mm_xor_si128(data[2], k);                                                                                          \
+        aes3 = _mm_xor_si128(data[3], k);                                                                                          \
+        aes4 = _mm_xor_si128(data[4], k);                                                                                          \
+        aes5 = _mm_xor_si128(data[5], k);                                                                                          \
     } while (0)
 
-#define AESECB6_UPDATE(i) \
-    do { \
-        __m128i k = ctx->keys[i];                                                                                                       \
-        aes0 = _mm_aesenc_si128(aes0, k);                                                                                       \
-        aes1 = _mm_aesenc_si128(aes1, k);                                                                                       \
-        aes2 = _mm_aesenc_si128(aes2, k);                                                                                       \
-        aes3 = _mm_aesenc_si128(aes3, k);                                                                                       \
-        aes4 = _mm_aesenc_si128(aes4, k);                                                                                       \
-        aes5 = _mm_aesenc_si128(aes5, k);                                                                                       \
+#define AESECB6_UPDATE(i)                                                                                                          \
+    do {                                                                                                                           \
+        __m128i k = ctx->keys[i];                                                                                                  \
+        aes0 = _mm_aesenc_si128(aes0, k);                                                                                          \
+        aes1 = _mm_aesenc_si128(aes1, k);                                                                                          \
+        aes2 = _mm_aesenc_si128(aes2, k);                                                                                          \
+        aes3 = _mm_aesenc_si128(aes3, k);                                                                                          \
+        aes4 = _mm_aesenc_si128(aes4, k);                                                                                          \
+        aes5 = _mm_aesenc_si128(aes5, k);                                                                                          \
     } while (0)
 
-#define AESECB6_FINAL() \
-    do { \
-        __m128i k = ctx->keys[10];                                                                                                       \
-        data[0] = _mm_aesenclast_si128(aes0, k);                                                                                \
-        data[1] = _mm_aesenclast_si128(aes1, k);                                                                                \
-        data[2] = _mm_aesenclast_si128(aes2, k);                                                                                \
-        data[3] = _mm_aesenclast_si128(aes3, k);                                                                                \
-        data[4] = _mm_aesenclast_si128(aes4, k);                                                                                \
-        data[5] = _mm_aesenclast_si128(aes5, k);                                                                                \
+#define AESECB6_FINAL()                                                                                                            \
+    do {                                                                                                                           \
+        __m128i k = ctx->keys[10];                                                                                                 \
+        data[0] = _mm_aesenclast_si128(aes0, k);                                                                                   \
+        data[1] = _mm_aesenclast_si128(aes1, k);                                                                                   \
+        data[2] = _mm_aesenclast_si128(aes2, k);                                                                                   \
+        data[3] = _mm_aesenclast_si128(aes3, k);                                                                                   \
+        data[4] = _mm_aesenclast_si128(aes4, k);                                                                                   \
+        data[5] = _mm_aesenclast_si128(aes5, k);                                                                                   \
     } while (0)
 
 static inline void aesecb6(ptls_fusion_aesgcm_context_t *ctx, __m128i *data)
@@ -216,7 +216,6 @@ static inline __m128i aesecb6ghash6(ptls_fusion_aesgcm_context_t *ctx, __m128i *
         t = _mm_xor_si128(t, X);
         t = _mm_clmulepi64_si128(ctx->ghash[i].r, t, 0x00);
         mid = _mm_xor_si128(mid, t);
-
     }
 
     AESECB6_UPDATE(6);
@@ -353,17 +352,17 @@ void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, const void *i
 
 /* setup the counters (we can always run in full), but use the last slot for calculating ek0, if possible */
 #define SETUP_BITS()                                                                                                               \
-    do { \
-        ctr = _mm_add_epi64(ctr, one64);                                                                                       \
-        bits[0] = _mm_shuffle_epi8(ctr, bswap64);                                                                              \
-        ctr = _mm_add_epi64(ctr, one64);                                                                                       \
-        bits[1] = _mm_shuffle_epi8(ctr, bswap64);                                                                              \
-        ctr = _mm_add_epi64(ctr, one64);                                                                                       \
-        bits[2] = _mm_shuffle_epi8(ctr, bswap64);                                                                              \
-        ctr = _mm_add_epi64(ctr, one64);                                                                                       \
-        bits[3] = _mm_shuffle_epi8(ctr, bswap64);                                                                              \
-        ctr = _mm_add_epi64(ctr, one64);                                                                                       \
-        bits[4] = _mm_shuffle_epi8(ctr, bswap64);                                                                              \
+    do {                                                                                                                           \
+        ctr = _mm_add_epi64(ctr, one64);                                                                                           \
+        bits[0] = _mm_shuffle_epi8(ctr, bswap64);                                                                                  \
+        ctr = _mm_add_epi64(ctr, one64);                                                                                           \
+        bits[1] = _mm_shuffle_epi8(ctr, bswap64);                                                                                  \
+        ctr = _mm_add_epi64(ctr, one64);                                                                                           \
+        bits[2] = _mm_shuffle_epi8(ctr, bswap64);                                                                                  \
+        ctr = _mm_add_epi64(ctr, one64);                                                                                           \
+        bits[3] = _mm_shuffle_epi8(ctr, bswap64);                                                                                  \
+        ctr = _mm_add_epi64(ctr, one64);                                                                                           \
+        bits[4] = _mm_shuffle_epi8(ctr, bswap64);                                                                                  \
         if (PTLS_LIKELY(srclen > 16 * 5)) {                                                                                        \
             ctr = _mm_add_epi64(ctr, one64);                                                                                       \
             bits[5] = _mm_shuffle_epi8(ctr, bswap64);                                                                              \
