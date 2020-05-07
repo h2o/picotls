@@ -48,7 +48,15 @@ int main(int argc, char **argv)
     {
         static const uint8_t iv[12] = {};
         uint8_t encrypted[sizeof(plaintext) + 16];
-        ptls_fusion_aesgcm_encrypt(&ctx, iv, "hello", 5, encrypted, plaintext, sizeof(plaintext));
+        ptls_fusion_aesgcm_encrypt_vec_t vec = {
+            .iv = iv,
+            .dst = encrypted,
+            .src = plaintext,
+            .srclen = sizeof(plaintext),
+            .aad = "hello",
+            .aadlen = 5,
+        };
+        ptls_fusion_aesgcm_encrypt(&ctx, &vec, 1);
         dump(encrypted, sizeof(encrypted));
     }
 
@@ -105,7 +113,15 @@ int main(int argc, char **argv)
         static const uint8_t iv[12] = {}, aad[13] = {}, text[16384] = {};
         uint8_t encrypted[sizeof(text) + 16];
         for (int i = 0; i < 1000000; ++i) {
-            ptls_fusion_aesgcm_encrypt(&ctx, iv, aad, sizeof(aad), encrypted, text, sizeof(text));
+            ptls_fusion_aesgcm_encrypt_vec_t vec = {
+                .iv = iv,
+                .dst = encrypted,
+                .src = text,
+                .srclen = sizeof(text),
+                .aad = aad,
+                .aadlen = sizeof(aad),
+            };
+            ptls_fusion_aesgcm_encrypt(&ctx, &vec, 1);
             if (i == 0)
                 dump(encrypted + sizeof(text), 16);
         }
