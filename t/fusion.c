@@ -118,13 +118,13 @@ int main(int argc, char **argv)
         }
     }
 #else
-    { /* benchmark */
-        __m128i test[300] = {}, ghash = {};
+    { /* benchmark (using ~16384 bytes block) */
+        __m128i test[171 * 6] = {}, ghash = {};
         __m128i ctr = _mm_setzero_si128();
-        for (int i = 0; i < 300; ++i)
+        for (int i = 0; i < 171 * 6; ++i)
             memcpy(test + i, plaintext, 16);
-        for (int i = 0; i < 5000000; ++i) {
-            for (int j = 0; j < 300;) {
+        for (int i = 0; i < 1000000; ++i) {
+            for (int j = 0; j < 171;) {
                 __m128i bits[6];
                 ctr = _mm_add_epi64(ctr, ONE);
                 bits[0] = _mm_shuffle_epi8(ctr, BSWAP64);
@@ -138,7 +138,7 @@ int main(int argc, char **argv)
                 bits[4] = _mm_shuffle_epi8(ctr, BSWAP64);
                 ctr = _mm_add_epi64(ctr, ONE);
                 bits[5] = _mm_shuffle_epi8(ctr, BSWAP64);
-                ghash = aesecb6ghash6(&ctx, bits, j == 0 ? test + 294 : test + j - 6, ghash);
+                ghash = aesecb6ghash6(&ctx, bits, j == 0 ? test + 171 * 6 - 6 : test + j - 6, ghash);
                 // aesecb4(&ctx, bits);
                 _mm_storeu_si128(test + j, _mm_xor_si128(_mm_loadu_si128(test + j), bits[0]));
                 ++j;
