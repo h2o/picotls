@@ -64,7 +64,7 @@ int main(int argc, char **argv)
             gdata[i] = ecb6[i + 1];
         gdata[5] = _mm_shuffle_epi8(_mm_set_epi32(0, 8 * 16 * 5, 0, 0), BSWAP64);
         __m128i dummy[6] = {}, ghash = {};
-        ghash = aesecb6ghash6(&ctx, dummy, gdata, ghash);
+        ghash = aesecb6ghashn(&ctx, dummy, gdata, 6, ghash);
         ghash = _mm_shuffle_epi8(ghash, bswap8);
         __m128i tag = _mm_xor_si128(ghash, ecb6[0]);
         dump(ecb6 + 1, 16);

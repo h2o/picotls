@@ -196,14 +196,16 @@ static __m128i ghashn(ptls_fusion_aesgcm_context_t *ctx, const __m128i *src, siz
     return ghash;
 }
 
-static inline __m128i aesecb6ghash6(ptls_fusion_aesgcm_context_t *ctx, __m128i *data, const __m128i *gdata, __m128i ghash)
+static inline __m128i aesecb6ghashn(ptls_fusion_aesgcm_context_t *ctx, __m128i *data, const __m128i *gdata, size_t num_gdata,
+                                    __m128i ghash)
 {
     __m128i hi = _mm_setzero_si128(), lo = _mm_setzero_si128(), mid = _mm_setzero_si128(), X, r, t;
+    size_t i = 0;
 
     AESECB6_INIT();
 
-    for (size_t i = 0; i < 5; ++i) {
-
+    --num_gdata;
+    do {
         AESECB6_UPDATE(i + 1);
 
         X = _mm_loadu_si128(gdata + 5 - i);
@@ -216,23 +218,27 @@ static inline __m128i aesecb6ghash6(ptls_fusion_aesgcm_context_t *ctx, __m128i *
         t = _mm_xor_si128(t, X);
         t = _mm_clmulepi64_si128(ctx->ghash[i].r, t, 0x00);
         mid = _mm_xor_si128(mid, t);
-    }
+
+    } while (++i, --num_gdata != 0);
+
+    for (; i < 5; ++i)
+        AESECB6_UPDATE(i + 1);
 
     AESECB6_UPDATE(6);
 
     X = _mm_loadu_si128(gdata + 0);
     X = _mm_shuffle_epi8(X, bswap8);
     X = _mm_xor_si128(X, ghash);
-    t = _mm_clmulepi64_si128(ctx->ghash[5].H, X, 0x00);
+    t = _mm_clmulepi64_si128(ctx->ghash[i].H, X, 0x00);
     lo = _mm_xor_si128(lo, t);
-    t = _mm_clmulepi64_si128(ctx->ghash[5].H, X, 0x11);
+    t = _mm_clmulepi64_si128(ctx->ghash[i].H, X, 0x11);
 
     AESECB6_UPDATE(7);
 
     hi = _mm_xor_si128(hi, t);
     t = _mm_shuffle_epi32(X, 78);
     t = _mm_xor_si128(t, X);
-    t = _mm_clmulepi64_si128(ctx->ghash[5].r, t, 0x00);
+    t = _mm_clmulepi64_si128(ctx->ghash[i].r, t, 0x00);
     mid = _mm_xor_si128(mid, t);
 
     AESECB6_UPDATE(8);
@@ -418,7 +424,7 @@ void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, const void *i
         }
 
         /* doit */
-        ghash = aesecb6ghash6(ctx, bits, gdata, ghash);
+        ghash = aesecb6ghashn(ctx, bits, gdata, 6, ghash);
     }
 
     /* apply the bit stream to the remainder */
