@@ -326,7 +326,7 @@ void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, const void *i
             gdata = gdatabuf;
         }
 
-        /* run AES and multiplification in parallel */
+        /* run AES and multiplication in parallel */
         size_t index = 0;
         for (; index < gdata_cnt; ++index) {
 
@@ -359,11 +359,13 @@ void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, const void *i
         if ((state & STATE_EK0_INCOMPLETE) != 0) {
             ek0 = bits5;
         } else {
-            assert(!"FIXME either finish the AES loop to get the ");
+            /* Even when a zero-byte AAD is being used, AES will be running one 96-byte block ahead of GHASH. That means that the
+             * AES-side would have the room to encrypt ek0 as late as when the GHASH-side is hashing AC. */
+            assert(!"logic flaw");
         }
     }
 
-    /* finish multiplification */
+    /* finish multiplication */
     mid = _mm_xor_si128(mid, hi);
     mid = _mm_xor_si128(mid, lo);
     lo = _mm_xor_si128(lo, _mm_slli_si128(mid, 8));
