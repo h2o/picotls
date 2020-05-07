@@ -202,12 +202,14 @@ static inline __m128i aesecb6ghashn(ptls_fusion_aesgcm_context_t *ctx, __m128i *
     __m128i hi = _mm_setzero_si128(), lo = _mm_setzero_si128(), mid = _mm_setzero_si128(), X, r, t;
     size_t i = 0;
 
+    gdata += num_gdata;
     AESECB6_INIT();
 
     while (--num_gdata != 0) {
+
         AESECB6_UPDATE(i + 1);
 
-        X = _mm_loadu_si128(gdata + 5 - i);
+        X = _mm_loadu_si128(--gdata);
         X = _mm_shuffle_epi8(X, bswap8);
         t = _mm_clmulepi64_si128(ctx->ghash[i].H, X, 0x00);
         lo = _mm_xor_si128(lo, t);
@@ -221,19 +223,16 @@ static inline __m128i aesecb6ghashn(ptls_fusion_aesgcm_context_t *ctx, __m128i *
         ++i;
     }
 
-    for (; i < 5; ++i)
-        AESECB6_UPDATE(i + 1);
+    AESECB6_UPDATE(i + 1);
 
-    AESECB6_UPDATE(6);
-
-    X = _mm_loadu_si128(gdata + 0);
+    X = _mm_loadu_si128(--gdata);
     X = _mm_shuffle_epi8(X, bswap8);
     X = _mm_xor_si128(X, ghash);
     t = _mm_clmulepi64_si128(ctx->ghash[i].H, X, 0x00);
     lo = _mm_xor_si128(lo, t);
     t = _mm_clmulepi64_si128(ctx->ghash[i].H, X, 0x11);
 
-    AESECB6_UPDATE(7);
+    AESECB6_UPDATE(i + 2);
 
     hi = _mm_xor_si128(hi, t);
     t = _mm_shuffle_epi32(X, 78);
@@ -241,7 +240,8 @@ static inline __m128i aesecb6ghashn(ptls_fusion_aesgcm_context_t *ctx, __m128i *
     t = _mm_clmulepi64_si128(ctx->ghash[i].r, t, 0x00);
     mid = _mm_xor_si128(mid, t);
 
-    AESECB6_UPDATE(8);
+    for (i += 3; i <= 8; ++i)
+        AESECB6_UPDATE(i);
 
     mid = _mm_xor_si128(mid, hi);
     mid = _mm_xor_si128(mid, lo);
