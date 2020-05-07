@@ -461,12 +461,63 @@ void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, const void *i
     /* the main loop */
     while (PTLS_LIKELY(srclen >= 6 * 16)) {
         /* apply the bits */
+#if 1
+       {
+           __m128i s0 = _mm_loadu_si128(src + 0);
+           __m128i s1 = _mm_loadu_si128(src + 1);
+           __m128i s2 = _mm_loadu_si128(src + 2);
+           __m128i s3 = _mm_loadu_si128(src + 3);
+           __m128i s4 = _mm_loadu_si128(src + 4);
+           __m128i s5 = _mm_loadu_si128(src + 5);
+          _mm_storeu_si128(dst + 0, _mm_xor_si128(s0, bits[0]));
+          _mm_storeu_si128(dst + 1, _mm_xor_si128(s1, bits[1]));
+          _mm_storeu_si128(dst + 2, _mm_xor_si128(s2, bits[2]));
+          _mm_storeu_si128(dst + 3, _mm_xor_si128(s3, bits[3]));
+          _mm_storeu_si128(dst + 4, _mm_xor_si128(s4, bits[4]));
+          _mm_storeu_si128(dst + 5, _mm_xor_si128(s5, bits[5]));
+       }
+        dst += 6;
+        src += 6;
+#else
         for (int i = 0; i < 6; ++i)
             _mm_storeu_si128(dst++, _mm_xor_si128(_mm_loadu_si128(src++), bits[i]));
+#endif
         srclen -= 6 * 16;
 
         /* setup bits */
+#if 1
+        if (PTLS_LIKELY(srclen > 16 * 5)) {
+            __m128i t0 = _mm_add_epi64(ctr, one64);
+            __m128i t1 = _mm_add_epi64(t0, one64);
+            __m128i t2 = _mm_add_epi64(t1, one64);
+            __m128i t3 = _mm_add_epi64(t2, one64);
+            __m128i t4 = _mm_add_epi64(t3, one64);
+            __m128i t5 = _mm_add_epi64(t4, one64);
+            bits[0] = _mm_shuffle_epi8(t0, bswap64);
+            bits[1] = _mm_shuffle_epi8(t1, bswap64);
+            bits[2] = _mm_shuffle_epi8(t2, bswap64);
+            bits[3] = _mm_shuffle_epi8(t3, bswap64);
+            bits[4] = _mm_shuffle_epi8(t4, bswap64);
+            bits[5] = _mm_shuffle_epi8(t5, bswap64);
+        } else {
+            __m128i t0 = _mm_add_epi64(ctr, one64);
+            __m128i t1 = _mm_add_epi64(t0, one64);
+            __m128i t2 = _mm_add_epi64(t1, one64);
+            __m128i t3 = _mm_add_epi64(t2, one64);
+            __m128i t4 = _mm_add_epi64(t3, one64);
+            ctr = _mm_add_epi64(t4, one64);
+            bits[0] = _mm_shuffle_epi8(t0, bswap64);
+            bits[1] = _mm_shuffle_epi8(t1, bswap64);
+            bits[2] = _mm_shuffle_epi8(t2, bswap64);
+            bits[3] = _mm_shuffle_epi8(t3, bswap64);
+            bits[4] = _mm_shuffle_epi8(t4, bswap64);
+            assert(!ek0_encrypted);
+            bits[5] = ek0;
+            ek0_encrypted = 1;
+        }
+#else
         SETUP_BITS();
+#endif
 
         /* setup gdata */
         const __m128i *gdata;
