@@ -38,11 +38,21 @@
  * IN THE SOFTWARE.
  */
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 #include <tmmintrin.h>
 #include <wmmintrin.h>
 #include "picotls.h"
 #include "picotls/fusion.h"
+
+struct ptls_fusion_aesgcm_context {
+    __m128i keys[PTLS_FUSION_AESGCM_ROUNDS + 1];
+    size_t ghash_cnt;
+    struct ptls_fusion_aesgcm_ghash_precompute {
+        __m128i H;
+        __m128i r;
+    } ghash[0];
+};
 
 static const uint64_t poly_[2] __attribute__((aligned(16))) = {1, 0xc200000000000000};
 #define poly (*(__m128i *)poly_)
@@ -381,60 +391,70 @@ static __m128i expand_key(__m128i key, __m128i t)
     return _mm_xor_si128(key, t);
 }
 
-void ptls_fusion_aesgcm_init(ptls_fusion_aesgcm_context_t *ctx, const void *_userkey)
+ptls_fusion_aesgcm_context_t *ptls_fusion_aesgcm_create(const void *userkey, size_t max_size)
 {
-    __m128i userkey = _mm_loadu_si128((__m128i *)_userkey);
-    size_t i = 0;
+    ptls_fusion_aesgcm_context_t *ctx;
+    size_t ghash_cnt = (max_size + 15) / 16 + 1; // round-up by block size, plus context to hash AC
 
-    ctx->keys[i++] = userkey;
+    if ((ctx = malloc(sizeof(*ctx) + sizeof(ctx->ghash[0]) * ghash_cnt)) == NULL)
+        return NULL;
+
+    {
+        size_t i = 0;
+        ctx->keys[i++] = _mm_loadu_si128((__m128i *)userkey);
 #define EXPAND(R)                                                                                                                  \
     do {                                                                                                                           \
         ctx->keys[i] = expand_key(ctx->keys[i - 1], _mm_aeskeygenassist_si128(ctx->keys[i - 1], R));                               \
         ++i;                                                                                                                       \
     } while (0)
-    EXPAND(0x1);
-    EXPAND(0x2);
-    EXPAND(0x4);
-    EXPAND(0x8);
-    EXPAND(0x10);
-    EXPAND(0x20);
-    EXPAND(0x40);
-    EXPAND(0x80);
-    EXPAND(0x1b);
-    EXPAND(0x36);
+        EXPAND(0x1);
+        EXPAND(0x2);
+        EXPAND(0x4);
+        EXPAND(0x8);
+        EXPAND(0x10);
+        EXPAND(0x20);
+        EXPAND(0x40);
+        EXPAND(0x80);
+        EXPAND(0x1b);
+        EXPAND(0x36);
 #undef EXPAND
+    }
 
+    ctx->ghash_cnt = ghash_cnt;
     ctx->ghash[0].H = ctx->keys[0];
-    for (i = 1; i < PTLS_FUSION_AESGCM_ROUNDS; ++i)
+    for (size_t i = 1; i < PTLS_FUSION_AESGCM_ROUNDS; ++i)
         ctx->ghash[0].H = _mm_aesenc_si128(ctx->ghash[0].H, ctx->keys[i]);
     ctx->ghash[0].H = _mm_aesenclast_si128(ctx->ghash[0].H, ctx->keys[PTLS_FUSION_AESGCM_ROUNDS]);
     ctx->ghash[0].H = _mm_shuffle_epi8(ctx->ghash[0].H, bswap8);
 
     ctx->ghash[0].H = transformH(ctx->ghash[0].H);
-    for (int i = 1; i < PTLS_ELEMENTSOF(ctx->ghash); ++i)
+    for (int i = 1; i < ghash_cnt; ++i)
         ctx->ghash[i].H = gfmul(ctx->ghash[i - 1].H, ctx->ghash[0].H);
-    for (int i = 0; i < PTLS_ELEMENTSOF(ctx->ghash); ++i) {
+    for (int i = 0; i < ghash_cnt; ++i) {
         __m128i r = _mm_shuffle_epi32(ctx->ghash[i].H, 78);
         r = _mm_xor_si128(r, ctx->ghash[i].H);
         ctx->ghash[i].r = r;
     }
+
+    return ctx;
 }
 
-void ptls_fusion_aesgcm_dispose(ptls_fusion_aesgcm_context_t *ctx)
+void ptls_fusion_aesgcm_destroy(ptls_fusion_aesgcm_context_t *ctx)
 {
-    ptls_clear_memory(ctx, sizeof(*ctx));
+    ptls_clear_memory(ctx, sizeof(*ctx) + sizeof(ctx->ghash[0]) * ctx->ghash_cnt);
+    free(ctx);
 }
 
 struct aesgcm_context {
     ptls_aead_context_t super;
-    ptls_fusion_aesgcm_context_t aesgcm;
+    ptls_fusion_aesgcm_context_t *aesgcm;
 };
 
 static void aesgcm_dispose_crypto(ptls_aead_context_t *_ctx)
 {
     struct aesgcm_context *ctx = (struct aesgcm_context *)_ctx;
 
-    ptls_fusion_aesgcm_dispose(&ctx->aesgcm);
+    ptls_fusion_aesgcm_destroy(ctx->aesgcm);
 }
 
 static void aead_do_encrypt_init(ptls_aead_context_t *_ctx, const void *iv, const void *aad, size_t aadlen)
@@ -479,7 +499,7 @@ static int aes128gcm_setup_crypto(ptls_aead_context_t *_ctx, int is_enc, const v
     }
 
     assert(is_enc);
-    ptls_fusion_aesgcm_init(&ctx->aesgcm, key);
+    ctx->aesgcm = ptls_fusion_aesgcm_create(key, 1500); /* FIXME use realloc with exponential back-off to support arbitrary size */
 
     return 0;
 }

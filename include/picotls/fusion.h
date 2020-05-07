@@ -32,16 +32,10 @@ extern "C" {
 
 #define PTLS_FUSION_AESGCM_ROUNDS 10 /* TODO support AES256 */
 
-typedef struct ptls_fusion_aesgcm_context_t {
-    __m128i keys[PTLS_FUSION_AESGCM_ROUNDS + 1];
-    struct ptls_fusion_aesgcm_ghash_precompute {
-        __m128i H;
-        __m128i r;
-    } ghash[1050];
-} ptls_fusion_aesgcm_context_t;
+typedef struct ptls_fusion_aesgcm_context ptls_fusion_aesgcm_context_t;
 
-void ptls_fusion_aesgcm_init(ptls_fusion_aesgcm_context_t *ctx, const void *key);
-void ptls_fusion_aesgcm_dispose(ptls_fusion_aesgcm_context_t *ctx);
+ptls_fusion_aesgcm_context_t *ptls_fusion_aesgcm_create(const void *key, size_t max_size);
+void ptls_fusion_aesgcm_destroy(ptls_fusion_aesgcm_context_t *ctx);
 void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, const void *iv, const void *_aad, size_t aadlen, void *_dst,
                                 const void *_src, size_t srclen);
 
