@@ -353,11 +353,17 @@ void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, const void *i
 
 /* setup the counters (we can always run in full), but use the last slot for calculating ek0, if possible */
 #define SETUP_BITS()                                                                                                               \
-    do {                                                                                                                           \
-        for (int i = 0; i < 5; ++i) {                                                                                              \
-            ctr = _mm_add_epi64(ctr, one64);                                                                                       \
-            bits[i] = _mm_shuffle_epi8(ctr, bswap64);                                                                              \
-        }                                                                                                                          \
+    do { \
+        ctr = _mm_add_epi64(ctr, one64);                                                                                       \
+        bits[0] = _mm_shuffle_epi8(ctr, bswap64);                                                                              \
+        ctr = _mm_add_epi64(ctr, one64);                                                                                       \
+        bits[1] = _mm_shuffle_epi8(ctr, bswap64);                                                                              \
+        ctr = _mm_add_epi64(ctr, one64);                                                                                       \
+        bits[2] = _mm_shuffle_epi8(ctr, bswap64);                                                                              \
+        ctr = _mm_add_epi64(ctr, one64);                                                                                       \
+        bits[3] = _mm_shuffle_epi8(ctr, bswap64);                                                                              \
+        ctr = _mm_add_epi64(ctr, one64);                                                                                       \
+        bits[4] = _mm_shuffle_epi8(ctr, bswap64);                                                                              \
         if (PTLS_LIKELY(srclen > 16 * 5)) {                                                                                        \
             ctr = _mm_add_epi64(ctr, one64);                                                                                       \
             bits[5] = _mm_shuffle_epi8(ctr, bswap64);                                                                              \
@@ -375,8 +381,16 @@ void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, const void *i
     /* the main loop */
     while (PTLS_LIKELY(srclen >= 6 * 16)) {
         /* apply the bits */
-        for (int i = 0; i < 6; ++i)
-            _mm_storeu_si128(dst++, _mm_xor_si128(_mm_loadu_si128(src++), bits[i]));
+#define APPLY(i) _mm_storeu_si128(dst + i, _mm_xor_si128(_mm_loadu_si128(src + i), bits[i]))
+        APPLY(0);
+        APPLY(1);
+        APPLY(2);
+        APPLY(3);
+        APPLY(4);
+        APPLY(5);
+#undef APPLY
+        dst += 6;
+        src += 6;
         srclen -= 6 * 16;
 
         /* setup bits */
