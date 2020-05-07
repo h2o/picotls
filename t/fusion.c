@@ -81,13 +81,6 @@ int main(int argc, char **argv)
 
         {
             __m128i gx = {};
-            gx = ghash6(&ctx, gdata, gx);
-            gx = _mm_shuffle_epi8(gx, bswap8);
-            tag = _mm_xor_si128(gx, ecb6[0]);
-            dump(&tag, 16);
-        }
-        {
-            __m128i gx = {};
             gx = ghashn(&ctx, gdata, 6, gx);
             gx = _mm_shuffle_epi8(gx, bswap8);
             tag = _mm_xor_si128(gx, ecb6[0]);
