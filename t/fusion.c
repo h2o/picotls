@@ -40,7 +40,6 @@ int main(int argc, char **argv)
 {
     static const uint8_t userkey[16] = {};
     static const uint8_t plaintext[16] = {};
-    __m128i ONE = _mm_set_epi32(0, 0, 0, 1), BSWAP64 = _mm_set_epi8(8, 9, 10, 11, 12, 13, 14, 15, 0, 1, 2, 3, 4, 5, 6, 7);
     ptls_fusion_aesgcm_context_t ctx;
 
     ptls_fusion_aesgcm_init(&ctx, userkey);
@@ -52,54 +51,6 @@ int main(int argc, char **argv)
         dump(encrypted, sizeof(encrypted));
     }
 
-    if (1) { /* test */
-        __m128i ecb6[6], ctr = _mm_setzero_si128();
-        for (int i = 0; i < 6; ++i) {
-            ctr = _mm_add_epi64(ctr, ONE);
-            ecb6[i] = _mm_shuffle_epi8(ctr, bswap8);
-        }
-        aesecb6(&ctx, ecb6);
-        __m128i gdata[6];
-        for (int i = 0; i < 5; ++i)
-            gdata[i] = ecb6[i + 1];
-        gdata[5] = _mm_shuffle_epi8(_mm_set_epi32(0, 8 * 16 * 5, 0, 0), BSWAP64);
-        __m128i dummy[6] = {}, ghash = {};
-        ghash = aesecb6ghash6(&ctx, dummy, gdata, ghash);
-        ghash = _mm_shuffle_epi8(ghash, bswap8);
-        __m128i tag = _mm_xor_si128(ghash, ecb6[0]);
-        dump(ecb6 + 1, 16);
-        dump(ecb6 + 1, 16 * 5);
-        dump(&tag, 16);
-
-        {
-            __m128i gx = {}, input[2] = {ecb6[1], _mm_shuffle_epi8(_mm_set_epi32(0, 8 * 16, 0, 0), BSWAP64)};
-            gx = ghashn(&ctx, input, 2, gx);
-            gx = _mm_shuffle_epi8(gx, bswap8);
-            tag = _mm_xor_si128(gx, ecb6[0]);
-            dump(&tag, 16);
-        }
-
-        {
-            __m128i gx = {};
-            gx = ghashn(&ctx, gdata, 6, gx);
-            gx = _mm_shuffle_epi8(gx, bswap8);
-            tag = _mm_xor_si128(gx, ecb6[0]);
-            dump(&tag, 16);
-        }
-
-        {
-            __m128i gx = {};
-            gx = gfmul(ctx.ghash[0].H, _mm_shuffle_epi8(ecb6[0], bswap8));
-            gx = gfmul(ctx.ghash[0].H, _mm_xor_si128(gx, _mm_shuffle_epi8(ecb6[1], bswap8)));
-            dump(&gx, 16);
-        }
-        {
-            __m128i gx = {};
-            gx = ghashn(&ctx, ecb6, 2, gx);
-            dump(&gx, 16);
-        }
-    }
-
 #if 1
     { /* benchmark */
         static const uint8_t iv[12] = {}, aad[13] = {}, text[16384] = {};
@@ -107,7 +58,7 @@ int main(int argc, char **argv)
         for (int i = 0; i < 1000000; ++i) {
             ptls_fusion_aesgcm_encrypt(&ctx, iv, aad, sizeof(aad), encrypted, text, sizeof(text));
             if (i == 0)
-                dump(encrypted + sizeof(text), 16);
+                dump(encrypted, sizeof(encrypted));
         }
     }
 #else

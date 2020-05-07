@@ -34,10 +34,10 @@ extern "C" {
 
 typedef struct ptls_fusion_aesgcm_context_t {
     __m128i keys[PTLS_FUSION_AESGCM_ROUNDS + 1];
-    struct {
+    struct ptls_fusion_aesgcm_ghash_precompute {
         __m128i H;
         __m128i r;
-    } ghash[6];
+    } ghash[1050];
 } ptls_fusion_aesgcm_context_t;
 
 void ptls_fusion_aesgcm_init(ptls_fusion_aesgcm_context_t *ctx, const void *key);
