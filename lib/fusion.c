@@ -115,43 +115,6 @@ static __m128i gfmul(__m128i x, __m128i y)
     return _mm_xor_si128(hi, lo);
 }
 
-static __m128i ghashn(ptls_fusion_aesgcm_context_t *ctx, const __m128i *src, size_t cnt, __m128i ghash)
-{
-    __m128i hi = _mm_setzero_si128(), lo = _mm_setzero_si128(), mid = _mm_setzero_si128();
-    assert(cnt <= 6);
-
-    for (size_t i = 0; i < cnt; ++i) {
-        __m128i X = _mm_loadu_si128(src + cnt - 1 - i);
-        X = _mm_shuffle_epi8(X, bswap8);
-        if (i == cnt - 1)
-            X = _mm_xor_si128(X, ghash);
-        __m128i t = _mm_clmulepi64_si128(ctx->ghash[i].H, X, 0x00);
-        lo = _mm_xor_si128(lo, t);
-        t = _mm_clmulepi64_si128(ctx->ghash[i].H, X, 0x11);
-        hi = _mm_xor_si128(hi, t);
-        t = _mm_shuffle_epi32(X, 78);
-        t = _mm_xor_si128(t, X);
-        t = _mm_clmulepi64_si128(ctx->ghash[i].r, t, 0x00);
-        mid = _mm_xor_si128(mid, t);
-    }
-
-    mid = _mm_xor_si128(mid, hi);
-    mid = _mm_xor_si128(mid, lo);
-    lo = _mm_xor_si128(lo, _mm_slli_si128(mid, 8));
-    hi = _mm_xor_si128(hi, _mm_srli_si128(mid, 8));
-
-    /* from https://crypto.stanford.edu/RealWorldCrypto/slides/gueron.pdf */
-    __m128i r = _mm_clmulepi64_si128(lo, poly, 0x10);
-    lo = _mm_shuffle_epi32(lo, 78);
-    lo = _mm_xor_si128(lo, r);
-    r = _mm_clmulepi64_si128(lo, poly, 0x10);
-    lo = _mm_shuffle_epi32(lo, 78);
-    lo = _mm_xor_si128(lo, r);
-    ghash = _mm_xor_si128(hi, lo);
-
-    return ghash;
-}
-
 static inline __m128i loadn(const void *_p, size_t l)
 {
     const uint8_t *p = _p;
