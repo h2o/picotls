@@ -139,6 +139,7 @@
 		E9B43DE324619D7E00824E51 /* fusion.c in Sources */ = {isa = PBXBuildFile; fileRef = E9B43DE224619D7E00824E51 /* fusion.c */; };
 		E9B43DE424619D7E00824E51 /* fusion.c in Sources */ = {isa = PBXBuildFile; fileRef = E9B43DE224619D7E00824E51 /* fusion.c */; };
 		E9B43DE524619E1600824E51 /* minicrypto.c in Sources */ = {isa = PBXBuildFile; fileRef = 1059003D1DC8D4E300FB4085 /* minicrypto.c */; };
+		E9B43DE724652D2000824E51 /* fusion.c in Sources */ = {isa = PBXBuildFile; fileRef = E9B43DBF24619D1700824E51 /* fusion.c */; };
 		E9BC76CF1EF3A35E00EB7A09 /* chacha20.c in Sources */ = {isa = PBXBuildFile; fileRef = E9BC76C61EF3A2F700EB7A09 /* chacha20.c */; };
 		E9BC76D21EF3A36A00EB7A09 /* chacha20.c in Sources */ = {isa = PBXBuildFile; fileRef = E9BC76C61EF3A2F700EB7A09 /* chacha20.c */; };
 		E9BC76D41EF3A37200EB7A09 /* chacha20.c in Sources */ = {isa = PBXBuildFile; fileRef = E9BC76C61EF3A2F700EB7A09 /* chacha20.c */; };
@@ -979,6 +980,7 @@
 				E9B43DC224619D5100824E51 /* picotls-probes.d in Sources */,
 				E9B43DC324619D5100824E51 /* aes.c in Sources */,
 				E9B43DC424619D5100824E51 /* pembase64.c in Sources */,
+				E9B43DE724652D2000824E51 /* fusion.c in Sources */,
 				E9B43DE424619D7E00824E51 /* fusion.c in Sources */,
 				E9B43DC524619D5100824E51 /* ffx.c in Sources */,
 				E9B43DC624619D5100824E51 /* picotls.c in Sources */,

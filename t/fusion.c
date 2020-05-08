@@ -22,42 +22,70 @@
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
+#include "picotls/fusion.h"
 #include "../deps/picotest/picotest.h"
-#include "../lib/fusion.c"
 
-static void dump(const void *_p, size_t len)
+static const char *tostr(const void *_p, size_t len)
 {
-    const uint8_t *p = _p;
-    for (size_t i = 0; i != len; ++i) {
-        if (i % 16 == 0 && i != 0)
-            printf("-");
-        printf("%02x", p[i]);
+    static char *buf;
+
+    if (buf != NULL)
+        free(buf);
+    buf = malloc(len * 2 + 1);
+
+    const uint8_t *s = _p;
+    char *d = buf;
+
+    for (; len != 0; --len) {
+        *d++ = "0123456789abcdef"[*s >> 4];
+        *d++ = "0123456789abcdef"[*s & 0xf];
+        ++s;
     }
-    printf("\n");
+    *d = '\0';
+
+    return buf;
 }
 
 int main(int argc, char **argv)
 {
-    static const uint8_t userkey[16] = {};
-    static const uint8_t plaintext[16] = {};
-    ptls_fusion_aesgcm_context_t *ctx = ptls_fusion_aesgcm_create(userkey, 16384);
+    static const uint8_t zero[16384] = {};
+    ptls_fusion_aesgcm_context_t *ctx = ptls_fusion_aesgcm_create(zero, 16384);
 
     {
-        static const uint8_t iv[12] = {};
-        uint8_t encrypted[sizeof(plaintext) + 16];
-        ptls_fusion_aesgcm_encrypt(ctx, iv, "hello", 5, encrypted, plaintext, sizeof(plaintext));
-        dump(encrypted, sizeof(encrypted));
+        uint8_t encrypted[32];
+        ptls_fusion_aesgcm_encrypt(ctx, zero, "hello", 5, encrypted, zero, 16);
+        ok(strcmp(tostr(encrypted, sizeof(encrypted)), "0388dace60b6a392f328c2b971b2fe78973fbca65477bf4785b0d561f7e3fd6c") == 0);
     }
 
-    { /* benchmark */
-        static const uint8_t iv[12] = {}, aad[13] = {}, text[16384] = {};
-        uint8_t encrypted[sizeof(text) + 16];
-        for (int i = 0; i < 1000000; ++i) {
-            ptls_fusion_aesgcm_encrypt(ctx, iv, aad, sizeof(aad), encrypted, text, sizeof(text));
-            if (i == 0)
-                dump(encrypted, sizeof(encrypted));
-        }
+    {
+        uint8_t encrypted[sizeof(zero) + 16];
+#define DOIT(iv, aad, aadlen, ptlen, expected_tag) \
+    do { \
+        ptls_fusion_aesgcm_encrypt(ctx, iv, aad, aadlen, encrypted, zero, ptlen); \
+        ok(strcmp(tostr(encrypted + ptlen, 16), expected_tag) == 0); \
+    } while (0)
+
+        DOIT(zero, zero, 13, 17, "1b4e515384e8aa5bb781ee12549a2ccf");
+        DOIT(zero, zero, 13, 32, "84030586f55adf8ac3c145913c6fd0f8");
+        DOIT(zero, zero, 13, 64, "66165d39739c50c90727e7d49127146b");
+        DOIT(zero, zero, 13, 65, "eb3b75e1d4431e1bb67da46f6a1a0edd");
+        DOIT(zero, zero, 13, 79, "8f4a96c7390c26bb15b68865e6a861b9");
+        DOIT(zero, zero, 13, 80, "5cc2554857b19e7a9e18d015feac61fd");
+        DOIT(zero, zero, 13, 81, "5a65f0d4db36c981bf7babd11691fe78");
+        DOIT(zero, zero, 13, 95, "6a8a51152efe928999a610d8a7b1df9d");
+        DOIT(zero, zero, 13, 96, "6b9c468e24ed96010687f3880a044d42");
+        DOIT(zero, zero, 13, 97, "1b4eb785b884a7d4fdebaff81c1c12e8");
+
+        DOIT(zero, zero, 22, 1328, "0507baaece8d573774c94e8103821316");
+        DOIT(zero, zero, 21, 1329, "dd70d59030eadb6313e778046540a253");
+        DOIT(zero, zero, 20, 1330, "f1b456b955afde7603188af0124a32ef");
+
+        DOIT(zero, zero, 13, 1337, "a22deec51250a7eb1f4384dea5f2e890");
+        DOIT(zero, zero, 12, 1338, "42102b0a499b2efa89702ece4b0c5789");
+        DOIT(zero, zero, 11, 1339, "9827f0b34252160d0365ffaa9364bedc");
+
+#undef DOIT
     }
 
-    return 0;
+    return done_testing();
 }
