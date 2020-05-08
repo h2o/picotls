@@ -46,7 +46,7 @@
 #include "picotls/fusion.h"
 
 struct ptls_fusion_aesgcm_context {
-    __m128i keys[PTLS_FUSION_AESGCM_ROUNDS + 1];
+    ptls_fusion_aesecb_context_t ecb;
     size_t ghash_cnt;
     struct ptls_fusion_aesgcm_ghash_precompute {
         __m128i H;
@@ -168,7 +168,7 @@ void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, const void *i
             bits5 = ek0;                                                                                                           \
             state |= STATE_EK0_BEEN_FED;                                                                                           \
         }                                                                                                                          \
-        __m128i k = ctx->keys[0];                                                                                                  \
+        __m128i k = ctx->ecb.keys[0];                                                                                              \
         bits0 = _mm_xor_si128(bits0, k);                                                                                           \
         bits1 = _mm_xor_si128(bits1, k);                                                                                           \
         bits2 = _mm_xor_si128(bits2, k);                                                                                           \
@@ -180,7 +180,7 @@ void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, const void *i
 /* aes block update */
 #define AESECB6_UPDATE(i)                                                                                                          \
     do {                                                                                                                           \
-        __m128i k = ctx->keys[i];                                                                                                  \
+        __m128i k = ctx->ecb.keys[i];                                                                                              \
         bits0 = _mm_aesenc_si128(bits0, k);                                                                                        \
         bits1 = _mm_aesenc_si128(bits1, k);                                                                                        \
         bits2 = _mm_aesenc_si128(bits2, k);                                                                                        \
@@ -192,7 +192,7 @@ void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, const void *i
 /* aesenclast */
 #define AESECB6_FINAL()                                                                                                            \
     do {                                                                                                                           \
-        __m128i k = ctx->keys[10];                                                                                                 \
+        __m128i k = ctx->ecb.keys[10];                                                                                             \
         bits0 = _mm_aesenclast_si128(bits0, k);                                                                                    \
         bits1 = _mm_aesenclast_si128(bits1, k);                                                                                    \
         bits2 = _mm_aesenclast_si128(bits2, k);                                                                                    \
@@ -393,7 +393,35 @@ static __m128i expand_key(__m128i key, __m128i t)
     return _mm_xor_si128(key, t);
 }
 
-ptls_fusion_aesgcm_context_t *ptls_fusion_aesgcm_create(const void *userkey, size_t max_size)
+void ptls_fusion_aesecb_init(ptls_fusion_aesecb_context_t *ctx, const void *key)
+{
+    size_t i = 0;
+
+    ctx->keys[i++] = _mm_loadu_si128((__m128i *)key);
+#define EXPAND(R)                                                                                                                  \
+    do {                                                                                                                           \
+        ctx->keys[i] = expand_key(ctx->keys[i - 1], _mm_aeskeygenassist_si128(ctx->keys[i - 1], R));                               \
+        ++i;                                                                                                                       \
+    } while (0)
+    EXPAND(0x1);
+    EXPAND(0x2);
+    EXPAND(0x4);
+    EXPAND(0x8);
+    EXPAND(0x10);
+    EXPAND(0x20);
+    EXPAND(0x40);
+    EXPAND(0x80);
+    EXPAND(0x1b);
+    EXPAND(0x36);
+#undef EXPAND
+}
+
+void ptls_fusion_aesecb_dispose(ptls_fusion_aesecb_context_t *ctx)
+{
+    ptls_clear_memory(ctx, sizeof(*ctx));
+}
+
+ptls_fusion_aesgcm_context_t *ptls_fusion_aesgcm_create(const void *key, size_t max_size)
 {
     ptls_fusion_aesgcm_context_t *ctx;
     size_t ghash_cnt = (max_size + 15) / 16 + 1; // round-up by block size, plus context to hash AC
@@ -401,32 +429,13 @@ ptls_fusion_aesgcm_context_t *ptls_fusion_aesgcm_create(const void *userkey, siz
     if ((ctx = malloc(sizeof(*ctx) + sizeof(ctx->ghash[0]) * ghash_cnt)) == NULL)
         return NULL;
 
-    {
-        size_t i = 0;
-        ctx->keys[i++] = _mm_loadu_si128((__m128i *)userkey);
-#define EXPAND(R)                                                                                                                  \
-    do {                                                                                                                           \
-        ctx->keys[i] = expand_key(ctx->keys[i - 1], _mm_aeskeygenassist_si128(ctx->keys[i - 1], R));                               \
-        ++i;                                                                                                                       \
-    } while (0)
-        EXPAND(0x1);
-        EXPAND(0x2);
-        EXPAND(0x4);
-        EXPAND(0x8);
-        EXPAND(0x10);
-        EXPAND(0x20);
-        EXPAND(0x40);
-        EXPAND(0x80);
-        EXPAND(0x1b);
-        EXPAND(0x36);
-#undef EXPAND
-    }
+    ptls_fusion_aesecb_init(&ctx->ecb, key);
 
     ctx->ghash_cnt = ghash_cnt;
-    ctx->ghash[0].H = ctx->keys[0];
+    ctx->ghash[0].H = ctx->ecb.keys[0];
     for (size_t i = 1; i < PTLS_FUSION_AESGCM_ROUNDS; ++i)
-        ctx->ghash[0].H = _mm_aesenc_si128(ctx->ghash[0].H, ctx->keys[i]);
-    ctx->ghash[0].H = _mm_aesenclast_si128(ctx->ghash[0].H, ctx->keys[PTLS_FUSION_AESGCM_ROUNDS]);
+        ctx->ghash[0].H = _mm_aesenc_si128(ctx->ghash[0].H, ctx->ecb.keys[i]);
+    ctx->ghash[0].H = _mm_aesenclast_si128(ctx->ghash[0].H, ctx->ecb.keys[PTLS_FUSION_AESGCM_ROUNDS]);
     ctx->ghash[0].H = _mm_shuffle_epi8(ctx->ghash[0].H, bswap8);
 
     ctx->ghash[0].H = transformH(ctx->ghash[0].H);
@@ -443,7 +452,9 @@ ptls_fusion_aesgcm_context_t *ptls_fusion_aesgcm_create(const void *userkey, siz
 
 void ptls_fusion_aesgcm_destroy(ptls_fusion_aesgcm_context_t *ctx)
 {
-    ptls_clear_memory(ctx, sizeof(*ctx) + sizeof(ctx->ghash[0]) * ctx->ghash_cnt);
+    ptls_clear_memory(ctx->ghash, sizeof(ctx->ghash[0]) * ctx->ghash_cnt);
+    ctx->ghash_cnt = 0;
+    ptls_fusion_aesecb_dispose(&ctx->ecb);
     free(ctx);
 }
 
