@@ -37,10 +37,22 @@ extern "C" {
 #if __GNUC__ >= 3
 #define PTLS_LIKELY(x) __builtin_expect(!!(x), 1)
 #define PTLS_UNLIKELY(x) __builtin_expect(!!(x), 0)
+#define PTLS_BUILD_ASSERT_EXPR(cond) (sizeof(char[2 * !!(!__builtin_constant_p(cond) || (cond)) - 1]) != 0)
+#define PTLS_BUILD_ASSERT(cond) ((void)PTLS_BUILD_ASSERT_EXPR(cond))
 #else
 #define PTLS_LIKELY(x) (x)
 #define PTLS_UNLIKELY(x) (x)
+#define PTLS_BUILD_ASSERT(cond) 1
 #endif
+
+/* __builtin_types_compatible_p yields incorrect results when older versions of GCC is used; see #303 */
+#if defined(__clang__) || __GNUC__ >= 6
+#define PTLS_ASSERT_IS_ARRAY_EXPR(a) PTLS_BUILD_ASSERT_EXPR(__builtin_types_compatible_p(__typeof__(a[0])[], __typeof__(a)))
+#else
+#define PTLS_ASSERT_IS_ARRAY_EXPR(a) 1
+#endif
+
+#define PTLS_ELEMENTSOF(x) (PTLS_ASSERT_IS_ARRAY_EXPR(x) * sizeof(x) / sizeof((x)[0]))
 
 #ifdef _WINDOWS
 #define PTLS_THREADLOCAL __declspec(thread)
@@ -650,7 +662,8 @@ struct st_ptls_context_t {
      */
     unsigned use_exporter : 1;
     /**
-     * if ChangeCipherSpec message should be sent during handshake
+     * if ChangeCipherSpec record should be sent during handshake. If the client sends CCS, the server sends one in response
+     * regardless of the value of this flag. See RFC 8446 Appendix D.3.
      */
     unsigned send_change_cipher_spec : 1;
     /**
