@@ -233,7 +233,7 @@ void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, const void *i
     AESECB6_FINAL();
 
     /* the main loop */
-    do {
+    while (1) {
         /* apply the bit stream to src and write to dest */
         if (PTLS_LIKELY(srclen >= 6 * 16)) {
 #define APPLY(i) _mm_storeu_si128(dst + i, _mm_xor_si128(_mm_loadu_si128(src + i), bits##i))
@@ -345,6 +345,10 @@ void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, const void *i
             mid = _mm_xor_si128(mid, t);
         }
 
+        /* Bail out if AC has been fed to GHASH. All required AES calculations have been complete by now, so ditch them. */
+        if (PTLS_UNLIKELY(state < 0))
+            break;
+
         AESECB6_UPDATE(index + 2);
 
         for (; index + 3 <= 9; ++index)
@@ -353,7 +357,7 @@ void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, const void *i
         /* finish bit stream generation */
         AESECB6_FINAL();
 
-    } while (state >= 0);
+    }
 
     if (!STATE_EK0_READY()) {
         if ((state & STATE_EK0_INCOMPLETE) != 0) {
