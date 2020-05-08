@@ -80,6 +80,7 @@ void *tcpls_new(void *ctx, int is_server) {
   tcpls->socket_ptr = NULL;
   tcpls->v4_addr_llist = NULL;
   tcpls->v6_addr_llist = NULL;
+  tcpls->aead = NULL;
   return tcpls;
 }
 
@@ -277,19 +278,29 @@ streamid_t tcpls_stream_new(void *tls_info, struct sockaddr *addr) {
  * towards the fallback path if the option is activated.
  *
  * Only send if the socket is within a connected state 
- *
+ * 
+ * Send through streamid; or to the primary one if streamid = 0
  * Send through the primary; or switch the primary if some problem occurs
  * 
  */
 
-ssize_t tcpls_send(void *tls_info, const void *input, size_t nbytes) {
+ssize_t tcpls_send(void *tls_info, streamid_t streamid, const void *input, size_t nbytes) {
   tcpls_t *tcpls = (tcpls_t *) tls_info;
   int ret;
   /*int is_failover_enabled = 0;*/
   /** Check the state of connections first do we have our primary connected tcp? */
-  
-
+  if (!streamid && !tcpls->socket_ptr) {
+    return -1;
+  }
+  /** Check whether we already have a stream open; if not, build a stream
+   * with the default context */
   //TODO
+  if (!tcpls->aead) {
+    // Create a stream with the default context
+  }
+  
+  // get the right  aead context matching the stream id, and then
+  // set tcpls->tls->traffic_protection.enc.aead = this_stream_aead;
   ret = ptls_send(tcpls->tls, tcpls->sendbuf, input, nbytes);
 
   switch (ret) {

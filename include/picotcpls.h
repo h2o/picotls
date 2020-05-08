@@ -2,7 +2,7 @@
 #define picotcpls_h
 
 #include "picotypes.h"
-#include "fifo.h"
+#include "containers.h"
 #include <netinet/in.h>
 #define NBR_SUPPORTED_TCPLS_OPTIONS 5
 #define VARSIZE_OPTION_MAX_CHUNK_SIZE 4*16384 /* should be able to hold 4 record before needing to be extended */
@@ -82,6 +82,9 @@ struct st_tcpls_t {
 
   tcpls_v4_addr_t *v4_addr_llist;
   tcpls_v6_addr_t *v6_addr_llist;
+  
+  /** Should contain all context;  one per stream */
+  ptls_aead_context_t *aead;
 
   /** socket of the primary address - must be update at each primary change*/
   int *socket_ptr;
@@ -103,7 +106,7 @@ int tcpls_add_v6(void *tls_info, struct sockaddr_in6 *addr, int is_primary);
 
 uint32_t tcpls_stream_new(void *tls_info, struct sockaddr *addr);
 
-ssize_t tcpls_send(void *tls_info, const void *input, size_t nbytes);
+ssize_t tcpls_send(void *tls_info, streamid_t streamid, const void *input, size_t nbytes);
 
 ssize_t tcpls_receive(void *tls_info, const void *input, size_t nbytes);
 

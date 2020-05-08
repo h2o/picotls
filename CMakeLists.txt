@@ -38,7 +38,7 @@ SET(MINICRYPTO_LIBRARY_FILES
 SET(CORE_FILES
     lib/picotls.c
     lib/picotcpls.c
-    lib/fifo.c
+    lib/containers.c
     lib/pembase64.c)
 SET(CORE_TEST_FILES
     t/picotls.c)
