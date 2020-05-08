@@ -5,12 +5,12 @@
 #include "containers.h"
 #include <netinet/in.h>
 #define NBR_SUPPORTED_TCPLS_OPTIONS 5
-#define VARSIZE_OPTION_MAX_CHUNK_SIZE 4*16384 /* should be able to hold 4 record before needing to be extended */
+#define VARSIZE_OPTION_MAX_CHUNK_SIZE 4*16384 /* should be able to hold 4 records before needing to be extended */
 
 /*
  * When adding a new stream, we increase the low IV part by 4096 to avoid any
- * chance (Note, when deriving server_write_iv and client_write_iv; we also
- * require to check whether the distance between them is at list
+ * chance of collision. Note, when deriving server_write_iv and client_write_iv; we also
+ * require to check whether the distance between them is at least
  * 4096*nbr_max_streams
  */
 #define MIN_LOWIV_STREAM_INCREASE 4096
@@ -59,11 +59,19 @@ typedef struct st_tcpls_v6_addr_t {
 } tcpls_v6_addr_t;
 
 typedef struct st_tcpls_stream {
-  tcpls_record_fifo_t *queue;
-  streamid_t streamid;
   /** Buffer for potentially lost records in case of failover, loss of
-   * connection, etc */
-  tcpls_record_fifo_t *buf;
+   * connection. Also potentially used for fair usage of the link w.r.t multiple
+   * streams  
+   **/
+  tcpls_record_fifo_t *send_queue;
+  streamid_t streamid;
+  /** Note: The following contexts use the same key; but a different counter and
+   * IV
+   */
+  /* Context for encryption */
+  ptls_aead_context_t *aead_enc;
+  /* Context for decryption */
+  ptls_aead_context_t *aead_dec;
   /** Attached to v4_addr or a v6_addr; */
   tcpls_v4_addr_t *v4_addr;
   tcpls_v6_addr_t *v6_addr;
@@ -83,8 +91,8 @@ struct st_tcpls_t {
   tcpls_v4_addr_t *v4_addr_llist;
   tcpls_v6_addr_t *v6_addr_llist;
   
-  /** Should contain all context;  one per stream */
-  ptls_aead_context_t *aead;
+  /** Should contain all streams */
+  list_t *streams;
 
   /** socket of the primary address - must be update at each primary change*/
   int *socket_ptr;

@@ -55,7 +55,7 @@ static int setlocal_bpf_sched(ptls_t *ptls, tcpls_options_t *option);
 
 static void _set_primary(tcpls_t *tcpls);
 
-/*static int setup_new_stream(tcpls_t *tcpls);*/
+static tcpls_stream_t *stream_new(tcpls_t *tcpls, struct sockaddr *addr);
 
 void *tcpls_new(void *ctx, int is_server) {
   ptls_context_t *ptls_ctx = (ptls_context_t *) ctx;
@@ -80,7 +80,7 @@ void *tcpls_new(void *ctx, int is_server) {
   tcpls->socket_ptr = NULL;
   tcpls->v4_addr_llist = NULL;
   tcpls->v6_addr_llist = NULL;
-  tcpls->aead = NULL;
+  tcpls->streams = new_list(sizeof(tcpls_stream_t), 3);
   return tcpls;
 }
 
@@ -287,6 +287,7 @@ streamid_t tcpls_stream_new(void *tls_info, struct sockaddr *addr) {
 ssize_t tcpls_send(void *tls_info, streamid_t streamid, const void *input, size_t nbytes) {
   tcpls_t *tcpls = (tcpls_t *) tls_info;
   int ret;
+  tcpls_stream_t *stream;
   /*int is_failover_enabled = 0;*/
   /** Check the state of connections first do we have our primary connected tcp? */
   if (!streamid && !tcpls->socket_ptr) {
@@ -295,8 +296,15 @@ ssize_t tcpls_send(void *tls_info, streamid_t streamid, const void *input, size_
   /** Check whether we already have a stream open; if not, build a stream
    * with the default context */
   //TODO
-  if (!tcpls->aead) {
-    // Create a stream with the default context
+  if (!tcpls->streams->size) {
+    // Create a stream with the default context, attached to primary IP
+    stream = stream_new(tcpls, NULL);
+    stream->aead_enc =  tcpls->tls->traffic_protection.enc.aead;
+    stream->aead_dec =  tcpls->tls->traffic_protection.dec.aead;
+    list_add(tcpls->streams, stream);
+  }
+  else {
+    stream = list_get(tcpls->streams, streamid);
   }
   
   // get the right  aead context matching the stream id, and then
@@ -636,6 +644,11 @@ static int setlocal_bpf_sched(ptls_t *ptls, tcpls_options_t *option) {
 
 
 /*=====================================utilities======================================*/
+
+
+static tcpls_stream_t *stream_new(tcpls_t *tcpls, struct sockaddr *addr) {
+  return NULL;
+}
 
 /**
  * ret < 0 : t1 < t2

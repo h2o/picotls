@@ -113,6 +113,11 @@ int list_add(list_t *list, void *item) {
   return 0;
 }
 
+
+void *list_get(list_t *list, int itemid) {
+  return NULL;
+}
+
 /**
  * remove item from the list if this item is inside, then move the items to keep
  * the continuous
