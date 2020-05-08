@@ -41,10 +41,29 @@ typedef struct ptls_fusion_aesgcm_context ptls_fusion_aesgcm_context_t;
 void ptls_fusion_aesecb_init(ptls_fusion_aesecb_context_t *ctx, const void *key);
 void ptls_fusion_aesecb_dispose(ptls_fusion_aesecb_context_t *ctx);
 
+/**
+ * Creates an AES-GCM context.
+ * @param key       the AES key (128 bits)
+ * @param max_size  maximum size of the record (i.e. AAD + encrypted payload)
+ */
 ptls_fusion_aesgcm_context_t *ptls_fusion_aesgcm_create(const void *key, size_t max_size);
+/**
+ * Destroys an AES-GCM context.
+ */
 void ptls_fusion_aesgcm_destroy(ptls_fusion_aesgcm_context_t *ctx);
-void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, const void *iv, const void *_aad, size_t aadlen, void *_dst,
-                                const void *_src, size_t srclen);
+/**
+ * Encrypts an AEAD block, and in parallel, optionally encrypts one block using AES-ECB.
+ * @param iv       initialization vector of 12 bytes
+ * @param aad      AAD
+ * @param aadlen   size of AAD
+ * @param dst      output buffer
+ * @param src      payload to be encrypted
+ * @param srclen   size of the payload to be encrypted
+ * @param suppkey  (optional) points to an AES-ECB context used for generating suppvec
+ * @param suppvec  (optional) vector to be encrypted using suppkey
+ */
+void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, const void *iv, const void *_aad, size_t aadlen, void *dst,
+                                const void *src, size_t srclen, ptls_fusion_aesecb_context_t *suppkey, void *suppvec);
 
 extern ptls_aead_algorithm_t ptls_fusion_aes128gcm;
 
