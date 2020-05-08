@@ -84,6 +84,8 @@ int main(int argc, char **argv)
         DOIT(zero, zero, 12, 1338, "42102b0a499b2efa89702ece4b0c5789");
         DOIT(zero, zero, 11, 1339, "9827f0b34252160d0365ffaa9364bedc");
 
+        DOIT(zero, zero, 0, 96, "afd649fc51e14f3966e4518ad53b9ddc");
+
 #undef DOIT
     }
 
