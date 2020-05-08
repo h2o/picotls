@@ -49,16 +49,28 @@ static const char *tostr(const void *_p, size_t len)
 int main(int argc, char **argv)
 {
     static const uint8_t zero[16384] = {};
-    ptls_fusion_aesgcm_context_t *ctx = ptls_fusion_aesgcm_create(zero, 16384);
 
     {
+        ptls_fusion_aesgcm_context_t *ctx = ptls_fusion_aesgcm_create(zero, 5 + 16);
         uint8_t encrypted[32];
         ptls_fusion_aesgcm_encrypt(ctx, zero, "hello", 5, encrypted, zero, 16);
         ok(strcmp(tostr(encrypted, sizeof(encrypted)), "0388dace60b6a392f328c2b971b2fe78973fbca65477bf4785b0d561f7e3fd6c") == 0);
+        ptls_fusion_aesgcm_destroy(ctx);
     }
 
+    { /* test capacity */
+        ptls_fusion_aesgcm_context_t *ctx = ptls_fusion_aesgcm_create(zero, 2);
+        uint8_t encrypted[17];
+        ptls_fusion_aesgcm_encrypt(ctx, zero, "a", 1, encrypted, "X", 1);
+        ok(strcmp(tostr(encrypted + 1, 16), "27215ed81a702e3941c80577d52fcb57") == 0);
+        ptls_fusion_aesgcm_destroy(ctx);
+    }
+
+
     {
+        ptls_fusion_aesgcm_context_t *ctx = ptls_fusion_aesgcm_create(zero, sizeof(zero));
         uint8_t encrypted[sizeof(zero) + 16];
+
 #define DOIT(iv, aad, aadlen, ptlen, expected_tag) \
     do { \
         ptls_fusion_aesgcm_encrypt(ctx, iv, aad, aadlen, encrypted, zero, ptlen); \
@@ -87,6 +99,8 @@ int main(int argc, char **argv)
         DOIT(zero, zero, 0, 96, "afd649fc51e14f3966e4518ad53b9ddc");
 
 #undef DOIT
+
+        ptls_fusion_aesgcm_destroy(ctx);
     }
 
     return done_testing();

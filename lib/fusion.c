@@ -428,7 +428,8 @@ void ptls_fusion_aesecb_dispose(ptls_fusion_aesecb_context_t *ctx)
 ptls_fusion_aesgcm_context_t *ptls_fusion_aesgcm_create(const void *key, size_t max_size)
 {
     ptls_fusion_aesgcm_context_t *ctx;
-    size_t ghash_cnt = (max_size + 15) / 16 + 1; // round-up by block size, plus context to hash AC
+    size_t ghash_cnt = (max_size + 15) / 16 + 2; // round-up by block size, add to handle worst split of the size between AAD and
+                                                 // payload, plus context to hash AC
 
     if ((ctx = malloc(sizeof(*ctx) + sizeof(ctx->ghash[0]) * ghash_cnt)) == NULL)
         return NULL;
