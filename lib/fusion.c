@@ -214,6 +214,9 @@ void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, const void *i
     __m128i hi = _mm_setzero_si128(), lo = _mm_setzero_si128(), mid = _mm_setzero_si128(), gdatabuf[6];
     __m128i ac = _mm_shuffle_epi8(_mm_set_epi32(0, (int)srclen * 8, 0, (int)aadlen * 8), bswap64);
 
+    const __m128i *gdata; // points to the elements fed into GHASH
+    size_t gdata_cnt;
+
     // src and dst are updated after the chunk is processed
     const __m128i *src = _src;
     __m128i *dst = _dst;
@@ -224,7 +227,6 @@ void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, const void *i
     struct ptls_fusion_aesgcm_ghash_precompute *ghash_precompute = ctx->ghash + (aadlen + 15) / 16 + (srclen + 15) / 16 + 1;
 
     int32_t state = 0;
-#define STATE_FINAL 0x80000000 /* negates the state when set */
 #define STATE_EK0_BEEN_FED 0x3
 #define STATE_EK0_INCOMPLETE 0x2
 #define STATE_EK0_READY() ((state & STATE_EK0_BEEN_FED) == 0x1)
@@ -298,8 +300,6 @@ void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, const void *i
         AESECB6_UPDATE(1);
 
         /* setup gdata */
-        const __m128i *gdata;
-        size_t gdata_cnt;
         if (PTLS_UNLIKELY(aadlen != 0)) {
             gdata_cnt = 0;
             while (gdata_cnt < 6) {
@@ -328,10 +328,8 @@ void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, const void *i
                         gdatabuf[gdata_cnt++] = loadn(dst_ghash, dst_ghashlen);
                         dst_ghashlen = 0;
                     }
-                    if (gdata_cnt < 6) {
-                        gdatabuf[gdata_cnt++] = ac;
-                        state |= STATE_FINAL;
-                    }
+                    if (gdata_cnt < 6)
+                        goto Finish;
                     break;
                 }
                 gdatabuf[gdata_cnt++] = _mm_loadu_si128(dst_ghash++);
@@ -341,13 +339,11 @@ void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, const void *i
         }
 
         /* run AES and multiplication in parallel */
-        size_t index = 0;
-        for (; index < gdata_cnt; ++index) {
-
-            AESECB6_UPDATE(index + 2);
+        for (size_t i = 2; i <= 7; ++i) {
+            AESECB6_UPDATE(i);
 
             --ghash_precompute;
-            __m128i X = _mm_loadu_si128(gdata + index);
+            __m128i X = _mm_loadu_si128(gdata++);
             X = _mm_shuffle_epi8(X, bswap8);
             __m128i t = _mm_clmulepi64_si128(ghash_precompute->H, X, 0x00);
             lo = _mm_xor_si128(lo, t);
@@ -359,30 +355,41 @@ void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, const void *i
             mid = _mm_xor_si128(mid, t);
         }
 
-        /* bail out if AC has been fed to GHASH */
-        if (PTLS_UNLIKELY(state < 0)) {
-            /* All AES operations for payload encryption and ek0 are complete by now. This is because it is necessary for GCM to
-             * process at least the same amount of data (i.e. payload-blocks + AC), and because AES is at least one 96-byte block
-             * ahead. */
-            assert(STATE_EK0_READY());
-            /* But calculation of suppvec might be in progress. If so, finish that. */
-            assert(suppkey == NULL);
-            if ((state & STATE_SUPP_IN_PROCESS) != 0) {
-                for (; index + 2 <= 9; ++index)
-                    bits4 = _mm_aesenc_si128(bits4, bits4keys[index + 2]);
-                bits4 = _mm_aesenclast_si128(bits4, bits4keys[10]);
-                _mm_storeu_si128(suppvec, bits4);
-            }
-            break;
-        }
-
-        AESECB6_UPDATE(index + 2);
-
-        for (; index + 3 <= 9; ++index)
-            AESECB6_UPDATE(index + 3);
+        AESECB6_UPDATE(8);
+        AESECB6_UPDATE(9);
 
         /* finish bit stream generation */
         AESECB6_FINAL();
+    }
+
+Finish:
+    gdatabuf[gdata_cnt++] = ac;
+
+    /* We have complete set of data to be fed into GHASH. Let's finish the remaining calculation (GHASH and possibly suppvec), and
+     * exit the loop.
+     * Note that by now, all AES operations for payload encryption and ek0 are complete. This is is because it is necessary for GCM
+     * to process at least the same amount of data (i.e. payload-blocks + AC), and because AES is at least one 96-byte block ahead.
+     */
+    assert(STATE_EK0_READY());
+    assert(suppkey == NULL);
+    if ((state & STATE_SUPP_IN_PROCESS) != 0) {
+        for (size_t i = 2; i <= 9; ++i)
+            bits4 = _mm_aesenc_si128(bits4, bits4keys[i]);
+        bits4 = _mm_aesenclast_si128(bits4, bits4keys[10]);
+        _mm_storeu_si128(suppvec, bits4);
+    }
+    for (size_t i = 0; i < gdata_cnt; ++i) {
+        --ghash_precompute;
+        __m128i X = _mm_loadu_si128(gdatabuf + i);
+        X = _mm_shuffle_epi8(X, bswap8);
+        __m128i t = _mm_clmulepi64_si128(ghash_precompute->H, X, 0x00);
+        lo = _mm_xor_si128(lo, t);
+        t = _mm_clmulepi64_si128(ghash_precompute->H, X, 0x11);
+        hi = _mm_xor_si128(hi, t);
+        t = _mm_shuffle_epi32(X, 78);
+        t = _mm_xor_si128(t, X);
+        t = _mm_clmulepi64_si128(ghash_precompute->r, t, 0x00);
+        mid = _mm_xor_si128(mid, t);
     }
 
     /* finish multiplication */
