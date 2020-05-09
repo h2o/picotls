@@ -45,8 +45,11 @@ extern "C" {
 #define PTLS_BUILD_ASSERT(cond) 1
 #endif
 
-/* __builtin_types_compatible_p yields incorrect results when older versions of GCC is used; see #303 */
-#if defined(__clang__) || __GNUC__ >= 6
+/* __builtin_types_compatible_p yields incorrect results when older versions of GCC is used; see #303
+ * Clang with Xcode 9.4 or prior is known to not work correctly when a pointer is const-qualified.
+ * Clang on Linux is okay with older versions.
+ * See https://github.com/h2o/quicly/pull/306#issuecomment-626037269 */
+#if (defined(__clang__) && (!defined(__APPLE__) || __clang_major__ >= 10)) || __GNUC__ >= 6
 #define PTLS_ASSERT_IS_ARRAY_EXPR(a) PTLS_BUILD_ASSERT_EXPR(__builtin_types_compatible_p(__typeof__(a[0])[], __typeof__(a)))
 #else
 #define PTLS_ASSERT_IS_ARRAY_EXPR(a) 1
