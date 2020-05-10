@@ -64,6 +64,21 @@ void ptls_fusion_aesgcm_destroy(ptls_fusion_aesgcm_context_t *ctx);
  */
 void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, const void *iv, const void *_aad, size_t aadlen, void *dst,
                                 const void *src, size_t srclen, ptls_fusion_aesecb_context_t *suppkey, void *suppvec);
+/**
+ * Decrypts an AEAD block, an in parallel, optionally encrypts one block using AES-ECB.
+ * @param iv       initialization vector of 12 bytes
+ * @param aad      AAD
+ * @param aadlen   size of AAD
+ * @param dst      output buffer
+ * @param src      payload to be encrypted
+ * @param srclen   size of the payload to be decrypted
+ * @param tag      the AEAD tag being received from peer
+ * @param suppkey  (optional) points to an AES-ECB context used for generating suppvec
+ * @param suppvec  (optional) vector to be encrypted using suppkey
+ */
+int ptls_fusion_aesgcm_decrypt(ptls_fusion_aesgcm_context_t *ctx, const void *iv, const void *_aad, size_t aadlen, void *dst,
+                               const void *src, size_t srclen, const void *tag, ptls_fusion_aesecb_context_t *suppkey,
+                               void *suppvec);
 
 extern ptls_aead_algorithm_t ptls_fusion_aes128gcm;
 

@@ -51,28 +51,41 @@ int main(int argc, char **argv)
     static const uint8_t zero[16384] = {}, one[16] = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1};
 
     {
+        static const uint8_t expected[] = {0x03, 0x88, 0xda, 0xce, 0x60, 0xb6, 0xa3, 0x92, 0xf3, 0x28, 0xc2,
+                                           0xb9, 0x71, 0xb2, 0xfe, 0x78, 0x97, 0x3f, 0xbc, 0xa6, 0x54, 0x77,
+                                           0xbf, 0x47, 0x85, 0xb0, 0xd5, 0x61, 0xf7, 0xe3, 0xfd, 0x6c};
         ptls_fusion_aesgcm_context_t *ctx = ptls_fusion_aesgcm_create(zero, 5 + 16);
-        uint8_t encrypted[32];
+        uint8_t encrypted[sizeof(expected)], decrypted[sizeof(expected) - 16];
+
         ptls_fusion_aesgcm_encrypt(ctx, zero, "hello", 5, encrypted, zero, 16, NULL, NULL);
-        ok(strcmp(tostr(encrypted, sizeof(encrypted)), "0388dace60b6a392f328c2b971b2fe78973fbca65477bf4785b0d561f7e3fd6c") == 0);
+        ok(memcmp(expected, encrypted, sizeof(expected)) == 0);
+
+        memset(decrypted, 0x55, sizeof(decrypted));
+        ok(ptls_fusion_aesgcm_decrypt(ctx, zero, "hello", 5, decrypted, expected, sizeof(expected) - 16,
+                                      expected + sizeof(expected) - 16, NULL, NULL));
+        ok(memcmp(decrypted, zero, sizeof(decrypted)) == 0);
+
         ptls_fusion_aesgcm_destroy(ctx);
     }
 
     { /* test capacity */
+        static const uint8_t expected[17] = {0x5b, 0x27, 0x21, 0x5e, 0xd8, 0x1a, 0x70, 0x2e, 0x39,
+                                             0x41, 0xc8, 0x05, 0x77, 0xd5, 0x2f, 0xcb, 0x57};
         ptls_fusion_aesgcm_context_t *ctx = ptls_fusion_aesgcm_create(zero, 2);
-        uint8_t encrypted[17];
+        uint8_t encrypted[17], decrypted[1] = {0x55};
         ptls_fusion_aesgcm_encrypt(ctx, zero, "a", 1, encrypted, "X", 1, NULL, NULL);
-        ok(strcmp(tostr(encrypted + 1, 16), "27215ed81a702e3941c80577d52fcb57") == 0);
+        ok(memcmp(expected, encrypted, 17) == 0);
+        ok(ptls_fusion_aesgcm_decrypt(ctx, zero, "a", 1, decrypted, expected, 1, expected + 1, NULL, NULL));
+        ok('X' == decrypted[0]);
         ptls_fusion_aesgcm_destroy(ctx);
     }
-
 
     {
         ptls_fusion_aesgcm_context_t *aead = ptls_fusion_aesgcm_create(zero, sizeof(zero));
         ptls_fusion_aesecb_context_t *ecb = NULL;
 
         for (int i = 0; i < 2; ++i) {
-            uint8_t encrypted[sizeof(zero) + 16], ecbvec[16];
+            uint8_t encrypted[sizeof(zero) + 16], ecbvec[16], decrypted[sizeof(zero)];
 #define DOIT(iv, aad, aadlen, ptlen, expected_tag)                                                                                 \
     do {                                                                                                                           \
         memset(ecbvec, 0, sizeof(ecbvec));                                                                                         \
@@ -83,6 +96,9 @@ int main(int argc, char **argv)
         } else {                                                                                                                   \
             ok(strcmp(tostr(ecbvec, sizeof(ecbvec)), "b6aeaffa752dc08b51639731761aed00") == 0);                                    \
         }                                                                                                                          \
+        memset(decrypted, 0x55, sizeof(decrypted));                                                                                \
+        ok(!ptls_fusion_aesgcm_decrypt(aead, iv, aad, aadlen, decrypted, encrypted, ptlen, zero, NULL, NULL));                     \
+        ok(memcmp(decrypted, zero, ptlen) == 0);                                                                                   \
     } while (0)
 
             DOIT(zero, zero, 13, 17, "1b4e515384e8aa5bb781ee12549a2ccf");
