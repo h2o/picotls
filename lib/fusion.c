@@ -63,7 +63,8 @@ static const uint8_t bswap64_[16] __attribute__((aligned(16))) = {7, 6, 5, 4, 3,
 static const uint8_t one64_[16] __attribute__((aligned(16))) = {0, 0, 0, 0, 0, 0, 0, 0, 1};
 #define one64 (*(__m128i *)one64_)
 
-// This function is covered by the Apache License and the MIT License. See Above.
+/* This function is covered by the Apache License and the MIT License. The origin is crypto/modes/asm/ghash-x86_64.pl of openssl
+ * at commit 33388b4. */
 static __m128i transformH(__m128i H)
 {
     //  # <<1 twist
