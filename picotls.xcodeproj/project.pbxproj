@@ -112,34 +112,16 @@
 		E99B75E41F5CE64E00CF503E /* pembase64.c in Sources */ = {isa = PBXBuildFile; fileRef = E99B75DF1F5CDDB500CF503E /* pembase64.c */; };
 		E99B75E51F5CE64E00CF503E /* pembase64.c in Sources */ = {isa = PBXBuildFile; fileRef = E99B75DF1F5CDDB500CF503E /* pembase64.c */; };
 		E9B43DC224619D5100824E51 /* picotls-probes.d in Sources */ = {isa = PBXBuildFile; fileRef = E95EBCC0227B71170022C32D /* picotls-probes.d */; };
-		E9B43DC324619D5100824E51 /* aes.c in Sources */ = {isa = PBXBuildFile; fileRef = 105900241DC8D37500FB4085 /* aes.c */; };
-		E9B43DC424619D5100824E51 /* pembase64.c in Sources */ = {isa = PBXBuildFile; fileRef = E99B75DF1F5CDDB500CF503E /* pembase64.c */; };
-		E9B43DC524619D5100824E51 /* ffx.c in Sources */ = {isa = PBXBuildFile; fileRef = E97577022212405D00D1EF74 /* ffx.c */; };
-		E9B43DC624619D5100824E51 /* picotls.c in Sources */ = {isa = PBXBuildFile; fileRef = 106530E91D9B7C13005B2C60 /* picotls.c */; };
-		E9B43DC724619D5100824E51 /* uECC.c in Sources */ = {isa = PBXBuildFile; fileRef = 105900BC1DC96A3500FB4085 /* uECC.c */; };
 		E9B43DC824619D5100824E51 /* picotest.c in Sources */ = {isa = PBXBuildFile; fileRef = 106530E31D9B4021005B2C60 /* picotest.c */; };
-		E9B43DC924619D5100824E51 /* sha256.c in Sources */ = {isa = PBXBuildFile; fileRef = 1059005F1DC8DE4400FB4085 /* sha256.c */; };
-		E9B43DCA24619D5100824E51 /* chacha20.c in Sources */ = {isa = PBXBuildFile; fileRef = E9F20BE422E34B340018D260 /* chacha20.c */; };
-		E9B43DCB24619D5100824E51 /* chacha20.c in Sources */ = {isa = PBXBuildFile; fileRef = E9BC76C61EF3A2F700EB7A09 /* chacha20.c */; };
-		E9B43DCD24619D5100824E51 /* asn1.c in Sources */ = {isa = PBXBuildFile; fileRef = E99B75DE1F5CDDB500CF503E /* asn1.c */; };
-		E9B43DCE24619D5100824E51 /* sha512.c in Sources */ = {isa = PBXBuildFile; fileRef = E9E865E9203BD45600E2FFCD /* sha512.c */; };
-		E9B43DCF24619D5100824E51 /* aes256.c in Sources */ = {isa = PBXBuildFile; fileRef = E9F20BE022E34B340018D260 /* aes256.c */; };
-		E9B43DD024619D5100824E51 /* random.c in Sources */ = {isa = PBXBuildFile; fileRef = E9F20BF922E34C110018D260 /* random.c */; };
-		E9B43DD124619D5100824E51 /* aes128.c in Sources */ = {isa = PBXBuildFile; fileRef = E9F20BE222E34B340018D260 /* aes128.c */; };
-		E9B43DD224619D5100824E51 /* drbg.c in Sources */ = {isa = PBXBuildFile; fileRef = 105900511DC8D79300FB4085 /* drbg.c */; };
-		E9B43DD324619D5100824E51 /* x25519.c in Sources */ = {isa = PBXBuildFile; fileRef = E9F20BE122E34B340018D260 /* x25519.c */; };
-		E9B43DD424619D5100824E51 /* poly1305.c in Sources */ = {isa = PBXBuildFile; fileRef = E9BC76D61EF3C1C200EB7A09 /* poly1305.c */; };
-		E9B43DD524619D5100824E51 /* hmac.c in Sources */ = {isa = PBXBuildFile; fileRef = 105900651DC8DFD300FB4085 /* hmac.c */; };
-		E9B43DD624619D5100824E51 /* chash.c in Sources */ = {isa = PBXBuildFile; fileRef = 1059006B1DC8E00400FB4085 /* chash.c */; };
-		E9B43DD724619D5100824E51 /* gf128.c in Sources */ = {isa = PBXBuildFile; fileRef = 105900AA1DC941D700FB4085 /* gf128.c */; };
-		E9B43DD824619D5100824E51 /* curve25519.c in Sources */ = {isa = PBXBuildFile; fileRef = 105900391DC8D46A00FB4085 /* curve25519.c */; };
-		E9B43DD924619D5100824E51 /* gcm.c in Sources */ = {isa = PBXBuildFile; fileRef = 105900A91DC941D700FB4085 /* gcm.c */; };
-		E9B43DDA24619D5100824E51 /* modes.c in Sources */ = {isa = PBXBuildFile; fileRef = 105900AF1DC9438200FB4085 /* modes.c */; };
-		E9B43DDB24619D5100824E51 /* blockwise.c in Sources */ = {isa = PBXBuildFile; fileRef = 105900291DC8D39800FB4085 /* blockwise.c */; };
 		E9B43DE324619D7E00824E51 /* fusion.c in Sources */ = {isa = PBXBuildFile; fileRef = E9B43DE224619D7E00824E51 /* fusion.c */; };
 		E9B43DE424619D7E00824E51 /* fusion.c in Sources */ = {isa = PBXBuildFile; fileRef = E9B43DE224619D7E00824E51 /* fusion.c */; };
 		E9B43DE524619E1600824E51 /* minicrypto.c in Sources */ = {isa = PBXBuildFile; fileRef = 1059003D1DC8D4E300FB4085 /* minicrypto.c */; };
 		E9B43DE724652D2000824E51 /* fusion.c in Sources */ = {isa = PBXBuildFile; fileRef = E9B43DBF24619D1700824E51 /* fusion.c */; };
+		E9B43E0C24689E8900824E51 /* fusionbench.c in Sources */ = {isa = PBXBuildFile; fileRef = E9B43E0B24689E8900824E51 /* fusionbench.c */; };
+		E9B43E0D24689EDA00824E51 /* fusion.c in Sources */ = {isa = PBXBuildFile; fileRef = E9B43DBF24619D1700824E51 /* fusion.c */; };
+		E9B43E0E24689F9500824E51 /* picotls-probes.d in Sources */ = {isa = PBXBuildFile; fileRef = E95EBCC0227B71170022C32D /* picotls-probes.d */; };
+		E9B43E0F24689FAC00824E51 /* picotls.c in Sources */ = {isa = PBXBuildFile; fileRef = 106530BF1D998641005B2C60 /* picotls.c */; };
+		E9B43E1024689FE700824E51 /* picotls.c in Sources */ = {isa = PBXBuildFile; fileRef = 106530BF1D998641005B2C60 /* picotls.c */; };
 		E9BC76CF1EF3A35E00EB7A09 /* chacha20.c in Sources */ = {isa = PBXBuildFile; fileRef = E9BC76C61EF3A2F700EB7A09 /* chacha20.c */; };
 		E9BC76D21EF3A36A00EB7A09 /* chacha20.c in Sources */ = {isa = PBXBuildFile; fileRef = E9BC76C61EF3A2F700EB7A09 /* chacha20.c */; };
 		E9BC76D41EF3A37200EB7A09 /* chacha20.c in Sources */ = {isa = PBXBuildFile; fileRef = E9BC76C61EF3A2F700EB7A09 /* chacha20.c */; };
@@ -242,6 +224,15 @@
 			);
 			runOnlyForDeploymentPostprocessing = 1;
 		};
+		E9B43E0624689E5900824E51 /* CopyFiles */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = /usr/share/man/man1/;
+			dstSubfolderSpec = 0;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 1;
+		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
@@ -310,6 +301,8 @@
 		E9B43DE124619D5100824E51 /* test-fusion */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = "test-fusion"; sourceTree = BUILT_PRODUCTS_DIR; };
 		E9B43DE224619D7E00824E51 /* fusion.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = fusion.c; sourceTree = "<group>"; };
 		E9B43DE62461A06800824E51 /* fusion.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = fusion.h; sourceTree = "<group>"; };
+		E9B43E0A24689E5900824E51 /* fusionbench */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = fusionbench; sourceTree = BUILT_PRODUCTS_DIR; };
+		E9B43E0B24689E8900824E51 /* fusionbench.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = fusionbench.c; sourceTree = "<group>"; };
 		E9BC76C61EF3A2F700EB7A09 /* chacha20.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = chacha20.c; path = src/chacha20.c; sourceTree = "<group>"; };
 		E9BC76CC1EF3A31000EB7A09 /* salsa20.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = salsa20.h; path = src/salsa20.h; sourceTree = "<group>"; };
 		E9BC76D61EF3C1C200EB7A09 /* poly1305.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = poly1305.c; path = src/poly1305.c; sourceTree = "<group>"; };
@@ -382,6 +375,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		E9B43DDC24619D5100824E51 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E9B43E0524689E5900824E51 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -465,6 +465,7 @@
 				10EACB171DCEAF0F00CA0341 /* libpicotls-minicrypto.a */,
 				E992F7A920E99A7C0008154D /* picotls-esni */,
 				E9B43DE124619D5100824E51 /* test-fusion */,
+				E9B43E0A24689E5900824E51 /* fusionbench */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -502,6 +503,7 @@
 				106530FE1DAD8A3C005B2C60 /* cli.c */,
 				E97577072213148800D1EF74 /* e2e.t */,
 				E9B43DE224619D7E00824E51 /* fusion.c */,
+				E9B43E0B24689E8900824E51 /* fusionbench.c */,
 				106530E91D9B7C13005B2C60 /* picotls.c */,
 				1059003D1DC8D4E300FB4085 /* minicrypto.c */,
 				106530C51D9B1A98005B2C60 /* openssl.c */,
@@ -795,6 +797,23 @@
 			productReference = E9B43DE124619D5100824E51 /* test-fusion */;
 			productType = "com.apple.product-type.tool";
 		};
+		E9B43DE824689E5900824E51 /* fusionbench */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E9B43E0724689E5900824E51 /* Build configuration list for PBXNativeTarget "fusionbench" */;
+			buildPhases = (
+				E9B43DE924689E5900824E51 /* Sources */,
+				E9B43E0524689E5900824E51 /* Frameworks */,
+				E9B43E0624689E5900824E51 /* CopyFiles */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = fusionbench;
+			productName = "test-crypto-openssl";
+			productReference = E9B43E0A24689E5900824E51 /* fusionbench */;
+			productType = "com.apple.product-type.tool";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -833,6 +852,7 @@
 				105900411DC8D57000FB4085 /* test-minicrypto */,
 				E992F79B20E99A7C0008154D /* picotls-esni */,
 				E9B43DC024619D5100824E51 /* test-fusion */,
+				E9B43DE824689E5900824E51 /* fusionbench */,
 			);
 		};
 /* End PBXProject section */
@@ -978,32 +998,21 @@
 			buildActionMask = 2147483647;
 			files = (
 				E9B43DC224619D5100824E51 /* picotls-probes.d in Sources */,
-				E9B43DC324619D5100824E51 /* aes.c in Sources */,
-				E9B43DC424619D5100824E51 /* pembase64.c in Sources */,
+				E9B43E1024689FE700824E51 /* picotls.c in Sources */,
 				E9B43DE724652D2000824E51 /* fusion.c in Sources */,
 				E9B43DE424619D7E00824E51 /* fusion.c in Sources */,
-				E9B43DC524619D5100824E51 /* ffx.c in Sources */,
-				E9B43DC624619D5100824E51 /* picotls.c in Sources */,
-				E9B43DC724619D5100824E51 /* uECC.c in Sources */,
 				E9B43DC824619D5100824E51 /* picotest.c in Sources */,
-				E9B43DC924619D5100824E51 /* sha256.c in Sources */,
-				E9B43DCA24619D5100824E51 /* chacha20.c in Sources */,
-				E9B43DCB24619D5100824E51 /* chacha20.c in Sources */,
-				E9B43DCD24619D5100824E51 /* asn1.c in Sources */,
-				E9B43DCE24619D5100824E51 /* sha512.c in Sources */,
-				E9B43DCF24619D5100824E51 /* aes256.c in Sources */,
-				E9B43DD024619D5100824E51 /* random.c in Sources */,
-				E9B43DD124619D5100824E51 /* aes128.c in Sources */,
-				E9B43DD224619D5100824E51 /* drbg.c in Sources */,
-				E9B43DD324619D5100824E51 /* x25519.c in Sources */,
-				E9B43DD424619D5100824E51 /* poly1305.c in Sources */,
-				E9B43DD524619D5100824E51 /* hmac.c in Sources */,
-				E9B43DD624619D5100824E51 /* chash.c in Sources */,
-				E9B43DD724619D5100824E51 /* gf128.c in Sources */,
-				E9B43DD824619D5100824E51 /* curve25519.c in Sources */,
-				E9B43DD924619D5100824E51 /* gcm.c in Sources */,
-				E9B43DDA24619D5100824E51 /* modes.c in Sources */,
-				E9B43DDB24619D5100824E51 /* blockwise.c in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E9B43DE924689E5900824E51 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E9B43E0E24689F9500824E51 /* picotls-probes.d in Sources */,
+				E9B43E0F24689FAC00824E51 /* picotls.c in Sources */,
+				E9B43E0D24689EDA00824E51 /* fusion.c in Sources */,
+				E9B43E0C24689E8900824E51 /* fusionbench.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1340,6 +1349,26 @@
 			};
 			name = Release;
 		};
+		E9B43E0824689E5900824E51 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				GCC_PREPROCESSOR_DEFINITIONS = "$(inherited)";
+				OTHER_CFLAGS = "-march=native";
+				OTHER_LDFLAGS = "";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Debug;
+		};
+		E9B43E0924689E5900824E51 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				GCC_PREPROCESSOR_DEFINITIONS = "$(inherited)";
+				OTHER_CFLAGS = "-march=native";
+				OTHER_LDFLAGS = "";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -1420,6 +1449,15 @@
 			buildConfigurations = (
 				E9B43DDF24619D5100824E51 /* Debug */,
 				E9B43DE024619D5100824E51 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		E9B43E0724689E5900824E51 /* Build configuration list for PBXNativeTarget "fusionbench" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E9B43E0824689E5900824E51 /* Debug */,
+				E9B43E0924689E5900824E51 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
