@@ -1056,6 +1056,11 @@ typedef struct st_ptls_log_event_t {
        */
       ptls_context_t *ctx;
       /**
+       * tcpls stuffs
+       */
+      tcpls_t *tcpls;
+
+      /**
        * the state
        */
       enum en_ptls_state_t {

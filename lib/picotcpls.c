@@ -131,8 +131,8 @@ int static add_v6_to_options(tcpls_t *tcpls, uint8_t n) {
  * if settopeer is 0, then this address is the peer's one
  */
 
-int tcpls_add_v4(void *tls_info, struct sockaddr_in *addr, int is_primary, int settopeer) {
-  tcpls_t *tcpls = (tcpls_t*) tls_info;
+int tcpls_add_v4(ptls_t *tls, struct sockaddr_in *addr, int is_primary, int settopeer) {
+  tcpls_t *tcpls = tls->tcpls;
   /* enable failover */
   tcpls->tls->ctx->failover = 1;
   tcpls_v4_addr_t *new_v4 = malloc(sizeof(tcpls_v4_addr_t));
@@ -165,8 +165,8 @@ int tcpls_add_v4(void *tls_info, struct sockaddr_in *addr, int is_primary, int s
   return 0;
 }
 
-int tcpls_add_v6(void *tls_info, struct sockaddr_in6 *addr, int is_primary, int settopeer) {
-  tcpls_t *tcpls = (tcpls_t*) tls_info;
+int tcpls_add_v6(ptls_t *tls, struct sockaddr_in6 *addr, int is_primary, int settopeer) {
+  tcpls_t *tcpls = tls->tcpls;
   tcpls_v6_addr_t *new_v6 = malloc(sizeof(*new_v6));
   if (new_v6 == NULL)
     return PTLS_ERROR_NO_MEMORY;
@@ -197,7 +197,7 @@ int tcpls_add_v6(void *tls_info, struct sockaddr_in6 *addr, int is_primary, int 
   return 0;
 }
 /** For connect-by-name sparing 2-RTT logic! Much much further work */
-int tcpls_add_domain(void *tls_info, char* domain) {
+int tcpls_add_domain(ptls_t *tls, char* domain) {
   return 0;
 }
 
@@ -209,8 +209,8 @@ int tcpls_add_domain(void *tls_info, char* domain) {
  *         1 if the timeout fired but some address(es) connected
  *         0 if all addresses connected
  */
-int tcpls_connect(void *tls_info) {
-  tcpls_t *tcpls = (tcpls_t*) tls_info;
+int tcpls_connect(ptls_t *tls) {
+  tcpls_t *tcpls = tls->tcpls;
   int maxfds = 0;
   int nfds = 0;
   fd_set wset;
@@ -325,7 +325,7 @@ int tcpls_connect(void *tls_info) {
  * is provided; else attach to addr if we hae a connection open to it  
  */
 
-streamid_t tcpls_stream_new(void *tls_info, struct sockaddr *addr) {
+streamid_t tcpls_stream_new(ptls_t *tls, struct sockaddr *addr) {
   return 0;
 }
 
@@ -340,8 +340,8 @@ streamid_t tcpls_stream_new(void *tls_info, struct sockaddr *addr) {
  * 
  */
 
-ssize_t tcpls_send(void *tls_info, streamid_t streamid, const void *input, size_t nbytes) {
-  tcpls_t *tcpls = (tcpls_t *) tls_info;
+ssize_t tcpls_send(ptls_t *tls, streamid_t streamid, const void *input, size_t nbytes) {
+  tcpls_t *tcpls = tls->tcpls;
   int ret;
   tcpls_stream_t *stream;
   /*int is_failover_enabled = 0;*/
@@ -404,7 +404,7 @@ ssize_t tcpls_send(void *tls_info, streamid_t streamid, const void *input, size_
   return 0;
 }
 
-ssize_t tcpls_receive(void *tls_info, const void *input, size_t nbytes) {
+ssize_t tcpls_receive(ptls_t *tls, const void *input, size_t nbytes) {
   return 0;
 }
 
@@ -829,5 +829,5 @@ void ptls_tcpls_options_free(ptls_t *ptls) {
 
 /** TODO */
 
-void tcpls_free(void *tls_info) {
+void tcpls_free(tcpls_t *tcpls) {
 }

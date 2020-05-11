@@ -106,17 +106,17 @@ struct st_ptls_record_t;
 
 void *tcpls_new();
 
-int tcpls_connect(void *tls_info);
+int tcpls_connect(ptls_t *tls);
 
-int tcpls_add_v4(void *tls_info, struct sockaddr_in *addr, int is_primary, int settopeer);
+int tcpls_add_v4(ptls_t *tls, struct sockaddr_in *addr, int is_primary, int settopeer);
 
-int tcpls_add_v6(void *tls_info, struct sockaddr_in6 *addr, int is_primary, int settopeer);
+int tcpls_add_v6(ptls_t *tls, struct sockaddr_in6 *addr, int is_primary, int settopeer);
 
-uint32_t tcpls_stream_new(void *tls_info, struct sockaddr *addr);
+uint32_t tcpls_stream_new(ptls_t *tls, struct sockaddr *addr);
 
-ssize_t tcpls_send(void *tls_info, streamid_t streamid, const void *input, size_t nbytes);
+ssize_t tcpls_send(ptls_t *tls, streamid_t streamid, const void *input, size_t nbytes);
 
-ssize_t tcpls_receive(void *tls_info, const void *input, size_t nbytes);
+ssize_t tcpls_receive(ptls_t *tls, const void *input, size_t nbytes);
 
 int ptls_set_user_timeout(ptls_t *ctx, uint16_t value, uint16_t sec_or_min,
     uint8_t setlocal, uint8_t settopeer);
@@ -128,7 +128,7 @@ int ptls_set_bpf_scheduler(ptls_t *ptls, const uint8_t *bpf_prog_bytecode,
 
 int ptls_send_tcpoption(ptls_t *tls, ptls_buffer_t *sendbuf, tcpls_enum_t type);
 
-void tcpls_free(void *tls_info);
+void tcpls_free(tcpls_t *tcpls);
 
 /*============================================================================*/
 /** Internal to picotls */
