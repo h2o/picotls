@@ -625,6 +625,18 @@ static __m128i expand_key(__m128i key, __m128i t)
     return _mm_xor_si128(key, t);
 }
 
+static inline __m128i aesecb_encrypt(ptls_fusion_aesecb_context_t *ctx, __m128i v)
+{
+    size_t i;
+
+    v = _mm_xor_si128(v, ctx->keys[0]);
+    for (i = 1; i < PTLS_FUSION_AES_ROUNDS; ++i)
+        v = _mm_aesenc_si128(v, ctx->keys[i]);
+    v = _mm_aesenclast_si128(v, ctx->keys[i]);
+
+    return v;
+}
+
 void ptls_fusion_aesecb_init(ptls_fusion_aesecb_context_t *ctx, const void *key)
 {
     size_t i = 0;
@@ -665,10 +677,7 @@ ptls_fusion_aesgcm_context_t *ptls_fusion_aesgcm_create(const void *key, size_t 
     ptls_fusion_aesecb_init(&ctx->ecb, key);
 
     ctx->ghash_cnt = ghash_cnt;
-    ctx->ghash[0].H = ctx->ecb.keys[0];
-    for (size_t i = 1; i < PTLS_FUSION_AESGCM_ROUNDS; ++i)
-        ctx->ghash[0].H = _mm_aesenc_si128(ctx->ghash[0].H, ctx->ecb.keys[i]);
-    ctx->ghash[0].H = _mm_aesenclast_si128(ctx->ghash[0].H, ctx->ecb.keys[PTLS_FUSION_AESGCM_ROUNDS]);
+    ctx->ghash[0].H = aesecb_encrypt(&ctx->ecb, _mm_setzero_si128());
     ctx->ghash[0].H = _mm_shuffle_epi8(ctx->ghash[0].H, bswap8);
 
     ctx->ghash[0].H = transformH(ctx->ghash[0].H);
@@ -689,6 +698,55 @@ void ptls_fusion_aesgcm_destroy(ptls_fusion_aesgcm_context_t *ctx)
     ctx->ghash_cnt = 0;
     ptls_fusion_aesecb_dispose(&ctx->ecb);
     free(ctx);
+}
+
+struct ctr_context {
+    ptls_cipher_context_t super;
+    ptls_fusion_aesecb_context_t fusion;
+    __m128i bits;
+    uint8_t is_ready;
+};
+
+static void ctr_dispose(ptls_cipher_context_t *_ctx)
+{
+    struct ctr_context *ctx = (struct ctr_context *)_ctx;
+    ptls_fusion_aesecb_dispose(&ctx->fusion);
+    _mm_storeu_si128(&ctx->bits, _mm_setzero_si128());
+}
+
+static void ctr_init(ptls_cipher_context_t *_ctx, const void *iv)
+{
+    struct ctr_context *ctx = (struct ctr_context *)_ctx;
+    _mm_storeu_si128(&ctx->bits, aesecb_encrypt(&ctx->fusion, _mm_loadu_si128(iv)));
+    ctx->is_ready = 1;
+}
+
+static void ctr_transform(ptls_cipher_context_t *_ctx, void *output, const void *input, size_t len)
+{
+    struct ctr_context *ctx = (struct ctr_context *)_ctx;
+
+    assert((ctx->is_ready && len <= 16) ||
+           !"CTR transfomation is supported only once per call to `init` and the maximum size is limited  to 16 bytes");
+    ctx->is_ready = 0;
+
+    if (len < 16) {
+        storen(output, len, _mm_xor_si128(_mm_loadu_si128(&ctx->bits), loadn(input, len)));
+    } else {
+        _mm_storeu_si128(output, _mm_xor_si128(_mm_loadu_si128(&ctx->bits), _mm_loadu_si128(input)));
+    }
+}
+
+static int aes128ctr_setup(ptls_cipher_context_t *_ctx, int is_enc, const void *key)
+{
+    struct ctr_context *ctx = (struct ctr_context *)_ctx;
+
+    ctx->super.do_dispose = ctr_dispose;
+    ctx->super.do_init = ctr_init;
+    ctx->super.do_transform = ctr_transform;
+    ptls_fusion_aesecb_init(&ctx->fusion, key);
+    ctx->is_ready = 0;
+
+    return 0;
 }
 
 struct aesgcm_context {
@@ -727,7 +785,7 @@ static size_t aead_do_decrypt(ptls_aead_context_t *_ctx, void *_output, const vo
     return SIZE_MAX;
 }
 
-static int aes128gcm_setup_crypto(ptls_aead_context_t *_ctx, int is_enc, const void *key)
+static int aes128gcm_setup(ptls_aead_context_t *_ctx, int is_enc, const void *key)
 {
     struct aesgcm_context *ctx = (struct aesgcm_context *)_ctx;
 
@@ -750,11 +808,17 @@ static int aes128gcm_setup_crypto(ptls_aead_context_t *_ctx, int is_enc, const v
     return 0;
 }
 
+ptls_cipher_algorithm_t ptls_fusion_aes128ctr = {"AES128-CTR",
+                                                 PTLS_AES128_KEY_SIZE,
+                                                 1, // block size
+                                                 PTLS_AES_IV_SIZE,
+                                                 sizeof(struct ctr_context),
+                                                 aes128ctr_setup};
 ptls_aead_algorithm_t ptls_fusion_aes128gcm = {"AES128-GCM",
-                                               NULL, // &ptls_fusion_aes128ctr,
+                                               &ptls_fusion_aes128ctr,
                                                NULL, // &ptls_fusion_aes128ecb,
                                                PTLS_AES128_KEY_SIZE,
                                                PTLS_AESGCM_IV_SIZE,
                                                PTLS_AESGCM_TAG_SIZE,
                                                sizeof(struct aesgcm_context),
-                                               aes128gcm_setup_crypto};
+                                               aes128gcm_setup};
