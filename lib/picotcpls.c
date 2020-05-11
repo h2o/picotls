@@ -85,13 +85,56 @@ void *tcpls_new(void *ctx, int is_server) {
 }
 
 
+int static add_v4_to_options(tcpls_t *tcpls, uint8_t n) {
+  /** Contains the number of IPs in [0], and then the 32 bits of IPs */
+  uint8_t *addresses = malloc(4*n+1);
+  if (!addresses)
+    return PTLS_ERROR_NO_MEMORY;
+  tcpls_v4_addr_t *current = tcpls->v4_addr_llist;
+  int i = 1;
+  while (current && i < 4*n+1) {
+    memcpy(&addresses[i], &current->addr.sin_addr.s_addr, 4);
+    i+=4;
+    current = current->next;
+  }
+  /** TODO, check what bit ordering to do here */
+  addresses[0] = n;
+  tcpls_options_t *option;
+  option = tcpls_init_context(tcpls->tls, addresses, sizeof(*addresses), MULTIHOMING_v4, 0, 1);
+  return option ? 0 : -1;
+}
+
+int static add_v6_to_options(tcpls_t *tcpls, uint8_t n) {
+  uint8_t *addresses = malloc(16*n+1);
+  if (!addresses)
+    return PTLS_ERROR_NO_MEMORY;
+  tcpls_v6_addr_t *current = tcpls->v6_addr_llist;
+  int i = 1;
+  while (current &&i < 16*n+1) {
+    memcpy(&addresses[i], &current->addr.sin6_addr.s6_addr, 16);
+    i+=16;
+    current = current->next;
+  }
+  addresses[0] = n;
+  tcpls_options_t *option;
+  option = tcpls_init_context(tcpls->tls, addresses, sizeof(*addresses), MULTIHOMING_v6, 0, 1);
+  return option ? 0 : -1;
+}
+
 /** 
  * Copy Sockaddr_in into our structures. If is_primary is set, flip that bit
  * from any other v4 address if set.
+ *
+ * if settopeer is enabled, it means that this address is actually ours and meant to
+ * be sent to the peer
+ * 
+ * if settopeer is 0, then this address is the peer's one
  */
 
-int tcpls_add_v4(void *tls_info, struct sockaddr_in *addr, int is_primary) {
+int tcpls_add_v4(void *tls_info, struct sockaddr_in *addr, int is_primary, int settopeer) {
   tcpls_t *tcpls = (tcpls_t*) tls_info;
+  /* enable failover */
+  tcpls->tls->ctx->failover = 1;
   tcpls_v4_addr_t *new_v4 = malloc(sizeof(tcpls_v4_addr_t));
   if (new_v4 == NULL)
     return PTLS_ERROR_NO_MEMORY;
@@ -104,18 +147,25 @@ int tcpls_add_v4(void *tls_info, struct sockaddr_in *addr, int is_primary) {
   tcpls_v4_addr_t *current = tcpls->v4_addr_llist;
   if (!current) {
     tcpls->v4_addr_llist = new_v4;
+    if (settopeer)
+      return add_v4_to_options(tcpls, 1);
     return 0;
   }
+  int n = 0;
   while (current->next) {
     if (current->is_primary && is_primary) {
       current->is_primary = 0;
     }
     current = current->next;
+    n++;
   }
   current->next = new_v4;
+  if (settopeer)
+    return add_v4_to_options(tcpls, n);
   return 0;
 }
-int tcpls_add_v6(void *tls_info, struct sockaddr_in6 *addr, int is_primary) {
+
+int tcpls_add_v6(void *tls_info, struct sockaddr_in6 *addr, int is_primary, int settopeer) {
   tcpls_t *tcpls = (tcpls_t*) tls_info;
   tcpls_v6_addr_t *new_v6 = malloc(sizeof(*new_v6));
   if (new_v6 == NULL)
@@ -129,15 +179,21 @@ int tcpls_add_v6(void *tls_info, struct sockaddr_in6 *addr, int is_primary) {
   tcpls_v6_addr_t *current = tcpls->v6_addr_llist;
   if (!current) {
     tcpls->v6_addr_llist = new_v6;
+    if (settopeer)
+      return add_v6_to_options(tcpls, 1);
     return 0;
   }
+  int n = 0;
   while(current->next) {
     if (current->is_primary && is_primary) {
       current->is_primary = 0;
     }
     current = current->next;
+    n++;
   }
   current->next = new_v6;
+  if (settopeer)
+    return add_v6_to_options(tcpls, n);
   return 0;
 }
 /** For connect-by-name sparing 2-RTT logic! Much much further work */
@@ -302,21 +358,35 @@ ssize_t tcpls_send(void *tls_info, streamid_t streamid, const void *input, size_
     stream->aead_enc =  tcpls->tls->traffic_protection.enc.aead;
     stream->aead_dec =  tcpls->tls->traffic_protection.dec.aead;
     list_add(tcpls->streams, stream);
+    /** Add a stream message creation to the sending buffer ! */
   }
   else {
     stream = list_get(tcpls->streams, streamid);
   }
-  
-  // get the right  aead context matching the stream id, and then
-  // set tcpls->tls->traffic_protection.enc.aead = this_stream_aead;
-  ret = ptls_send(tcpls->tls, tcpls->sendbuf, input, nbytes);
+  if (!stream)
+    return -1;
 
+  // For compatibility with picotcpls; set 
+  ptls_aead_context_t *remember_aead = tcpls->tls->traffic_protection.enc.aead;
+  // get the right  aead context matching the stream id
+  // This is done for compabitility with original PTLS's unit tests
+  tcpls->tls->traffic_protection.enc.aead = stream->aead_enc;
+  ret = ptls_send(tcpls->tls, tcpls->sendbuf, input, nbytes);
+  tcpls->tls->traffic_protection.enc.aead = remember_aead;
   switch (ret) {
     /** Error in encryption -- TODO document the possibilties */
     default: return ret;
   }
+  /** Send over the socket's stream */
+  int sock_to_use;
+  if (stream->v4_addr) {
+    sock_to_use = stream->v4_addr->socket;
+  }
+  else if (stream->v6_addr) {
+    sock_to_use = stream->v6_addr->socket;
+  }
   /** Get the primary address */
-  ret = send(*tcpls->socket_ptr, tcpls->sendbuf->base, tcpls->sendbuf->off, 0);
+  ret = send(sock_to_use, tcpls->sendbuf->base, tcpls->sendbuf->off, 0);
   if (ret < 0) {
     /** The peer reset the connection */
     if (errno == ECONNRESET) {
@@ -499,8 +569,16 @@ static tcpls_options_t*  tcpls_init_context(ptls_t *ptls, const void *data, size
       *option->data = ptls_iovec_init(data, sizeof(uint16_t));
       option->type = USER_TIMEOUT;
       return option;
-    case FAILOVER_ADDR4:
-    case FAILOVER_ADDR6: break;
+    case MULTIHOMING_v4:
+    case MULTIHOMING_v6:
+      if (option->data->len) {
+        free(option->data->base);
+      }
+      /** TODO refactor with better name */
+      option->is_varlen = 0; /* should be always in one record */
+      *option->data = ptls_iovec_init(data, datalen);
+      option->type = type;
+      break;
     case BPF_CC:
       if (option->data->len) {
       /** We already had one bpf cc, free it */
@@ -533,8 +611,25 @@ int handle_tcpls_extension_option(ptls_t *ptls, tcpls_enum_t type,
         return setlocal_usertimeout(ptls, option);
       }
       break;
-    case FAILOVER_ADDR4:
-    case FAILOVER_ADDR6:
+    case MULTIHOMING_v4:
+      {
+        /** input should contain a list of v4 IP addresses */
+        struct sockaddr_in addr;
+        bzero(&addr, sizeof(addr));
+        int nbr = inputlen/sizeof(uint32_t);
+        int offset = 0;
+        while(nbr) {
+          memcpy(&addr.sin_addr.s_addr, input+offset, sizeof(uint32_t));
+          offset+=4;
+          /*tcpls_add_v4();*/
+          nbr--;
+        }
+      }
+      break;
+    case MULTIHOMING_v6:
+      /** input should contain a list of v6 IP addresses */
+      break;
+    case FAILOVER:
       break;
     case BPF_CC:
       {
@@ -622,9 +717,9 @@ Exit:
 int tcpls_sends_failover_signal(tcpls_t *tcpls, ptls_buffer_t *sendbuf) {
 
   uint8_t input[TCPLS_SIGNAL_SIZE];
-  tcpls_enum_t f_signal = FAILOVER_SIGNAL;
+  tcpls_enum_t f_signal = FAILOVER;
   memcpy(input, &f_signal, sizeof(f_signal));
-  memcpy(input+sizeof(f_signal), &tcpls->tls->traffic_protection.enc.aead->seq,
+  memcpy(input+sizeof(f_signal), &tcpls->tls->traffic_protection.dec.aead->seq,
       sizeof(tcpls->tls->traffic_protection.enc.aead->seq));
   /** Synchronization problem in sequence number ! */
   return buffer_push_encrypted_records(sendbuf,

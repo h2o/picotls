@@ -237,6 +237,8 @@ extern "C" {
 #define PTLS_EXTENSION_TYPE_ENCRYPTED_TCP_OPTIONS 100
   /** Define TCP extensions to be used as TLS extensions during the handshake */
 #define PTLS_EXTENSION_TYPE_ENCRYPTED_TCP_OPTIONS_USERTIMEOUT 101
+#define PTLS_EXTENSION_TYPE_ENCRYPTED_MULTIHOMING_v4 102
+#define PTLS_EXTENSION_TYPE_ENCRYPTED_MULTIHOMING_v6 103
 
 #define PTLS_PROTOCOL_VERSION_TLS13_FINAL 0x0304
 #define PTLS_PROTOCOL_VERSION_TLS13_DRAFT26 0x7f1a
@@ -775,10 +777,14 @@ typedef struct st_ptls_log_event_t {
      */
     unsigned tcpls_options_confirmed : 1;
     
+
     /**
-     * Socket on which eventually applies local and received tcpls_options
+     * If we have multiple addresses, and this option is enabled, the server announces
+     * its (encrypted) addresses during the TLS handshake.
      */
-    int sockfd;
+
+    unsigned failover : 1;
+
     /**
      *
      */

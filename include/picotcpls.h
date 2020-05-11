@@ -20,9 +20,9 @@
 /** TCP options we would support in the TLS context */
 typedef enum tcpls_enum_t {
   USER_TIMEOUT,
-  FAILOVER_ADDR4,
-  FAILOVER_ADDR6,
-  FAILOVER_SIGNAL,
+  MULTIHOMING_v4,
+  MULTIHOMING_v6,
+  FAILOVER,
   BPF_CC,
 } tcpls_enum_t;
 
@@ -108,9 +108,9 @@ void *tcpls_new();
 
 int tcpls_connect(void *tls_info);
 
-int tcpls_add_v4(void *tls_info, struct sockaddr_in *addr, int is_primary);
+int tcpls_add_v4(void *tls_info, struct sockaddr_in *addr, int is_primary, int settopeer);
 
-int tcpls_add_v6(void *tls_info, struct sockaddr_in6 *addr, int is_primary);
+int tcpls_add_v6(void *tls_info, struct sockaddr_in6 *addr, int is_primary, int settopeer);
 
 uint32_t tcpls_stream_new(void *tls_info, struct sockaddr *addr);
 
