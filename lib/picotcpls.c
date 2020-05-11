@@ -614,20 +614,36 @@ int handle_tcpls_extension_option(ptls_t *ptls, tcpls_enum_t type,
     case MULTIHOMING_v4:
       {
         /** input should contain a list of v4 IP addresses */
+        int ret = 0;
         struct sockaddr_in addr;
         bzero(&addr, sizeof(addr));
         int nbr = inputlen/sizeof(uint32_t);
         int offset = 0;
-        while(nbr) {
+        while(nbr && !ret) {
           memcpy(&addr.sin_addr.s_addr, input+offset, sizeof(uint32_t));
           offset+=4;
-          /*tcpls_add_v4();*/
+          ret = tcpls_add_v4(ptls, &addr, 0, 0);
           nbr--;
         }
+        return ret;
       }
       break;
     case MULTIHOMING_v6:
+      {
       /** input should contain a list of v6 IP addresses */
+        int ret = 0;
+        struct sockaddr_in6 addr;
+        bzero(&addr, sizeof(addr));
+        int nbr = inputlen/(sizeof(uint64_t)*2);
+        int offset = 0;
+        while (nbr && !ret) {
+          memcpy(&addr.sin6_addr.s6_addr, input+offset, sizeof(uint64_t)*2);
+          offset+=16;
+          ret = tcpls_add_v6(ptls, &addr, 0, 0);
+          nbr--;
+        }
+        return ret;
+      }
       break;
     case FAILOVER:
       break;
