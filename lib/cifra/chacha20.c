@@ -150,11 +150,13 @@ static size_t chacha20poly1305_encrypt_final(ptls_aead_context_t *_ctx, void *ou
 }
 
 static size_t chacha20poly1305_decrypt(ptls_aead_context_t *_ctx, void *output, const void *input, size_t inlen, const void *iv,
-                                       const void *aad, size_t aadlen)
+                                       const void *aad, size_t aadlen, ptls_cipher_context_t *suppkey, void *suppvec)
 {
     struct chacha20poly1305_context_t *ctx = (struct chacha20poly1305_context_t *)_ctx;
     uint8_t tag[PTLS_CHACHA20POLY1305_TAG_SIZE];
     size_t ret;
+
+    ptls_aead__encrypt_supp(suppkey, suppvec);
 
     if (inlen < sizeof(tag))
         return SIZE_MAX;
@@ -187,6 +189,7 @@ static int aead_chacha20poly1305_setup_crypto(ptls_aead_context_t *_ctx, int is_
         ctx->super.do_encrypt_init = chacha20poly1305_init;
         ctx->super.do_encrypt_update = chacha20poly1305_encrypt_update;
         ctx->super.do_encrypt_final = chacha20poly1305_encrypt_final;
+        ctx->super.do_encrypt = ptls_aead__do_encrypt;
         ctx->super.do_decrypt = NULL;
     } else {
         ctx->super.do_encrypt_init = NULL;

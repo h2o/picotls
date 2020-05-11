@@ -133,8 +133,10 @@ static inline size_t aesgcm_encrypt_final(ptls_aead_context_t *_ctx, void *outpu
 }
 
 static inline size_t aesgcm_decrypt(ptls_aead_context_t *_ctx, void *output, const void *input, size_t inlen, const void *iv,
-                             const void *aad, size_t aadlen)
+                                    const void *aad, size_t aadlen, ptls_cipher_context_t *suppkey, void *suppvec)
 {
+    ptls_aead__encrypt_supp(suppkey, suppvec);
+
     struct aesgcm_context_t *ctx = (struct aesgcm_context_t *)_ctx;
 
     if (inlen < PTLS_AESGCM_TAG_SIZE)
@@ -157,6 +159,7 @@ static inline int aead_aesgcm_setup_crypto(ptls_aead_context_t *_ctx, int is_enc
         ctx->super.do_encrypt_init = aesgcm_encrypt_init;
         ctx->super.do_encrypt_update = aesgcm_encrypt_update;
         ctx->super.do_encrypt_final = aesgcm_encrypt_final;
+        ctx->super.do_encrypt = ptls_aead__do_encrypt;
         ctx->super.do_decrypt = NULL;
     } else {
         ctx->super.do_encrypt_init = NULL;

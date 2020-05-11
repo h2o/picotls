@@ -5134,16 +5134,13 @@ void ptls_aead_free(ptls_aead_context_t *ctx)
     free(ctx);
 }
 
-size_t ptls_aead_encrypt(ptls_aead_context_t *ctx, void *output, const void *input, size_t inlen, uint64_t seq, const void *aad,
-                         size_t aadlen)
+void ptls_aead_encrypt_s(ptls_aead_context_t *ctx, void *output, const void *input, size_t inlen, uint64_t seq, const void *aad,
+                         size_t aadlen, ptls_cipher_context_t *suppkey, void *suppvec)
 {
-    size_t off = 0;
+    uint8_t iv[PTLS_MAX_IV_SIZE];
 
-    ptls_aead_encrypt_init(ctx, seq, aad, aadlen);
-    off += ptls_aead_encrypt_update(ctx, ((uint8_t *)output) + off, input, inlen);
-    off += ptls_aead_encrypt_final(ctx, ((uint8_t *)output) + off);
-
-    return off;
+    ptls_aead__build_iv(ctx, iv, seq);
+    ctx->do_encrypt(ctx, output, input, inlen, iv, aad, aadlen, suppkey, suppvec);
 }
 
 void ptls_aead__build_iv(ptls_aead_context_t *ctx, uint8_t *iv, uint64_t seq)

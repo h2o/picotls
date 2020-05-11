@@ -166,6 +166,18 @@ static inline __m128i gfmul_final(struct ptls_fusion_gfmul_state *gstate, __m128
     return tag;
 }
 
+static inline __m128i aesecb_encrypt(ptls_fusion_aesecb_context_t *ctx, __m128i v)
+{
+    size_t i;
+
+    v = _mm_xor_si128(v, ctx->keys[0]);
+    for (i = 1; i < PTLS_FUSION_AES_ROUNDS; ++i)
+        v = _mm_aesenc_si128(v, ctx->keys[i]);
+    v = _mm_aesenclast_si128(v, ctx->keys[i]);
+
+    return v;
+}
+
 static inline __m128i loadn(const void *_p, size_t l)
 {
     const uint8_t *p = _p;
@@ -186,8 +198,8 @@ static inline void storen(void *_p, size_t l, __m128i v)
         p[i] = buf[i];
 }
 
-void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, const void *iv, const void *_aad, size_t aadlen, void *_dst,
-                                const void *_src, size_t srclen, ptls_fusion_aesecb_context_t *suppkey, void *suppvec)
+void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, void *output, const void *input, size_t inlen, const void *iv,
+                                const void *_aad, size_t aadlen, ptls_fusion_aesecb_context_t *suppkey, void *suppvec)
 {
 /* init the bits (we can always run in full), but use the last slot for calculating ek0, if possible */
 #define AESECB6_INIT()                                                                                                             \
@@ -254,14 +266,15 @@ void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, const void *i
     const __m128i *bits4keys = ctx->ecb.keys; /* is changed to suppkey->keys when calcurating suppout */
     struct ptls_fusion_gfmul_state gstate = {};
     __m128i gdatabuf[6];
-    __m128i ac = _mm_shuffle_epi8(_mm_set_epi32(0, (int)srclen * 8, 0, (int)aadlen * 8), bswap64);
+    __m128i ac = _mm_shuffle_epi8(_mm_set_epi32(0, (int)inlen * 8, 0, (int)aadlen * 8), bswap64);
 
     const __m128i *gdata; // points to the elements fed into GHASH
     size_t gdata_cnt;
 
     // src and dst are updated after the chunk is processed
-    const __m128i *src = _src;
-    __m128i *dst = _dst;
+    const __m128i *src = input;
+    __m128i *dst = output;
+    size_t srclen = inlen;
     // aad and src_ghash are updated before the chunk is processed (i.e., when the pointers are fed indo the processor)
     const __m128i *aad = _aad, *dst_ghash = dst;
     size_t dst_ghashlen = srclen;
@@ -419,8 +432,8 @@ Finish:
 #undef STATE_SUPP_IN_PROCESS
 }
 
-int ptls_fusion_aesgcm_decrypt(ptls_fusion_aesgcm_context_t *ctx, const void *iv, const void *_aad, size_t aadlen, void *_dst,
-                               const void *_src, size_t _srclen, const void *tag, ptls_fusion_aesecb_context_t *suppkey,
+int ptls_fusion_aesgcm_decrypt(ptls_fusion_aesgcm_context_t *ctx, void *output, const void *input, size_t inlen, const void *iv,
+                               const void *_aad, size_t aadlen, const void *tag, ptls_fusion_aesecb_context_t *suppkey,
                                void *suppvec)
 {
     __m128i ctr, ek0 = _mm_setzero_si128(), bits0, bits1 = _mm_setzero_si128(), bits2 = _mm_setzero_si128(),
@@ -428,15 +441,15 @@ int ptls_fusion_aesgcm_decrypt(ptls_fusion_aesgcm_context_t *ctx, const void *iv
     const __m128i *bits1keys;
     struct ptls_fusion_gfmul_state gstate = {};
     __m128i gdatabuf[6];
-    __m128i ac = _mm_shuffle_epi8(_mm_set_epi32(0, (int)_srclen * 8, 0, (int)aadlen * 8), bswap64);
-    struct ptls_fusion_aesgcm_ghash_precompute *ghash_precompute = ctx->ghash + (aadlen + 15) / 16 + (_srclen + 15) / 16 + 1;
+    __m128i ac = _mm_shuffle_epi8(_mm_set_epi32(0, (int)inlen * 8, 0, (int)aadlen * 8), bswap64);
+    struct ptls_fusion_aesgcm_ghash_precompute *ghash_precompute = ctx->ghash + (aadlen + 15) / 16 + (inlen + 15) / 16 + 1;
 
     const __m128i *gdata; // points to the elements fed into GHASH
     size_t gdata_cnt;
 
-    const __m128i *src_ghash = _src, *src_aes = _src, *aad = _aad;
-    __m128i *dst = _dst;
-    size_t nondata_aes_cnt = 0, src_ghashlen = _srclen, src_aeslen = _srclen;
+    const __m128i *src_ghash = input, *src_aes = input, *aad = _aad;
+    __m128i *dst = output;
+    size_t nondata_aes_cnt = 0, src_ghashlen = inlen, src_aeslen = inlen;
 
     /* build counter */
     ctr = loadn(iv, PTLS_AESGCM_IV_SIZE);
@@ -491,10 +504,11 @@ int ptls_fusion_aesgcm_decrypt(ptls_fusion_aesgcm_context_t *ctx, const void *iv
                 if (src_ghashlen < 16) {
                     if (src_ghashlen != 0) {
                         gdatabuf[gdata_cnt++] = loadn(src_ghash, src_ghashlen);
+                        src_ghash = (__m128i *)((uint8_t *)src_ghash + src_ghashlen);
                         src_ghashlen = 0;
                     }
-                    if (gdata_cnt < 6 && (state & STATE_IS_FIRST_RUN) == 0) {
-                        gdatabuf[gdata_cnt++] = ek0;
+                    if (gdata_cnt < 6 && (state & STATE_GHASH_HAS_MORE) != 0) {
+                        gdatabuf[gdata_cnt++] = ac;
                         state &= ~STATE_GHASH_HAS_MORE;
                     }
                     break;
@@ -577,14 +591,16 @@ int ptls_fusion_aesgcm_decrypt(ptls_fusion_aesgcm_context_t *ctx, const void *iv
             switch (nondata_aes_cnt) {
 #define APPLY(i)                                                                                                                   \
     case i:                                                                                                                        \
-        if (PTLS_LIKELY(src_aeslen >= 16)) {                                                                                       \
+        if (PTLS_LIKELY(src_aeslen > 16)) {                                                                                        \
             _mm_storeu_si128(dst++, _mm_xor_si128(_mm_loadu_si128(src_aes++), bits##i));                                           \
             src_aeslen -= 16;                                                                                                      \
         } else {                                                                                                                   \
-            if (src_aeslen != 0) {                                                                                                 \
+            if (src_aeslen == 16) {                                                                                                \
+                _mm_storeu_si128(dst, _mm_xor_si128(_mm_loadu_si128(src_aes), bits##i));                                           \
+            } else if (src_aeslen != 0) {                                                                                          \
                 storen(dst, src_aeslen, _mm_xor_si128(loadn(src_aes, src_aeslen), bits##i));                                       \
-                src_aeslen = 0;                                                                                                    \
             }                                                                                                                      \
+            src_aeslen = 0;                                                                                                        \
             goto Finish;                                                                                                           \
         }
                 APPLY(0);
@@ -623,18 +639,6 @@ static __m128i expand_key(__m128i key, __m128i t)
     key = _mm_xor_si128(key, _mm_slli_si128(key, 4));
     key = _mm_xor_si128(key, _mm_slli_si128(key, 4));
     return _mm_xor_si128(key, t);
-}
-
-static inline __m128i aesecb_encrypt(ptls_fusion_aesecb_context_t *ctx, __m128i v)
-{
-    size_t i;
-
-    v = _mm_xor_si128(v, ctx->keys[0]);
-    for (i = 1; i < PTLS_FUSION_AES_ROUNDS; ++i)
-        v = _mm_aesenc_si128(v, ctx->keys[i]);
-    v = _mm_aesenclast_si128(v, ctx->keys[i]);
-
-    return v;
 }
 
 void ptls_fusion_aesecb_init(ptls_fusion_aesecb_context_t *ctx, const void *key)
@@ -778,11 +782,32 @@ static size_t aead_do_encrypt_final(ptls_aead_context_t *_ctx, void *_output)
     return SIZE_MAX;
 }
 
-static size_t aead_do_decrypt(ptls_aead_context_t *_ctx, void *_output, const void *input, size_t inlen, const void *iv,
-                              const void *aad, size_t aadlen)
+void aead_do_encrypt(struct st_ptls_aead_context_t *_ctx, void *output, const void *input, size_t inlen, const void *iv,
+                     const void *aad, size_t aadlen, ptls_cipher_context_t *suppkey, void *suppvec)
 {
-    assert(!"FIXME");
-    return SIZE_MAX;
+    ptls_fusion_aesgcm_context_t *aesgcm = ((struct aesgcm_context *)_ctx)->aesgcm;
+    ptls_fusion_aesecb_context_t *aesecb = suppkey != NULL ? &((struct ctr_context *)suppkey)->fusion : NULL;
+
+    ptls_fusion_aesgcm_encrypt(aesgcm, output, input, inlen, iv, aad, aadlen, aesecb, suppvec);
+}
+
+static size_t aead_do_decrypt(ptls_aead_context_t *_ctx, void *output, const void *input, size_t inlen, const void *iv,
+                              const void *aad, size_t aadlen, ptls_cipher_context_t *suppkey, void *suppvec)
+{
+    ptls_fusion_aesgcm_context_t *aesgcm = ((struct aesgcm_context *)_ctx)->aesgcm;
+    struct ptls_fusion_aesecb_context *aesecb = suppkey != NULL ? &((struct ctr_context *)suppkey)->fusion : NULL;
+
+    if (inlen < 16) {
+        if (suppkey != NULL)
+            _mm_storeu_si128(suppvec, aesecb_encrypt(aesecb, _mm_loadu_si128(suppvec)));
+        return SIZE_MAX;
+    }
+
+    size_t enclen = inlen - 16;
+    if (!ptls_fusion_aesgcm_decrypt(aesgcm, output, input, enclen, iv, aad, aadlen, (const uint8_t *)input + enclen, aesecb,
+                                    suppvec))
+        return SIZE_MAX;
+    return enclen;
 }
 
 static int aes128gcm_setup(ptls_aead_context_t *_ctx, int is_enc, const void *key)
@@ -794,6 +819,7 @@ static int aes128gcm_setup(ptls_aead_context_t *_ctx, int is_enc, const void *ke
         ctx->super.do_encrypt_init = aead_do_encrypt_init;
         ctx->super.do_encrypt_update = aead_do_encrypt_update;
         ctx->super.do_encrypt_final = aead_do_encrypt_final;
+        ctx->super.do_encrypt = aead_do_encrypt;
         ctx->super.do_decrypt = NULL;
     } else {
         ctx->super.do_encrypt_init = NULL;

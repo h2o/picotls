@@ -53,31 +53,32 @@ ptls_fusion_aesgcm_context_t *ptls_fusion_aesgcm_create(const void *key, size_t 
 void ptls_fusion_aesgcm_destroy(ptls_fusion_aesgcm_context_t *ctx);
 /**
  * Encrypts an AEAD block, and in parallel, optionally encrypts one block using AES-ECB.
+ * @param ctx      context
+ * @param output   output buffer
+ * @param input    payload to be encrypted
+ * @param inlen   size of the payload to be encrypted
  * @param iv       initialization vector of 12 bytes
  * @param aad      AAD
  * @param aadlen   size of AAD
- * @param dst      output buffer
- * @param src      payload to be encrypted
- * @param srclen   size of the payload to be encrypted
  * @param suppkey  (optional) points to an AES-ECB context used for generating suppvec
  * @param suppvec  (optional) vector to be encrypted using suppkey
  */
-void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, const void *iv, const void *_aad, size_t aadlen, void *dst,
-                                const void *src, size_t srclen, ptls_fusion_aesecb_context_t *suppkey, void *suppvec);
+void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, void *output, const void *input, size_t inlen, const void *iv,
+                                const void *aad, size_t aadlen, ptls_fusion_aesecb_context_t *suppkey, void *suppvec);
 /**
- * Decrypts an AEAD block, an in parallel, optionally encrypts one block using AES-ECB.
+ * Decrypts an AEAD block, an in parallel, optionally encrypts one block using AES-ECB. Returns if decryption was successful.
  * @param iv       initialization vector of 12 bytes
+ * @param output   output buffer
+ * @param src      payload to be decrypted
+ * @param inlen    size of the payload to be decrypted
  * @param aad      AAD
  * @param aadlen   size of AAD
- * @param dst      output buffer
- * @param src      payload to be encrypted
- * @param srclen   size of the payload to be decrypted
  * @param tag      the AEAD tag being received from peer
  * @param suppkey  (optional) points to an AES-ECB context used for generating suppvec
  * @param suppvec  (optional) vector to be encrypted using suppkey
  */
-int ptls_fusion_aesgcm_decrypt(ptls_fusion_aesgcm_context_t *ctx, const void *iv, const void *_aad, size_t aadlen, void *dst,
-                               const void *src, size_t srclen, const void *tag, ptls_fusion_aesecb_context_t *suppkey,
+int ptls_fusion_aesgcm_decrypt(ptls_fusion_aesgcm_context_t *ctx, void *output, const void *input, size_t inlen, const void *iv,
+                               const void *aad, size_t aadlen, const void *tag, ptls_fusion_aesecb_context_t *suppkey,
                                void *suppvec);
 
 extern ptls_aead_algorithm_t ptls_fusion_aes128gcm;

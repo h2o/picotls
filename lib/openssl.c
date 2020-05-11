@@ -823,8 +823,10 @@ static size_t aead_do_encrypt_final(ptls_aead_context_t *_ctx, void *_output)
 }
 
 static size_t aead_do_decrypt(ptls_aead_context_t *_ctx, void *_output, const void *input, size_t inlen, const void *iv,
-                              const void *aad, size_t aadlen)
+                              const void *aad, size_t aadlen, ptls_cipher_context_t *suppkey, void *suppvec)
 {
+    ptls_aead__encrypt_supp(suppkey, suppvec);
+
     struct aead_crypto_context_t *ctx = (struct aead_crypto_context_t *)_ctx;
     uint8_t *output = _output;
     size_t off = 0, tag_size = ctx->super.algo->tag_size;
@@ -861,6 +863,7 @@ static int aead_setup_crypto(ptls_aead_context_t *_ctx, int is_enc, const void *
         ctx->super.do_encrypt_init = aead_do_encrypt_init;
         ctx->super.do_encrypt_update = aead_do_encrypt_update;
         ctx->super.do_encrypt_final = aead_do_encrypt_final;
+        ctx->super.do_encrypt = ptls_aead__do_encrypt;
         ctx->super.do_decrypt = NULL;
     } else {
         ctx->super.do_encrypt_init = NULL;

@@ -56,10 +56,10 @@ int main(int argc, char **argv)
 
     if (!decrypt) {
         for (int i = 0; i < count; ++i)
-            ptls_fusion_aesgcm_encrypt(ctx, iv, aad, sizeof(aad), text, text, textlen, suppkey, suppvec);
+            ptls_fusion_aesgcm_encrypt(ctx, text, text, textlen, iv, aad, sizeof(aad), suppkey, suppvec);
     } else {
         for (int i = 0; i < count; ++i)
-            ptls_fusion_aesgcm_decrypt(ctx, iv, aad, sizeof(aad), text, text, textlen, text + textlen, suppkey, suppvec);
+            ptls_fusion_aesgcm_decrypt(ctx, text, text, textlen, iv, aad, sizeof(aad), suppkey, suppvec);
     }
 
     for (int i = 0; i < 16; ++i)
