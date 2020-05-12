@@ -58,8 +58,9 @@ int main(int argc, char **argv)
         for (int i = 0; i < count; ++i)
             ptls_fusion_aesgcm_encrypt(ctx, text, text, textlen, iv, aad, sizeof(aad), suppkey, suppvec);
     } else {
+        uint8_t tag[16] = {};
         for (int i = 0; i < count; ++i)
-            ptls_fusion_aesgcm_decrypt(ctx, text, text, textlen, iv, aad, sizeof(aad), suppkey, suppvec);
+            ptls_fusion_aesgcm_decrypt(ctx, text, text, textlen, iv, aad, sizeof(aad), &tag, suppkey, suppvec);
     }
 
     for (int i = 0; i < 16; ++i)
