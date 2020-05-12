@@ -457,7 +457,7 @@ int ptls_fusion_aesgcm_decrypt(ptls_fusion_aesgcm_context_t *ctx, void *output, 
 
     /* schedule ek0 and suppkey */
     ctr = _mm_add_epi64(ctr, one64);
-    bits0 = _mm_shuffle_epi8(ctr, bswap64);
+    bits0 = _mm_xor_si128(_mm_shuffle_epi8(ctr, bswap64), ctx->ecb.keys[0]);
     ++nondata_aes_cnt;
     if (suppkey != NULL) {
         bits1keys = suppkey->keys;
@@ -522,17 +522,17 @@ int ptls_fusion_aesgcm_decrypt(ptls_fusion_aesgcm_context_t *ctx, void *output, 
         if (PTLS_LIKELY(nondata_aes_cnt == 0))
             goto InitAllBits;
         switch (nondata_aes_cnt) {
-#define INIT_BITS(n)                                                                                                               \
+#define INIT_BITS(n, keys)                                                                                                         \
     case n:                                                                                                                        \
         ctr = _mm_add_epi64(ctr, one64);                                                                                           \
-        bits##n = _mm_shuffle_epi8(ctr, bswap64);
+        bits##n = _mm_xor_si128(_mm_shuffle_epi8(ctr, bswap64), keys[0]);
         InitAllBits:
-            INIT_BITS(0);
-            INIT_BITS(1);
-            INIT_BITS(2);
-            INIT_BITS(3);
-            INIT_BITS(4);
-            INIT_BITS(5);
+            INIT_BITS(0, ctx->ecb.keys);
+            INIT_BITS(1, bits1keys);
+            INIT_BITS(2, ctx->ecb.keys);
+            INIT_BITS(3, ctx->ecb.keys);
+            INIT_BITS(4, ctx->ecb.keys);
+            INIT_BITS(5, ctx->ecb.keys);
 #undef INIT_BITS
         }
 
