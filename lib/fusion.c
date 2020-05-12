@@ -828,7 +828,6 @@ static int aes128gcm_setup(ptls_aead_context_t *_ctx, int is_enc, const void *ke
         ctx->super.do_decrypt = aead_do_decrypt;
     }
 
-    assert(is_enc);
     ctx->aesgcm = ptls_fusion_aesgcm_create(key, 1500); /* FIXME use realloc with exponential back-off to support arbitrary size */
 
     return 0;
