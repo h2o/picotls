@@ -40,6 +40,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include "picotypes.h"
+#include "containers.h"
 #include "picotls.h"
 #include "picotcpls.h"
 
@@ -50,26 +51,32 @@ static int is_varlen(tcpls_enum_t type);
 static int setlocal_usertimeout(ptls_t *ptls, tcpls_options_t *option);
 static int setlocal_bpf_sched(ptls_t *ptls, tcpls_options_t *option);
 static void _set_primary(tcpls_t *tcpls);
-static tcpls_stream_t *stream_new(tcpls_t *tcpls, struct sockaddr *addr);
+static tcpls_stream_t *stream_new(ptls_t *tcpls, tcpls_v4_addr_t *addr, tcpls_v6_addr_t *addr6);
 static int stream_send_control_message(tcpls_t *tcpls, tcpls_stream_t *stream,
     const void *inputinfo, tcpls_enum_t message, uint32_t message_len);
+static tcpls_v4_addr_t *get_v4_primary_addr(tcpls_t *tcpls);
+static tcpls_v6_addr_t *get_v6_primary_addr(tcpls_t *tcpls);
 
 void *tcpls_new(void *ctx, int is_server) {
   ptls_context_t *ptls_ctx = (ptls_context_t *) ctx;
   ptls_t *tls;
+  tcpls_t *tcpls  = malloc(sizeof(*tcpls));
+  if (tcpls == NULL)
+    return NULL;
   uint8_t *smallsendbuf = malloc(256*sizeof(uint8_t));
   if (smallsendbuf == NULL)
     return NULL;
   uint8_t *smallrecvbuf = malloc(256*sizeof(uint8_t));
   if (smallrecvbuf)
     return NULL;
-  if (is_server)
+  if (is_server) {
     tls = ptls_server_new(ptls_ctx);
-  else
+    tcpls->next_stream_id = 2147483648;  // 2**31
+  }
+  else {
     tls = ptls_client_new(ptls_ctx);
-  tcpls_t *tcpls  = malloc(sizeof(*tcpls));
-  if (tcpls == NULL)
-    return NULL;
+    tcpls->next_stream_id = 0;
+  }
   // init tcpls stuffs
   tcpls->tls = tls;
   ptls_buffer_init(tcpls->sendbuf, smallsendbuf, sizeof(smallsendbuf));
@@ -318,30 +325,31 @@ int tcpls_connect(ptls_t *tls) {
 }
 
 
-/** Create and attach a new stream to the main address if no addr
- * is provided; else attach to addr if we hae a connection open to it  
+/**
+ * Create and attach locallty a new stream to the main address if no addr
+ * is provided; else attach to addr if we have a connection open to it
  */
 
 streamid_t tcpls_stream_new(ptls_t *tls, struct sockaddr *addr) {
   return 0;
 }
 
- /**
- * Encrypts and sends input towards the primary path if available; else sends
- * towards the fallback path if the option is activated.
- *
- * Only send if the socket is within a connected state 
- * 
- * Send through streamid; or to the primary one if streamid = 0
- * Send through the primary; or switch the primary if some problem occurs
- * 
- */
+/**
+* Encrypts and sends input towards the primary path if available; else sends
+* towards the fallback path if the option is activated.
+*
+* Only send if the socket is within a connected state 
+*
+* Send through streamid; or to the primary one if streamid = 0
+* Send through the primary; or switch the primary if some problem occurs
+*/
+
 
 ssize_t tcpls_send(ptls_t *tls, streamid_t streamid, const void *input, size_t nbytes) {
   tcpls_t *tcpls = tls->tcpls;
   int ret;
   tcpls_stream_t *stream;
- /*int is_failover_enabled = 0;*/
+  /*int is_failover_enabled = 0;*/
   /** Check the state of connections first do we have our primary connected tcp? */
   if (!streamid && !tcpls->socket_ptr) {
     return -1;
@@ -351,7 +359,11 @@ ssize_t tcpls_send(ptls_t *tls, streamid_t streamid, const void *input, size_t n
   //TODO
   if (!tcpls->streams->size) {
     // Create a stream with the default context, attached to primary IP
-    stream = stream_new(tcpls, NULL);
+    tcpls_v4_addr_t *addr = get_v4_primary_addr(tcpls);
+    tcpls_v6_addr_t *addr6 = get_v6_primary_addr(tcpls);
+    assert(addr || addr6);
+    stream = stream_new(tls, addr, addr6);
+
     stream->aead_enc =  tcpls->tls->traffic_protection.enc.aead;
     stream->aead_dec =  tcpls->tls->traffic_protection.dec.aead;
     list_add(tcpls->streams, stream);
@@ -364,7 +376,8 @@ ssize_t tcpls_send(ptls_t *tls, streamid_t streamid, const void *input, size_t n
   if (!stream)
     return -1;
 
-  // For compatibility with picotcpls; set 
+  // For compatibility with picotcpls; set the traffic_protection context
+  // of the stream we want to use
   ptls_aead_context_t *remember_aead = tcpls->tls->traffic_protection.enc.aead;
   // get the right  aead context matching the stream id
   // This is done for compabitility with original PTLS's unit tests
@@ -666,6 +679,8 @@ int handle_tcpls_extension_option(ptls_t *ptls, tcpls_enum_t type,
         return ret;
       }
       break;
+    case STREAM_ATTACH:
+      break;
     case FAILOVER:
       break;
     case BPF_CC:
@@ -685,6 +700,12 @@ int handle_tcpls_extension_option(ptls_t *ptls, tcpls_enum_t type,
  return 0;
 }
 
+/**
+ * Handle single record and varlen options with possibly many records
+ *
+ * varlen records must be sent over the same stream for appropriate buffering
+ * //TODO make the buffering per-stream!
+ */
 
 int handle_tcpls_record(ptls_t *tls, struct st_ptls_record_t *rec)
 {
@@ -756,8 +777,54 @@ static int setlocal_bpf_sched(ptls_t *ptls, tcpls_options_t *option) {
 
 /*=====================================utilities======================================*/
 
+static void stream_derive_new_aead_iv(ptls_t *tls, uint8_t *iv, int iv_size) {
 
-static tcpls_stream_t *stream_new(tcpls_t *tcpls, struct sockaddr *addr) {
+}
+
+/**
+ * Create a new stream and attach it to a local addr.
+ * if addr is set, addr6 must be NULL;
+ * if addr6 is set, addr must be NULL;
+ */
+
+static tcpls_stream_t *stream_new(ptls_t *tls, tcpls_v4_addr_t *addr, tcpls_v6_addr_t *addr6) {
+  tcpls_t *tcpls = tls->tcpls;
+  tcpls_stream_t *stream = malloc(sizeof(*stream));
+  stream->streamid = tcpls->next_stream_id++;
+  /** TODO figure out a good default size for the control flow */
+  stream->send_queue = tcpls_record_queue_new(500);
+  if (addr) {
+    stream->v4_addr = addr;
+  }
+  else if (addr6) {
+    stream->v6_addr = addr6;
+  }
+  /** Now derive a correct aead context for this stream */
+  stream->aead_enc = (ptls_aead_context_t *) malloc(tls->cipher_suite->aead->context_size);
+  if (!stream->aead_enc)
+    return NULL;
+  memcpy(stream->aead_enc, &tls->traffic_protection.enc, sizeof(tls->traffic_protection.enc));
+  /** restart the counter */
+  stream->aead_enc->seq = 0;
+  /** now change the lower half bits of the IV to avoid collisions */
+  stream_derive_new_aead_iv(tls, stream->aead_enc->static_iv,
+      tls->cipher_suite->aead->iv_size);
+  stream->aead_dec = (ptls_aead_context_t *) malloc(tls->cipher_suite->aead->context_size);
+  if (stream->aead_dec)
+    return NULL;
+  memcpy(stream->aead_dec, &tls->traffic_protection.dec, sizeof(tls->traffic_protection.dec));
+  stream->aead_dec->seq = 0;
+  stream_derive_new_aead_iv(tls, stream->aead_dec->static_iv,
+      tls->cipher_suite->aead->iv_size);
+  return stream;
+}
+
+
+tcpls_v4_addr_t *get_v4_primary_addr(tcpls_t *tcpls) {
+  return NULL;
+}
+
+tcpls_v6_addr_t *get_v6_primary_addr(tcpls_t *tcpls) {
   return NULL;
 }
 

@@ -88,15 +88,17 @@ struct st_tcpls_t {
   ptls_buffer_t *sendbuf;
   /* Receiving buffer */
   ptls_buffer_t *recvbuf;
-  /** Linked List of address to be used for happy eyeball 
+  /** Linked List of address to be used for happy eyeball
    * and for failover 
    */
-
   tcpls_v4_addr_t *v4_addr_llist;
   tcpls_v6_addr_t *v6_addr_llist;
-  
+
   /** Should contain all streams */
   list_t *streams;
+
+  /** value of the next stream id :) */
+  uint32_t next_stream_id;
 
   /** socket of the primary address - must be update at each primary change*/
   int *socket_ptr;

@@ -11,7 +11,7 @@
  * acknowledgments to arrive to free space
  */
 
-tcpls_record_fifo_t *tcpls_recorc_queue_new(int max_record_num) {
+tcpls_record_fifo_t *tcpls_record_queue_new(int max_record_num) {
   tcpls_record_fifo_t *fifo = malloc(sizeof(*fifo));
   if (fifo == NULL)
     return NULL;
