@@ -288,10 +288,9 @@ void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, void *output,
 #define STATE_SUPP_IN_PROCESS 0x4
 
     /* build counter */
-    ctr = loadn(iv, PTLS_AESGCM_IV_SIZE);
-    ctr = _mm_shuffle_epi8(ctr, bswap8);
-    ctr = _mm_add_epi64(ctr, one64);
-    ek0 = _mm_shuffle_epi8(ctr, bswap64);
+    ek0 = loadn(iv, PTLS_AESGCM_IV_SIZE);
+    ek0 = _mm_insert_epi16(ek0, 0x100, 7);
+    ctr = _mm_shuffle_epi8(ek0, bswap64);
 
     /* prepare the first bit stream */
     AESECB6_INIT();
@@ -453,7 +452,7 @@ int ptls_fusion_aesgcm_decrypt(ptls_fusion_aesgcm_context_t *ctx, void *output, 
 
     /* build counter */
     ctr = loadn(iv, PTLS_AESGCM_IV_SIZE);
-    ctr = _mm_shuffle_epi8(ctr, bswap8);
+    ctr = _mm_shuffle_epi8(ctr, bswap64);
 
     /* schedule ek0 and suppkey */
     ctr = _mm_add_epi64(ctr, one64);

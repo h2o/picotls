@@ -122,6 +122,8 @@ int main(int argc, char **argv)
             DOIT(zero, zero, 0, 80, "98885a3a22bd4742fe7b72172193b163");
             DOIT(zero, zero, 0, 96, "afd649fc51e14f3966e4518ad53b9ddc");
 
+            DOIT(zero, zero, 20, 85, "afe8b727057c804a0525c2914ef856b0");
+
 #undef DOIT
 
             ecb = malloc(sizeof(*ecb));
@@ -130,6 +132,31 @@ int main(int argc, char **argv)
 
         ptls_fusion_aesecb_dispose(ecb);
         free(ecb);
+        ptls_fusion_aesgcm_destroy(aead);
+    }
+
+    {
+        static const uint8_t key[16] = {0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
+                                        0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff},
+                             aad[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19},
+                             iv[] = {20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31},
+                             plaintext[] =
+                                 "hello world\nhello world\nhello world\nhello world\nhello world\nhello world\nhello world\n";
+        static const uint8_t expected[] = {0xd3, 0xa8, 0x1d, 0x96, 0x4c, 0x9b, 0x02, 0xd7, 0x9a, 0xb0, 0x41, 0x07, 0x4c, 0x8c, 0xe2,
+                                           0xe0, 0x2e, 0x83, 0x54, 0x52, 0x45, 0xcb, 0xd4, 0x68, 0xc8, 0x43, 0x45, 0xca, 0x91, 0xfb,
+                                           0xa3, 0x7a, 0x67, 0xed, 0xe8, 0xd7, 0x5e, 0xe2, 0x33, 0xd1, 0x3e, 0xbf, 0x50, 0xc2, 0x4b,
+                                           0x86, 0x83, 0x55, 0x11, 0xbb, 0x17, 0x4f, 0xf5, 0x78, 0xb8, 0x65, 0xeb, 0x9a, 0x2b, 0x8f,
+                                           0x77, 0x08, 0xa9, 0x60, 0x17, 0x73, 0xc5, 0x07, 0xf3, 0x04, 0xc9, 0x3f, 0x67, 0x4d, 0x12,
+                                           0xa1, 0x02, 0x93, 0xc2, 0x3c, 0xd3, 0xf8, 0x59, 0x33, 0xd5, 0x01, 0xc3, 0xbb, 0xaa, 0xe6,
+                                           0x3f, 0xbb, 0x23, 0x66, 0x94, 0x26, 0x28, 0x43, 0xa5, 0xfd, 0x2f};
+        ptls_fusion_aesgcm_context_t *aead = ptls_fusion_aesgcm_create(key, sizeof(aad) + sizeof(plaintext));
+        uint8_t encrypted[sizeof(plaintext) + 16], decrypted[sizeof(plaintext)];
+        ptls_fusion_aesgcm_encrypt(aead, encrypted, plaintext, sizeof(plaintext), iv, aad, sizeof(aad), NULL, NULL);
+        ok(memcmp(expected, encrypted, sizeof(plaintext)) == 0);
+        ok(memcmp(expected + sizeof(plaintext), encrypted + sizeof(plaintext), 16) == 0);
+        ok(ptls_fusion_aesgcm_decrypt(aead, decrypted, encrypted, sizeof(plaintext), iv, aad, sizeof(aad),
+                                      encrypted + sizeof(plaintext), NULL, NULL));
+        ok(memcmp(decrypted, plaintext, sizeof(plaintext)) == 0);
         ptls_fusion_aesgcm_destroy(aead);
     }
 
