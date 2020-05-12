@@ -396,7 +396,7 @@ void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, void *output,
         /* run AES and multiplication in parallel */
         for (size_t i = 2; i <= 7; ++i) {
             AESECB6_UPDATE(i);
-            gfmul_onestep(&gstate, *gdata++, --ghash_precompute);
+            gfmul_onestep(&gstate, _mm_loadu_si128(gdata++), --ghash_precompute);
         }
         AESECB6_UPDATE(8);
         AESECB6_UPDATE(9);
@@ -551,7 +551,7 @@ int ptls_fusion_aesgcm_decrypt(ptls_fusion_aesgcm_context_t *ctx, void *output, 
             size_t aesi;
             for (aesi = 1; aesi <= gdata_cnt; ++aesi) {
                 AESECB6_UPDATE(aesi);
-                gfmul_onestep(&gstate, *gdata++, --ghash_precompute);
+                gfmul_onestep(&gstate, _mm_loadu_si128(gdata++), --ghash_precompute);
             }
             for (; aesi <= 9; ++aesi)
                 AESECB6_UPDATE(aesi);
