@@ -16,6 +16,8 @@
 #define MIN_LOWIV_STREAM_INCREASE 4096
 
 #define TCPLS_SIGNAL_SIZE 12
+#define STREAM_SENDER_NEW_STREAM_SIZE 4
+#define STREAM_CLOSE_SIZE 4
 
 /** TCP options we would support in the TLS context */
 typedef enum tcpls_enum_t {
@@ -24,6 +26,8 @@ typedef enum tcpls_enum_t {
   MULTIHOMING_v6,
   FAILOVER,
   BPF_CC,
+  STREAM_ATTACH,
+  STREAM_CLOSE
 } tcpls_enum_t;
 
 typedef enum tcpls_tcp_state_t {

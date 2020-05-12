@@ -46,16 +46,13 @@
 /** Forward declarations */
 static tcpls_options_t* tcpls_init_context(ptls_t *ptls, const void *data, size_t datalen,
     tcpls_enum_t type, uint8_t setlocal, uint8_t settopeer);
-
 static int is_varlen(tcpls_enum_t type);
-
 static int setlocal_usertimeout(ptls_t *ptls, tcpls_options_t *option);
-
 static int setlocal_bpf_sched(ptls_t *ptls, tcpls_options_t *option);
-
 static void _set_primary(tcpls_t *tcpls);
-
 static tcpls_stream_t *stream_new(tcpls_t *tcpls, struct sockaddr *addr);
+static int stream_send_control_message(tcpls_t *tcpls, tcpls_stream_t *stream,
+    const void *inputinfo, tcpls_enum_t message, uint32_t message_len);
 
 void *tcpls_new(void *ctx, int is_server) {
   ptls_context_t *ptls_ctx = (ptls_context_t *) ctx;
@@ -215,11 +212,11 @@ int tcpls_connect(ptls_t *tls) {
   int nfds = 0;
   fd_set wset;
   FD_ZERO(&wset);
-#define HANDLE_CONNECTS(current) do {                                               \
+#define HANDLE_CONNECTS(current, afinet) do {                                               \
   while (current) {                                                                 \
     if (current->state == CLOSED){                                                  \
       if (!current->socket) {                                                       \
-        if ((current->socket = socket(AF_INET, SOCK_STREAM|SOCK_NONBLOCK, 0)) < 0) {\
+        if ((current->socket = socket(afinet, SOCK_STREAM|SOCK_NONBLOCK, 0)) < 0) {\
           current = current->next;                                                  \
           continue;                                                                 \
         }                                                                           \
@@ -247,10 +244,10 @@ int tcpls_connect(ptls_t *tls) {
 
   // Connect with v4 addresses first
   tcpls_v4_addr_t *current_v4 = tcpls->v4_addr_llist;
-  HANDLE_CONNECTS(current_v4);
+  HANDLE_CONNECTS(current_v4, AF_INET);
   tcpls_v6_addr_t *current_v6 = tcpls->v6_addr_llist;
   // Connect with v6 addresses
-  HANDLE_CONNECTS(current_v6);
+  HANDLE_CONNECTS(current_v6, AF_INET6);
 #undef HANDLE_CONNECTS
 
   /* wait until all connected or the timeout fired */
@@ -344,7 +341,7 @@ ssize_t tcpls_send(ptls_t *tls, streamid_t streamid, const void *input, size_t n
   tcpls_t *tcpls = tls->tcpls;
   int ret;
   tcpls_stream_t *stream;
-  /*int is_failover_enabled = 0;*/
+ /*int is_failover_enabled = 0;*/
   /** Check the state of connections first do we have our primary connected tcp? */
   if (!streamid && !tcpls->socket_ptr) {
     return -1;
@@ -359,6 +356,7 @@ ssize_t tcpls_send(ptls_t *tls, streamid_t streamid, const void *input, size_t n
     stream->aead_dec =  tcpls->tls->traffic_protection.dec.aead;
     list_add(tcpls->streams, stream);
     /** Add a stream message creation to the sending buffer ! */
+    stream_send_control_message(tcpls, stream, "", STREAM_ATTACH, 0);
   }
   else {
     stream = list_get(tcpls->streams, streamid);
@@ -527,6 +525,25 @@ int ptls_set_bpf_cc(ptls_t *ptls, const uint8_t *bpf_prog_bytecode, size_t bytec
 
 /*===================================Internal========================================*/
 
+/**
+ * Send a message to the peer to 
+ *    - initiate a new stream
+ *    - close a new stream
+ *    - send a acknowledgment
+ *
+ * Note, currently we implement 1 stream per TCP connection
+ */
+
+static int stream_send_control_message(tcpls_t *tcpls, tcpls_stream_t *stream,
+    const void *inputinfo, tcpls_enum_t tcpls_message, uint32_t message_len) {
+  uint8_t input[message_len];
+  memcpy(input, &tcpls_message, sizeof(tcpls_message));
+  memcpy(input+sizeof(tcpls_message), inputinfo, message_len);
+  return buffer_push_encrypted_records(tcpls->sendbuf,
+      PTLS_CONTENT_TYPE_TCPLS_OPTION, input,
+      message_len+sizeof(tcpls_message), stream->aead_enc);
+}
+
 static tcpls_options_t*  tcpls_init_context(ptls_t *ptls, const void *data, size_t datalen,
     tcpls_enum_t type, uint8_t setlocal, uint8_t settopeer) {
   ptls->ctx->support_tcpls_options = 1;
@@ -617,6 +634,9 @@ int handle_tcpls_extension_option(ptls_t *ptls, tcpls_enum_t type,
         int ret = 0;
         struct sockaddr_in addr;
         bzero(&addr, sizeof(addr));
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons(443); /** Not great; but it's fine for a POC; else we also need
+                                        to reference the port somewhere */
         int nbr = inputlen/sizeof(uint32_t);
         int offset = 0;
         while(nbr && !ret) {
@@ -634,6 +654,7 @@ int handle_tcpls_extension_option(ptls_t *ptls, tcpls_enum_t type,
         int ret = 0;
         struct sockaddr_in6 addr;
         bzero(&addr, sizeof(addr));
+        addr.sin6_family = AF_INET6;
         int nbr = inputlen/(sizeof(uint64_t)*2);
         int offset = 0;
         while (nbr && !ret) {
@@ -722,27 +743,6 @@ Exit:
   ptls_buffer_dispose(tls->tcpls_buf);
   return ret;
 }
-
-
-/**
- * In case of failover, the peer only switch TCP's connection upon reception of this signal
- *
- * Pick the faster non-primary and open TCP connection to send the signal
- * */
-
-int tcpls_sends_failover_signal(tcpls_t *tcpls, ptls_buffer_t *sendbuf) {
-
-  uint8_t input[TCPLS_SIGNAL_SIZE];
-  tcpls_enum_t f_signal = FAILOVER;
-  memcpy(input, &f_signal, sizeof(f_signal));
-  memcpy(input+sizeof(f_signal), &tcpls->tls->traffic_protection.dec.aead->seq,
-      sizeof(tcpls->tls->traffic_protection.enc.aead->seq));
-  /** Synchronization problem in sequence number ! */
-  return buffer_push_encrypted_records(sendbuf,
-      PTLS_CONTENT_TYPE_TCPLS_OPTION, input,
-      TCPLS_SIGNAL_SIZE, tcpls->tls->traffic_protection.enc.aead);
-}
-
 
 static int setlocal_usertimeout(ptls_t *ptls, tcpls_options_t *option) {
   return 0;
