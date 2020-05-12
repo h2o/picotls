@@ -367,8 +367,11 @@ ssize_t tcpls_send(ptls_t *tls, streamid_t streamid, const void *input, size_t n
     stream->aead_enc =  tcpls->tls->traffic_protection.enc.aead;
     stream->aead_dec =  tcpls->tls->traffic_protection.dec.aead;
     list_add(tcpls->streams, stream);
+    uint8_t input[4];
+    /** send the stream id to the peer */
+    memcpy(input, &stream->streamid, 4);
     /** Add a stream message creation to the sending buffer ! */
-    stream_send_control_message(tcpls, stream, "", STREAM_ATTACH, 0);
+    stream_send_control_message(tcpls, stream, input, STREAM_ATTACH, 0);
   }
   else {
     stream = list_get(tcpls->streams, streamid);
@@ -821,10 +824,32 @@ static tcpls_stream_t *stream_new(ptls_t *tls, tcpls_v4_addr_t *addr, tcpls_v6_a
 
 
 tcpls_v4_addr_t *get_v4_primary_addr(tcpls_t *tcpls) {
+  tcpls_v4_addr_t *current = tcpls->v4_addr_llist;
+  int has_primary = 0;
+  while (current && !has_primary) {
+    if (current->is_primary) {
+      has_primary = 1;
+      continue;
+    }
+    current = current->next;
+  }
+  if (has_primary)
+    return current;
   return NULL;
 }
 
 tcpls_v6_addr_t *get_v6_primary_addr(tcpls_t *tcpls) {
+  tcpls_v6_addr_t *current = tcpls->v6_addr_llist;
+  int has_primary = 0;
+  while (current && !has_primary) {
+    if (current->is_primary) {
+      has_primary = 1;
+      continue;
+    }
+    current = current->next;
+  }
+  if (has_primary)
+    return current;
   return NULL;
 }
 
