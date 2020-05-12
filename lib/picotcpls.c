@@ -781,7 +781,17 @@ static int setlocal_bpf_sched(ptls_t *ptls, tcpls_options_t *option) {
 /*=====================================utilities======================================*/
 
 static void stream_derive_new_aead_iv(ptls_t *tls, uint8_t *iv, int iv_size) {
-
+  if (iv_size == 96) {
+    uint32_t low_iv = (uint32_t) iv[8];
+    /** if over uin32 MAX; it should properly wrap arround */
+    low_iv += tls->tcpls->streams->size * MIN_LOWIV_STREAM_INCREASE;
+    memcpy(&iv[8], &low_iv, 4);
+  }
+  else if (iv_size == 128) {
+    uint64_t low_iv = (uint64_t) iv[8];
+    low_iv += tls->tcpls->streams->size * MIN_LOWIV_STREAM_INCREASE;
+    memcpy(&iv[8], &low_iv, 8);
+  }
 }
 
 /**
