@@ -60,7 +60,7 @@ static int is_varlen(tcpls_enum_t type);
 static int setlocal_usertimeout(ptls_t *ptls, tcpls_options_t *option);
 static int setlocal_bpf_sched(ptls_t *ptls, tcpls_options_t *option);
 static void _set_primary(tcpls_t *tcpls);
-static tcpls_stream_t *stream_new(ptls_t *tcpls, tcpls_v4_addr_t *addr,
+static tcpls_stream_t *stream_new(ptls_t *tcpls, streamid_t streamid, tcpls_v4_addr_t *addr,
     tcpls_v6_addr_t *addr6, int is_ours);
 static int stream_send_control_message(tcpls_t *tcpls, tcpls_stream_t *stream,
     const void *inputinfo, tcpls_enum_t message, uint32_t message_len);
@@ -95,6 +95,7 @@ void *tcpls_new(void *ctx, int is_server) {
   tcpls->v4_addr_llist = NULL;
   tcpls->v6_addr_llist = NULL;
   tcpls->nbr_of_peer_streams_attached = 0;
+  tcpls->nbr_tcp_streams = 0;
   tcpls->streams = new_list(sizeof(tcpls_stream_t), 3);
   return tcpls;
 }
@@ -278,6 +279,7 @@ int tcpls_connect(ptls_t *tls) {
   memcpy(&t_previous, &t_initial, sizeof(t_previous));
   timeout.tv_sec = 1;
   timeout.tv_usec = 0;
+  tcpls->nbr_tcp_streams = nfds;
 
 #define CHECK_WHICH_CONNECTED(current) do {                                         \
   while (current) {                                                                 \
@@ -373,7 +375,7 @@ ssize_t tcpls_send(ptls_t *tls, streamid_t streamid, const void *input, size_t n
     tcpls_v4_addr_t *addr = get_v4_primary_addr(tcpls);
     tcpls_v6_addr_t *addr6 = get_v6_primary_addr(tcpls);
     assert(addr || addr6);
-    stream = stream_new(tls, addr, addr6, 1);
+    stream = stream_new(tls, tcpls->next_stream_id++, addr, addr6, 1);
 
     stream->aead_enc =  tcpls->tls->traffic_protection.enc.aead;
     stream->aead_dec =  tcpls->tls->traffic_protection.dec.aead;
@@ -429,8 +431,58 @@ ssize_t tcpls_send(ptls_t *tls, streamid_t streamid, const void *input, size_t n
   return 0;
 }
 
-ssize_t tcpls_receive(ptls_t *tls, const void *input, size_t nbytes) {
-  return 0;
+/**
+ * Wait at most tv time over all stream sockets to be available for reading
+ */
+
+ssize_t tcpls_receive(ptls_t *tls, void *buf, size_t nbytes, struct timeval *tv) {
+  fd_set rset;
+  int ret;
+  tcpls_t *tcpls = tls->tcpls;
+  list_t *socklist = new_list(sizeof(int), tcpls->nbr_tcp_streams);
+  FD_ZERO(&rset);
+#define ADD_TO_RSET(current) do {                                     \
+  while (current) {                                                   \
+    FD_SET(current->socket, &rset);                                   \
+    list_add(socklist, &current->socket);                             \
+    current = current->next;                                          \
+  }                                                                   \
+} while(0);
+  tcpls_v4_addr_t *current = tcpls->v4_addr_llist;
+  ADD_TO_RSET(current);
+  tcpls_v6_addr_t *current_v6 = tcpls->v6_addr_llist;
+  ADD_TO_RSET(current_v6);
+#undef ADD_TO_RSET
+  ret = select(socklist->size+1, &rset, NULL, NULL, tv);
+  if (ret == -1) {
+    //TODO
+  }
+  int *socket;
+  ret = 0;
+  uint8_t input[nbytes];
+  for (int i =  0; i < socklist->size; i++) {
+     socket = list_get(socklist, i);
+     if (FD_ISSET(*socket, &rset)) {
+       ret = read(*socket, input, nbytes);
+       if (ret == -1) {
+         //things TODO
+       }
+       break;
+     }
+  }
+  /* We have stuff to decrypts */
+  if (ret > 0) {
+    ptls_buffer_t decryptbuf;
+    ptls_buffer_init(&decryptbuf, "", ret);
+    //TODO put the right decryption context 
+    if ((ptls_receive(tls, &decryptbuf, input, (size_t*)&ret) != 0)) {
+      //TODO
+    }
+    memcpy(buf, decryptbuf.base, decryptbuf.off);
+    ret = decryptbuf.off;
+  }
+  free(socklist);
+  return ret;
 }
 
 /**
@@ -694,6 +746,12 @@ int handle_tcpls_extension_option(ptls_t *ptls, tcpls_enum_t type,
       }
       break;
     case STREAM_ATTACH:
+      { 
+        //TODO fix this with sending with network order and receiving with host
+        //order
+        /*streamid_t streamid = (streamid_t) *input;*/
+        /*tcpls_stream_t *stream = stream_new*/
+      }
       break;
     case FAILOVER:
       break;
@@ -834,11 +892,11 @@ static void stream_derive_new_aead_iv(ptls_t *tls, uint8_t *iv, int iv_size, int
  * initiated by the peer (STREAM_ATTACH event, is_ours = 0)
  */
 
-static tcpls_stream_t *stream_new(ptls_t *tls, tcpls_v4_addr_t *addr,
-    tcpls_v6_addr_t *addr6, int is_ours) {
-  tcpls_t *tcpls = tls->tcpls;
+static tcpls_stream_t *stream_new(ptls_t *tls, streamid_t streamid,
+    tcpls_v4_addr_t *addr, tcpls_v6_addr_t *addr6, int is_ours) {
   tcpls_stream_t *stream = malloc(sizeof(*stream));
-  stream->streamid = tcpls->next_stream_id++;
+  stream->streamid = streamid;
+
   /** TODO figure out a good default size for the control flow */
   stream->send_queue = tcpls_record_queue_new(500);
   if (addr) {

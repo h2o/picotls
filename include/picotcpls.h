@@ -101,6 +101,9 @@ struct st_tcpls_t {
   uint32_t next_stream_id;
   /** count the number of times we attached a stream from the peer*/
   uint32_t nbr_of_peer_streams_attached;
+  
+  /** nbr of tcp connection */
+  uint32_t nbr_tcp_streams;
 
   /** socket of the primary address - must be update at each primary change*/
   int *socket_ptr;
@@ -124,7 +127,7 @@ uint32_t tcpls_stream_new(ptls_t *tls, struct sockaddr *addr);
 
 ssize_t tcpls_send(ptls_t *tls, streamid_t streamid, const void *input, size_t nbytes);
 
-ssize_t tcpls_receive(ptls_t *tls, const void *input, size_t nbytes);
+ssize_t tcpls_receive(ptls_t *tls, void *input, size_t nbytes, struct timeval *tv);
 
 int ptls_set_user_timeout(ptls_t *ctx, uint16_t value, uint16_t sec_or_min,
     uint8_t setlocal, uint8_t settopeer);
