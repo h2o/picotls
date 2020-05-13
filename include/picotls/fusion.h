@@ -57,7 +57,7 @@ void ptls_fusion_aesgcm_destroy(ptls_fusion_aesgcm_context_t *ctx);
  * @param output   output buffer
  * @param input    payload to be encrypted
  * @param inlen   size of the payload to be encrypted
- * @param iv       initialization vector of 12 bytes
+ * @param iv       initialization vector of 12 bytes (must be accessible as a 16-byte value)
  * @param aad      AAD
  * @param aadlen   size of AAD
  * @param supp     (optional) supplementary encryption context

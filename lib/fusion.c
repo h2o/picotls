@@ -41,6 +41,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <tmmintrin.h>
+#include <nmmintrin.h>
 #include <wmmintrin.h>
 #include "picotls.h"
 #include "picotls/fusion.h"
@@ -300,8 +301,8 @@ void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, void *output,
     int32_t state = supp != NULL ? STATE_SUPP_USED : 0;
 
     /* build counter */
-    ek0 = loadn(iv, PTLS_AESGCM_IV_SIZE);
-    ek0 = _mm_insert_epi16(ek0, 0x100, 7);
+    ek0 = _mm_loadu_si128(iv);
+    ek0 = _mm_insert_epi32(ek0, 0x1000000, 3);
     ctr = _mm_shuffle_epi8(ek0, bswap64);
 
     /* prepare the first bit stream */
