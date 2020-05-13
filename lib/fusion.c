@@ -54,6 +54,18 @@ struct ptls_fusion_aesgcm_context {
     } ghash[0];
 };
 
+struct ctr_context {
+    ptls_cipher_context_t super;
+    ptls_fusion_aesecb_context_t fusion;
+    __m128i bits;
+    uint8_t is_ready;
+};
+
+struct aesgcm_context {
+    ptls_aead_context_t super;
+    ptls_fusion_aesgcm_context_t *aesgcm;
+};
+
 static const uint64_t poly_[2] __attribute__((aligned(16))) = {1, 0xc200000000000000};
 #define poly (*(__m128i *)poly_)
 static const uint8_t bswap8_[16] __attribute__((aligned(16))) = {15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0};
@@ -199,7 +211,7 @@ static inline void storen(void *_p, size_t l, __m128i v)
 }
 
 void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, void *output, const void *input, size_t inlen, const void *iv,
-                                const void *_aad, size_t aadlen, ptls_fusion_aesecb_context_t *suppkey, void *suppvec)
+                                const void *_aad, size_t aadlen, ptls_aead_supplementary_encryption_t *supp)
 {
 /* init the bits (we can always run in full), but use the last slot for calculating ek0, if possible */
 #define AESECB6_INIT()                                                                                                             \
@@ -222,10 +234,9 @@ void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, void *output,
                 bits5 = ek0;                                                                                                       \
                 state |= STATE_EK0_BEEN_FED;                                                                                       \
             }                                                                                                                      \
-            if (suppkey != NULL && srclen <= 16 * 4) {                                                                             \
-                bits4 = _mm_loadu_si128(suppvec);                                                                                  \
-                bits4keys = suppkey->keys;                                                                                         \
-                suppkey = NULL;                                                                                                    \
+            if ((state & STATE_SUPP_USED) != 0 && srclen <= 16 * 4 && (const __m128i *)supp->input + 1 <= dst_ghash) {             \
+                bits4 = _mm_loadu_si128(supp->input);                                                                              \
+                bits4keys = ((struct ctr_context *)supp->ctx)->fusion.keys;                                                        \
                 state |= STATE_SUPP_IN_PROCESS;                                                                                    \
             }                                                                                                                      \
         }                                                                                                                          \
@@ -263,7 +274,7 @@ void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, void *output,
     } while (0)
 
     __m128i ctr, ek0, bits0, bits1, bits2, bits3, bits4, bits5 = _mm_setzero_si128();
-    const __m128i *bits4keys = ctx->ecb.keys; /* is changed to suppkey->keys when calcurating suppout */
+    const __m128i *bits4keys = ctx->ecb.keys; /* is changed to supp->ctx.keys when calcurating suppout */
     struct ptls_fusion_gfmul_state gstate = {};
     __m128i gdatabuf[6];
     __m128i ac = _mm_shuffle_epi8(_mm_set_epi32(0, (int)inlen * 8, 0, (int)aadlen * 8), bswap64);
@@ -281,11 +292,12 @@ void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, void *output,
 
     struct ptls_fusion_aesgcm_ghash_precompute *ghash_precompute = ctx->ghash + (aadlen + 15) / 16 + (srclen + 15) / 16 + 1;
 
-    int32_t state = 0;
 #define STATE_EK0_BEEN_FED 0x3
 #define STATE_EK0_INCOMPLETE 0x2
 #define STATE_EK0_READY() ((state & STATE_EK0_BEEN_FED) == 0x1)
-#define STATE_SUPP_IN_PROCESS 0x4
+#define STATE_SUPP_USED 0x4
+#define STATE_SUPP_IN_PROCESS 0x8
+    int32_t state = supp != NULL ? STATE_SUPP_USED : 0;
 
     /* build counter */
     ek0 = loadn(iv, PTLS_AESGCM_IV_SIZE);
@@ -319,8 +331,8 @@ void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, void *output,
                 state &= ~STATE_EK0_INCOMPLETE;
             }
             if ((state & STATE_SUPP_IN_PROCESS) != 0) {
-                _mm_storeu_si128(suppvec, bits4);
-                state &= ~STATE_SUPP_IN_PROCESS;
+                _mm_storeu_si128((__m128i *)supp->output, bits4);
+                state &= ~(STATE_SUPP_USED | STATE_SUPP_IN_PROCESS);
             }
             if (srclen != 0) {
 #define APPLY(i)                                                                                                                   \
@@ -405,23 +417,32 @@ void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, void *output,
 Finish:
     gdatabuf[gdata_cnt++] = ac;
 
-    /* We have complete set of data to be fed into GHASH. Let's finish the remaining calculation (GHASH and possibly suppvec), and
-     * exit the loop.
+    /* We have complete set of data to be fed into GHASH. Let's finish the remaining calculation.
      * Note that by now, all AES operations for payload encryption and ek0 are complete. This is is because it is necessary for GCM
      * to process at least the same amount of data (i.e. payload-blocks + AC), and because AES is at least one 96-byte block ahead.
      */
     assert(STATE_EK0_READY());
-    assert(suppkey == NULL);
-    if ((state & STATE_SUPP_IN_PROCESS) != 0) {
-        for (size_t i = 2; i <= 9; ++i)
-            bits4 = _mm_aesenc_si128(bits4, bits4keys[i]);
-        bits4 = _mm_aesenclast_si128(bits4, bits4keys[10]);
-        _mm_storeu_si128(suppvec, bits4);
-    }
     for (size_t i = 0; i < gdata_cnt; ++i)
         gfmul_onestep(&gstate, gdatabuf[i], --ghash_precompute);
 
     _mm_storeu_si128(dst, gfmul_final(&gstate, ek0));
+
+    /* Finish the calculation of supplemental vector. Done at the very last, because the sample might cover the GCM tag. */
+    if ((state & STATE_SUPP_USED) != 0) {
+        size_t i;
+        if ((state & STATE_SUPP_IN_PROCESS) == 0) {
+            bits4keys = ((struct ctr_context *)supp->ctx)->fusion.keys;
+            bits4 = _mm_xor_si128(_mm_loadu_si128(supp->input), bits4keys[0]);
+            i = 1;
+        } else {
+            i = 2;
+        }
+        do {
+            bits4 = _mm_aesenc_si128(bits4, bits4keys[i++]);
+        } while (i != 10);
+        bits4 = _mm_aesenclast_si128(bits4, bits4keys[10]);
+        _mm_storeu_si128((__m128i *)supp->output, bits4);
+    }
 
 #undef AESECB6_INIT
 #undef AESECB6_UPDATE
@@ -432,12 +453,10 @@ Finish:
 }
 
 int ptls_fusion_aesgcm_decrypt(ptls_fusion_aesgcm_context_t *ctx, void *output, const void *input, size_t inlen, const void *iv,
-                               const void *_aad, size_t aadlen, const void *tag, ptls_fusion_aesecb_context_t *suppkey,
-                               void *suppvec)
+                               const void *_aad, size_t aadlen, const void *tag)
 {
     __m128i ctr, ek0 = _mm_setzero_si128(), bits0, bits1 = _mm_setzero_si128(), bits2 = _mm_setzero_si128(),
                  bits3 = _mm_setzero_si128(), bits4 = _mm_setzero_si128(), bits5 = _mm_setzero_si128();
-    const __m128i *bits1keys;
     struct ptls_fusion_gfmul_state gstate = {};
     __m128i gdatabuf[6];
     __m128i ac = _mm_shuffle_epi8(_mm_set_epi32(0, (int)inlen * 8, 0, (int)aadlen * 8), bswap64);
@@ -458,13 +477,6 @@ int ptls_fusion_aesgcm_decrypt(ptls_fusion_aesgcm_context_t *ctx, void *output, 
     ctr = _mm_add_epi64(ctr, one64);
     bits0 = _mm_xor_si128(_mm_shuffle_epi8(ctr, bswap64), ctx->ecb.keys[0]);
     ++nondata_aes_cnt;
-    if (suppkey != NULL) {
-        bits1keys = suppkey->keys;
-        bits1 = _mm_loadu_si128(suppvec);
-        ++nondata_aes_cnt;
-    } else {
-        bits1keys = ctx->ecb.keys;
-    }
 
 #define STATE_IS_FIRST_RUN 0x1
 #define STATE_GHASH_HAS_MORE 0x2
@@ -527,7 +539,7 @@ int ptls_fusion_aesgcm_decrypt(ptls_fusion_aesgcm_context_t *ctx, void *output, 
         bits##n = _mm_xor_si128(_mm_shuffle_epi8(ctr, bswap64), keys[0]);
         InitAllBits:
             INIT_BITS(0, ctx->ecb.keys);
-            INIT_BITS(1, bits1keys);
+            INIT_BITS(1, ctx->ecb.keys);
             INIT_BITS(2, ctx->ecb.keys);
             INIT_BITS(3, ctx->ecb.keys);
             INIT_BITS(4, ctx->ecb.keys);
@@ -540,7 +552,7 @@ int ptls_fusion_aesgcm_decrypt(ptls_fusion_aesgcm_context_t *ctx, void *output, 
     do {                                                                                                                           \
         __m128i k = ctx->ecb.keys[i];                                                                                              \
         bits0 = _mm_aesenc_si128(bits0, k);                                                                                        \
-        bits1 = _mm_aesenc_si128(bits1, bits1keys[i]);                                                                             \
+        bits1 = _mm_aesenc_si128(bits1, k);                                                                                        \
         bits2 = _mm_aesenc_si128(bits2, k);                                                                                        \
         bits3 = _mm_aesenc_si128(bits3, k);                                                                                        \
         bits4 = _mm_aesenc_si128(bits4, k);                                                                                        \
@@ -556,7 +568,7 @@ int ptls_fusion_aesgcm_decrypt(ptls_fusion_aesgcm_context_t *ctx, void *output, 
                 AESECB6_UPDATE(aesi);
             __m128i k = ctx->ecb.keys[aesi];
             bits0 = _mm_aesenclast_si128(bits0, k);
-            bits1 = _mm_aesenclast_si128(bits1, bits1keys[aesi]);
+            bits1 = _mm_aesenclast_si128(bits1, k);
             bits2 = _mm_aesenclast_si128(bits2, k);
             bits3 = _mm_aesenclast_si128(bits3, k);
             bits4 = _mm_aesenclast_si128(bits4, k);
@@ -581,10 +593,6 @@ int ptls_fusion_aesgcm_decrypt(ptls_fusion_aesgcm_context_t *ctx, void *output, 
         } else {
             if ((state & STATE_IS_FIRST_RUN) != 0) {
                 ek0 = bits0;
-                if (suppkey != NULL) {
-                    _mm_store_si128(suppvec, bits1);
-                    bits1keys = ctx->ecb.keys;
-                }
                 state &= ~STATE_IS_FIRST_RUN;
             }
             switch (nondata_aes_cnt) {
@@ -703,13 +711,6 @@ void ptls_fusion_aesgcm_destroy(ptls_fusion_aesgcm_context_t *ctx)
     free(ctx);
 }
 
-struct ctr_context {
-    ptls_cipher_context_t super;
-    ptls_fusion_aesecb_context_t fusion;
-    __m128i bits;
-    uint8_t is_ready;
-};
-
 static void ctr_dispose(ptls_cipher_context_t *_ctx)
 {
     struct ctr_context *ctx = (struct ctr_context *)_ctx;
@@ -752,11 +753,6 @@ static int aes128ctr_setup(ptls_cipher_context_t *_ctx, int is_enc, const void *
     return 0;
 }
 
-struct aesgcm_context {
-    ptls_aead_context_t super;
-    ptls_fusion_aesgcm_context_t *aesgcm;
-};
-
 static void aesgcm_dispose_crypto(ptls_aead_context_t *_ctx)
 {
     struct aesgcm_context *ctx = (struct aesgcm_context *)_ctx;
@@ -782,29 +778,18 @@ static size_t aead_do_encrypt_final(ptls_aead_context_t *_ctx, void *_output)
 }
 
 void aead_do_encrypt(struct st_ptls_aead_context_t *_ctx, void *output, const void *input, size_t inlen, const void *iv,
-                     const void *aad, size_t aadlen, ptls_cipher_context_t *suppkey, void *suppvec)
+                     const void *aad, size_t aadlen, ptls_aead_supplementary_encryption_t *supp)
 {
-    ptls_fusion_aesgcm_context_t *aesgcm = ((struct aesgcm_context *)_ctx)->aesgcm;
-    ptls_fusion_aesecb_context_t *aesecb = suppkey != NULL ? &((struct ctr_context *)suppkey)->fusion : NULL;
-
-    ptls_fusion_aesgcm_encrypt(aesgcm, output, input, inlen, iv, aad, aadlen, aesecb, suppvec);
+    ptls_fusion_aesgcm_encrypt(((struct aesgcm_context *)_ctx)->aesgcm, output, input, inlen, iv, aad, aadlen, supp);
 }
 
 static size_t aead_do_decrypt(ptls_aead_context_t *_ctx, void *output, const void *input, size_t inlen, const void *iv,
-                              const void *aad, size_t aadlen, ptls_cipher_context_t *suppkey, void *suppvec)
+                              const void *aad, size_t aadlen)
 {
     ptls_fusion_aesgcm_context_t *aesgcm = ((struct aesgcm_context *)_ctx)->aesgcm;
-    struct ptls_fusion_aesecb_context *aesecb = suppkey != NULL ? &((struct ctr_context *)suppkey)->fusion : NULL;
-
-    if (inlen < 16) {
-        if (suppkey != NULL)
-            _mm_storeu_si128(suppvec, aesecb_encrypt(aesecb, _mm_loadu_si128(suppvec)));
-        return SIZE_MAX;
-    }
 
     size_t enclen = inlen - 16;
-    if (!ptls_fusion_aesgcm_decrypt(aesgcm, output, input, enclen, iv, aad, aadlen, (const uint8_t *)input + enclen, aesecb,
-                                    suppvec))
+    if (!ptls_fusion_aesgcm_decrypt(aesgcm, output, input, enclen, iv, aad, aadlen, (const uint8_t *)input + enclen))
         return SIZE_MAX;
     return enclen;
 }

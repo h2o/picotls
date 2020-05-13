@@ -9,8 +9,7 @@ int main(int argc, char **argv)
 {
     static const uint8_t key[16] = {}, iv[12] = {}, aad[13] = {};
     size_t textlen = 16384;
-    ptls_fusion_aesecb_context_t *suppkey = NULL;
-    uint8_t suppvec[16] = {};
+    ptls_aead_supplementary_encryption_t *supp = NULL;
     int ch, decrypt = 0, count = 1000000;
 
     while ((ch = getopt(argc, argv, "b:dn:sh")) != -1) {
@@ -32,8 +31,8 @@ int main(int argc, char **argv)
             break;
         case 's': {
             static const uint8_t k[16] = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1};
-            suppkey = malloc(sizeof(*suppkey));
-            ptls_fusion_aesecb_init(suppkey, k);
+            supp = malloc(sizeof(*supp));
+            supp->ctx = ptls_cipher_new(&ptls_fusion_aes128ctr, 1, k);
         } break;
         default:
             printf("Usage: %s -b <bytes> -s\n"
@@ -51,16 +50,18 @@ int main(int argc, char **argv)
 
     uint8_t *text = malloc(textlen + 16);
     memset(text, 0, textlen + 16);
+    if (supp != NULL)
+        supp->input = textlen >= 2 ? text + 2 : text + textlen;
 
     ptls_fusion_aesgcm_context_t *ctx = ptls_fusion_aesgcm_create(key, sizeof(aad) + textlen);
 
     if (!decrypt) {
         for (int i = 0; i < count; ++i)
-            ptls_fusion_aesgcm_encrypt(ctx, text, text, textlen, iv, aad, sizeof(aad), suppkey, suppvec);
+            ptls_fusion_aesgcm_encrypt(ctx, text, text, textlen, iv, aad, sizeof(aad), supp);
     } else {
         uint8_t tag[16] = {};
         for (int i = 0; i < count; ++i)
-            ptls_fusion_aesgcm_decrypt(ctx, text, text, textlen, iv, aad, sizeof(aad), &tag, suppkey, suppvec);
+            ptls_fusion_aesgcm_decrypt(ctx, text, text, textlen, iv, aad, sizeof(aad), &tag);
     }
 
     for (int i = 0; i < 16; ++i)

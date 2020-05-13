@@ -133,10 +133,8 @@ static inline size_t aesgcm_encrypt_final(ptls_aead_context_t *_ctx, void *outpu
 }
 
 static inline size_t aesgcm_decrypt(ptls_aead_context_t *_ctx, void *output, const void *input, size_t inlen, const void *iv,
-                                    const void *aad, size_t aadlen, ptls_cipher_context_t *suppkey, void *suppvec)
+                                    const void *aad, size_t aadlen)
 {
-    ptls_aead__encrypt_supp(suppkey, suppvec);
-
     struct aesgcm_context_t *ctx = (struct aesgcm_context_t *)_ctx;
 
     if (inlen < PTLS_AESGCM_TAG_SIZE)

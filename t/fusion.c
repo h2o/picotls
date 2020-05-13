@@ -57,11 +57,11 @@ int main(int argc, char **argv)
         ptls_fusion_aesgcm_context_t *ctx = ptls_fusion_aesgcm_create(zero, 5 + 16);
         uint8_t encrypted[sizeof(expected)], decrypted[sizeof(expected) - 16];
 
-        ptls_fusion_aesgcm_encrypt(ctx, encrypted, zero, 16, zero, "hello", 5, NULL, NULL);
+        ptls_fusion_aesgcm_encrypt(ctx, encrypted, zero, 16, zero, "hello", 5, NULL);
         ok(memcmp(expected, encrypted, sizeof(expected)) == 0);
 
         memset(decrypted, 0x55, sizeof(decrypted));
-        ok(ptls_fusion_aesgcm_decrypt(ctx, decrypted, expected, 16, zero, "hello", 5, expected + 16, NULL, NULL));
+        ok(ptls_fusion_aesgcm_decrypt(ctx, decrypted, expected, 16, zero, "hello", 5, expected + 16));
         ok(memcmp(decrypted, zero, sizeof(decrypted)) == 0);
 
         ptls_fusion_aesgcm_destroy(ctx);
@@ -72,66 +72,65 @@ int main(int argc, char **argv)
                                              0x41, 0xc8, 0x05, 0x77, 0xd5, 0x2f, 0xcb, 0x57};
         ptls_fusion_aesgcm_context_t *ctx = ptls_fusion_aesgcm_create(zero, 2);
         uint8_t encrypted[17], decrypted[1] = {0x55};
-        ptls_fusion_aesgcm_encrypt(ctx, encrypted, "X", 1, zero, "a", 1, NULL, NULL);
+        ptls_fusion_aesgcm_encrypt(ctx, encrypted, "X", 1, zero, "a", 1, NULL);
         ok(memcmp(expected, encrypted, 17) == 0);
-        ok(ptls_fusion_aesgcm_decrypt(ctx, decrypted, expected, 1, zero, "a", 1, expected + 1, NULL, NULL));
+        ok(ptls_fusion_aesgcm_decrypt(ctx, decrypted, expected, 1, zero, "a", 1, expected + 1));
         ok('X' == decrypted[0]);
         ptls_fusion_aesgcm_destroy(ctx);
     }
 
     {
         ptls_fusion_aesgcm_context_t *aead = ptls_fusion_aesgcm_create(zero, sizeof(zero));
-        ptls_fusion_aesecb_context_t *ecb = NULL;
+        ptls_aead_supplementary_encryption_t *supp = NULL;
 
         for (int i = 0; i < 2; ++i) {
-            uint8_t encrypted[sizeof(zero) + 16], ecbvec[16], decrypted[sizeof(zero)];
-#define DOIT(iv, aad, aadlen, ptlen, expected_tag)                                                                                 \
+            uint8_t encrypted[sizeof(zero) + 16], decrypted[sizeof(zero)];
+#define DOIT(iv, aad, aadlen, ptlen, expected_tag, expected_supp)                                                                  \
     do {                                                                                                                           \
-        memset(ecbvec, 0, sizeof(ecbvec));                                                                                         \
-        ptls_fusion_aesgcm_encrypt(aead, encrypted, zero, ptlen, iv, aad, aadlen, ecb, &ecbvec);                                   \
+        memset(encrypted, 0xcc, sizeof(encrypted));                                                                                \
+        ptls_fusion_aesgcm_encrypt(aead, encrypted, zero, ptlen, iv, aad, aadlen, supp);                                           \
+        printf("%s\n", tostr(encrypted + ptlen, 16));                                                                              \
         ok(strcmp(tostr(encrypted + ptlen, 16), expected_tag) == 0);                                                               \
-        if (i == 0) {                                                                                                              \
-            ok(memcmp(ecbvec, zero, sizeof(ecbvec)) == 0);                                                                         \
-        } else {                                                                                                                   \
-            ok(strcmp(tostr(ecbvec, sizeof(ecbvec)), "b6aeaffa752dc08b51639731761aed00") == 0);                                    \
-        }                                                                                                                          \
+        if (supp != NULL)                                                                                                          \
+            ok(strcmp(tostr(supp->output, sizeof(supp->output)), expected_supp) == 0);                                             \
         memset(decrypted, 0x55, sizeof(decrypted));                                                                                \
-        ok(ptls_fusion_aesgcm_decrypt(aead, decrypted, encrypted, ptlen, iv, aad, aadlen, encrypted + ptlen, NULL, NULL));         \
+        ok(ptls_fusion_aesgcm_decrypt(aead, decrypted, encrypted, ptlen, iv, aad, aadlen, encrypted + ptlen));                     \
         ok(memcmp(decrypted, zero, ptlen) == 0);                                                                                   \
     } while (0)
 
-            DOIT(zero, zero, 13, 17, "1b4e515384e8aa5bb781ee12549a2ccf");
-            DOIT(zero, zero, 13, 32, "84030586f55adf8ac3c145913c6fd0f8");
-            DOIT(zero, zero, 13, 64, "66165d39739c50c90727e7d49127146b");
-            DOIT(zero, zero, 13, 65, "eb3b75e1d4431e1bb67da46f6a1a0edd");
-            DOIT(zero, zero, 13, 79, "8f4a96c7390c26bb15b68865e6a861b9");
-            DOIT(zero, zero, 13, 80, "5cc2554857b19e7a9e18d015feac61fd");
-            DOIT(zero, zero, 13, 81, "5a65f0d4db36c981bf7babd11691fe78");
-            DOIT(zero, zero, 13, 95, "6a8a51152efe928999a610d8a7b1df9d");
-            DOIT(zero, zero, 13, 96, "6b9c468e24ed96010687f3880a044d42");
-            DOIT(zero, zero, 13, 97, "1b4eb785b884a7d4fdebaff81c1c12e8");
+            DOIT(zero, zero, 13, 17, "1b4e515384e8aa5bb781ee12549a2ccf", "4576f18ef3ae9dfd37cf72c4592da874");
+            DOIT(zero, zero, 13, 32, "84030586f55adf8ac3c145913c6fd0f8", "a062016e90dcc316d061fde5424cf34f");
+            DOIT(zero, zero, 13, 64, "66165d39739c50c90727e7d49127146b", "a062016e90dcc316d061fde5424cf34f");
+            DOIT(zero, zero, 13, 65, "eb3b75e1d4431e1bb67da46f6a1a0edd", "a062016e90dcc316d061fde5424cf34f");
+            DOIT(zero, zero, 13, 79, "8f4a96c7390c26bb15b68865e6a861b9", "a062016e90dcc316d061fde5424cf34f");
+            DOIT(zero, zero, 13, 80, "5cc2554857b19e7a9e18d015feac61fd", "a062016e90dcc316d061fde5424cf34f");
+            DOIT(zero, zero, 13, 81, "5a65f0d4db36c981bf7babd11691fe78", "a062016e90dcc316d061fde5424cf34f");
+            DOIT(zero, zero, 13, 95, "6a8a51152efe928999a610d8a7b1df9d", "a062016e90dcc316d061fde5424cf34f");
+            DOIT(zero, zero, 13, 96, "6b9c468e24ed96010687f3880a044d42", "a062016e90dcc316d061fde5424cf34f");
+            DOIT(zero, zero, 13, 97, "1b4eb785b884a7d4fdebaff81c1c12e8", "a062016e90dcc316d061fde5424cf34f");
 
-            DOIT(zero, zero, 22, 1328, "0507baaece8d573774c94e8103821316");
-            DOIT(zero, zero, 21, 1329, "dd70d59030eadb6313e778046540a253");
-            DOIT(zero, zero, 20, 1330, "f1b456b955afde7603188af0124a32ef");
+            DOIT(zero, zero, 22, 1328, "0507baaece8d573774c94e8103821316", "a062016e90dcc316d061fde5424cf34f");
+            DOIT(zero, zero, 21, 1329, "dd70d59030eadb6313e778046540a253", "a062016e90dcc316d061fde5424cf34f");
+            DOIT(zero, zero, 20, 1330, "f1b456b955afde7603188af0124a32ef", "a062016e90dcc316d061fde5424cf34f");
 
-            DOIT(zero, zero, 13, 1337, "a22deec51250a7eb1f4384dea5f2e890");
-            DOIT(zero, zero, 12, 1338, "42102b0a499b2efa89702ece4b0c5789");
-            DOIT(zero, zero, 11, 1339, "9827f0b34252160d0365ffaa9364bedc");
+            DOIT(zero, zero, 13, 1337, "a22deec51250a7eb1f4384dea5f2e890", "a062016e90dcc316d061fde5424cf34f");
+            DOIT(zero, zero, 12, 1338, "42102b0a499b2efa89702ece4b0c5789", "a062016e90dcc316d061fde5424cf34f");
+            DOIT(zero, zero, 11, 1339, "9827f0b34252160d0365ffaa9364bedc", "a062016e90dcc316d061fde5424cf34f");
 
-            DOIT(zero, zero, 0, 80, "98885a3a22bd4742fe7b72172193b163");
-            DOIT(zero, zero, 0, 96, "afd649fc51e14f3966e4518ad53b9ddc");
+            DOIT(zero, zero, 0, 80, "98885a3a22bd4742fe7b72172193b163", "a062016e90dcc316d061fde5424cf34f");
+            DOIT(zero, zero, 0, 96, "afd649fc51e14f3966e4518ad53b9ddc", "a062016e90dcc316d061fde5424cf34f");
 
-            DOIT(zero, zero, 20, 85, "afe8b727057c804a0525c2914ef856b0");
+            DOIT(zero, zero, 20, 85, "afe8b727057c804a0525c2914ef856b0", "a062016e90dcc316d061fde5424cf34f");
 
 #undef DOIT
 
-            ecb = malloc(sizeof(*ecb));
-            ptls_fusion_aesecb_init(ecb, one);
+            supp = malloc(sizeof(*supp));
+            supp->ctx = ptls_cipher_new(&ptls_fusion_aes128ctr, 1, one);
+            supp->input = encrypted + 2;
         }
 
-        ptls_fusion_aesecb_dispose(ecb);
-        free(ecb);
+        ptls_cipher_free(supp->ctx);
+        free(supp);
         ptls_fusion_aesgcm_destroy(aead);
     }
 
@@ -151,11 +150,11 @@ int main(int argc, char **argv)
                                            0x3f, 0xbb, 0x23, 0x66, 0x94, 0x26, 0x28, 0x43, 0xa5, 0xfd, 0x2f};
         ptls_fusion_aesgcm_context_t *aead = ptls_fusion_aesgcm_create(key, sizeof(aad) + sizeof(plaintext));
         uint8_t encrypted[sizeof(plaintext) + 16], decrypted[sizeof(plaintext)];
-        ptls_fusion_aesgcm_encrypt(aead, encrypted, plaintext, sizeof(plaintext), iv, aad, sizeof(aad), NULL, NULL);
+        ptls_fusion_aesgcm_encrypt(aead, encrypted, plaintext, sizeof(plaintext), iv, aad, sizeof(aad), NULL);
         ok(memcmp(expected, encrypted, sizeof(plaintext)) == 0);
         ok(memcmp(expected + sizeof(plaintext), encrypted + sizeof(plaintext), 16) == 0);
         ok(ptls_fusion_aesgcm_decrypt(aead, decrypted, encrypted, sizeof(plaintext), iv, aad, sizeof(aad),
-                                      encrypted + sizeof(plaintext), NULL, NULL));
+                                      encrypted + sizeof(plaintext)));
         ok(memcmp(decrypted, plaintext, sizeof(plaintext)) == 0);
         ptls_fusion_aesgcm_destroy(aead);
     }

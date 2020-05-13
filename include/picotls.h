@@ -299,6 +299,12 @@ typedef const struct st_ptls_cipher_algorithm_t {
     int (*setup_crypto)(ptls_cipher_context_t *ctx, int is_enc, const void *key);
 } ptls_cipher_algorithm_t;
 
+typedef struct st_ptls_aead_supplementary_encryption_t {
+    ptls_cipher_context_t *ctx;
+    const void *input;
+    uint8_t output[16];
+} ptls_aead_supplementary_encryption_t;
+
 /**
  * AEAD context. AEAD implementations are allowed to stuff data at the end of the struct. The size of the memory allocated for the
  * struct is governed by ptls_aead_algorithm_t::context_size.
@@ -312,9 +318,9 @@ typedef struct st_ptls_aead_context_t {
     size_t (*do_encrypt_update)(struct st_ptls_aead_context_t *ctx, void *output, const void *input, size_t inlen);
     size_t (*do_encrypt_final)(struct st_ptls_aead_context_t *ctx, void *output);
     void (*do_encrypt)(struct st_ptls_aead_context_t *ctx, void *output, const void *input, size_t inlen, const void *iv,
-                       const void *aad, size_t aadlen, ptls_cipher_context_t *suppkey, void *suppvec);
+                       const void *aad, size_t aadlen, ptls_aead_supplementary_encryption_t *supp);
     size_t (*do_decrypt)(struct st_ptls_aead_context_t *ctx, void *output, const void *input, size_t inlen, const void *iv,
-                         const void *aad, size_t aadlen, ptls_cipher_context_t *suppkey, void *suppvec);
+                         const void *aad, size_t aadlen);
 } ptls_aead_context_t;
 
 /**
@@ -1196,7 +1202,7 @@ void ptls_aead_free(ptls_aead_context_t *ctx);
 static size_t ptls_aead_encrypt(ptls_aead_context_t *ctx, void *output, const void *input, size_t inlen, uint64_t seq,
                                 const void *aad, size_t aadlen);
 void ptls_aead_encrypt_s(ptls_aead_context_t *ctx, void *output, const void *input, size_t inlen, uint64_t seq, const void *aad,
-                         size_t aadlen, ptls_cipher_context_t *suppkey, void *suppvec);
+                         size_t aadlen, ptls_aead_supplementary_encryption_t *supp);
 /**
  * initializes the internal state of the encryptor
  */
@@ -1217,8 +1223,6 @@ static size_t ptls_aead_encrypt_final(ptls_aead_context_t *ctx, void *output);
  */
 static size_t ptls_aead_decrypt(ptls_aead_context_t *ctx, void *output, const void *input, size_t inlen, uint64_t seq,
                                 const void *aad, size_t aadlen);
-static size_t ptls_aead_decrypt_s(ptls_aead_context_t *ctx, void *output, const void *input, size_t inlen, uint64_t seq,
-                                  const void *aad, size_t aadlen, ptls_cipher_context_t *suppkey, void *suppvec);
 /**
  * Return the current read epoch.
  */
@@ -1249,16 +1253,12 @@ int ptls_server_handle_message(ptls_t *tls, ptls_buffer_t *sendbuf, size_t epoch
 /**
  * internal
  */
-static void ptls_aead__encrypt_supp(ptls_cipher_context_t *ctx, void *vec);
-/**
- * internal
- */
 void ptls_aead__build_iv(ptls_aead_context_t *ctx, uint8_t *iv, uint64_t seq);
 /**
  *
  */
 static void ptls_aead__do_encrypt(ptls_aead_context_t *ctx, void *output, const void *input, size_t inlen, const void *iv,
-                                  const void *aad, size_t aadlen, ptls_cipher_context_t *suppkey, void *suppvec);
+                                  const void *aad, size_t aadlen, ptls_aead_supplementary_encryption_t *supp);
 /**
  * internal
  */
@@ -1381,19 +1381,10 @@ inline void ptls_cipher_encrypt(ptls_cipher_context_t *ctx, void *output, const 
     ctx->do_transform(ctx, output, input, len);
 }
 
-inline void ptls_aead__encrypt_supp(ptls_cipher_context_t *ctx, void *vec)
-{
-    if (ctx != NULL) {
-        ptls_cipher_init(ctx, vec);
-        memset(vec, 0, ctx->algo->iv_size);
-        ptls_cipher_encrypt(ctx, vec, vec, ctx->algo->iv_size);
-    }
-}
-
 inline size_t ptls_aead_encrypt(ptls_aead_context_t *ctx, void *output, const void *input, size_t inlen, uint64_t seq,
                                 const void *aad, size_t aadlen)
 {
-    ptls_aead_encrypt_s(ctx, output, input, inlen, seq, aad, aadlen, NULL, NULL);
+    ptls_aead_encrypt_s(ctx, output, input, inlen, seq, aad, aadlen, NULL);
     return inlen + ctx->algo->tag_size;
 }
 
@@ -1416,26 +1407,26 @@ inline size_t ptls_aead_encrypt_final(ptls_aead_context_t *ctx, void *output)
 }
 
 inline void ptls_aead__do_encrypt(ptls_aead_context_t *ctx, void *output, const void *input, size_t inlen, const void *iv,
-                                  const void *aad, size_t aadlen, ptls_cipher_context_t *suppkey, void *suppvec)
+                                  const void *aad, size_t aadlen, ptls_aead_supplementary_encryption_t *supp)
 {
     ctx->do_encrypt_init(ctx, iv, aad, aadlen);
     ctx->do_encrypt_update(ctx, output, input, inlen);
     ctx->do_encrypt_final(ctx, (uint8_t *)output + inlen);
-}
 
-inline size_t ptls_aead_decrypt_s(ptls_aead_context_t *ctx, void *output, const void *input, size_t inlen, uint64_t seq,
-                                  const void *aad, size_t aadlen, ptls_cipher_context_t *suppkey, void *suppvec)
-{
-    uint8_t iv[PTLS_MAX_IV_SIZE];
-
-    ptls_aead__build_iv(ctx, iv, seq);
-    return ctx->do_decrypt(ctx, output, input, inlen, iv, aad, aadlen, suppkey, suppvec);
+    if (supp != NULL) {
+        ptls_cipher_init(supp->ctx, supp->input);
+        memset(supp->output, 0, sizeof(supp->output));
+        ptls_cipher_encrypt(supp->ctx, supp->output, supp->output, sizeof(supp->output));
+    }
 }
 
 inline size_t ptls_aead_decrypt(ptls_aead_context_t *ctx, void *output, const void *input, size_t inlen, uint64_t seq,
                                 const void *aad, size_t aadlen)
 {
-    return ptls_aead_decrypt_s(ctx, output, input, inlen, seq, aad, aadlen, NULL, NULL);
+    uint8_t iv[PTLS_MAX_IV_SIZE];
+
+    ptls_aead__build_iv(ctx, iv, seq);
+    return ctx->do_decrypt(ctx, output, input, inlen, iv, aad, aadlen);
 }
 
 #define ptls_define_hash(name, ctx_type, init_func, update_func, final_func)                                                       \
