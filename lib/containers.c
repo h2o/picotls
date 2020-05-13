@@ -115,7 +115,9 @@ int list_add(list_t *list, void *item) {
 
 
 void *list_get(list_t *list, int itemid) {
-  return NULL;
+  if (itemid > list->size-1)
+    return NULL;
+  return &list->items[list->itemsize*itemid];
 }
 
 /**

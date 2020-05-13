@@ -780,6 +780,15 @@ static int setlocal_bpf_sched(ptls_t *ptls, tcpls_options_t *option) {
 
 /*=====================================utilities======================================*/
 
+/**
+ * Compute the value IV to use for the next stream.
+ *
+ * It allows the counter to start at 0, and MIN_LOWIV_STREAM_INCREASE prevent
+ * the AES counter to have a chance to overlap between calls. However, we must
+ * have |sever_iv - client_iv| < max_nbr_streams * MIN_LOWIV_STREAM_INCREASE
+ * that should be verified during the handshake (TODO)
+ **/
+
 static void stream_derive_new_aead_iv(ptls_t *tls, uint8_t *iv, int iv_size) {
   if (iv_size == 96) {
     uint32_t low_iv = (uint32_t) iv[8];
