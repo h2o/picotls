@@ -99,6 +99,8 @@ struct st_tcpls_t {
 
   /** value of the next stream id :) */
   uint32_t next_stream_id;
+  /** count the number of times we attached a stream from the peer*/
+  uint32_t nbr_of_peer_streams_attached;
 
   /** socket of the primary address - must be update at each primary change*/
   int *socket_ptr;

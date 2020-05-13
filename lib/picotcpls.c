@@ -2,13 +2,27 @@
  * \file picotcpls.c
  *
  * \brief Implement logic for setting, sending, receiving and processing TCP
- * options through the TLS layer
+ * options through the TLS layer, as well as offering a wrapper for the
+ * transport protocol and expose only one interface to the application layer
  *
- * This file defines an API exposed to the application to set localy and/or to the
+ * This file defines an API exposed to the application
+ * <ul>
+ *   <li> tcpls_new </li>
+ *   <li> tcpls_connect </li>
+ *   <li> tcpls_add_v4 </li>
+ *   <li> tcpls_add_v6 </li>
+ *   <li> tcpls_send </li>
+ *   <li> tcpls_receive </li>
+ *   <li> tcpls_stream_new </li>
+ * </ul>
+ *
+ * We also offer an API to set localy and/or to the
  * peer some TCP options. We currently support the following options:
  *
  * <ul>
  *    <li> User Timeout RFC5482 </li>
+ *    <li> Failover </li>
+ *    <li> BPF injection of a Congestion Control scheme (kernel >= 5.6)  </li>
  * </ul>
  * 
  * To set up a TCP option, the application layer should first turns on 
@@ -20,11 +34,6 @@
  * and then
  *
  * ptls_send_tcpotion(...)
- *
- * On the receiver side, the application should loop over ptls_receive until the
- * TLS layer has eventually processed the option. For most of the cases, one
- * call of ptls_receive is enough, but we expect to support option with variable
- * lengths which could spawn over multiple TLS records
  *
  */
 
@@ -51,7 +60,8 @@ static int is_varlen(tcpls_enum_t type);
 static int setlocal_usertimeout(ptls_t *ptls, tcpls_options_t *option);
 static int setlocal_bpf_sched(ptls_t *ptls, tcpls_options_t *option);
 static void _set_primary(tcpls_t *tcpls);
-static tcpls_stream_t *stream_new(ptls_t *tcpls, tcpls_v4_addr_t *addr, tcpls_v6_addr_t *addr6);
+static tcpls_stream_t *stream_new(ptls_t *tcpls, tcpls_v4_addr_t *addr,
+    tcpls_v6_addr_t *addr6, int is_ours);
 static int stream_send_control_message(tcpls_t *tcpls, tcpls_stream_t *stream,
     const void *inputinfo, tcpls_enum_t message, uint32_t message_len);
 static tcpls_v4_addr_t *get_v4_primary_addr(tcpls_t *tcpls);
@@ -84,6 +94,7 @@ void *tcpls_new(void *ctx, int is_server) {
   tcpls->socket_ptr = NULL;
   tcpls->v4_addr_llist = NULL;
   tcpls->v6_addr_llist = NULL;
+  tcpls->nbr_of_peer_streams_attached = 0;
   tcpls->streams = new_list(sizeof(tcpls_stream_t), 3);
   return tcpls;
 }
@@ -362,7 +373,7 @@ ssize_t tcpls_send(ptls_t *tls, streamid_t streamid, const void *input, size_t n
     tcpls_v4_addr_t *addr = get_v4_primary_addr(tcpls);
     tcpls_v6_addr_t *addr6 = get_v6_primary_addr(tcpls);
     assert(addr || addr6);
-    stream = stream_new(tls, addr, addr6);
+    stream = stream_new(tls, addr, addr6, 1);
 
     stream->aead_enc =  tcpls->tls->traffic_protection.enc.aead;
     stream->aead_dec =  tcpls->tls->traffic_protection.dec.aead;
@@ -374,7 +385,7 @@ ssize_t tcpls_send(ptls_t *tls, streamid_t streamid, const void *input, size_t n
     stream_send_control_message(tcpls, stream, input, STREAM_ATTACH, 0);
   }
   else {
-    stream = list_get(tcpls->streams, streamid);
+    stream = (tcpls_stream_t *) list_get(tcpls->streams, streamid);
   }
   if (!stream)
     return -1;
@@ -789,16 +800,27 @@ static int setlocal_bpf_sched(ptls_t *ptls, tcpls_options_t *option) {
  * that should be verified during the handshake (TODO)
  **/
 
-static void stream_derive_new_aead_iv(ptls_t *tls, uint8_t *iv, int iv_size) {
+static void stream_derive_new_aead_iv(ptls_t *tls, uint8_t *iv, int iv_size, int is_ours) {
+  int mult;
+  if (is_ours) {
+    /** server next_stream_id starts at 2**31 */
+    if (tls->is_server)
+      mult = tls->tcpls->next_stream_id-2147483648;
+    else
+      mult = tls->tcpls->next_stream_id;
+  }
+  else {
+    mult = tls->tcpls->nbr_of_peer_streams_attached;
+  }
   if (iv_size == 96) {
     uint32_t low_iv = (uint32_t) iv[8];
     /** if over uin32 MAX; it should properly wrap arround */
-    low_iv += tls->tcpls->streams->size * MIN_LOWIV_STREAM_INCREASE;
+    low_iv += mult * MIN_LOWIV_STREAM_INCREASE;
     memcpy(&iv[8], &low_iv, 4);
   }
   else if (iv_size == 128) {
     uint64_t low_iv = (uint64_t) iv[8];
-    low_iv += tls->tcpls->streams->size * MIN_LOWIV_STREAM_INCREASE;
+    low_iv += mult * MIN_LOWIV_STREAM_INCREASE;
     memcpy(&iv[8], &low_iv, 8);
   }
 }
@@ -807,9 +829,13 @@ static void stream_derive_new_aead_iv(ptls_t *tls, uint8_t *iv, int iv_size) {
  * Create a new stream and attach it to a local addr.
  * if addr is set, addr6 must be NULL;
  * if addr6 is set, addr must be NULL;
+ * 
+ * is_ours tells whether this stream has been initiated by us (is_our = 1), or
+ * initiated by the peer (STREAM_ATTACH event, is_ours = 0)
  */
 
-static tcpls_stream_t *stream_new(ptls_t *tls, tcpls_v4_addr_t *addr, tcpls_v6_addr_t *addr6) {
+static tcpls_stream_t *stream_new(ptls_t *tls, tcpls_v4_addr_t *addr,
+    tcpls_v6_addr_t *addr6, int is_ours) {
   tcpls_t *tcpls = tls->tcpls;
   tcpls_stream_t *stream = malloc(sizeof(*stream));
   stream->streamid = tcpls->next_stream_id++;
@@ -830,14 +856,14 @@ static tcpls_stream_t *stream_new(ptls_t *tls, tcpls_v4_addr_t *addr, tcpls_v6_a
   stream->aead_enc->seq = 0;
   /** now change the lower half bits of the IV to avoid collisions */
   stream_derive_new_aead_iv(tls, stream->aead_enc->static_iv,
-      tls->cipher_suite->aead->iv_size);
+      tls->cipher_suite->aead->iv_size, is_ours);
   stream->aead_dec = (ptls_aead_context_t *) malloc(tls->cipher_suite->aead->context_size);
   if (stream->aead_dec)
     return NULL;
   memcpy(stream->aead_dec, &tls->traffic_protection.dec, sizeof(tls->traffic_protection.dec));
   stream->aead_dec->seq = 0;
   stream_derive_new_aead_iv(tls, stream->aead_dec->static_iv,
-      tls->cipher_suite->aead->iv_size);
+      tls->cipher_suite->aead->iv_size, is_ours);
   return stream;
 }
 
