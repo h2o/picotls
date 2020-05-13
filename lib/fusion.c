@@ -193,12 +193,18 @@ static inline __m128i aesecb_encrypt(ptls_fusion_aesecb_context_t *ctx, __m128i 
 
 static inline __m128i loadn(const void *_p, size_t l)
 {
-    const uint8_t *p = _p;
-    uint8_t buf[16] = {};
-
-    for (size_t i = 0; i != l; ++i)
-        buf[i] = p[i];
-    return *(__m128i *)buf;
+    /* FIXME is this optimal? */
+    if (PTLS_LIKELY(((uintptr_t)_p % 4096) <= 4080)) {
+        static const uint8_t mask[31] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                                         0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
+        return _mm_and_si128(_mm_loadu_si128(_p), _mm_loadu_si128((__m128i *)(mask + 16 - l)));
+    } else {
+        const uint8_t *p = _p;
+        uint8_t buf[16] = {};
+        for (size_t i = 0; i != l; ++i)
+            buf[i] = p[i];
+        return *(__m128i *)buf;
+    }
 }
 
 static inline void storen(void *_p, size_t l, __m128i v)
@@ -343,6 +349,8 @@ void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, void *output,
             srclen -= 16;                                                                                                          \
         } else {                                                                                                                   \
             if (srclen != 0) {                                                                                                     \
+                /* While it is possible to use _mm_storeu_si128 here, as there is space to store GCM tag, writing byte-per-byte    \
+                 * seems to be faster on 9th gen Core. */                                                                          \
                 storen(dst, srclen, _mm_xor_si128(loadn(src, srclen), bits##i));                                                   \
                 dst = (__m128i *)((uint8_t *)dst + srclen);                                                                        \
                 srclen = 0;                                                                                                        \
