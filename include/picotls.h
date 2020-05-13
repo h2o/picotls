@@ -1193,6 +1193,13 @@ static void ptls_cipher_encrypt(ptls_cipher_context_t *ctx, void *output, const 
 ptls_aead_context_t *ptls_aead_new(ptls_aead_algorithm_t *aead, ptls_hash_algorithm_t *hash, int is_enc, const void *secret,
                                    const char *label_prefix);
 /**
+ * instantiates an AEAD cipher given key and iv
+ * @param aead
+ * @param is_enc 1 if creating a context for encryption, 0 if creating a context for decryption
+ * @return pointer to an AEAD context if successful, otherwise NULL
+ */
+ptls_aead_context_t *ptls_aead_new_direct(ptls_aead_algorithm_t *aead, int is_enc, const void *key, const void *iv);
+/**
  * destroys an AEAD cipher context
  */
 void ptls_aead_free(ptls_aead_context_t *ctx);
