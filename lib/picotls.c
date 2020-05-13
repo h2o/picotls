@@ -5125,10 +5125,8 @@ ptls_aead_context_t *ptls_aead_new_direct(ptls_aead_algorithm_t *aead, int is_en
         return NULL;
 
     *ctx = (ptls_aead_context_t){aead};
-    memcpy(ctx->static_iv, iv, aead->iv_size);
 
-    if (aead->setup_crypto(ctx, is_enc, key) != 0) {
-        ptls_clear_memory(ctx->static_iv, aead->iv_size);
+    if (aead->setup_crypto(ctx, is_enc, key, iv) != 0) {
         free(ctx);
         return NULL;
     }
@@ -5139,23 +5137,13 @@ ptls_aead_context_t *ptls_aead_new_direct(ptls_aead_algorithm_t *aead, int is_en
 void ptls_aead_free(ptls_aead_context_t *ctx)
 {
     ctx->dispose_crypto(ctx);
-    ptls_clear_memory(ctx->static_iv, ctx->algo->iv_size);
     free(ctx);
 }
 
-void ptls_aead_encrypt_s(ptls_aead_context_t *ctx, void *output, const void *input, size_t inlen, uint64_t seq, const void *aad,
-                         size_t aadlen, ptls_aead_supplementary_encryption_t *supp)
+void ptls_aead__build_iv(ptls_aead_algorithm_t *algo, uint8_t *iv, const uint8_t *static_iv, uint64_t seq)
 {
-    uint8_t iv[PTLS_MAX_IV_SIZE];
-
-    ptls_aead__build_iv(ctx, iv, seq);
-    ctx->do_encrypt(ctx, output, input, inlen, iv, aad, aadlen, supp);
-}
-
-void ptls_aead__build_iv(ptls_aead_context_t *ctx, uint8_t *iv, uint64_t seq)
-{
-    size_t iv_size = ctx->algo->iv_size, i;
-    const uint8_t *s = ctx->static_iv;
+    size_t iv_size = algo->iv_size, i;
+    const uint8_t *s = static_iv;
     uint8_t *d = iv;
 
     /* build iv */

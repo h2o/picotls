@@ -7,7 +7,7 @@
 
 int main(int argc, char **argv)
 {
-    static const uint8_t key[16] = {}, iv[12] = {}, aad[13] = {};
+    static const uint8_t key[16] = {}, aad[13] = {};
     size_t textlen = 16384;
     ptls_aead_supplementary_encryption_t *supp = NULL;
     int ch, decrypt = 0, count = 1000000;
@@ -57,11 +57,11 @@ int main(int argc, char **argv)
 
     if (!decrypt) {
         for (int i = 0; i < count; ++i)
-            ptls_fusion_aesgcm_encrypt(ctx, text, text, textlen, iv, aad, sizeof(aad), supp);
+            ptls_fusion_aesgcm_encrypt(ctx, text, text, textlen, _mm_setzero_si128(), aad, sizeof(aad), supp);
     } else {
         uint8_t tag[16] = {};
         for (int i = 0; i < count; ++i)
-            ptls_fusion_aesgcm_decrypt(ctx, text, text, textlen, iv, aad, sizeof(aad), &tag);
+            ptls_fusion_aesgcm_decrypt(ctx, text, text, textlen, _mm_setzero_si128(), aad, sizeof(aad), &tag);
     }
 
     for (int i = 0; i < 16; ++i)
