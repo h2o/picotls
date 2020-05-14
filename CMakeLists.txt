@@ -137,14 +137,14 @@ IF ((CMAKE_SIZEOF_VOID_P EQUAL 8) AND
      (CMAKE_SYSTEM_PROCESSOR STREQUAL "AMD64"))
     MESSAGE(STATUS " Enabling fusion support")
     ADD_LIBRARY(picotls-fusion lib/fusion.c)
-    SET_TARGET_PROPERTIES(picotls-fusion PROPERTIES COMPILE_FLAGS "-maes -mpclmul")
+    SET_TARGET_PROPERTIES(picotls-fusion PROPERTIES COMPILE_FLAGS "-mavx2 -maes -mpclmul")
     TARGET_LINK_LIBRARIES(picotls-fusion picotls-core)
     ADD_EXECUTABLE(test-fusion.t
         deps/picotest/picotest.c
         lib/picotls.c
         lib/fusion.c
         t/fusion.c)
-    SET_TARGET_PROPERTIES(test-fusion.t PROPERTIES COMPILE_FLAGS "-maes -mpclmul")
+    SET_TARGET_PROPERTIES(test-fusion.t PROPERTIES COMPILE_FLAGS "-mavx2 -maes -mpclmul")
     SET(TEST_EXES ${TEST_EXES} test-fusion.t)
 ENDIF ()
 
