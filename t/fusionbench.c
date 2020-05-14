@@ -53,7 +53,7 @@ int main(int argc, char **argv)
     if (supp != NULL)
         supp->input = textlen >= 2 ? text + 2 : text + textlen;
 
-    ptls_fusion_aesgcm_context_t *ctx = ptls_fusion_aesgcm_create(key, sizeof(aad) + textlen);
+    ptls_fusion_aesgcm_context_t *ctx = ptls_fusion_aesgcm_new(key, sizeof(aad) + textlen);
 
     if (!decrypt) {
         for (int i = 0; i < count; ++i)

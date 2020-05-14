@@ -683,7 +683,7 @@ void ptls_fusion_aesecb_dispose(ptls_fusion_aesecb_context_t *ctx)
     ptls_clear_memory(ctx, sizeof(*ctx));
 }
 
-ptls_fusion_aesgcm_context_t *ptls_fusion_aesgcm_create(const void *key, size_t max_size)
+ptls_fusion_aesgcm_context_t *ptls_fusion_aesgcm_new(const void *key, size_t max_size)
 {
     ptls_fusion_aesgcm_context_t *ctx;
     size_t ghash_cnt = (max_size + 15) / 16 + 2; // round-up by block size, add to handle worst split of the size between AAD and
@@ -710,7 +710,7 @@ ptls_fusion_aesgcm_context_t *ptls_fusion_aesgcm_create(const void *key, size_t 
     return ctx;
 }
 
-void ptls_fusion_aesgcm_destroy(ptls_fusion_aesgcm_context_t *ctx)
+void ptls_fusion_aesgcm_free(ptls_fusion_aesgcm_context_t *ctx)
 {
     ptls_clear_memory(ctx->ghash, sizeof(ctx->ghash[0]) * ctx->ghash_cnt);
     ctx->ghash_cnt = 0;
@@ -764,7 +764,7 @@ static void aesgcm_dispose_crypto(ptls_aead_context_t *_ctx)
 {
     struct aesgcm_context *ctx = (struct aesgcm_context *)_ctx;
 
-    ptls_fusion_aesgcm_destroy(ctx->aesgcm);
+    ptls_fusion_aesgcm_free(ctx->aesgcm);
 }
 
 static void aead_do_encrypt_init(ptls_aead_context_t *_ctx, uint64_t seq, const void *aad, size_t aadlen)
@@ -830,7 +830,7 @@ static int aes128gcm_setup(ptls_aead_context_t *_ctx, int is_enc, const void *ke
     ctx->super.do_encrypt = aead_do_encrypt;
     ctx->super.do_decrypt = aead_do_decrypt;
 
-    ctx->aesgcm = ptls_fusion_aesgcm_create(key, 1500); /* FIXME use realloc with exponential back-off to support arbitrary size */
+    ctx->aesgcm = ptls_fusion_aesgcm_new(key, 1500); /* FIXME use realloc with exponential back-off to support arbitrary size */
 
     return 0;
 }

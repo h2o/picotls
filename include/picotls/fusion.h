@@ -46,11 +46,11 @@ void ptls_fusion_aesecb_dispose(ptls_fusion_aesecb_context_t *ctx);
  * @param key       the AES key (128 bits)
  * @param max_size  maximum size of the record (i.e. AAD + encrypted payload)
  */
-ptls_fusion_aesgcm_context_t *ptls_fusion_aesgcm_create(const void *key, size_t max_size);
+ptls_fusion_aesgcm_context_t *ptls_fusion_aesgcm_new(const void *key, size_t max_size);
 /**
  * Destroys an AES-GCM context.
  */
-void ptls_fusion_aesgcm_destroy(ptls_fusion_aesgcm_context_t *ctx);
+void ptls_fusion_aesgcm_free(ptls_fusion_aesgcm_context_t *ctx);
 /**
  * Encrypts an AEAD block, and in parallel, optionally encrypts one block using AES-ECB.
  * @param ctx      context
