@@ -695,6 +695,13 @@ static tcpls_options_t*  tcpls_init_context(ptls_t *ptls, const void *data, size
   return NULL;
 }
 
+/**
+ * Handle TCPLS extension
+ *
+ * Note: the implementation currently does not handle malformed options (we
+ * should check our parsing and send alert messages upon inapropriate data)
+ */
+
 int handle_tcpls_extension_option(ptls_t *ptls, tcpls_enum_t type,
     const uint8_t *input, size_t inputlen) {
   if (!ptls->ctx->tcpls_options_confirmed)
@@ -751,11 +758,20 @@ int handle_tcpls_extension_option(ptls_t *ptls, tcpls_enum_t type,
       }
       break;
     case STREAM_ATTACH:
-      { 
+      {
         //TODO fix this with sending with network order and receiving with host
         //order
-        /*streamid_t streamid = (streamid_t) *input;*/
-        /*tcpls_stream_t *stream = stream_new*/
+        streamid_t streamid = (streamid_t) *input;
+        tcpls_v4_addr_t *addr = get_v4_addr(ptls->tcpls, ptls->tcpls->socket_rcv);
+        tcpls_v6_addr_t *addr6 = NULL;
+        if (!addr) {
+          add6 = get_v6_addr(ptls->tcpls, ptls->tcpls->socket_rcv);
+        }
+        tcpls_stream_t *stream = stream_new(ptls->tcpls, streamid, addr, add6, 0);
+        if (!stream) {
+          return PTLS_ERROR_NO_MEMORY;
+        }
+        list_add(ptls->tcpls->streams, stream);
       }
       break;
     case FAILOVER:
