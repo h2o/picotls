@@ -40,6 +40,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <immintrin.h>
 #include <tmmintrin.h>
 #include <nmmintrin.h>
 #include <wmmintrin.h>
@@ -849,14 +850,30 @@ ptls_aead_algorithm_t ptls_fusion_aes128gcm = {"AES128-GCM",
                                                sizeof(struct aesgcm_context),
                                                aes128gcm_setup};
 
+#include <cpuid.h>
+
 int ptls_fusion_is_supported_by_cpu(void)
 {
-#define REQUIRE(s)                                                                                                                 \
-    if (!__builtin_cpu_supports(s))                                                                                                \
+    unsigned leaf1_ecx, leaf7_ebx;
+
+    { /* GCC-specific code to obtain CPU features */
+        unsigned unused1, unused2, unused3;
+        if (!__get_cpuid(1, &unused1, &unused2, &leaf1_ecx, &unused3))
+            return 0;
+        if (!__get_cpuid_count(7, 0, &unused1, &leaf7_ebx, &unused2, &unused3))
+            return 0;
+    }
+
+
+    /* AVX2 */
+    if ((leaf7_ebx & (1 << 5)) == 0)
         return 0;
-    REQUIRE("avx2");
-    REQUIRE("aes");
-    REQUIRE("pclmul");
-#undef REQUIRE
+    /* AES */
+    if ((leaf1_ecx & (1 << 25)) == 0)
+        return 0;
+    /* PCLMUL */
+    if ((leaf1_ecx & (1 << 1)) == 0)
+        return 0;
+
     return 1;
 }
