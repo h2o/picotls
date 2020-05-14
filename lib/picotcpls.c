@@ -81,7 +81,7 @@ void *tcpls_new(void *ctx, int is_server) {
   if (smallsendbuf == NULL)
     return NULL;
   uint8_t *smallrecvbuf = malloc(256*sizeof(uint8_t));
-  if (smallrecvbuf)
+  if (smallrecvbuf == NULL)
     return NULL;
   if (is_server) {
     tls = ptls_server_new(ptls_ctx);

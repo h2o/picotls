@@ -85,7 +85,7 @@ list_t *new_list(int itemsize, int capacity) {
   list_t *list = malloc(sizeof(*list));
   if (!list)
     return NULL;
-  list->items = malloc(sizeof(itemsize)*capacity);
+  list->items = malloc(itemsize*capacity);
   if (!list->items) {
     free(list);
     return NULL;
@@ -104,9 +104,10 @@ list_t *new_list(int itemsize, int capacity) {
 
 int list_add(list_t *list, void *item) {
   if (list->size == list->capacity) {
-    list->items = reallocarray(list->items, list->capacity*2, list->itemsize);
+    list->items = realloc(list->items, list->capacity*2*list->itemsize);
     if (!list->items)
       return -1;
+    list->capacity = list->capacity*2;
   }
   memcpy(&list->items[list->size*list->itemsize], item, list->itemsize);
   list->size++;
@@ -121,8 +122,9 @@ void *list_get(list_t *list, int itemid) {
 }
 
 /**
- * remove item from the list if this item is inside, then move the items to keep
- * the continuous
+ * remove item  from the list if this item is inside, then move the items to keep
+ * them continuous
+ * Note: if several same item are in the list, remove the first one
  * return -1 if an error occured or if the item isn't part of the list
  */
 
@@ -130,19 +132,16 @@ int list_remove(list_t *list, void *item) {
   if (list->size == 0)
     return -1;
   for (int i = 0; i < list->size; i++) {
-    if (memcpy(&list->items[i*list->itemsize], item, list->itemsize) == 0) {
+    if (memcmp(&list->items[i*list->itemsize], item, list->itemsize) == 0) {
       if (i == list->size-1) {
         list->size--;
         return 0;
       }
       else {
-        uint8_t *items_tmp = malloc((list->size-i-1)*list->itemsize);
-        if (!items_tmp)
-          return -1;
+        uint8_t *items_tmp[(list->size-i-1)*list->itemsize];
         /** Note: could do a memmove instead */
         memcpy(items_tmp, &list->items[(i+1)*list->itemsize], (list->size-i-1)*list->itemsize);
         memcpy(&list->items[i*list->itemsize], items_tmp, (list->size-i-1)*list->itemsize);
-        free(items_tmp);
         list->size--;
         return 0;
       }

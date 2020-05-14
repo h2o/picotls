@@ -1929,6 +1929,44 @@ static void test_tcpls(void)
         ctx->sign_certificate = second_sc_orig;
 }
 
+static void test_list_t(void)
+{
+  list_t *list64 = new_list(sizeof(uint64_t), 10);
+  assert(list64);
+  ok(list64->size == 0);
+  uint64_t item1 = 42;
+  ok(list_add(list64, &item1) == 0);
+  ok(list64->size == 1);
+  for (int i = 0; i < 20; i++) {
+    item1++;
+    list_add(list64, &item1);
+  }
+  ok(list64->size == 21);
+  uint64_t item2 = 64;
+  list_add(list64, &item2);
+  list_add(list64, &item1);
+  uint64_t *item3 = list_get(list64, 21);
+  ok(*item3 == item2);
+  item1 = 42;
+  uint64_t item4 = 4242424242;
+  ok(list_remove(list64, &item1) == 0);
+  ok(list64->size == 22);
+  ok(*(uint64_t*) list_get(list64, 0) == 43);
+  ok(list_remove(list64, &item4) == -1);
+  list_free(list64);
+}
+
+static void test_record_fifo_t(void)
+{
+  ok(0==0);
+}
+
+static void test_containers(void)
+{
+  subtest("list_t", test_list_t);
+  subtest("record_fifo_t", test_record_fifo_t);
+}
+
 static void test_quic(void)
 {
     subtest("varint", test_quicint);
@@ -1954,6 +1992,7 @@ void test_picotls(void)
     subtest("fragmented-message", test_fragmented_message);
     subtest("handshake", test_all_handshakes);
     subtest("tcpls", test_tcpls);
+    subtest("containers", test_containers);
     subtest("quic", test_quic);
 }
 
