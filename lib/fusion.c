@@ -850,20 +850,18 @@ ptls_aead_algorithm_t ptls_fusion_aes128gcm = {"AES128-GCM",
                                                sizeof(struct aesgcm_context),
                                                aes128gcm_setup};
 
-#include <cpuid.h>
-
 int ptls_fusion_is_supported_by_cpu(void)
 {
     unsigned leaf1_ecx, leaf7_ebx;
 
     { /* GCC-specific code to obtain CPU features */
-        unsigned unused1, unused2, unused3;
-        if (!__get_cpuid(1, &unused1, &unused2, &leaf1_ecx, &unused3))
+        unsigned leaf_cnt;
+        __asm__("cpuid" : "=a"(leaf_cnt) : "a"(0) : "ebx", "ecx", "edx");
+        if (leaf_cnt < 7)
             return 0;
-        if (!__get_cpuid_count(7, 0, &unused1, &leaf7_ebx, &unused2, &unused3))
-            return 0;
+        __asm__("cpuid" : "=c"(leaf1_ecx) : "a"(1) : "ebx", "edx");
+        __asm__("cpuid" : "=b"(leaf7_ebx) : "a"(7), "c"(0) : "edx");
     }
-
 
     /* AVX2 */
     if ((leaf7_ebx & (1 << 5)) == 0)
