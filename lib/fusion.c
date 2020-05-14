@@ -787,7 +787,7 @@ static inline __m128i calc_counter(struct aesgcm_context *ctx, uint64_t seq)
 {
     __m128i ctr = _mm_setzero_si128();
     ctr = _mm_insert_epi64(ctr, seq, 0);
-    ctr = _mm_slli_si128(ctr, 32);
+    ctr = _mm_slli_si128(ctr, 4);
     ctr = _mm_xor_si128(ctx->static_iv, ctr);
     return ctr;
 }
