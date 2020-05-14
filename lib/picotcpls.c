@@ -62,12 +62,14 @@ static int setlocal_bpf_sched(ptls_t *ptls, tcpls_options_t *option);
 static void _set_primary(tcpls_t *tcpls);
 static tcpls_stream_t *stream_new(ptls_t *tcpls, streamid_t streamid, tcpls_v4_addr_t *addr,
     tcpls_v6_addr_t *addr6, int is_ours);
+static void stream_free(tcpls_stream_t *stream);
 static int stream_send_control_message(tcpls_t *tcpls, tcpls_stream_t *stream,
     const void *inputinfo, tcpls_enum_t message, uint32_t message_len);
 static tcpls_v4_addr_t *get_v4_primary_addr(tcpls_t *tcpls);
 static tcpls_v4_addr_t *get_v4_addr(tcpls_t *tcpls, int socket);
 static tcpls_v6_addr_t *get_v6_primary_addr(tcpls_t *tcpls);
 static tcpls_v6_addr_t *get_v6_addr(tcpls_t *tcpls, int socket);
+static tcpls_stream_t *stream_get(tcpls_t *tcpls, streamid_t streamid);
 
 void *tcpls_new(void *ctx, int is_server) {
   ptls_context_t *ptls_ctx = (ptls_context_t *) ctx;
@@ -384,6 +386,7 @@ ssize_t tcpls_send(ptls_t *tls, streamid_t streamid, const void *input, size_t n
     stream->aead_enc =  tcpls->tls->traffic_protection.enc.aead;
     stream->aead_dec =  tcpls->tls->traffic_protection.dec.aead;
     list_add(tcpls->streams, stream);
+
     uint8_t input[4];
     /** send the stream id to the peer */
     memcpy(input, &stream->streamid, 4);
@@ -391,7 +394,7 @@ ssize_t tcpls_send(ptls_t *tls, streamid_t streamid, const void *input, size_t n
     stream_send_control_message(tcpls, stream, input, STREAM_ATTACH, 0);
   }
   else {
-    stream = (tcpls_stream_t *) list_get(tcpls->streams, streamid);
+    stream = stream_get(tcpls, streamid);
   }
   if (!stream)
     return -1;
@@ -437,6 +440,8 @@ ssize_t tcpls_send(ptls_t *tls, streamid_t streamid, const void *input, size_t n
 
 /**
  * Wait at most tv time over all stream sockets to be available for reading
+ *
+ * // TODO adding configurable callbacks for TCPLS events
  */
 
 ssize_t tcpls_receive(ptls_t *tls, void *buf, size_t nbytes, struct timeval *tv) {
@@ -459,7 +464,8 @@ ssize_t tcpls_receive(ptls_t *tls, void *buf, size_t nbytes, struct timeval *tv)
 #undef ADD_TO_RSET
   ret = select(socklist->size+1, &rset, NULL, NULL, tv);
   if (ret == -1) {
-    //TODO
+    list_free(socklist);
+    return -1;
   }
   int *socket;
   ret = 0;
@@ -469,7 +475,9 @@ ssize_t tcpls_receive(ptls_t *tls, void *buf, size_t nbytes, struct timeval *tv)
      if (FD_ISSET(*socket, &rset)) {
        ret = read(*socket, input, nbytes);
        if (ret == -1) {
-         //things TODO
+         //things TODO ?
+         list_free(socklist);
+         return ret;
        }
        break;
      }
@@ -479,14 +487,16 @@ ssize_t tcpls_receive(ptls_t *tls, void *buf, size_t nbytes, struct timeval *tv)
   if (ret > 0) {
     ptls_buffer_t decryptbuf;
     ptls_buffer_init(&decryptbuf, "", ret);
-    //TODO put the right decryption context 
+    //TODO put the right decryption context
     if ((ptls_receive(tls, &decryptbuf, input, (size_t*)&ret) != 0)) {
-      //TODO
+      ptls_buffer_dispose(&decryptbuf);
+      list_free(socklist);
+      return ret;
     }
     memcpy(buf, decryptbuf.base, decryptbuf.off);
     ret = decryptbuf.off;
+    ptls_buffer_dispose(&decryptbuf);
   }
-  free(socklist);
   return ret;
 }
 
@@ -757,6 +767,21 @@ int handle_tcpls_extension_option(ptls_t *ptls, tcpls_enum_t type,
         return ret;
       }
       break;
+    case STREAM_CLOSE:
+      {
+       streamid_t streamid = (streamid_t) *input;
+       tcpls_stream_t *stream = stream_get(ptls->tcpls, streamid);
+       if (!stream) {
+         /** What to do? this should not happen - Close the connection*/
+         return -1;
+       }
+       /** Note, we current assume only one stream per address */
+       close(ptls->tcpls->socket_rcv);
+       list_remove(ptls->tcpls->streams, stream);
+       stream_free(stream);
+       return 0;
+      }
+      break;
     case STREAM_ATTACH:
       {
         //TODO fix this with sending with network order and receiving with host
@@ -765,13 +790,14 @@ int handle_tcpls_extension_option(ptls_t *ptls, tcpls_enum_t type,
         tcpls_v4_addr_t *addr = get_v4_addr(ptls->tcpls, ptls->tcpls->socket_rcv);
         tcpls_v6_addr_t *addr6 = NULL;
         if (!addr) {
-          add6 = get_v6_addr(ptls->tcpls, ptls->tcpls->socket_rcv);
+          addr6 = get_v6_addr(ptls->tcpls, ptls->tcpls->socket_rcv);
         }
-        tcpls_stream_t *stream = stream_new(ptls->tcpls, streamid, addr, add6, 0);
+        tcpls_stream_t *stream = stream_new(ptls, streamid, addr, addr6, 0);
         if (!stream) {
           return PTLS_ERROR_NO_MEMORY;
         }
         list_add(ptls->tcpls->streams, stream);
+        return 0;
       }
       break;
     case FAILOVER:
@@ -917,6 +943,7 @@ static tcpls_stream_t *stream_new(ptls_t *tls, streamid_t streamid,
     tcpls_v4_addr_t *addr, tcpls_v6_addr_t *addr6, int is_ours) {
   tcpls_stream_t *stream = malloc(sizeof(*stream));
   stream->streamid = streamid;
+  stream->list_id = streamid;
 
   /** TODO figure out a good default size for the control flow */
   stream->send_queue = tcpls_record_queue_new(500);
@@ -946,6 +973,25 @@ static tcpls_stream_t *stream_new(ptls_t *tls, streamid_t streamid,
   return stream;
 }
 
+tcpls_stream_t *stream_get(tcpls_t *tcpls, streamid_t streamid) {
+  if (!tcpls->streams)
+    return NULL;
+  tcpls_stream_t *stream;
+  for (int i = 0; i < tcpls->streams->size; i++) {
+    stream = list_get(tcpls->streams, i);
+    if (stream->streamid == streamid)
+      return stream;
+  }
+  return NULL;
+}
+
+static void stream_free(tcpls_stream_t *stream) {
+  if (!stream)
+    return;
+  ptls_aead_free(stream->aead_enc);
+  ptls_aead_free(stream->aead_dec);
+  free(stream);
+}
 
 tcpls_v4_addr_t *get_v4_primary_addr(tcpls_t *tcpls) {
   tcpls_v4_addr_t *current = tcpls->v4_addr_llist;

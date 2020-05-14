@@ -150,3 +150,14 @@ int list_remove(list_t *list, void *item) {
   }
   return -1;
 }
+
+void list_free(list_t *list) {
+  if (!list)
+    return;
+  if (!list->items) {
+    free(list);
+    return;
+  }
+  free(list->items);
+  free(list);
+}

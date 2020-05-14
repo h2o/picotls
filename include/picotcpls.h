@@ -69,6 +69,9 @@ typedef struct st_tcpls_stream {
    **/
   tcpls_record_fifo_t *send_queue;
   streamid_t streamid;
+  /** if put within a list_t, this structure should have a list_id for
+   * genericity */
+  uint32_t list_id;
   /** Note: The following contexts use the same key; but a different counter and
    * IV
    */
