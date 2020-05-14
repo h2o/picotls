@@ -65,7 +65,9 @@ static tcpls_stream_t *stream_new(ptls_t *tcpls, streamid_t streamid, tcpls_v4_a
 static int stream_send_control_message(tcpls_t *tcpls, tcpls_stream_t *stream,
     const void *inputinfo, tcpls_enum_t message, uint32_t message_len);
 static tcpls_v4_addr_t *get_v4_primary_addr(tcpls_t *tcpls);
+static tcpls_v4_addr_t *get_v4_addr(tcpls_t *tcpls, int socket);
 static tcpls_v6_addr_t *get_v6_primary_addr(tcpls_t *tcpls);
+static tcpls_v6_addr_t *get_v6_addr(tcpls_t *tcpls, int socket);
 
 void *tcpls_new(void *ctx, int is_server) {
   ptls_context_t *ptls_ctx = (ptls_context_t *) ctx;
@@ -91,7 +93,9 @@ void *tcpls_new(void *ctx, int is_server) {
   tcpls->tls = tls;
   ptls_buffer_init(tcpls->sendbuf, smallsendbuf, sizeof(smallsendbuf));
   ptls_buffer_init(tcpls->recvbuf, smallrecvbuf, sizeof(smallrecvbuf));
-  tcpls->socket_ptr = NULL;
+  ptls_ctx->output_decrypted_tcpls_data = 0;
+  tcpls->socket_primary = 0;
+  tcpls->socket_rcv = 0;
   tcpls->v4_addr_llist = NULL;
   tcpls->v6_addr_llist = NULL;
   tcpls->nbr_of_peer_streams_attached = 0;
@@ -364,7 +368,7 @@ ssize_t tcpls_send(ptls_t *tls, streamid_t streamid, const void *input, size_t n
   tcpls_stream_t *stream;
   /*int is_failover_enabled = 0;*/
   /** Check the state of connections first do we have our primary connected tcp? */
-  if (!streamid && !tcpls->socket_ptr) {
+  if (!streamid && !tcpls->socket_primary) {
     return -1;
   }
   /** Check whether we already have a stream open; if not, build a stream
@@ -470,6 +474,7 @@ ssize_t tcpls_receive(ptls_t *tls, void *buf, size_t nbytes, struct timeval *tv)
        break;
      }
   }
+  tcpls->socket_rcv = *socket;
   /* We have stuff to decrypts */
   if (ret > 0) {
     ptls_buffer_t decryptbuf;
@@ -941,6 +946,28 @@ tcpls_v4_addr_t *get_v4_primary_addr(tcpls_t *tcpls) {
   return NULL;
 }
 
+/** could do some code cleanup here */
+
+static tcpls_v4_addr_t *get_v4_addr(tcpls_t *tcpls, int socket) {
+  tcpls_v4_addr_t *current = tcpls->v4_addr_llist;
+  while (current) {
+    if (current->socket == socket)
+      return current;
+    current = current->next;
+  }
+  return NULL;
+}
+
+static tcpls_v6_addr_t *get_v6_addr(tcpls_t *tcpls, int socket) {
+  tcpls_v6_addr_t *current = tcpls->v6_addr_llist;
+  while (current) {
+    if (current->socket == socket)
+      return current;
+    current = current->next;
+  }
+  return NULL;
+}
+
 tcpls_v6_addr_t *get_v6_primary_addr(tcpls_t *tcpls) {
   tcpls_v6_addr_t *current = tcpls->v6_addr_llist;
   int has_primary = 0;
@@ -1006,12 +1033,12 @@ static void _set_primary(tcpls_t *tcpls) {
   if (primary_v4 && primary_v6) {
     switch (cmp_times(&primary_v4->connect_time, &primary_v6->connect_time)) {
       case -1: primary_v4->is_primary = 1;
-               tcpls->socket_ptr = &primary_v4->socket; break;
+               tcpls->socket_primary = primary_v4->socket; break;
       case 0:
       case 1: primary_v6->is_primary = 1;
-              tcpls->socket_ptr = &primary_v6->socket; break;
+              tcpls->socket_primary = primary_v6->socket; break;
       default: primary_v6->is_primary = 1;
-               tcpls->socket_ptr = &primary_v6->socket; break;
+               tcpls->socket_primary = primary_v6->socket; break;
     }
   } else if (primary_v4) {
     primary_v4->is_primary = 1;

@@ -4007,6 +4007,7 @@ static ptls_t *new_instance(ptls_context_t *ctx, int is_server)
 ptls_t *ptls_client_new(ptls_context_t *ctx)
 {
     ptls_t *tls = new_instance(ctx, 0);
+    ctx->output_decrypted_tcpls_data = 1;
     tls->state = PTLS_STATE_CLIENT_HANDSHAKE_START;
     tls->ctx->random_bytes(tls->client_random, sizeof(tls->client_random));
     log_client_random(tls);
@@ -4025,6 +4026,7 @@ ptls_t *ptls_client_new(ptls_context_t *ctx)
 ptls_t *ptls_server_new(ptls_context_t *ctx)
 {
     ptls_t *tls = new_instance(ctx, 1);
+    ctx->output_decrypted_tcpls_data = 1;
     tls->state = PTLS_STATE_SERVER_EXPECT_CLIENT_HELLO;
     tls->server.early_data_skipped_bytes = UINT32_MAX;
     
@@ -4401,8 +4403,9 @@ static int handle_handshake_record(ptls_t *tls,
     return ret;
 }
 
-static int handle_input(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_buffer_t *decryptbuf, const void *input, size_t *inlen,
-                        ptls_handshake_properties_t *properties)
+static int handle_input(ptls_t *tls, ptls_message_emitter_t *emitter,
+    ptls_buffer_t *decryptbuf, const void *input, size_t *inlen,
+    ptls_handshake_properties_t *properties)
 {
     struct st_ptls_record_t rec;
     int ret;
@@ -4464,8 +4467,9 @@ static int handle_input(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_buffe
                 decryptbuf->off += rec.length;
                 ret = 0;
             } else if (tls->state == PTLS_STATE_SERVER_EXPECT_END_OF_EARLY_DATA) {
-                if (tls->traffic_protection.dec.aead != NULL)
+                if (tls->traffic_protection.dec.aead != NULL){
                     decryptbuf->off += rec.length;
+                }
                 ret = 0;
             } else {
                 ret = PTLS_ALERT_UNEXPECTED_MESSAGE;
@@ -4477,8 +4481,10 @@ static int handle_input(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_buffe
             }
             else {
               ret = handle_tcpls_record(tls, &rec);
-              if (!ret)
+              if (!ret && tls->ctx->output_decrypted_tcpls_data) {
                 decryptbuf->off += rec.length;
+              }
+              return ret;
             }
             break;
         case PTLS_CONTENT_TYPE_ALERT:
@@ -4489,7 +4495,6 @@ static int handle_input(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_buffe
             break;
         }
     }
-
 NextRecord:
     ptls_buffer_dispose(&tls->recvbuf.rec);
     return ret;

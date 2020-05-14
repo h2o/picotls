@@ -158,6 +158,7 @@ extern "C" {
 #define PTLS_ALERT_UNRECOGNIZED_NAME 112
 #define PTLS_ALERT_CERTIFICATE_REQUIRED 116
 #define PTLS_ALERT_NO_APPLICATION_PROTOCOL 120
+#define PTLS_ALERT_TCPLS_RECORD 130
 
   /* internal errors */
 #define PTLS_ERROR_NO_MEMORY (PTLS_ERROR_CLASS_INTERNAL + 1)
@@ -777,6 +778,15 @@ typedef struct st_ptls_log_event_t {
      */
     unsigned tcpls_options_confirmed : 1;
     
+    /**
+     * If set to 1, ptls_receive would contain into its decrypted buffer any
+     * decrypted record that is part of the tcpls session.
+     *
+     * Typically, for the wrapper case, this is set to 0 to only pull
+     * application-level data
+     */
+
+    unsigned output_decrypted_tcpls_data : 1;
 
     /**
      * If we have multiple addresses, and this option is enabled, the server announces

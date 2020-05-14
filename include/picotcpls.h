@@ -106,7 +106,9 @@ struct st_tcpls_t {
   uint32_t nbr_tcp_streams;
 
   /** socket of the primary address - must be update at each primary change*/
-  int *socket_ptr;
+  int socket_primary;
+  /** remember on which socket we pulled out bytes */
+  int socket_rcv;
 };
 
 struct st_ptls_record_t;
