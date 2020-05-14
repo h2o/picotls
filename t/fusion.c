@@ -48,6 +48,11 @@ static const char *tostr(const void *_p, size_t len)
 
 int main(int argc, char **argv)
 {
+    if (!ptls_fusion_is_supported_by_cpu()) {
+        note("CPU does have the necessary features (avx2, aes, pclmul)\n");
+        return done_testing();
+    }
+
     static const uint8_t zero[16384] = {}, one[16] = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1};
 
     {

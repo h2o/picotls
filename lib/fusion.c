@@ -848,3 +848,15 @@ ptls_aead_algorithm_t ptls_fusion_aes128gcm = {"AES128-GCM",
                                                PTLS_AESGCM_TAG_SIZE,
                                                sizeof(struct aesgcm_context),
                                                aes128gcm_setup};
+
+int ptls_fusion_is_supported_by_cpu(void)
+{
+#define REQUIRE(s)                                                                                                                 \
+    if (!__builtin_cpu_supports(s))                                                                                                \
+        return 0;
+    REQUIRE("avx2");
+    REQUIRE("aes");
+    REQUIRE("pclmul");
+#undef REQUIRE
+    return 1;
+}
