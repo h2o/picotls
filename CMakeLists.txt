@@ -145,6 +145,7 @@ IF ((CMAKE_SIZEOF_VOID_P EQUAL 8) AND
         lib/fusion.c
         t/fusion.c)
     SET_TARGET_PROPERTIES(test-fusion.t PROPERTIES COMPILE_FLAGS "-mavx2 -maes -mpclmul")
+    ADD_DEPENDENCIES(test-fusion.t generate-picotls-probes)
     SET(TEST_EXES ${TEST_EXES} test-fusion.t)
 ENDIF ()
 
