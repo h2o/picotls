@@ -56,10 +56,25 @@ int main(int argc, char **argv)
     static const uint8_t zero[16384] = {}, one[16] = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1};
 
     {
+        ptls_fusion_aesecb_context_t ecb;
+        uint8_t encrypted[16];
+
+        ptls_fusion_aesecb_init(&ecb, 1, zero, 16);
+        ptls_fusion_aesecb_encrypt(&ecb, encrypted, "hello world!!!!!");
+        ptls_fusion_aesecb_dispose(&ecb);
+        ok(strcmp(tostr(encrypted, 16), "172afecb50b5f1237814b2f7cb51d0f7") == 0);
+
+        ptls_fusion_aesecb_init(&ecb, 1, zero, 32);
+        ptls_fusion_aesecb_encrypt(&ecb, encrypted, "hello world!!!!!");
+        ptls_fusion_aesecb_dispose(&ecb);
+        ok(strcmp(tostr(encrypted, 16), "2a033f0627b3554aa4fe5786550736ff") == 0);
+    }
+
+    {
         static const uint8_t expected[] = {0x03, 0x88, 0xda, 0xce, 0x60, 0xb6, 0xa3, 0x92, 0xf3, 0x28, 0xc2,
                                            0xb9, 0x71, 0xb2, 0xfe, 0x78, 0x97, 0x3f, 0xbc, 0xa6, 0x54, 0x77,
                                            0xbf, 0x47, 0x85, 0xb0, 0xd5, 0x61, 0xf7, 0xe3, 0xfd, 0x6c};
-        ptls_fusion_aesgcm_context_t *ctx = ptls_fusion_aesgcm_new(zero, 5 + 16);
+        ptls_fusion_aesgcm_context_t *ctx = ptls_fusion_aesgcm_new(zero, PTLS_AES128_KEY_SIZE, 5 + 16);
         uint8_t encrypted[sizeof(expected)], decrypted[sizeof(expected) - 16];
 
         ptls_fusion_aesgcm_encrypt(ctx, encrypted, zero, 16, _mm_setzero_si128(), "hello", 5, NULL);
@@ -75,7 +90,7 @@ int main(int argc, char **argv)
     { /* test capacity */
         static const uint8_t expected[17] = {0x5b, 0x27, 0x21, 0x5e, 0xd8, 0x1a, 0x70, 0x2e, 0x39,
                                              0x41, 0xc8, 0x05, 0x77, 0xd5, 0x2f, 0xcb, 0x57};
-        ptls_fusion_aesgcm_context_t *ctx = ptls_fusion_aesgcm_new(zero, 2);
+        ptls_fusion_aesgcm_context_t *ctx = ptls_fusion_aesgcm_new(zero, PTLS_AES128_KEY_SIZE, 2);
         uint8_t encrypted[17], decrypted[1] = {0x55};
         ptls_fusion_aesgcm_encrypt(ctx, encrypted, "X", 1, _mm_setzero_si128(), "a", 1, NULL);
         ok(memcmp(expected, encrypted, 17) == 0);
@@ -85,7 +100,7 @@ int main(int argc, char **argv)
     }
 
     {
-        ptls_fusion_aesgcm_context_t *aead = ptls_fusion_aesgcm_new(zero, sizeof(zero));
+        ptls_fusion_aesgcm_context_t *aead = ptls_fusion_aesgcm_new(zero, PTLS_AES128_KEY_SIZE, sizeof(zero));
         ptls_aead_supplementary_encryption_t *supp = NULL;
 
         for (int i = 0; i < 2; ++i) {

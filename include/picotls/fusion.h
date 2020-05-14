@@ -30,23 +30,26 @@ extern "C" {
 #include <emmintrin.h>
 #include "../picotls.h"
 
-#define PTLS_FUSION_AES_ROUNDS 10 /* TODO support AES256 */
+#define PTLS_FUSION_AES128_ROUNDS 10
+#define PTLS_FUSION_AES256_ROUNDS 14
 
 typedef struct ptls_fusion_aesecb_context {
-    __m128i keys[PTLS_FUSION_AES_ROUNDS + 1];
+    __m128i keys[PTLS_FUSION_AES256_ROUNDS + 1];
+    unsigned rounds;
 } ptls_fusion_aesecb_context_t;
 
 typedef struct ptls_fusion_aesgcm_context ptls_fusion_aesgcm_context_t;
 
-void ptls_fusion_aesecb_init(ptls_fusion_aesecb_context_t *ctx, const void *key);
+void ptls_fusion_aesecb_init(ptls_fusion_aesecb_context_t *ctx, int is_enc, const void *key, size_t key_size);
 void ptls_fusion_aesecb_dispose(ptls_fusion_aesecb_context_t *ctx);
+void ptls_fusion_aesecb_encrypt(ptls_fusion_aesecb_context_t *ctx, void *dst, const void *src);
 
 /**
  * Creates an AES-GCM context.
  * @param key       the AES key (128 bits)
  * @param max_size  maximum size of the record (i.e. AAD + encrypted payload)
  */
-ptls_fusion_aesgcm_context_t *ptls_fusion_aesgcm_new(const void *key, size_t max_size);
+ptls_fusion_aesgcm_context_t *ptls_fusion_aesgcm_new(const void *key, size_t key_size, size_t max_size);
 /**
  * Destroys an AES-GCM context.
  */
