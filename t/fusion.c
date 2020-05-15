@@ -175,7 +175,7 @@ static void gcm_test_vectors(void)
     ptls_fusion_aesgcm_free(aead);
 }
 
-static void test_generated(void)
+static void test_generated(int aes256)
 {
     ptls_cipher_context_t *rand = ptls_cipher_new(&ptls_minicrypto_aes128ctr, 1, zero);
     ptls_cipher_init(rand, zero);
@@ -198,7 +198,8 @@ static void test_generated(void)
         memset(decrypted, 0xcc, sizeof(decrypted));
 
         { /* check using fusion */
-            ptls_aead_context_t *fusion = ptls_aead_new_direct(&ptls_fusion_aes128gcm, 1, key, iv);
+            ptls_aead_context_t *fusion =
+                ptls_aead_new_direct(aes256 ? &ptls_fusion_aes256gcm : &ptls_fusion_aes128gcm, 1, key, iv);
             ptls_aead_encrypt(fusion, encrypted, text, textlen, seq, aad, aadlen);
             ok(ptls_aead_decrypt(fusion, decrypted, encrypted, textlen + 16, seq, aad, aadlen) == textlen);
             ok(memcmp(decrypted, text, textlen) == 0);
@@ -208,7 +209,8 @@ static void test_generated(void)
         memset(decrypted, 0xcc, sizeof(decrypted));
 
         { /* check that the encrypted text can be decrypted by OpenSSL */
-            ptls_aead_context_t *mc = ptls_aead_new_direct(&ptls_minicrypto_aes128gcm, 0, key, iv);
+            ptls_aead_context_t *mc =
+                ptls_aead_new_direct(aes256 ? &ptls_minicrypto_aes256gcm : &ptls_minicrypto_aes128gcm, 0, key, iv);
             ok(ptls_aead_decrypt(mc, decrypted, encrypted, textlen + 16, seq, aad, aadlen) == textlen);
             ok(memcmp(decrypted, text, textlen) == 0);
             ptls_aead_free(mc);
@@ -216,6 +218,16 @@ static void test_generated(void)
     }
 
     ptls_cipher_free(rand);
+}
+
+static void test_generated_aes128(void)
+{
+    test_generated(0);
+}
+
+static void test_generated_aes256(void)
+{
+    test_generated(1);
 }
 
 int main(int argc, char **argv)
@@ -229,7 +241,8 @@ int main(int argc, char **argv)
     subtest("gcm-basic", gcm_basic);
     subtest("gcm-capacity", gcm_capacity);
     subtest("gcm-test-vectors", gcm_test_vectors);
-    subtest("generated", test_generated);
+    subtest("generated-128", test_generated_aes128);
+    subtest("generated-256", test_generated_aes256);
 
     return done_testing();
 }

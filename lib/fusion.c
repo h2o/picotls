@@ -786,17 +786,27 @@ static void ctr_transform(ptls_cipher_context_t *_ctx, void *output, const void 
     }
 }
 
-static int aes128ctr_setup(ptls_cipher_context_t *_ctx, int is_enc, const void *key)
+static int aesctr_setup(ptls_cipher_context_t *_ctx, int is_enc, const void *key, size_t key_size)
 {
     struct ctr_context *ctx = (struct ctr_context *)_ctx;
 
     ctx->super.do_dispose = ctr_dispose;
     ctx->super.do_init = ctr_init;
     ctx->super.do_transform = ctr_transform;
-    ptls_fusion_aesecb_init(&ctx->fusion, 1, key, PTLS_AES128_KEY_SIZE);
+    ptls_fusion_aesecb_init(&ctx->fusion, 1, key, key_size);
     ctx->is_ready = 0;
 
     return 0;
+}
+
+static int aes128ctr_setup(ptls_cipher_context_t *ctx, int is_enc, const void *key)
+{
+    return aesctr_setup(ctx, is_enc, key, PTLS_AES128_KEY_SIZE);
+}
+
+static int aes256ctr_setup(ptls_cipher_context_t *ctx, int is_enc, const void *key)
+{
+    return aesctr_setup(ctx, is_enc, key, PTLS_AES256_KEY_SIZE);
 }
 
 static void aesgcm_dispose_crypto(ptls_aead_context_t *_ctx)
@@ -855,7 +865,7 @@ static size_t aead_do_decrypt(ptls_aead_context_t *_ctx, void *output, const voi
     return enclen;
 }
 
-static int aes128gcm_setup(ptls_aead_context_t *_ctx, int is_enc, const void *key, const void *iv)
+static int aesgcm_setup(ptls_aead_context_t *_ctx, int is_enc, const void *key, const void *iv, size_t key_size)
 {
     struct aesgcm_context *ctx = (struct aesgcm_context *)_ctx;
 
@@ -869,10 +879,20 @@ static int aes128gcm_setup(ptls_aead_context_t *_ctx, int is_enc, const void *ke
     ctx->super.do_encrypt = aead_do_encrypt;
     ctx->super.do_decrypt = aead_do_decrypt;
 
-    ctx->aesgcm = ptls_fusion_aesgcm_new(key, PTLS_AES128_KEY_SIZE,
-                                         1500); /* FIXME use realloc with exponential back-off to support arbitrary size */
+    ctx->aesgcm =
+        ptls_fusion_aesgcm_new(key, key_size, 1500); /* FIXME use realloc with exponential back-off to support arbitrary size */
 
     return 0;
+}
+
+static int aes128gcm_setup(ptls_aead_context_t *ctx, int is_enc, const void *key, const void *iv)
+{
+    return aesgcm_setup(ctx, is_enc, key, iv, PTLS_AES128_KEY_SIZE);
+}
+
+static int aes256gcm_setup(ptls_aead_context_t *ctx, int is_enc, const void *key, const void *iv)
+{
+    return aesgcm_setup(ctx, is_enc, key, iv, PTLS_AES256_KEY_SIZE);
 }
 
 ptls_cipher_algorithm_t ptls_fusion_aes128ctr = {"AES128-CTR",
@@ -881,6 +901,12 @@ ptls_cipher_algorithm_t ptls_fusion_aes128ctr = {"AES128-CTR",
                                                  PTLS_AES_IV_SIZE,
                                                  sizeof(struct ctr_context),
                                                  aes128ctr_setup};
+ptls_cipher_algorithm_t ptls_fusion_aes256ctr = {"AES256-CTR",
+                                                 PTLS_AES256_KEY_SIZE,
+                                                 1, // block size
+                                                 PTLS_AES_IV_SIZE,
+                                                 sizeof(struct ctr_context),
+                                                 aes256ctr_setup};
 ptls_aead_algorithm_t ptls_fusion_aes128gcm = {"AES128-GCM",
                                                &ptls_fusion_aes128ctr,
                                                NULL, // &ptls_fusion_aes128ecb,
@@ -889,6 +915,14 @@ ptls_aead_algorithm_t ptls_fusion_aes128gcm = {"AES128-GCM",
                                                PTLS_AESGCM_TAG_SIZE,
                                                sizeof(struct aesgcm_context),
                                                aes128gcm_setup};
+ptls_aead_algorithm_t ptls_fusion_aes256gcm = {"AES256-GCM",
+                                               &ptls_fusion_aes256ctr,
+                                               NULL, // &ptls_fusion_aes256ecb,
+                                               PTLS_AES256_KEY_SIZE,
+                                               PTLS_AESGCM_IV_SIZE,
+                                               PTLS_AESGCM_TAG_SIZE,
+                                               sizeof(struct aesgcm_context),
+                                               aes256gcm_setup};
 
 int ptls_fusion_is_supported_by_cpu(void)
 {
