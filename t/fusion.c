@@ -23,6 +23,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "picotls/fusion.h"
+#include "picotls/minicrypto.h"
 #include "../deps/picotest/picotest.h"
 
 static const char *tostr(const void *_p, size_t len)
@@ -174,6 +175,49 @@ static void gcm_test_vectors(void)
     ptls_fusion_aesgcm_free(aead);
 }
 
+static void test_generated(void)
+{
+    ptls_cipher_context_t *rand = ptls_cipher_new(&ptls_minicrypto_aes128ctr, 1, zero);
+    ptls_cipher_init(rand, zero);
+
+    for (int i = 0; i < 10000; ++i) {
+        /* generate input using RNG */
+        uint8_t key[32], iv[12], aadlen, textlen;
+        uint64_t seq;
+        ptls_cipher_encrypt(rand, key, zero, sizeof(key));
+        ptls_cipher_encrypt(rand, iv, zero, sizeof(iv));
+        ptls_cipher_encrypt(rand, &aadlen, zero, sizeof(aadlen));
+        ptls_cipher_encrypt(rand, &textlen, zero, sizeof(textlen));
+        ptls_cipher_encrypt(rand, &seq, zero, sizeof(seq));
+        uint8_t aad[aadlen], text[textlen];
+        ptls_cipher_encrypt(rand, aad, zero, sizeof(aad));
+        ptls_cipher_encrypt(rand, text, zero, sizeof(text));
+
+        uint8_t encrypted[textlen + 16], decrypted[textlen];
+        memset(encrypted, 0x55, sizeof(encrypted));
+        memset(decrypted, 0xcc, sizeof(decrypted));
+
+        { /* check using fusion */
+            ptls_aead_context_t *fusion = ptls_aead_new_direct(&ptls_fusion_aes128gcm, 1, key, iv);
+            ptls_aead_encrypt(fusion, encrypted, text, textlen, seq, aad, aadlen);
+            ok(ptls_aead_decrypt(fusion, decrypted, encrypted, textlen + 16, seq, aad, aadlen) == textlen);
+            ok(memcmp(decrypted, text, textlen) == 0);
+            ptls_aead_free(fusion);
+        }
+
+        memset(decrypted, 0xcc, sizeof(decrypted));
+
+        { /* check that the encrypted text can be decrypted by OpenSSL */
+            ptls_aead_context_t *mc = ptls_aead_new_direct(&ptls_minicrypto_aes128gcm, 0, key, iv);
+            ok(ptls_aead_decrypt(mc, decrypted, encrypted, textlen + 16, seq, aad, aadlen) == textlen);
+            ok(memcmp(decrypted, text, textlen) == 0);
+            ptls_aead_free(mc);
+        }
+    }
+
+    ptls_cipher_free(rand);
+}
+
 int main(int argc, char **argv)
 {
     if (!ptls_fusion_is_supported_by_cpu()) {
@@ -185,6 +229,7 @@ int main(int argc, char **argv)
     subtest("gcm-basic", gcm_basic);
     subtest("gcm-capacity", gcm_capacity);
     subtest("gcm-test-vectors", gcm_test_vectors);
+    subtest("generated", test_generated);
 
     return done_testing();
 }

@@ -91,6 +91,7 @@
 		10EACB1A1DCEC2A300CA0341 /* libpicotls-core.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 106530DA1D9B3E6F005B2C60 /* libpicotls-core.a */; };
 		E949EF282073629300511ECA /* minicrypto-pem.c in Sources */ = {isa = PBXBuildFile; fileRef = E949EF272073629300511ECA /* minicrypto-pem.c */; };
 		E95E95382290456B00215ACD /* picotls-probes.d in Sources */ = {isa = PBXBuildFile; fileRef = E95EBCC0227B71170022C32D /* picotls-probes.d */; };
+		E973651E246E37300039AA49 /* libpicotls-minicrypto.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 10EACB171DCEAF0F00CA0341 /* libpicotls-minicrypto.a */; };
 		E97577012212405300D1EF74 /* ffx.h in Headers */ = {isa = PBXBuildFile; fileRef = E97577002212405300D1EF74 /* ffx.h */; };
 		E97577032212405D00D1EF74 /* ffx.c in Sources */ = {isa = PBXBuildFile; fileRef = E97577022212405D00D1EF74 /* ffx.c */; };
 		E97577042212407900D1EF74 /* ffx.c in Sources */ = {isa = PBXBuildFile; fileRef = E97577022212405D00D1EF74 /* ffx.c */; };
@@ -378,6 +379,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				E973651E246E37300039AA49 /* libpicotls-minicrypto.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -451,6 +453,7 @@
 				E992F79920E99A080008154D /* src */,
 				106530C41D9B1A0E005B2C60 /* t */,
 				106530B31D9985E0005B2C60 /* Products */,
+				E973651D246E37300039AA49 /* Frameworks */,
 			);
 			sourceTree = "<group>";
 		};
@@ -568,6 +571,13 @@
 				E95EBCCA227EA0180022C32D /* dtrace-utils.cmake */,
 			);
 			path = cmake;
+			sourceTree = "<group>";
+		};
+		E973651D246E37300039AA49 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 		E992F79920E99A080008154D /* src */ = {
