@@ -3620,8 +3620,8 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
         0)
         goto Exit;
 
-    /* check if ClientHello makes sense */
-    if (!(ch.legacy_version == 0x0303 && is_supported_version(ch.selected_version))) {
+    /* bail out if CH cannot be handled as TLS 1.3, providing the application the raw CH and SNI, to help them fallback */
+    if (!is_supported_version(ch.selected_version)) {
         if (!is_second_flight && tls->ctx->on_client_hello != NULL) {
             ptls_on_client_hello_parameters_t params = {
                 .server_name = ch.server_name,
@@ -3632,6 +3632,15 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
             if ((ret = tls->ctx->on_client_hello->cb(tls->ctx->on_client_hello, tls, &params)) != 0)
                 goto Exit;
         }
+        ret = PTLS_ALERT_PROTOCOL_VERSION;
+        goto Exit;
+    }
+
+    /* Check TLS 1.3-specific constraints. Hereafter, we might exit without calling on_client_hello. That's fine because this CH is
+     * ought to be rejected. */
+    if (ch.legacy_version <= 0x0300) {
+        /* RFC 8446 Appendix D.5: any endpoint receiving a Hello message with legacy_version set to 0x0300 MUST abort the handshake
+         * with a "protocol_version" alert. */
         ret = PTLS_ALERT_PROTOCOL_VERSION;
         goto Exit;
     }
