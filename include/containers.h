@@ -21,7 +21,10 @@ struct st_tcpls_record_fifo_t {
   struct st_ptls_record_t *queue;
   struct st_ptls_record_t *front;
   struct st_ptls_record_t *back;
+  int front_idx;
+  int back_idx;
 };
+
 
 tcpls_record_fifo_t *tcpls_record_queue_new(int max_record_num);
 

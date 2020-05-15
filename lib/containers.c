@@ -18,9 +18,9 @@ tcpls_record_fifo_t *tcpls_record_queue_new(int max_record_num) {
   fifo->queue = malloc(max_record_num*sizeof(struct st_ptls_record_t));
   if (fifo->queue == NULL)
     goto Exit;
-  fifo->front = fifo->queue;
-  fifo->back = fifo->queue;
   fifo->size = 0;
+  fifo->front_idx = 0;
+  fifo->back_idx = 0;
   fifo->max_record_num = max_record_num;
   return fifo;
 Exit:
@@ -36,13 +36,13 @@ Exit:
 queue_ret_t tcpls_record_queue_push(tcpls_record_fifo_t *fifo, struct st_ptls_record_t *rec) {
   if (fifo->size == fifo->max_record_num)
     return MEMORY_FULL;
-  memcpy(fifo->front, rec, sizeof(*rec));
+  memcpy(&fifo->queue[fifo->front_idx], rec, sizeof(*rec));
   fifo->size++;
-  if (fifo->front - fifo->queue == sizeof(*rec)*(fifo->max_record_num-1)) {
-    fifo->front = fifo->queue;
+  if (fifo->front_idx == fifo->max_record_num-1) {
+    fifo->front_idx = 0;
   }
   else {
-    fifo->front = fifo->queue+(fifo->size*sizeof(*rec));
+    fifo->front_idx++;
   }
   return OK;
 }
@@ -51,11 +51,11 @@ queue_ret_t tcpls_record_queue_del(tcpls_record_fifo_t *fifo, int n) {
   while (n > 0) {
     if (fifo->size == 0)
       return EMPTY;
-    if (fifo->back - fifo->queue == sizeof(struct st_ptls_record_t)*(fifo->max_record_num-1)) {
-      fifo->back = fifo->queue;
+    if (fifo->back_idx == fifo->max_record_num-1) {
+      fifo->back_idx = 0;
     }
     else {
-      fifo->back+=sizeof(struct st_ptls_record_t);
+      fifo->back_idx++;
     }
     fifo->size--;
     n--;

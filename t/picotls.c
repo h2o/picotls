@@ -1965,12 +1965,10 @@ static void test_record_fifo_t(void)
   struct st_ptls_record_t rec;
   memset(&rec, 0, sizeof(rec));
   ok(tcpls_record_queue_push(r_fifo, &rec) == OK);
-  ok(r_fifo->front-r_fifo->back == sizeof(rec));
   ok(tcpls_record_queue_push(r_fifo, &rec) == OK);
-  ok(r_fifo->front-r_fifo->back == 2*sizeof(rec));
   ok(tcpls_record_queue_push(r_fifo, &rec) == OK);
-  ok(r_fifo->front == r_fifo->queue);
-
+  ok(r_fifo->front_idx == 0);
+  
   /*ok(r_fifo->front-r_fifo->back == 3*sizeof(rec));*/
   /*ok(tcpls_record_queue_del(r_fifo, 1) == OK);*/
   /*ok(r_fifo->size == 0);*/
