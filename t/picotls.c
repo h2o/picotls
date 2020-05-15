@@ -1968,14 +1968,12 @@ static void test_record_fifo_t(void)
   ok(tcpls_record_queue_push(r_fifo, &rec) == OK);
   ok(tcpls_record_queue_push(r_fifo, &rec) == OK);
   ok(r_fifo->front_idx == 0);
-  
-  /*ok(r_fifo->front-r_fifo->back == 3*sizeof(rec));*/
-  /*ok(tcpls_record_queue_del(r_fifo, 1) == OK);*/
-  /*ok(r_fifo->size == 0);*/
-  /*ok(r_fifo->back == r_fifo->front);*/
-  /*for (int i = 0; i < 9; i++) {*/
-    /*ok(tcpls_record_queue_push(r_fifo, &rec) == OK);*/
-  /*}*/
+  ok(tcpls_record_queue_del(r_fifo, 1) == OK);
+  ok(tcpls_record_queue_del(r_fifo, 2) == OK);
+  ok(tcpls_record_queue_del(r_fifo, 1) == EMPTY);
+  ok(tcpls_record_queue_push(r_fifo, &rec) == OK);
+  ok(tcpls_record_queue_del(r_fifo, 1) == OK);
+  ok(r_fifo->front_idx == r_fifo->back_idx);
   tcpls_record_fifo_free(r_fifo);
 }
 
