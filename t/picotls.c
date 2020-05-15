@@ -1952,13 +1952,33 @@ static void test_list_t(void)
   ok(list_remove(list64, &item1) == 0);
   ok(list64->size == 22);
   ok(*(uint64_t*) list_get(list64, 0) == 43);
+  ok(*(uint64_t*) list_get(list64, 2) == 45);
   ok(list_remove(list64, &item4) == -1);
   list_free(list64);
 }
 
 static void test_record_fifo_t(void)
 {
-  ok(0==0);
+  tcpls_record_fifo_t *r_fifo = tcpls_record_queue_new(3);
+  ok(r_fifo->size == 0);
+  ok(r_fifo->max_record_num == 3);
+  struct st_ptls_record_t rec;
+  memset(&rec, 0, sizeof(rec));
+  ok(tcpls_record_queue_push(r_fifo, &rec) == OK);
+  ok(r_fifo->front-r_fifo->back == sizeof(rec));
+  ok(tcpls_record_queue_push(r_fifo, &rec) == OK);
+  ok(r_fifo->front-r_fifo->back == 2*sizeof(rec));
+  ok(tcpls_record_queue_push(r_fifo, &rec) == OK);
+  ok(r_fifo->front == r_fifo->queue);
+
+  /*ok(r_fifo->front-r_fifo->back == 3*sizeof(rec));*/
+  /*ok(tcpls_record_queue_del(r_fifo, 1) == OK);*/
+  /*ok(r_fifo->size == 0);*/
+  /*ok(r_fifo->back == r_fifo->front);*/
+  /*for (int i = 0; i < 9; i++) {*/
+    /*ok(tcpls_record_queue_push(r_fifo, &rec) == OK);*/
+  /*}*/
+  tcpls_record_fifo_free(r_fifo);
 }
 
 static void test_containers(void)
