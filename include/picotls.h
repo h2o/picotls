@@ -512,6 +512,10 @@ typedef struct st_ptls_on_client_hello_parameters_t {
      * if ESNI was used
      */
     unsigned esni : 1;
+    /**
+     * set to 1 if ClientHello is too old (or too new) to be handled by picotls
+     */
+    unsigned incompatible_version : 1;
 } ptls_on_client_hello_parameters_t;
 
 /**
