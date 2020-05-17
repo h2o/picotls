@@ -117,7 +117,6 @@
 		E9B43DE324619D7E00824E51 /* fusion.c in Sources */ = {isa = PBXBuildFile; fileRef = E9B43DE224619D7E00824E51 /* fusion.c */; };
 		E9B43DE424619D7E00824E51 /* fusion.c in Sources */ = {isa = PBXBuildFile; fileRef = E9B43DE224619D7E00824E51 /* fusion.c */; };
 		E9B43DE524619E1600824E51 /* minicrypto.c in Sources */ = {isa = PBXBuildFile; fileRef = 1059003D1DC8D4E300FB4085 /* minicrypto.c */; };
-		E9B43DE724652D2000824E51 /* fusion.c in Sources */ = {isa = PBXBuildFile; fileRef = E9B43DBF24619D1700824E51 /* fusion.c */; };
 		E9B43E0C24689E8900824E51 /* fusionbench.c in Sources */ = {isa = PBXBuildFile; fileRef = E9B43E0B24689E8900824E51 /* fusionbench.c */; };
 		E9B43E0D24689EDA00824E51 /* fusion.c in Sources */ = {isa = PBXBuildFile; fileRef = E9B43DBF24619D1700824E51 /* fusion.c */; };
 		E9B43E0E24689F9500824E51 /* picotls-probes.d in Sources */ = {isa = PBXBuildFile; fileRef = E95EBCC0227B71170022C32D /* picotls-probes.d */; };
@@ -1009,7 +1008,6 @@
 			files = (
 				E9B43DC224619D5100824E51 /* picotls-probes.d in Sources */,
 				E9B43E1024689FE700824E51 /* picotls.c in Sources */,
-				E9B43DE724652D2000824E51 /* fusion.c in Sources */,
 				E9B43DE424619D7E00824E51 /* fusion.c in Sources */,
 				E9B43DC824619D5100824E51 /* picotest.c in Sources */,
 			);
