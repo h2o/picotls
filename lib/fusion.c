@@ -210,14 +210,14 @@ static inline __m128i loadn(const void *_p, size_t l)
     }
 }
 
-static inline void storen(void *_p, size_t l, __m128i v)
+static inline void load_xor_storen(void *_dst, const void *_src, __m128i v, size_t l)
 {
-    uint8_t buf[16], *p = _p;
-
+    uint8_t buf[16] __attribute((aligned(16)));
+    uint8_t *dst = _dst;
+    const uint8_t *src = _src;
     *(__m128i *)buf = v;
-
     for (size_t i = 0; i != l; ++i)
-        p[i] = buf[i];
+        dst[i] = src[i] ^ buf[i];
 }
 
 void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, void *output, const void *input, size_t inlen, __m128i ctr,
@@ -355,7 +355,7 @@ void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, void *output,
             if (srclen != 0) {                                                                                                     \
                 /* While it is possible to use _mm_storeu_si128 here, as there is space to store GCM tag, writing byte-per-byte    \
                  * seems to be faster on 9th gen Core. */                                                                          \
-                storen(dst, srclen, _mm_xor_si128(loadn(src, srclen), bits##i));                                                   \
+                load_xor_storen(dst, src, bits##i, srclen);                                                                        \
                 dst = (__m128i *)((uint8_t *)dst + srclen);                                                                        \
                 srclen = 0;                                                                                                        \
             }                                                                                                                      \
@@ -615,7 +615,7 @@ int ptls_fusion_aesgcm_decrypt(ptls_fusion_aesgcm_context_t *ctx, void *output, 
             if (src_aeslen == 16) {                                                                                                \
                 _mm_storeu_si128(dst, _mm_xor_si128(_mm_loadu_si128(src_aes), bits##i));                                           \
             } else if (src_aeslen != 0) {                                                                                          \
-                storen(dst, src_aeslen, _mm_xor_si128(loadn(src_aes, src_aeslen), bits##i));                                       \
+                load_xor_storen(dst, src_aes, bits##i, src_aeslen);                                                                \
             }                                                                                                                      \
             src_aeslen = 0;                                                                                                        \
             goto Finish;                                                                                                           \
@@ -780,7 +780,7 @@ static void ctr_transform(ptls_cipher_context_t *_ctx, void *output, const void 
     ctx->is_ready = 0;
 
     if (len < 16) {
-        storen(output, len, _mm_xor_si128(_mm_loadu_si128(&ctx->bits), loadn(input, len)));
+        load_xor_storen(output, input, _mm_loadu_si128(&ctx->bits), len);
     } else {
         _mm_storeu_si128(output, _mm_xor_si128(_mm_loadu_si128(&ctx->bits), _mm_loadu_si128(input)));
     }
