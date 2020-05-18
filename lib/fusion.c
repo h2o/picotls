@@ -349,17 +349,13 @@ void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, void *output,
             if (srclen != 0) {
 #define APPLY(i)                                                                                                                   \
     do {                                                                                                                           \
-        if (srclen >= 16) {                                                                                                        \
+        if (PTLS_LIKELY(srclen >= 16)) {                                                                                           \
             _mm_storeu_si128(dst++, _mm_xor_si128(_mm_loadu_si128(src++), bits##i));                                               \
             srclen -= 16;                                                                                                          \
+        } else if (PTLS_LIKELY(srclen != 0)) {                                                                                     \
+            bits0 = bits##i;                                                                                                       \
+            goto ApplyRemainder;                                                                                                   \
         } else {                                                                                                                   \
-            if (srclen != 0) {                                                                                                     \
-                /* While it is possible to use _mm_storeu_si128 here, as there is space to store GCM tag, writing byte-per-byte    \
-                 * seems to be faster on 9th gen Core. */                                                                          \
-                storen(dst, srclen, _mm_xor_si128(loadn(src, srclen), bits##i));                                                   \
-                dst = (__m128i *)((uint8_t *)dst + srclen);                                                                        \
-                srclen = 0;                                                                                                        \
-            }                                                                                                                      \
             goto ApplyEnd;                                                                                                         \
         }                                                                                                                          \
     } while (0)
@@ -369,8 +365,13 @@ void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, void *output,
                 APPLY(3);
                 APPLY(4);
                 APPLY(5);
-            ApplyEnd:;
 #undef APPLY
+                goto ApplyEnd;
+            ApplyRemainder:
+                storen(dst, srclen, _mm_xor_si128(loadn(src, srclen), bits0));
+                dst = (__m128i *)((uint8_t *)dst + srclen);
+                srclen = 0;
+            ApplyEnd:;
             }
         }
 
@@ -613,12 +614,7 @@ int ptls_fusion_aesgcm_decrypt(ptls_fusion_aesgcm_context_t *ctx, void *output, 
             _mm_storeu_si128(dst++, _mm_xor_si128(_mm_loadu_si128(src_aes++), bits##i));                                           \
             src_aeslen -= 16;                                                                                                      \
         } else {                                                                                                                   \
-            if (src_aeslen == 16) {                                                                                                \
-                _mm_storeu_si128(dst, _mm_xor_si128(_mm_loadu_si128(src_aes), bits##i));                                           \
-            } else if (src_aeslen != 0) {                                                                                          \
-                storen(dst, src_aeslen, _mm_xor_si128(loadn(src_aes, src_aeslen), bits##i));                                       \
-            }                                                                                                                      \
-            src_aeslen = 0;                                                                                                        \
+            bits0 = bits##i;                                                                                                       \
             goto Finish;                                                                                                           \
         }
                 APPLY(0);
@@ -634,6 +630,12 @@ int ptls_fusion_aesgcm_decrypt(ptls_fusion_aesgcm_context_t *ctx, void *output, 
     }
 
 Finish:
+    if (src_aeslen == 16) {
+        _mm_storeu_si128(dst, _mm_xor_si128(_mm_loadu_si128(src_aes), bits0));
+    } else if (src_aeslen != 0) {
+        storen(dst, src_aeslen, _mm_xor_si128(loadn(src_aes, src_aeslen), bits0));
+    }
+
     assert((state & STATE_IS_FIRST_RUN) == 0);
 
     /* the only case where AES operation is complete and GHASH is not is when the application of AC is remaining */
