@@ -211,14 +211,16 @@ static inline __m128i loadn(const void *_p, size_t l)
     }
 }
 
-static inline void storen(void *_p, size_t l, __m128i v)
+static inline __m128i *load_xor_storen(__m128i *_dst, const __m128i *_src, size_t l, __m128i bits)
 {
-    uint8_t buf[16], *p = _p;
+    uint8_t buf[16] __attribute__((aligned(16))), *dst = (void *)_dst;
+    const uint8_t *src = (void *)_src;
 
-    *(__m128i *)buf = v;
+    *(__m128i *)buf = bits;
 
     for (size_t i = 0; i != l; ++i)
-        p[i] = buf[i];
+        dst[i] = src[i] ^ buf[i];
+    return (__m128i *)(dst + l);
 }
 
 void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, void *output, const void *input, size_t inlen, __m128i ctr,
@@ -368,8 +370,7 @@ void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, void *output,
 #undef APPLY
                 goto ApplyEnd;
             ApplyRemainder:
-                storen(dst, srclen, _mm_xor_si128(loadn(src, srclen), bits0));
-                dst = (__m128i *)((uint8_t *)dst + srclen);
+                dst = load_xor_storen(dst, src, srclen, bits0);
                 srclen = 0;
             ApplyEnd:;
             }
@@ -633,7 +634,7 @@ Finish:
     if (src_aeslen == 16) {
         _mm_storeu_si128(dst, _mm_xor_si128(_mm_loadu_si128(src_aes), bits0));
     } else if (src_aeslen != 0) {
-        storen(dst, src_aeslen, _mm_xor_si128(loadn(src_aes, src_aeslen), bits0));
+        load_xor_storen(dst, src_aes, src_aeslen, bits0);
     }
 
     assert((state & STATE_IS_FIRST_RUN) == 0);
@@ -816,7 +817,7 @@ static void ctr_transform(ptls_cipher_context_t *_ctx, void *output, const void 
     ctx->is_ready = 0;
 
     if (len < 16) {
-        storen(output, len, _mm_xor_si128(_mm_loadu_si128(&ctx->bits), loadn(input, len)));
+        load_xor_storen(output, input, len, _mm_loadu_si128(&ctx->bits));
     } else {
         _mm_storeu_si128(output, _mm_xor_si128(_mm_loadu_si128(&ctx->bits), _mm_loadu_si128(input)));
     }
