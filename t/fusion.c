@@ -179,8 +179,9 @@ static void test_generated(int aes256)
 {
     ptls_cipher_context_t *rand = ptls_cipher_new(&ptls_minicrypto_aes128ctr, 1, zero);
     ptls_cipher_init(rand, zero);
+    int i;
 
-    for (int i = 0; i < 10000; ++i) {
+    for (i = 0; i < 10000; ++i) {
         /* generate input using RNG */
         uint8_t key[32], iv[12], aadlen, textlen;
         uint64_t seq;
@@ -201,8 +202,10 @@ static void test_generated(int aes256)
             ptls_aead_context_t *fusion =
                 ptls_aead_new_direct(aes256 ? &ptls_fusion_aes256gcm : &ptls_fusion_aes128gcm, 1, key, iv);
             ptls_aead_encrypt(fusion, encrypted, text, textlen, seq, aad, aadlen);
-            ok(ptls_aead_decrypt(fusion, decrypted, encrypted, textlen + 16, seq, aad, aadlen) == textlen);
-            ok(memcmp(decrypted, text, textlen) == 0);
+            if (ptls_aead_decrypt(fusion, decrypted, encrypted, textlen + 16, seq, aad, aadlen) != textlen)
+                goto Fail;
+            if (memcmp(decrypted, text, textlen) != 0)
+                goto Fail;
             ptls_aead_free(fusion);
         }
 
@@ -211,13 +214,21 @@ static void test_generated(int aes256)
         { /* check that the encrypted text can be decrypted by OpenSSL */
             ptls_aead_context_t *mc =
                 ptls_aead_new_direct(aes256 ? &ptls_minicrypto_aes256gcm : &ptls_minicrypto_aes128gcm, 0, key, iv);
-            ok(ptls_aead_decrypt(mc, decrypted, encrypted, textlen + 16, seq, aad, aadlen) == textlen);
-            ok(memcmp(decrypted, text, textlen) == 0);
+            if (ptls_aead_decrypt(mc, decrypted, encrypted, textlen + 16, seq, aad, aadlen) != textlen)
+                goto Fail;
+            if (memcmp(decrypted, text, textlen) != 0)
+                goto Fail;
             ptls_aead_free(mc);
         }
     }
 
+    ok(1);
     ptls_cipher_free(rand);
+    return;
+
+Fail:
+    note("mismatch at index=%d", i);
+    ok(0);
 }
 
 static void test_generated_aes128(void)
