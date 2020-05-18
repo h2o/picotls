@@ -917,8 +917,7 @@ static int aesgcm_setup(ptls_aead_context_t *_ctx, int is_enc, const void *key, 
     ctx->super.do_encrypt = aead_do_encrypt;
     ctx->super.do_decrypt = aead_do_decrypt;
 
-    ctx->aesgcm =
-        ptls_fusion_aesgcm_new(key, key_size, 1500); /* FIXME use realloc with exponential back-off to support arbitrary size */
+    ctx->aesgcm = ptls_fusion_aesgcm_new(key, key_size, 1500 /* assume ordinary packet size */);
 
     return 0;
 }
