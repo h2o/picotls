@@ -47,9 +47,13 @@ void ptls_fusion_aesecb_encrypt(ptls_fusion_aesecb_context_t *ctx, void *dst, co
 /**
  * Creates an AES-GCM context.
  * @param key       the AES key (128 bits)
- * @param max_size  maximum size of the record (i.e. AAD + encrypted payload)
+ * @param capacity  maximum size of AEAD record (i.e. AAD + encrypted payload)
  */
-ptls_fusion_aesgcm_context_t *ptls_fusion_aesgcm_new(const void *key, size_t key_size, size_t max_size);
+ptls_fusion_aesgcm_context_t *ptls_fusion_aesgcm_new(const void *key, size_t key_size, size_t capacity);
+/**
+ * Updates the capacity.
+ */
+ptls_fusion_aesgcm_context_t *ptls_fusion_aesgcm_set_capacity(ptls_fusion_aesgcm_context_t *ctx, size_t capacity);
 /**
  * Destroys an AES-GCM context.
  */
