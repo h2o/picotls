@@ -142,7 +142,6 @@ IF ((CMAKE_SIZEOF_VOID_P EQUAL 8) AND
     ADD_EXECUTABLE(test-fusion.t
         deps/picotest/picotest.c
         lib/picotls.c
-        lib/fusion.c
         t/fusion.c)
     TARGET_LINK_LIBRARIES(test-fusion.t picotls-minicrypto)
     SET_TARGET_PROPERTIES(test-fusion.t PROPERTIES COMPILE_FLAGS "-mavx2 -maes -mpclmul")

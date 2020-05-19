@@ -195,20 +195,27 @@ static inline __m128i aesecb_encrypt(ptls_fusion_aesecb_context_t *ctx, __m128i 
     return v;
 }
 
-static inline __m128i loadn(const void *_p, size_t l)
+static const uint8_t loadn_mask[31] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                                       0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
+static const uint8_t loadn_shuffle[31] = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+                                          0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, // first 16 bytes map to byte offsets
+                                          0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80,
+                                          0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80}; // latter 15 bytes map to zero
+
+static inline __m128i loadn(const void *p, size_t l)
 {
-    /* FIXME is this optimal? */
-    if (PTLS_LIKELY(((uintptr_t)_p % 4096) <= 4080)) {
-        static const uint8_t mask[31] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-                                         0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
-        return _mm_and_si128(_mm_loadu_si128(_p), _mm_loadu_si128((__m128i *)(mask + 16 - l)));
+    __m128i v, mask = _mm_loadu_si128((__m128i *)(loadn_mask + 16 - l));
+    uintptr_t mod4k = (uintptr_t)p % 4096;
+
+    if (PTLS_LIKELY(mod4k <= 4080) || mod4k + l > 4096) {
+        v = _mm_loadu_si128(p);
     } else {
-        const uint8_t *p = _p;
-        uint8_t buf[16] = {};
-        for (size_t i = 0; i != l; ++i)
-            buf[i] = p[i];
-        return *(__m128i *)buf;
+        uintptr_t shift = (uintptr_t)p & 15;
+        __m128i pattern = _mm_loadu_si128((const __m128i *)(loadn_shuffle + shift));
+        v = _mm_shuffle_epi8(_mm_load_si128((const __m128i *)((uintptr_t)p - shift)), pattern);
     }
+    v = _mm_and_si128(v, mask);
+    return v;
 }
 
 static inline void storen(void *_p, size_t l, __m128i v)

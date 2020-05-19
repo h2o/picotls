@@ -25,6 +25,7 @@
 #include "picotls/fusion.h"
 #include "picotls/minicrypto.h"
 #include "../deps/picotest/picotest.h"
+#include "../lib/fusion.c"
 
 static const char *tostr(const void *_p, size_t len)
 {
@@ -47,9 +48,26 @@ static const char *tostr(const void *_p, size_t len)
     return buf;
 }
 
+static void test_loadn(void)
+{
+    uint8_t buf[8192] = {};
+
+    for (size_t off = 0; off < 8192 - 15; ++off) {
+        uint8_t *src = buf + off;
+        memcpy(src, "hello world12345", 16);
+        __m128i v = loadn(src, 11);
+        if (memcmp(&v, "hello world\0\0\0\0\0", 16) != 0) {
+            ok(!"fail");
+            return;
+        }
+        memset(src, 0, 11);
+    }
+    ok(!!"success");
+}
+
 static const uint8_t zero[16384] = {};
 
-static void ecb(void)
+static void test_ecb(void)
 {
     ptls_fusion_aesecb_context_t ecb;
     uint8_t encrypted[16];
@@ -248,7 +266,8 @@ int main(int argc, char **argv)
         return done_testing();
     }
 
-    subtest("ecb", ecb);
+    subtest("loadn", test_loadn);
+    subtest("ecb", test_ecb);
     subtest("gcm-basic", gcm_basic);
     subtest("gcm-capacity", gcm_capacity);
     subtest("gcm-test-vectors", gcm_test_vectors);
