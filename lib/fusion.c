@@ -290,9 +290,6 @@ void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, void *output,
     __m128i gdatabuf[6];
     __m128i ac = _mm_shuffle_epi8(_mm_set_epi32(0, (int)aadlen * 8, 0, (int)inlen * 8), bswap8);
 
-    const __m128i *gdata; // points to the elements fed into GHASH
-    size_t gdata_cnt;
-
     // src and dst are updated after the chunk is processed
     const __m128i *src = input;
     __m128i *dst = output;
@@ -314,16 +311,40 @@ void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, void *output,
     ctr = _mm_insert_epi32(ctr, 1, 0);
     ek0 = _mm_shuffle_epi8(ctr, bswap8);
 
-    { /* prepare the first bit stream */
-        size_t i;
-        AESECB6_INIT();
-        for (i = 1; i < ctx->ecb.rounds; ++i)
-            AESECB6_UPDATE(i);
-        AESECB6_FINAL(i);
+    /* start preparing AES */
+    AESECB6_INIT();
+    AESECB6_UPDATE(1);
+
+    /* build first ghash data (only AAD can be fed at this point, as this would be calculated alongside the first AES block) */
+    const __m128i *gdata = gdatabuf; // points to the elements fed into GHASH
+    size_t gdata_cnt = 0;
+    if (PTLS_LIKELY(aadlen != 0)) {
+        while (gdata_cnt < 6) {
+            if (PTLS_LIKELY(aadlen < 16)) {
+                if (aadlen != 0) {
+                    gdatabuf[gdata_cnt++] = loadn(aad, aadlen);
+                    aadlen = 0;
+                }
+                goto MainLoop;
+            }
+            gdatabuf[gdata_cnt++] = _mm_loadu_si128(aad++);
+            aadlen -= 16;
+        }
     }
 
     /* the main loop */
+MainLoop:
     while (1) {
+        /* run AES and multiplication in parallel */
+        size_t i;
+        for (i = 2; i < gdata_cnt + 2; ++i) {
+            AESECB6_UPDATE(i);
+            gfmul_onestep(&gstate, _mm_loadu_si128(gdata++), --ghash_precompute);
+        }
+        for (; i < ctx->ecb.rounds; ++i)
+            AESECB6_UPDATE(i);
+        AESECB6_FINAL(i);
+
         /* apply the bit stream to src and write to dest */
         if (PTLS_LIKELY(srclen >= 6 * 16)) {
 #define APPLY(i) _mm_storeu_si128(dst + i, _mm_xor_si128(_mm_loadu_si128(src + i), bits##i))
@@ -418,16 +439,6 @@ void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, void *output,
             }
             gdata = gdatabuf;
         }
-
-        /* run AES and multiplication in parallel */
-        size_t i;
-        for (i = 2; i <= 7; ++i) {
-            AESECB6_UPDATE(i);
-            gfmul_onestep(&gstate, _mm_loadu_si128(gdata++), --ghash_precompute);
-        }
-        for (; i < ctx->ecb.rounds; ++i)
-            AESECB6_UPDATE(i);
-        AESECB6_FINAL(i);
     }
 
 Finish:
