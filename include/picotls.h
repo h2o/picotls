@@ -1185,11 +1185,6 @@ typedef struct st_ptls_log_event_t {
        * user data
        */
       void *data_ptr;
-    /**
-       * List of user configured options
-       */
-      tcpls_options_t *tcpls_options;
-
       /**
        * Buffer tcpls options that might span over multiple records (e.g., eBPF
        * bytcod)

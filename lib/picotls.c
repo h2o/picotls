@@ -3685,7 +3685,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
     /* send EncryptedExtensions */
     ptls_push_message(emitter, tls->key_schedule, PTLS_HANDSHAKE_TYPE_ENCRYPTED_EXTENSIONS, {
         ptls_buffer_t *sendbuf = emitter->buf;
-        tcpls_options_t *tcpls_options;
+        tcpls_options_t *option;
         ptls_buffer_push_block(sendbuf, 2, {
             if (tls->esni != NULL) {
                 /* the extension is sent even if the application does not handle server name, because otherwise the handshake
@@ -3714,34 +3714,31 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
                 buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_EARLY_DATA, {});
             /** Push encrypted TCP options if we have some */
            // TCPLS
-            if (tls->ctx->support_tcpls_options && tls->tcpls_options != NULL) {
-              tcpls_options = tls->tcpls_options;
-              for (int i = 0; i < NBR_SUPPORTED_TCPLS_OPTIONS; i++) {
-                /* if len is 0, the option has not been initialized yet, and
-                 might be sent later */
-                if (tcpls_options[i].data->base && tcpls_options[i].type == USER_TIMEOUT) {
+            if (tls->ctx->support_tcpls_options && tls->tcpls) {
+              for (int i = 0; i < tls->tcpls->tcpls_options->size; i++) {
+                option = list_get(tls->tcpls->tcpls_options, i);
+                if (option->data->base && option->type == USER_TIMEOUT) {
                   buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_ENCRYPTED_TCP_OPTIONS_USERTIMEOUT, {
-                    ptls_buffer_pushv(sendbuf, tcpls_options[i].data->base,
-                        tcpls_options[i].data->len);
+                    ptls_buffer_pushv(sendbuf, option->data->base,
+                        option->data->len);
                   });
                 }
               }
             }
-            if (tls->ctx->support_tcpls_options && tls->tcpls_options != NULL
-                && tls->ctx->failover) {
+            if (tls->ctx->support_tcpls_options && tls->ctx->failover && tls->tcpls) {
               /** Push our others v4 and v6 */
-              tcpls_options = tls->tcpls_options;
-              for (int i = 0; i < NBR_SUPPORTED_TCPLS_OPTIONS; i++) {
-                if (tcpls_options[i].data->base && tcpls_options[i].type == MULTIHOMING_v4) {
+              for (int i = 0; i < tls->tcpls->tcpls_options->size; i++) {
+                option = list_get(tls->tcpls->tcpls_options, i);
+                if (option->data->base && option->type == MULTIHOMING_v4) {
                   buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_ENCRYPTED_MULTIHOMING_v4, {
-                    ptls_buffer_pushv(sendbuf, tcpls_options[i].data->base,
-                        tcpls_options[i].data->len);
+                    ptls_buffer_pushv(sendbuf, option->data->base,
+                        option->data->len);
                   });
                 }
-                else if (tcpls_options[i].data->base &&tcpls_options[i].type == MULTIHOMING_v4) {
+                else if (option->data->base && option->type == MULTIHOMING_v4) {
                   buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_ENCRYPTED_MULTIHOMING_v6, {
-                    ptls_buffer_pushv(sendbuf, tcpls_options[i].data->base,
-                        tcpls_options[i].data->len);
+                    ptls_buffer_pushv(sendbuf, option->data->base,
+                        option->data->len);
                   });
                 }
               }
@@ -4011,8 +4008,6 @@ ptls_t *ptls_client_new(ptls_context_t *ctx)
     tls->state = PTLS_STATE_CLIENT_HANDSHAKE_START;
     tls->ctx->random_bytes(tls->client_random, sizeof(tls->client_random));
     log_client_random(tls);
-    //TCPLS
-    tls->tcpls_options = NULL;
     if (tls->send_change_cipher_spec) {
         tls->client.legacy_session_id =
             ptls_iovec_init(tls->client.legacy_session_id_buf, sizeof(tls->client.legacy_session_id_buf));
@@ -4029,15 +4024,15 @@ ptls_t *ptls_server_new(ptls_context_t *ctx)
     ctx->output_decrypted_tcpls_data = 1;
     tls->state = PTLS_STATE_SERVER_EXPECT_CLIENT_HELLO;
     tls->server.early_data_skipped_bytes = UINT32_MAX;
-    
-    //TCPLS
-    tls->tcpls_options = NULL;
+
     PTLS_PROBE(NEW, tls, 1);
     return tls;
 }
 
 void ptls_free(ptls_t *tls)
 {
+    if (!tls)
+      return;
     PTLS_PROBE0(FREE, tls);
     ptls_buffer_dispose(&tls->recvbuf.rec);
     ptls_buffer_dispose(&tls->recvbuf.mess);
@@ -4053,7 +4048,6 @@ void ptls_free(ptls_t *tls)
         ptls_aead_free(tls->traffic_protection.enc.aead);
     free(tls->server_name);
     free(tls->negotiated_protocol);
-    ptls_tcpls_options_free(tls);
     if (tls->is_server) {
         /* nothing to do */
     } else {
@@ -4072,6 +4066,7 @@ void ptls_free(ptls_t *tls)
     update_open_count(tls->ctx, -1);
     ptls_clear_memory(tls, sizeof(*tls));
     free(tls);
+    tls = NULL;
 }
 
 ptls_context_t *ptls_get_context(ptls_t *tls)

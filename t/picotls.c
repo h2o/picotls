@@ -1204,9 +1204,10 @@ static void test_sends_varlen_bpf_prog(void)
   
   ptls_buffer_init(&cbuf, "", 0);
   ptls_buffer_init(&sbuf, "", 0);
-
-  client = ptls_new(ctx, 0);
-  server = ptls_new(ctx_peer, 1);
+  tcpls_t *tcpls_client = tcpls_new(ctx, 0);
+  tcpls_t *tcpls_server = tcpls_new(ctx_peer, 1);
+  client = tcpls_client->tls;
+  server = tcpls_server->tls;
   
   ret = ptls_handle_message(client, &cbuf, coffs, 0, NULL, 0, NULL);
   ok(ret == PTLS_ERROR_IN_PROGRESS);
@@ -1238,7 +1239,10 @@ static void test_sends_varlen_bpf_prog(void)
   consumed = sbuf.off; 
   ret = ptls_receive(client, &decbuf, sbuf.base, &consumed);
   ok(ret == 0);
-
+  ctx->support_tcpls_options = 0;
+  ctx_peer->support_tcpls_options = 0;
+  tcpls_free(tcpls_client);
+  tcpls_free(tcpls_server);
 }
 
 
@@ -1257,14 +1261,14 @@ static void test_sends_tcpls_record(void)
   ctx->on_extension = &cb;
   int ret;
   size_t consumed;
-  
-  
+  tcpls_t *tcpls_client = tcpls_new(ctx, 0);
+  tcpls_t *tcpls_server = tcpls_new(ctx_peer, 1);
   ptls_buffer_init(&cbuf, "", 0);
   ptls_buffer_init(&sbuf, "", 0);
 
-  client = ptls_new(ctx, 0);
-  server = ptls_new(ctx_peer, 1);
-
+  client = tcpls_client->tls;
+  server = tcpls_server->tls;
+  
   ret = ptls_handle_message(client, &cbuf, coffs, 0, NULL, 0, NULL);
   
   ok(ret == PTLS_ERROR_IN_PROGRESS);
@@ -1284,7 +1288,7 @@ static void test_sends_tcpls_record(void)
   ok(sbuf.off == 0);
   ok(ptls_handshake_is_complete(server));
   
-  ptls_set_user_timeout(client, 10, 0, 0, 1);
+  ok(ptls_set_user_timeout(client, 10, 0, 0, 1) == 0);
   
   cbuf.off = 0;
   ptls_buffer_init(&decbuf, "", 0);
@@ -1296,17 +1300,18 @@ static void test_sends_tcpls_record(void)
   ok(ret==0);
   decbuf.off = 0;
   cbuf.off = 0;
-  assert(server->tcpls_options);
-  int i;
-  for (i = 0; i < NBR_SUPPORTED_TCPLS_OPTIONS; i++) {
-    if (server->tcpls_options[i].type == USER_TIMEOUT)
+  assert(server->tcpls->tcpls_options);
+  tcpls_options_t *option = NULL;
+  for (int i = 0; i < server->tcpls->tcpls_options->size; i++) {
+    option = list_get(server->tcpls->tcpls_options, i);
+    if (option->type == USER_TIMEOUT)
       break;
   }
-  
-  ok(*((uint16_t *) client->tcpls_options[i].data->base) == 10);
+  assert(option);
+  ok(*((uint16_t *) option->data->base) == 10);
 
-  ptls_free(client);
-  ptls_free(server);
+  /*ptls_free(client);*/
+  /*ptls_free(server);*/
 
   cbuf.off = 0;
   sbuf.off = 0;
@@ -1317,7 +1322,8 @@ static void test_sends_tcpls_record(void)
 
   ptls_buffer_dispose(&cbuf);
   ptls_buffer_dispose(&sbuf);
-
+  tcpls_free(tcpls_client);
+  tcpls_free(tcpls_server);
   ctx->tcpls_options_confirmed = 0;
   ctx_peer->tcpls_options_confirmed = 0;
   ctx->support_tcpls_options = 0;
@@ -1353,12 +1359,13 @@ static void test_server_sends_tcpls_encrypted_extensions(void)
   
   ptls_buffer_init(&cbuf, "", 0);
   ptls_buffer_init(&sbuf, "", 0);
-
-  client = ptls_new(ctx, 0);
+  tcpls_t *tcpls_client = tcpls_new(ctx, 0);
+  tcpls_t *tcpls_server = tcpls_new(ctx_peer, 1);
+  client = tcpls_client->tls;
   *ptls_get_data_ptr(client) = &client_secrets;
-  server = ptls_new(ctx_peer, 1);
+  server = tcpls_server->tls;
   *ptls_get_data_ptr(server) = &server_secrets;
-  
+
   ret = ptls_set_user_timeout(server, 5, 0, 1, 1);
   ok(ret == 0);
 
@@ -1375,18 +1382,20 @@ static void test_server_sends_tcpls_encrypted_extensions(void)
   ok(cbuf.off != 0);
   ok(ptls_handshake_is_complete(client));
   ok(ctx->tcpls_options_confirmed == 1);
-  
-  int i;
-  for (i = 0; i < NBR_SUPPORTED_TCPLS_OPTIONS; i++) {
-    if (client->tcpls_options[i].type == USER_TIMEOUT)
+  tcpls_options_t *option = NULL;
+  ok(client->tcpls->tcpls_options->size == 1);
+  for (int i = 0; i < client->tcpls->tcpls_options->size; i++) {
+    option = list_get(client->tcpls->tcpls_options, i);
+    if (option->type == USER_TIMEOUT)
       break;
   }
   
-  ok(*((uint16_t *) client->tcpls_options[i].data->base) == 5);
+  ok(*((uint16_t *) option->data->base) == 5);
 
-  ptls_free(client);
-  ptls_free(server);
-
+  /*ptls_free(client);*/
+  /*ptls_free(server);*/
+  tcpls_free(tcpls_client);
+  tcpls_free(tcpls_server);
   cbuf.off = 0;
   sbuf.off = 0;
   memset(client_secrets, 0, sizeof(client_secrets));
@@ -1410,44 +1419,46 @@ static void test_server_sends_tcpls_encrypted_extensions(void)
   ctx_peer->max_early_data_size = 0;
   ctx->tcpls_options_confirmed = 0;
   ctx_peer->tcpls_options_confirmed = 0;
+  ctx->support_tcpls_options = 0;
+  ctx_peer->support_tcpls_options = 0;
 }
 
 static void test_tcpls_usertimeout(void)
 {
-  ptls_t *client, *server;
+  ptls_t *server;
   ctx->support_tcpls_options = 1;
   ctx_peer->support_tcpls_options = 1;
-  client = ptls_new(ctx, 0);
-  server = ptls_new(ctx_peer, 1);
+  tcpls_t *tcpls_server = tcpls_new(ctx_peer, 1);
+  server = tcpls_server->tls;
   /** 1 second */
   int ret = ptls_set_user_timeout(server, 1, 0, 1, 1);
   ok(ret == 0);
   /** check whether the timeout has the right value */
-  int i;
-  for (i = 0; i < NBR_SUPPORTED_TCPLS_OPTIONS; i++) {
-    if (server->tcpls_options[i].type == USER_TIMEOUT)
+  tcpls_options_t *option;
+  for (int i = 0; i < NBR_SUPPORTED_TCPLS_OPTIONS; i++) {
+    option = list_get(tcpls_server->tcpls_options, i);
+    if (option->type == USER_TIMEOUT)
       break;
   }
-  ok(i==0);
-  tcpls_options_t option = server->tcpls_options[i];
-  ok(*((uint16_t*) option.data->base) == 1);
+  ok(*((uint16_t*) option->data->base) == 1);
   /** 1 minute */
   ret = ptls_set_user_timeout(server, 1, 1, 1, 1);
   ok(ret == 0);
   /*ok(*((uint16_t *) (*option)->data) == 32769);*/
-  ok(*((uint16_t *) option.data->base) == 32769);
+  ok(*((uint16_t *) option->data->base) == 32769);
   ctx->support_tcpls_options = 0;
   ctx_peer->support_tcpls_options = 0;
   ctx->tcpls_options_confirmed = 0;
   ctx_peer->tcpls_options_confirmed = 0;
   /** cleanup */
-  ptls_free(client);
-  ptls_free(server);
+  /*ptls_free(client);*/
+  /*ptls_free(server);*/
+  tcpls_free(tcpls_server);
   /*ptls_tcpls_options_free(ctx_peer);*/
   /*ptls_tcpls_options_free(ctx);*/
 }
 
-static void test_tcpls_api(void)
+static void test_tcpls_option_api(void)
 {
   ptls_t *client, *server;
   traffic_secrets_t client_secrets = {{{0}}}, server_secrets = {{{0}}};
@@ -1476,10 +1487,11 @@ static void test_tcpls_api(void)
 
   ptls_buffer_init(&cbuf, "", 0);
   ptls_buffer_init(&sbuf, "", 0);
-
-  client = ptls_new(ctx, 0);
+  tcpls_t *tcpls_client = tcpls_new(ctx, 0);
+  tcpls_t *tcpls_server = tcpls_new(ctx_peer, 1);
+  client = tcpls_client->tls;
   *ptls_get_data_ptr(client) = &client_secrets;
-  server = ptls_new(ctx_peer, 1);
+  server = tcpls_server->tls;
   *ptls_get_data_ptr(server) = &server_secrets;
   
   /* full handshake */
@@ -1510,8 +1522,10 @@ static void test_tcpls_api(void)
   ok(ctx->tcpls_options_confirmed ==1);
   ok(ctx_peer->tcpls_options_confirmed ==1);
 
-  ptls_free(client);
-  ptls_free(server);
+  /*ptls_free(client);*/
+  /*ptls_free(server);*/
+  tcpls_free(tcpls_client);
+  tcpls_free(tcpls_server);
 
   cbuf.off = 0;
   sbuf.off = 0;
@@ -1536,6 +1550,8 @@ static void test_tcpls_api(void)
   ctx_peer->max_early_data_size = 0;
   ctx->tcpls_options_confirmed = 0;
   ctx_peer->tcpls_options_confirmed = 0;
+  ctx->support_tcpls_options = 0;
+  ctx_peer->support_tcpls_options = 0;
 }
 
 static void test_handshake_api(void)
@@ -1917,9 +1933,8 @@ static void test_tcpls(void)
         second_sc_orig = ctx->sign_certificate;
         ctx->sign_certificate = &client_sc;
     }
-    subtest("api", test_tcpls_api);
+    subtest("option_api", test_tcpls_option_api);
     subtest("set_usertimeout", test_tcpls_usertimeout);
-    subtest("api", test_tcpls_api);
     subtest("server_sends_tcpls_encrypted_extensions", test_server_sends_tcpls_encrypted_extensions);
     subtest("sends_tcpls_record", test_sends_tcpls_record);
     subtest("sends_varlen_bpf_prog", test_sends_varlen_bpf_prog);
@@ -1927,6 +1942,36 @@ static void test_tcpls(void)
 
     if (ctx_peer != ctx)
         ctx->sign_certificate = second_sc_orig;
+}
+
+static void test_tcpls_addresses(void)
+{
+  tcpls_t *tcpls = tcpls_new(ctx, 0);
+  struct sockaddr_in addr;
+  addr.sin_port = htons(443);
+  inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+  ok(tcpls_add_v4(tcpls->tls, &addr, 1, 0) == 0);
+  ok(tcpls->v4_addr_llist->state == CLOSED);
+  ok(tcpls->v4_addr_llist->is_primary == 1);
+  ok(tcpls->v4_addr_llist->next == NULL); 
+  struct sockaddr_in6 addr6;
+  addr6.sin6_port = htons(443);
+  inet_pton(AF_INET, "::1", &addr6.sin6_addr);
+  ok(tcpls_add_v6(tcpls->tls, &addr6, 0, 1) == 0);
+  tcpls_free(tcpls);
+}
+
+static void test_tcpls_stream_api(void)
+{
+  tcpls_t *tcpls = tcpls_new(ctx, 0);
+  ok(tcpls != NULL);
+  tcpls_free(tcpls);
+}
+
+static void test_tcpls_api(void) 
+{
+    subtest("addresses_api", test_tcpls_addresses);
+    subtest("stream_api", test_tcpls_stream_api);
 }
 
 static void test_list_t(void)
@@ -2007,8 +2052,9 @@ void test_picotls(void)
     subtest("base64-decode", test_base64_decode);
     subtest("fragmented-message", test_fragmented_message);
     subtest("handshake", test_all_handshakes);
-    subtest("tcpls", test_tcpls);
     subtest("containers", test_containers);
+    subtest("tcpls", test_tcpls);
+    subtest("tcpls_api", test_tcpls_api);
     subtest("quic", test_quic);
 }
 

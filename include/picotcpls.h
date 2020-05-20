@@ -2,6 +2,7 @@
 #define picotcpls_h
 
 #include "picotypes.h"
+#include "picotls.h"
 #include "containers.h"
 #include <netinet/in.h>
 #define NBR_SUPPORTED_TCPLS_OPTIONS 5
@@ -38,9 +39,9 @@ typedef enum tcpls_tcp_state_t {
 
 struct st_tcpls_options_t {
   tcpls_enum_t type;
-  unsigned setlocal : 1; /** Whether or not we also apply the option locally */
-  unsigned settopeer : 1; /** Whether or not this option might be sent to the peer */
-  unsigned is_varlen : 1; /** Tell whether this option is of variable length */
+  uint8_t setlocal; /** Whether or not we also apply the option locally */
+  uint8_t settopeer; /** Whether or not this option might be sent to the peer */
+  uint8_t is_varlen; /** Tell whether this option is of variable length */
   ptls_iovec_t *data;
 };
 
@@ -96,7 +97,8 @@ struct st_tcpls_t {
    */
   tcpls_v4_addr_t *v4_addr_llist;
   tcpls_v6_addr_t *v6_addr_llist;
-
+  /** carry a list of tcpls_option_t */
+  list_t *tcpls_options;
   /** Should contain all streams */
   list_t *streams;
 
@@ -155,6 +157,6 @@ int handle_tcpls_record(ptls_t *tls, struct st_ptls_record_t *rec);
 
 int tcpls_failover_signal(tcpls_t *tcpls, ptls_buffer_t *sendbuf);
 
-void ptls_tcpls_options_free(ptls_t *ptls);
+void ptls_tcpls_options_free(tcpls_t *tcpls);
 
 #endif

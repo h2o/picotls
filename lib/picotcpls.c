@@ -54,11 +54,11 @@
 #include "picotcpls.h"
 
 /** Forward declarations */
-static tcpls_options_t* tcpls_init_context(ptls_t *ptls, const void *data, size_t datalen,
+static int tcpls_init_context(ptls_t *ptls, const void *data, size_t datalen,
     tcpls_enum_t type, uint8_t setlocal, uint8_t settopeer);
 static int is_varlen(tcpls_enum_t type);
-static int setlocal_usertimeout(ptls_t *ptls, tcpls_options_t *option);
-static int setlocal_bpf_sched(ptls_t *ptls, tcpls_options_t *option);
+static int setlocal_usertimeout(ptls_t *ptls, int val);
+static int setlocal_bpf_cc(ptls_t *ptls, const uint8_t *bpf_prog, size_t proglen);
 static void _set_primary(tcpls_t *tcpls);
 static tcpls_stream_t *stream_new(ptls_t *tcpls, streamid_t streamid, tcpls_v4_addr_t *addr,
     tcpls_v6_addr_t *addr6, int is_ours);
@@ -77,12 +77,6 @@ void *tcpls_new(void *ctx, int is_server) {
   tcpls_t *tcpls  = malloc(sizeof(*tcpls));
   if (tcpls == NULL)
     return NULL;
-  uint8_t *smallsendbuf = malloc(256*sizeof(uint8_t));
-  if (smallsendbuf == NULL)
-    return NULL;
-  uint8_t *smallrecvbuf = malloc(256*sizeof(uint8_t));
-  if (smallrecvbuf == NULL)
-    return NULL;
   if (is_server) {
     tls = ptls_server_new(ptls_ctx);
     tcpls->next_stream_id = 2147483648;  // 2**31
@@ -92,17 +86,21 @@ void *tcpls_new(void *ctx, int is_server) {
     tcpls->next_stream_id = 0;
   }
   // init tcpls stuffs
+  tcpls->sendbuf = malloc(sizeof(*tcpls->sendbuf));
+  tcpls->recvbuf = malloc(sizeof(*tcpls->recvbuf));
   tcpls->tls = tls;
-  ptls_buffer_init(tcpls->sendbuf, smallsendbuf, sizeof(smallsendbuf));
-  ptls_buffer_init(tcpls->recvbuf, smallrecvbuf, sizeof(smallrecvbuf));
-  ptls_ctx->output_decrypted_tcpls_data = 0;
+  ptls_buffer_init(tcpls->sendbuf, "", 0);
+  ptls_buffer_init(tcpls->recvbuf, "", 0);
+  ptls_ctx->output_decrypted_tcpls_data = 1;
   tcpls->socket_primary = 0;
   tcpls->socket_rcv = 0;
   tcpls->v4_addr_llist = NULL;
   tcpls->v6_addr_llist = NULL;
   tcpls->nbr_of_peer_streams_attached = 0;
   tcpls->nbr_tcp_streams = 0;
+  tcpls->tcpls_options = new_list(sizeof(tcpls_options_t), NBR_SUPPORTED_TCPLS_OPTIONS);
   tcpls->streams = new_list(sizeof(tcpls_stream_t), 3);
+  tls->tcpls = tcpls;
   return tcpls;
 }
 
@@ -121,9 +119,7 @@ int static add_v4_to_options(tcpls_t *tcpls, uint8_t n) {
   }
   /** TODO, check what bit ordering to do here */
   addresses[0] = n;
-  tcpls_options_t *option;
-  option = tcpls_init_context(tcpls->tls, addresses, sizeof(*addresses), MULTIHOMING_v4, 0, 1);
-  return option ? 0 : -1;
+  return tcpls_init_context(tcpls->tls, addresses, sizeof(*addresses), MULTIHOMING_v4, 0, 1);
 }
 
 int static add_v6_to_options(tcpls_t *tcpls, uint8_t n) {
@@ -138,9 +134,7 @@ int static add_v6_to_options(tcpls_t *tcpls, uint8_t n) {
     current = current->next;
   }
   addresses[0] = n;
-  tcpls_options_t *option;
-  option = tcpls_init_context(tcpls->tls, addresses, sizeof(*addresses), MULTIHOMING_v6, 0, 1);
-  return option ? 0 : -1;
+  return tcpls_init_context(tcpls->tls, addresses, 16*n+1, MULTIHOMING_v6, 0, 1);
 }
 
 /** 
@@ -156,7 +150,8 @@ int static add_v6_to_options(tcpls_t *tcpls, uint8_t n) {
 int tcpls_add_v4(ptls_t *tls, struct sockaddr_in *addr, int is_primary, int settopeer) {
   tcpls_t *tcpls = tls->tcpls;
   /* enable failover */
-  tcpls->tls->ctx->failover = 1;
+  if (!settopeer)
+    tls->ctx->failover = 1;
   tcpls_v4_addr_t *new_v4 = malloc(sizeof(tcpls_v4_addr_t));
   if (new_v4 == NULL)
     return PTLS_ERROR_NO_MEMORY;
@@ -347,10 +342,64 @@ int tcpls_connect(ptls_t *tls) {
 /**
  * Create and attach locallty a new stream to the main address if no addr
  * is provided; else attach to addr if we have a connection open to it
+ *
+ * returns -1 if a stream is alreay attached for addr
  */
 
 streamid_t tcpls_stream_new(ptls_t *tls, struct sockaddr *addr) {
-  return 0;
+  /** Check first whether a stream isn't already attach to this addr */
+  tcpls_t *tcpls = tls->tcpls;
+  assert(tcpls);
+  tcpls_stream_t *stream = NULL;
+  for (int i = 0; i < tcpls->streams->size; i++) {
+    stream = list_get(tcpls->streams, i);
+    if (addr->sa_family == AF_INET && stream->v4_addr && !memcmp(&stream->v4_addr->addr,
+          addr, sizeof(*addr)))
+    {
+      return -1;
+    }
+    else if (addr->sa_family == AF_INET6  && stream->v6_addr &&
+        !memcpy(&stream->v6_addr->addr, addr, sizeof(struct sockaddr_in6))) {
+      return -1;
+    }
+  }
+  if (addr->sa_family == AF_INET) {
+    tcpls_v4_addr_t *current = tcpls->v4_addr_llist;
+    if (!current) {
+      return -1;
+    }
+    int found = 0;
+    while (current) {
+      if (!memcmp(&current->addr, (struct sockaddr_in*) addr, sizeof(struct sockaddr_in))) {
+        found = 1;
+        break;
+      }
+      current = current->next;
+    }
+    if (!found)
+      return -1;
+    stream = stream_new(tls, tcpls->next_stream_id++, current, NULL, 1);
+  }
+  else {
+    tcpls_v6_addr_t *current = tcpls->v6_addr_llist;
+    if (!current)
+      return -1;
+    int found = 0;
+    while (current) {
+      if (!memcmp(&current->addr, (struct sockaddr_in6 *) addr, sizeof(struct sockaddr_in6))) {
+        found = 1;
+        break;
+      }
+      current = current->next;
+    }
+    if (!found)
+      return -1;
+    stream = stream_new(tls, tcpls->next_stream_id++, NULL, current, 1);
+  }
+  if (!stream)
+    return -1;
+  list_add(tcpls->streams, stream);
+  return stream->streamid;
 }
 
 /**
@@ -507,6 +556,7 @@ ssize_t tcpls_receive(ptls_t *tls, void *buf, size_t nbytes, struct timeval *tv)
  * */
 int ptls_send_tcpoption(ptls_t *tls, ptls_buffer_t *sendbuf, tcpls_enum_t type)
 {
+  tcpls_t *tcpls = tls->tcpls;
   if(tls->traffic_protection.enc.aead == NULL)
     return -1;
   
@@ -522,13 +572,12 @@ int ptls_send_tcpoption(ptls_t *tls, ptls_buffer_t *sendbuf, tcpls_enum_t type)
   }
   /** Get the option */
   tcpls_options_t *option;
-  int i;
   int found = 0;
-  for (i = 0; i < NBR_SUPPORTED_TCPLS_OPTIONS && !found; i++) {
-    if (tls->tcpls_options[i].type == type && tls->tcpls_options[i].data->base &&
-        tls->tcpls_options[i].settopeer) {
-      option = &tls->tcpls_options[i];
+  for (int i = 0; i < tcpls->tcpls_options->size && !found; i++) {
+    option = list_get(tcpls->tcpls_options, i);
+    if (option->type == type && option->data->base && option->settopeer) {
       found = 1;
+      break;
     }
   }
   if (!found)
@@ -567,16 +616,15 @@ int ptls_send_tcpoption(ptls_t *tls, ptls_buffer_t *sendbuf, tcpls_enum_t type)
 int ptls_set_user_timeout(ptls_t *ptls, uint16_t value, uint16_t sec_or_min,
     uint8_t setlocal, uint8_t settopeer) {
   int ret = 0;
-  tcpls_options_t *option;
   uint16_t *val = malloc(sizeof(uint16_t));
   if (val == NULL)
     return PTLS_ERROR_NO_MEMORY;
   *val = value | sec_or_min << 15;
-  option = tcpls_init_context(ptls, val, 2, USER_TIMEOUT, setlocal, settopeer);
-  if (!option)
-    return -1;
-  if (option->setlocal) {
-    ret = setlocal_usertimeout(ptls, option);
+  ret = tcpls_init_context(ptls, val, 2, USER_TIMEOUT, setlocal, settopeer);
+  if (ret)
+    return ret;
+  if (setlocal) {
+    ret = setlocal_usertimeout(ptls, *val);
   }
   return ret;
 }
@@ -603,16 +651,15 @@ int ptls_set_faileover(ptls_t *ptls, char *address) {
 int ptls_set_bpf_cc(ptls_t *ptls, const uint8_t *bpf_prog_bytecode, size_t bytecodelen,
     int setlocal, int settopeer) {
   int ret = 0;
-  tcpls_options_t *option;
   uint8_t* bpf_cc = NULL;
   if ((bpf_cc =  malloc(bytecodelen)) == NULL)
     return PTLS_ERROR_NO_MEMORY;
   memcpy(bpf_cc, bpf_prog_bytecode, bytecodelen);
-  option = tcpls_init_context(ptls, bpf_cc, bytecodelen, BPF_CC, setlocal, settopeer);
-  if (!option)
+  ret = tcpls_init_context(ptls, bpf_cc, bytecodelen, BPF_CC, setlocal, settopeer);
+  if (ret)
     return -1;
-  if (option->setlocal){
-    ret = setlocal_bpf_sched(ptls, option);
+  if (setlocal){
+    ret = setlocal_bpf_cc(ptls, bpf_prog_bytecode, bytecodelen);
   }
   return ret;
 }
@@ -638,58 +685,63 @@ static int stream_send_control_message(tcpls_t *tcpls, tcpls_stream_t *stream,
       message_len+sizeof(tcpls_message), stream->aead_enc);
 }
 
-static tcpls_options_t*  tcpls_init_context(ptls_t *ptls, const void *data, size_t datalen,
+static int  tcpls_init_context(ptls_t *ptls, const void *data, size_t datalen,
     tcpls_enum_t type, uint8_t setlocal, uint8_t settopeer) {
+  tcpls_t *tcpls = ptls->tcpls;
   ptls->ctx->support_tcpls_options = 1;
-  if (!ptls->tcpls_options) {
-    ptls->tcpls_options = malloc(sizeof(*ptls->tcpls_options)*NBR_SUPPORTED_TCPLS_OPTIONS);
-    for (int i = 0; i < NBR_SUPPORTED_TCPLS_OPTIONS; i++) {
-      ptls->tcpls_options[i].data = malloc(sizeof(ptls_iovec_t));
-      memset(ptls->tcpls_options[i].data, 0, sizeof(ptls_iovec_t));
-      ptls->tcpls_options[i].type = 0;
-      ptls->tcpls_options[i].setlocal = 0;
-      ptls->tcpls_options[i].settopeer = 0;
-      ptls->tcpls_options[i].is_varlen = 0;
-    }
-  }
   /** Picking up the right slot in the list, i.e;, the first unused should have
    * a len of 0
    * */
   tcpls_options_t *option = NULL;
-  for (int i = 0; i < NBR_SUPPORTED_TCPLS_OPTIONS; i++) {
+  int found_one = 0;
+  for (int i = 0; i < tcpls->tcpls_options->size; i++) {
     /** already set or Not yet set */
-    if ((ptls->tcpls_options[i].type == type && ptls->tcpls_options[i].data->base)
-        || !ptls->tcpls_options[i].data->base) {
-      option = &ptls->tcpls_options[i];
+    option = list_get(tcpls->tcpls_options, i);
+    if (option->type == type && option->data->base) {
+      found_one = 1;
       break;
     }
   }
-  if (option == NULL)
-    return NULL;
+  /** let's create it and add it to the list */
+  if (!found_one) {
+    option = malloc(sizeof(tcpls_options_t));
+    option->data = malloc(sizeof(ptls_iovec_t));
+    memset(option->data, 0, sizeof(ptls_iovec_t));
+    option->type = type;
+    option->is_varlen = 0;
+  }
 
   option->setlocal = setlocal;
   option->settopeer = settopeer;
 
   switch (type) {
     case USER_TIMEOUT:
-      if (option->data->len) {
-        /** We already allocated one, free it before getting a new one */
+      if (found_one) {
         free(option->data->base);
       }
       option->is_varlen = 0;
       *option->data = ptls_iovec_init(data, sizeof(uint16_t));
       option->type = USER_TIMEOUT;
-      return option;
+      if (!found_one) {
+        /** copy the option, free this one */
+        list_add(tcpls->tcpls_options, option);
+        free(option);
+      }
+      return 0;
     case MULTIHOMING_v4:
     case MULTIHOMING_v6:
       if (option->data->len) {
-        free(option->data->base);
       }
       /** TODO refactor with better name */
       option->is_varlen = 0; /* should be always in one record */
       *option->data = ptls_iovec_init(data, datalen);
       option->type = type;
-      break;
+      if (!found_one) {
+        /** copy the option, free this one */
+        list_add(tcpls->tcpls_options, option);
+        free(option);
+      }
+      return 0;
     case BPF_CC:
       if (option->data->len) {
       /** We already had one bpf cc, free it */
@@ -698,11 +750,16 @@ static tcpls_options_t*  tcpls_init_context(ptls_t *ptls, const void *data, size
       option->is_varlen = 1;
       *option->data = ptls_iovec_init(data, datalen);
       option->type = BPF_CC;
-      return option;
+      if (!found_one) {
+        /** copy the option, free this one */
+        list_add(tcpls->tcpls_options, option);
+        free(option);
+      }
+      return 0;
     default:
         break;
   }
-  return NULL;
+  return -1;
 }
 
 /**
@@ -716,17 +773,17 @@ int handle_tcpls_extension_option(ptls_t *ptls, tcpls_enum_t type,
     const uint8_t *input, size_t inputlen) {
   if (!ptls->ctx->tcpls_options_confirmed)
     return -1;
-  tcpls_options_t *option = NULL;
   switch (type) {
     case USER_TIMEOUT:
       {
         uint16_t *nval = malloc(inputlen);
         *nval = (uint16_t) *input;
+        int ret;
         /**nval = ntoh16(input);*/
-        option = tcpls_init_context(ptls, nval, 2, USER_TIMEOUT, 1, 0);
-        if (!option)
+        ret= tcpls_init_context(ptls, nval, 2, USER_TIMEOUT, 1, 0);
+        if (ret)
           return -1; /** Should define an appropriate error code */
-        return setlocal_usertimeout(ptls, option);
+        return setlocal_usertimeout(ptls, *nval);
       }
       break;
     case MULTIHOMING_v4:
@@ -804,12 +861,14 @@ int handle_tcpls_extension_option(ptls_t *ptls, tcpls_enum_t type,
       break;
     case BPF_CC:
       {
+        int ret;
+        /** save the cc; will be freed at tcpls_free */
         uint8_t *bpf_prog = malloc(inputlen);
         memcpy(bpf_prog, input, inputlen);
-        option = tcpls_init_context(ptls, bpf_prog, inputlen, BPF_CC, 1, 0);
-        if (!option)
+        ret = tcpls_init_context(ptls, bpf_prog, inputlen, BPF_CC, 1, 0);
+        if (ret)
           return -1;
-        return setlocal_bpf_sched(ptls, option);
+        return setlocal_bpf_cc(ptls, bpf_prog, inputlen);
       }
       break;
     default:
@@ -884,12 +943,12 @@ Exit:
   return ret;
 }
 
-static int setlocal_usertimeout(ptls_t *ptls, tcpls_options_t *option) {
+static int setlocal_usertimeout(ptls_t *ptls, int val) {
   return 0;
 }
 
 
-static int setlocal_bpf_sched(ptls_t *ptls, tcpls_options_t *option) {
+static int setlocal_bpf_cc(ptls_t *ptls, const uint8_t *prog, size_t proglen) {
   return 0;
 }
 
@@ -1114,20 +1173,53 @@ static int is_varlen(tcpls_enum_t type) {
   return (type == BPF_CC);
 }
 
-void ptls_tcpls_options_free(ptls_t *ptls) {
-  if (ptls->tcpls_options == NULL)
+void ptls_tcpls_options_free(tcpls_t *tcpls) {
+  if (!tcpls)
     return;
-  for (int i = 0; i < NBR_SUPPORTED_TCPLS_OPTIONS; i++) {
-    if (ptls->tcpls_options[i].data->base) {
-      free(ptls->tcpls_options[i].data->base);
+  tcpls_options_t *option = NULL;
+  for (int i = 0; i < tcpls->tcpls_options->size; i++) {
+    option = list_get(tcpls->tcpls_options, i);
+    if (option->data->base) {
+      free(option->data->base);
     }
-    free(ptls->tcpls_options[i].data);
+    free(option->data);
   }
-  free(ptls->tcpls_options);
-  ptls->tcpls_options = NULL;
+  list_free(tcpls->tcpls_options);
+  tcpls->tcpls_options = NULL;
 }
 
-/** TODO */
-
 void tcpls_free(tcpls_t *tcpls) {
+  if (!tcpls)
+    return;
+  ptls_buffer_dispose(tcpls->recvbuf);
+  ptls_buffer_dispose(tcpls->sendbuf);
+  free(tcpls->sendbuf);
+  free(tcpls->recvbuf);
+  list_free(tcpls->streams);
+  ptls_tcpls_options_free(tcpls);
+#define FREE_ADDR_LLIST(current, next) do {              \
+  if (!next) {                                           \
+    free(current);                                       \
+  }                                                      \
+  else {                                                 \
+    while (next) {                                       \
+      free(current);                                     \
+      current = next;                                    \
+      next = next->next;                                 \
+    }                                                    \
+  }                                                      \
+} while(0);
+  if (tcpls->v4_addr_llist) {
+    tcpls_v4_addr_t *current = tcpls->v4_addr_llist;
+    tcpls_v4_addr_t *next = current->next;
+    FREE_ADDR_LLIST(current, next);
+  }
+  if (tcpls->v6_addr_llist) {
+    tcpls_v6_addr_t *current = tcpls->v6_addr_llist;
+    tcpls_v6_addr_t *next = current->next;
+    FREE_ADDR_LLIST(current, next);
+  }
+#undef FREE_ADDR_LLIST
+  ptls_free(tcpls->tls);
+  free(tcpls);
 }
