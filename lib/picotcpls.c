@@ -107,34 +107,35 @@ void *tcpls_new(void *ctx, int is_server) {
 
 int static add_v4_to_options(tcpls_t *tcpls, uint8_t n) {
   /** Contains the number of IPs in [0], and then the 32 bits of IPs */
-  uint8_t *addresses = malloc(4*n+1);
+  uint8_t *addresses = malloc(sizeof(struct in_addr)+1);
   if (!addresses)
     return PTLS_ERROR_NO_MEMORY;
   tcpls_v4_addr_t *current = tcpls->v4_addr_llist;
   int i = 1;
-  while (current && i < 4*n+1) {
-    memcpy(&addresses[i], &current->addr.sin_addr.s_addr, 4);
-    i+=4;
+  while (current && i < sizeof(struct in_addr)+1) {
+    memcpy(&addresses[i], &current->addr.sin_addr, sizeof(struct in_addr));
+    i+=sizeof(struct in_addr);
     current = current->next;
   }
   /** TODO, check what bit ordering to do here */
   addresses[0] = n;
-  return tcpls_init_context(tcpls->tls, addresses, sizeof(*addresses), MULTIHOMING_v4, 0, 1);
+  return tcpls_init_context(tcpls->tls, addresses, sizeof(struct in_addr)+1, MULTIHOMING_v4, 0, 1);
 }
 
 int static add_v6_to_options(tcpls_t *tcpls, uint8_t n) {
-  uint8_t *addresses = malloc(16*n+1);
+  uint8_t *addresses = malloc(sizeof(struct in6_addr)+1);
   if (!addresses)
     return PTLS_ERROR_NO_MEMORY;
   tcpls_v6_addr_t *current = tcpls->v6_addr_llist;
   int i = 1;
   while (current &&i < 16*n+1) {
-    memcpy(&addresses[i], &current->addr.sin6_addr.s6_addr, 16);
-    i+=16;
+    memcpy(&addresses[i], &current->addr.sin6_addr.s6_addr, sizeof(struct in6_addr));
+    i+=sizeof(struct in6_addr);
     current = current->next;
   }
   addresses[0] = n;
-  return tcpls_init_context(tcpls->tls, addresses, 16*n+1, MULTIHOMING_v6, 0, 1);
+  return tcpls_init_context(tcpls->tls, addresses, sizeof(struct in6_addr),
+      MULTIHOMING_v6, 0, 1);
 }
 
 /** 
@@ -169,9 +170,14 @@ int tcpls_add_v4(ptls_t *tls, struct sockaddr_in *addr, int is_primary, int sett
     return 0;
   }
   int n = 0;
-  while (current->next) {
+  while (current) {
     if (current->is_primary && is_primary) {
       current->is_primary = 0;
+    }
+    /** we already added this address */
+    if (!memcmp(&current->addr, addr, sizeof(*addr))) {
+      free(new_v4);
+      return -1;
     }
     current = current->next;
     n++;
@@ -201,9 +207,13 @@ int tcpls_add_v6(ptls_t *tls, struct sockaddr_in6 *addr, int is_primary, int set
     return 0;
   }
   int n = 0;
-  while(current->next) {
+  while(current) {
     if (current->is_primary && is_primary) {
       current->is_primary = 0;
+    }
+    if (!memcmp(&current->addr, addr, sizeof(*addr))) {
+      free(new_v6);
+      return -1;
     }
     current = current->next;
     n++;
@@ -732,8 +742,6 @@ static int  tcpls_init_context(ptls_t *ptls, const void *data, size_t datalen,
     case MULTIHOMING_v6:
       if (option->data->len) {
       }
-      /** TODO refactor with better name */
-      option->is_varlen = 0; /* should be always in one record */
       *option->data = ptls_iovec_init(data, datalen);
       option->type = type;
       if (!found_one) {
@@ -940,6 +948,7 @@ int handle_tcpls_record(ptls_t *tls, struct st_ptls_record_t *rec)
 
 Exit:
   ptls_buffer_dispose(tls->tcpls_buf);
+  /*free(tls->tcpls_buf);*/
   return ret;
 }
 

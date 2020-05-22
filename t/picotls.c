@@ -1239,6 +1239,7 @@ static void test_sends_varlen_bpf_prog(void)
   consumed = sbuf.off; 
   ret = ptls_receive(client, &decbuf, sbuf.base, &consumed);
   ok(ret == 0);
+  /*ptls_buffer_dispose(&decbuf);*/
   ctx->support_tcpls_options = 0;
   ctx_peer->support_tcpls_options = 0;
   tcpls_free(tcpls_client);
@@ -1948,16 +1949,33 @@ static void test_tcpls_addresses(void)
 {
   tcpls_t *tcpls = tcpls_new(ctx, 0);
   struct sockaddr_in addr;
+  bzero(&addr, sizeof(addr));
   addr.sin_port = htons(443);
   inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
-  ok(tcpls_add_v4(tcpls->tls, &addr, 1, 0) == 0);
+  ok(tcpls_add_v4(tcpls->tls, &addr, 1, 1) == 0);
   ok(tcpls->v4_addr_llist->state == CLOSED);
   ok(tcpls->v4_addr_llist->is_primary == 1);
-  ok(tcpls->v4_addr_llist->next == NULL); 
+  ok(tcpls->v4_addr_llist->next == NULL);
   struct sockaddr_in6 addr6;
+  bzero(&addr6, sizeof(addr6));
   addr6.sin6_port = htons(443);
   inet_pton(AF_INET, "::1", &addr6.sin6_addr);
   ok(tcpls_add_v6(tcpls->tls, &addr6, 0, 1) == 0);
+  ok(tcpls_add_v6(tcpls->tls, &addr6, 0, 1) == -1);
+  ok(tcpls->tcpls_options->size == 2);
+  tcpls_options_t *option;
+  for (int i = 0; i < tcpls->tcpls_options->size; i++) {
+    option = list_get(tcpls->tcpls_options, i);
+    ok(option->type == MULTIHOMING_v4 || option->type == MULTIHOMING_v6);
+    if (option->type == MULTIHOMING_v4) {
+      ok(*(uint8_t*) option->data->base == 1);
+      ok(memcmp(&option->data->base[1], &addr.sin_addr, sizeof(addr.sin_addr)) == 0);
+    }
+    else if (option->type == MULTIHOMING_v6) {
+      ok(*(uint8_t*) option->data->base == 1);
+      ok(memcmp(&option->data->base[1], &addr6.sin6_addr, sizeof(addr6.sin6_addr)) == 0);
+    }
+  }
   tcpls_free(tcpls);
 }
 
@@ -1968,7 +1986,7 @@ static void test_tcpls_stream_api(void)
   tcpls_free(tcpls);
 }
 
-static void test_tcpls_api(void) 
+static void test_tcpls_api(void)
 {
     subtest("addresses_api", test_tcpls_addresses);
     subtest("stream_api", test_tcpls_stream_api);
