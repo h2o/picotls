@@ -803,11 +803,11 @@ int handle_tcpls_extension_option(ptls_t *ptls, tcpls_enum_t type,
         addr.sin_family = AF_INET;
         addr.sin_port = htons(443); /** Not great; but it's fine for a POC; else we also need
                                         to reference the port somewhere */
-        int nbr = inputlen/sizeof(uint32_t);
+        uint8_t nbr = *input;
         int offset = 0;
         while(nbr && !ret) {
-          memcpy(&addr.sin_addr.s_addr, input+offset, sizeof(uint32_t));
-          offset+=4;
+          memcpy(&addr.sin_addr, input+1+offset, sizeof(struct sin_addr));
+          offset+=sizeof(struct sin_addr);
           ret = tcpls_add_v4(ptls, &addr, 0, 0);
           nbr--;
         }
@@ -821,11 +821,11 @@ int handle_tcpls_extension_option(ptls_t *ptls, tcpls_enum_t type,
         struct sockaddr_in6 addr;
         bzero(&addr, sizeof(addr));
         addr.sin6_family = AF_INET6;
-        int nbr = inputlen/(sizeof(uint64_t)*2);
+        uint8_t nbr = *input;
         int offset = 0;
         while (nbr && !ret) {
-          memcpy(&addr.sin6_addr.s6_addr, input+offset, sizeof(uint64_t)*2);
-          offset+=16;
+          memcpy(&addr.sin6_addr, input+1+offset, sizeof(struct sin6_addr));
+          offset+=sizeof(struct sin6_addr);
           ret = tcpls_add_v6(ptls, &addr, 0, 0);
           nbr--;
         }
