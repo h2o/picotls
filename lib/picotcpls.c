@@ -13,8 +13,8 @@
  *   <li> tcpls_connect </li>
  *   <li> tcpls_send </li>
  *   <li> tcpls_receive </li>
- *   <li> tcpls_stream_new </li>
- *   <li> tcpls_stream_close </li>
+ *   <li> tcpls_stream_new </li> (Optional)
+ *   <li> tcpls_stream_close </li> (Optional)
  *   <li> tcpls_free </li>
  * </ul>
  *
@@ -76,6 +76,7 @@ static tcpls_v4_addr_t *get_v4_addr(tcpls_t *tcpls, int socket);
 static tcpls_v6_addr_t *get_v6_primary_addr(tcpls_t *tcpls);
 static tcpls_v6_addr_t *get_v6_addr(tcpls_t *tcpls, int socket);
 static tcpls_stream_t *stream_get(tcpls_t *tcpls, streamid_t streamid);
+static tcpls_stream_t *stream_helper_new(tcpls_t *tcpls, struct sockaddr *addr);
 
 void *tcpls_new(void *ctx, int is_server) {
   ptls_context_t *ptls_ctx = (ptls_context_t *) ctx;
@@ -373,55 +374,13 @@ streamid_t tcpls_stream_new(ptls_t *tls, struct sockaddr *addr) {
   /** Check first whether a stream isn't already attach to this addr */
   tcpls_t *tcpls = tls->tcpls;
   assert(tcpls);
-  tcpls_stream_t *stream = NULL;
-  for (int i = 0; i < tcpls->streams->size; i++) {
-    stream = list_get(tcpls->streams, i);
-    if (addr->sa_family == AF_INET && stream->v4_addr && !memcmp(&stream->v4_addr->addr,
-          addr, sizeof(struct sockaddr_in)))
-    {
-      return -1;
-    }
-    else if (addr->sa_family == AF_INET6  && stream->v6_addr &&
-        !memcpy(&stream->v6_addr->addr, addr, sizeof(struct sockaddr_in6))) {
-      return -1;
-    }
-  }
-  if (addr->sa_family == AF_INET) {
-    tcpls_v4_addr_t *current = tcpls->v4_addr_llist;
-    if (!current) {
-      return -1;
-    }
-    int found = 0;
-    while (current) {
-      if (!memcmp(&current->addr, (struct sockaddr_in*) addr, sizeof(struct sockaddr_in))) {
-        found = 1;
-        break;
-      }
-      current = current->next;
-    }
-    if (!found)
-      return -1;
-    stream = stream_new(tls, tcpls->next_stream_id++, current, NULL, 1);
-  }
-  else {
-    tcpls_v6_addr_t *current = tcpls->v6_addr_llist;
-    if (!current)
-      return -1;
-    int found = 0;
-    while (current) {
-      if (!memcmp(&current->addr, (struct sockaddr_in6 *) addr, sizeof(struct sockaddr_in6))) {
-        found = 1;
-        break;
-      }
-      current = current->next;
-    }
-    if (!found)
-      return -1;
-    stream = stream_new(tls, tcpls->next_stream_id++, NULL, current, 1);
-  }
+  tcpls_stream_t *stream = stream_helper_new(tcpls, addr);
   if (!stream)
     return -1;
   list_add(tcpls->streams, stream);
+  /** send a stream new if we already connected */
+  //todo
+
   return stream->streamid;
 }
 
@@ -696,6 +655,58 @@ int ptls_set_bpf_cc(ptls_t *ptls, const uint8_t *bpf_prog_bytecode, size_t bytec
 }
 
 /*===================================Internal========================================*/
+
+
+
+static tcpls_stream_t *stream_helper_new(tcpls_t *tcpls, struct sockaddr *addr) {
+  tcpls_stream_t *stream = NULL;
+  for (int i = 0; i < tcpls->streams->size; i++) {
+    stream = list_get(tcpls->streams, i);
+    if (addr->sa_family == AF_INET && stream->v4_addr && !memcmp(&stream->v4_addr->addr,
+          addr, sizeof(struct sockaddr_in)))
+    {
+      return NULL;
+    }
+    else if (addr->sa_family == AF_INET6  && stream->v6_addr &&
+        !memcpy(&stream->v6_addr->addr, addr, sizeof(struct sockaddr_in6))) {
+      return NULL;
+    }
+  }
+  if (addr->sa_family == AF_INET) {
+    tcpls_v4_addr_t *current = tcpls->v4_addr_llist;
+    if (!current) {
+      return NULL;
+    }
+    int found = 0;
+    while (current) {
+      if (!memcmp(&current->addr, (struct sockaddr_in*) addr, sizeof(struct sockaddr_in))) {
+        found = 1;
+        break;
+      }
+      current = current->next;
+    }
+    if (!found)
+      return NULL;
+    stream = stream_new(tcpls->tls, tcpls->next_stream_id++, current, NULL, 1);
+  }
+  else {
+    tcpls_v6_addr_t *current = tcpls->v6_addr_llist;
+    if (!current)
+      return NULL;
+    int found = 0;
+    while (current) {
+      if (!memcmp(&current->addr, (struct sockaddr_in6 *) addr, sizeof(struct sockaddr_in6))) {
+        found = 1;
+        break;
+      }
+      current = current->next;
+    }
+    if (!found)
+      return NULL;
+    stream = stream_new(tcpls->tls, tcpls->next_stream_id++, NULL, current, 1);
+  }
+  return stream;
+}
 
 /**
  * Send a message to the peer to 

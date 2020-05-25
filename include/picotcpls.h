@@ -134,6 +134,10 @@ uint32_t tcpls_stream_new(ptls_t *tls, struct sockaddr *addr);
 
 int tcpls_stream_close(ptls_t *tls, streamid_t streamid);
 
+/**
+ * 
+ */
+
 ssize_t tcpls_send(ptls_t *tls, streamid_t streamid, const void *input, size_t nbytes);
 
 ssize_t tcpls_receive(ptls_t *tls, void *input, size_t nbytes, struct timeval *tv);

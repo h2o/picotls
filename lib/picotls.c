@@ -2170,23 +2170,30 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
             break;
         case PTLS_EXTENSION_TYPE_ENCRYPTED_MULTIHOMING_v4:
         case PTLS_EXTENSION_TYPE_ENCRYPTED_MULTIHOMING_v6:
-            ptls_decode_block(src, end, 2, {
-                ptls_decode_open_block(src, end, 1, {
-                    if (src == end) {
-                        ret = PTLS_ALERT_DECODE_ERROR;
+            {
+              tcpls_enum_t exttype;
+              if (type == PTLS_EXTENSION_TYPE_ENCRYPTED_MULTIHOMING_v6)
+                exttype = MULTIHOMING_v6;
+              else
+                exttype = MULTIHOMING_v4;
+              ptls_decode_block(src, end, 2, {
+                  ptls_decode_open_block(src, end, 1, {
+                      if (src == end) {
+                          ret = PTLS_ALERT_DECODE_ERROR;
+                          goto Exit;
+                      }
+                      if (handle_tcpls_extension_option(tls, exttype, src, end-src)) {
+                        ret = PTLS_ALERT_ILLEGAL_PARAMETER;
                         goto Exit;
-                    }
-                    if (handle_tcpls_extension_option(tls, type, src, end-src)) {
-                      ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+                      }
+                      src = end;
+                  });
+                  if (src != end) {
+                      ret = PTLS_ALERT_HANDSHAKE_FAILURE;
                       goto Exit;
-                    }
-                    src = end;
-                });
-                if (src != end) {
-                    ret = PTLS_ALERT_HANDSHAKE_FAILURE;
-                    goto Exit;
-                }
-            });
+                  }
+              });
+            }
             break;
         case PTLS_EXTENSION_TYPE_ENCRYPTED_SERVER_NAME:
             if (*src == PTLS_ESNI_RESPONSE_TYPE_ACCEPT) {
