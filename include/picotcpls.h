@@ -124,13 +124,15 @@ struct st_ptls_record_t;
 
 void *tcpls_new();
 
-int tcpls_connect(ptls_t *tls);
+int tcpls_connect(ptls_t *tls, struct timeval *timeout);
 
 int tcpls_add_v4(ptls_t *tls, struct sockaddr_in *addr, int is_primary, int settopeer);
 
 int tcpls_add_v6(ptls_t *tls, struct sockaddr_in6 *addr, int is_primary, int settopeer);
 
 uint32_t tcpls_stream_new(ptls_t *tls, struct sockaddr *addr);
+
+int tcpls_stream_close(ptls_t *tls, streamid_t streamid);
 
 ssize_t tcpls_send(ptls_t *tls, streamid_t streamid, const void *input, size_t nbytes);
 

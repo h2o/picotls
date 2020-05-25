@@ -18,6 +18,10 @@
  *   <li> tcpls_free </li>
  * </ul>
  *
+ * Callbacks can be attached to message events happening within TCPLS. E.g.,
+ * upon a new stream attachment, a fonction provided by the application might be
+ * called and would be passed information about the particular event.
+ *
  * We also offer an API to set localy and/or to the
  * peer some TCP options. We currently support the following options:
  *
@@ -247,7 +251,7 @@ int tcpls_add_domain(ptls_t *tls, char* domain) {
  *         1 if the timeout fired but some address(es) connected
  *         0 if all addresses connected
  */
-int tcpls_connect(ptls_t *tls) {
+int tcpls_connect(ptls_t *tls, struct timeval *timeout) {
   tcpls_t *tcpls = tls->tcpls;
   int maxfds = 0;
   int nfds = 0;
@@ -296,11 +300,9 @@ int tcpls_connect(ptls_t *tls) {
   int remaining_nfds = nfds;
   current_v4 = tcpls->v4_addr_llist;
   current_v6 = tcpls->v6_addr_llist;
-  struct timeval t_initial, timeout, t_previous, t_current;
+  struct timeval t_initial, t_previous, t_current;
   gettimeofday(&t_initial, NULL);
   memcpy(&t_previous, &t_initial, sizeof(t_previous));
-  timeout.tv_sec = 1;
-  timeout.tv_usec = 0;
   tcpls->nbr_tcp_streams = nfds;
 
 #define CHECK_WHICH_CONNECTED(current) do {                                         \
@@ -319,7 +321,7 @@ int tcpls_connect(ptls_t *tls) {
 } while(0) 
  
   while (remaining_nfds) {
-    if ((ret = select(maxfds+1, NULL, &wset, NULL, &timeout)) < 0) {
+    if ((ret = select(maxfds+1, NULL, &wset, NULL, timeout)) < 0) {
       return -1;
     }
     else if (!ret) {
@@ -334,7 +336,7 @@ int tcpls_connect(ptls_t *tls) {
       gettimeofday(&t_current, NULL);
       
       int new_val =
-        timeout.tv_sec*(uint64_t)1000000+timeout.tv_usec
+        timeout->tv_sec*(uint64_t)1000000+timeout->tv_usec
           - (t_current.tv_sec*(uint64_t)1000000+t_current.tv_usec
               - t_previous.tv_sec*(uint64_t)1000000-t_previous.tv_usec);
 
@@ -344,8 +346,8 @@ int tcpls_connect(ptls_t *tls) {
         - t_initial.tv_sec*(uint64_t)1000000-t_initial.tv_usec;
 
       int sec = new_val / 1000000;
-      timeout.tv_sec = sec;
-      timeout.tv_usec = new_val - timeout.tv_sec*(uint64_t)1000000;
+      timeout->tv_sec = sec;
+      timeout->tv_usec = new_val - timeout->tv_sec*(uint64_t)1000000;
 
       sec = rtt / 1000000;
 
@@ -361,7 +363,7 @@ int tcpls_connect(ptls_t *tls) {
 
 
 /**
- * Create and attach locallty a new stream to the main address if no addr
+ * Create and attach locally a new stream to the main address if no addr
  * is provided; else attach to addr if we have a connection open to it
  *
  * returns -1 if a stream is alreay attached for addr
@@ -375,7 +377,7 @@ streamid_t tcpls_stream_new(ptls_t *tls, struct sockaddr *addr) {
   for (int i = 0; i < tcpls->streams->size; i++) {
     stream = list_get(tcpls->streams, i);
     if (addr->sa_family == AF_INET && stream->v4_addr && !memcmp(&stream->v4_addr->addr,
-          addr, sizeof(*addr)))
+          addr, sizeof(struct sockaddr_in)))
     {
       return -1;
     }
@@ -424,6 +426,14 @@ streamid_t tcpls_stream_new(ptls_t *tls, struct sockaddr *addr) {
 }
 
 /**
+ * Close a stream. If no stream are attached to any address, then the connection
+ * is closed, and the application should call tcpls_free
+ */
+int tcpls_stream_close(ptls_t *tls, streamid_t streamid) {
+  return 0;
+}
+
+/**
 * Encrypts and sends input towards the primary path if available; else sends
 * towards the fallback path if the option is activated.
 *
@@ -461,7 +471,7 @@ ssize_t tcpls_send(ptls_t *tls, streamid_t streamid, const void *input, size_t n
     /** send the stream id to the peer */
     memcpy(input, &stream->streamid, 4);
     /** Add a stream message creation to the sending buffer ! */
-    stream_send_control_message(tcpls, stream, input, STREAM_ATTACH, 0);
+    stream_send_control_message(tcpls, stream, input, STREAM_ATTACH, 4);
   }
   else {
     stream = stream_get(tcpls, streamid);
@@ -847,6 +857,7 @@ int handle_tcpls_extension_option(ptls_t *ptls, tcpls_enum_t type,
       break;
     case STREAM_CLOSE:
       {
+       // TODO encoding with network order and decoding to host order
        streamid_t streamid = (streamid_t) *input;
        tcpls_stream_t *stream = stream_get(ptls->tcpls, streamid);
        if (!stream) {
@@ -857,6 +868,7 @@ int handle_tcpls_extension_option(ptls_t *ptls, tcpls_enum_t type,
        close(ptls->tcpls->socket_rcv);
        list_remove(ptls->tcpls->streams, stream);
        stream_free(stream);
+       //TODO make an application callback
        return 0;
       }
       break;
