@@ -99,19 +99,26 @@ static inline void init_extension_bitmap(struct st_ptls_extension_bitmap_t
         ALLOW(CLIENT_HELLO);
         ALLOW(ENCRYPTED_EXTENSIONS);
     });
-    EXT(ENCRYPTED_TCP_OPTIONS, {
-        ALLOW(CLIENT_HELLO);
-        ALLOW(SERVER_HELLO);
-        ALLOW(ENCRYPTED_EXTENSIONS);
-    });
-    EXT(ENCRYPTED_TCP_OPTIONS_USERTIMEOUT, {
-        ALLOW(SERVER_HELLO);
-        ALLOW(ENCRYPTED_EXTENSIONS);
-    });
-    EXT(ENCRYPTED_MULTIHOMING_v4, {
-        ALLOW(SERVER_HELLO);
-        ALLOW(ENCRYPTED_EXTENSIONS);
-    });
+    /*EXT(ENCRYPTED_TCP_OPTIONS, {*/
+        /*ALLOW(CLIENT_HELLO);*/
+        /*ALLOW(SERVER_HELLO);*/
+        /*ALLOW(ENCRYPTED_EXTENSIONS);*/
+    /*});*/
+    /*EXT(ENCRYPTED_TCP_OPTIONS_USERTIMEOUT, {*/
+        /*ALLOW(CLIENT_HELLO);*/
+        /*ALLOW(SERVER_HELLO);*/
+        /*ALLOW(ENCRYPTED_EXTENSIONS);*/
+    /*});*/
+    /*EXT(ENCRYPTED_MULTIHOMING_v4, {*/
+        /*ALLOW(CLIENT_HELLO);*/
+        /*ALLOW(SERVER_HELLO);*/
+        /*ALLOW(ENCRYPTED_EXTENSIONS);*/
+    /*});*/
+    /*EXT(ENCRYPTED_MULTIHOMING_v6, {*/
+        /*ALLOW(CLIENT_HELLO);*/
+        /*ALLOW(SERVER_HELLO);*/
+        /*ALLOW(ENCRYPTED_EXTENSIONS);*/
+    /*});*/
     EXT(STATUS_REQUEST, {
         ALLOW(CLIENT_HELLO);
         ALLOW(CERTIFICATE);
@@ -2133,9 +2140,10 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
 
     unknown_extensions[0].type = UINT16_MAX;
     decode_extensions(src, end, PTLS_HANDSHAKE_TYPE_ENCRYPTED_EXTENSIONS, &type, {
-        if (tls->ctx->on_extension != NULL &&
-            (ret = tls->ctx->on_extension->cb(tls->ctx->on_extension, tls, PTLS_HANDSHAKE_TYPE_ENCRYPTED_EXTENSIONS, type,
-                                              ptls_iovec_init(src, end - src)) != 0))
+        if (tls->ctx->on_extension != NULL && (ret =
+              tls->ctx->on_extension->cb(tls->ctx->on_extension, tls,
+                PTLS_HANDSHAKE_TYPE_ENCRYPTED_EXTENSIONS, type,
+                ptls_iovec_init(src, end - src)) != 0))
             goto Exit;
         switch (type) {
         case PTLS_EXTENSION_TYPE_SERVER_NAME:
@@ -2161,21 +2169,34 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
             }
             break;
         case PTLS_EXTENSION_TYPE_ENCRYPTED_MULTIHOMING_v4:
-            if (end-src != *src*sizeof(uint32_t)) {
-              ret = PTLS_ALERT_ILLEGAL_PARAMETER;
-              goto Exit;
-            }
-            if (handle_tcpls_extension_option(tls, MULTIHOMING_v4, src+1, *src*sizeof(uint32_t))) {
-              ret = PTLS_ALERT_ILLEGAL_PARAMETER;
-              goto Exit;
-            }
+            /*if (end-src != *src*sizeof(struct in_addr)) {*/
+              /*ret = PTLS_ALERT_ILLEGAL_PARAMETER;*/
+              /*goto Exit;*/
+            /*}*/
+            ptls_decode_block(src, end, 2, {
+                ptls_decode_open_block(src, end, 1, {
+                    if (src == end) {
+                        ret = PTLS_ALERT_DECODE_ERROR;
+                        goto Exit;
+                    }
+                    if (handle_tcpls_extension_option(tls, MULTIHOMING_v4, src, end-src)) {
+                      ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+                      goto Exit;
+                    }
+                    src = end;
+                });
+                if (src != end) {
+                    ret = PTLS_ALERT_HANDSHAKE_FAILURE;
+                    goto Exit;
+                }
+            });
             break;
         case PTLS_EXTENSION_TYPE_ENCRYPTED_MULTIHOMING_v6:
-            if (end-src != *src*sizeof(uint64_t)*2) {
+            if (end-src != *src*sizeof(struct in6_addr)) {
               ret = PTLS_ALERT_ILLEGAL_PARAMETER;
               goto Exit;
             }
-            if (handle_tcpls_extension_option(tls, MULTIHOMING_v6, src+1, *src*sizeof(uint64_t)*2)) {
+            if (handle_tcpls_extension_option(tls, MULTIHOMING_v6, src+1, *src*sizeof(struct in6_addr))) {
               ret = PTLS_ALERT_ILLEGAL_PARAMETER;
               goto Exit;
             }
@@ -3719,6 +3740,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
                 option = list_get(tls->tcpls->tcpls_options, i);
                 if (option->data->base && option->type == USER_TIMEOUT) {
                   buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_ENCRYPTED_TCP_OPTIONS_USERTIMEOUT, {
+                    /** FIXME use ptls_buffer_push16 */
                     ptls_buffer_pushv(sendbuf, option->data->base,
                         option->data->len);
                   });
@@ -3731,11 +3753,14 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
                 option = list_get(tls->tcpls->tcpls_options, i);
                 if (option->data->base && option->type == MULTIHOMING_v4) {
                   buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_ENCRYPTED_MULTIHOMING_v4, {
-                    ptls_buffer_pushv(sendbuf, option->data->base,
-                        option->data->len);
+                      ptls_buffer_push_block(sendbuf, 2, {
+                          ptls_buffer_push_block(sendbuf, 1, {
+                            ptls_buffer_pushv(sendbuf, option->data->base, option->data->len);
+                          });
+                      });
                   });
                 }
-                else if (option->data->base && option->type == MULTIHOMING_v4) {
+                else if (option->data->base && option->type == MULTIHOMING_v6) {
                   buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_ENCRYPTED_MULTIHOMING_v6, {
                     ptls_buffer_pushv(sendbuf, option->data->base,
                         option->data->len);

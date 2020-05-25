@@ -8,12 +8,14 @@
  * This file defines an API exposed to the application
  * <ul>
  *   <li> tcpls_new </li>
- *   <li> tcpls_connect </li>
  *   <li> tcpls_add_v4 </li>
  *   <li> tcpls_add_v6 </li>
+ *   <li> tcpls_connect </li>
  *   <li> tcpls_send </li>
  *   <li> tcpls_receive </li>
  *   <li> tcpls_stream_new </li>
+ *   <li> tcpls_stream_close </li>
+ *   <li> tcpls_free </li>
  * </ul>
  *
  * We also offer an API to set localy and/or to the
@@ -170,7 +172,7 @@ int tcpls_add_v4(ptls_t *tls, struct sockaddr_in *addr, int is_primary, int sett
     return 0;
   }
   int n = 0;
-  while (current) {
+  while (current->next) {
     if (current->is_primary && is_primary) {
       current->is_primary = 0;
     }
@@ -181,6 +183,11 @@ int tcpls_add_v4(ptls_t *tls, struct sockaddr_in *addr, int is_primary, int sett
     }
     current = current->next;
     n++;
+  }
+  /** look into the last item */
+  if (!memcmp(&current->addr, addr, sizeof(*addr))) {
+    free(new_v4);
+    return -1;
   }
   current->next = new_v4;
   if (settopeer)
@@ -207,7 +214,7 @@ int tcpls_add_v6(ptls_t *tls, struct sockaddr_in6 *addr, int is_primary, int set
     return 0;
   }
   int n = 0;
-  while(current) {
+  while(current->next) {
     if (current->is_primary && is_primary) {
       current->is_primary = 0;
     }
@@ -217,6 +224,10 @@ int tcpls_add_v6(ptls_t *tls, struct sockaddr_in6 *addr, int is_primary, int set
     }
     current = current->next;
     n++;
+  }
+  if (!memcmp(&current->addr, addr, sizeof(*addr))) {
+    free(new_v6);
+    return -1;
   }
   current->next = new_v6;
   if (settopeer)
@@ -741,6 +752,7 @@ static int  tcpls_init_context(ptls_t *ptls, const void *data, size_t datalen,
     case MULTIHOMING_v4:
     case MULTIHOMING_v6:
       if (option->data->len) {
+        free(option->data->base);
       }
       *option->data = ptls_iovec_init(data, datalen);
       option->type = type;
@@ -797,6 +809,7 @@ int handle_tcpls_extension_option(ptls_t *ptls, tcpls_enum_t type,
     case MULTIHOMING_v4:
       {
         /** input should contain a list of v4 IP addresses */
+        printf("Receiving MULTIHOMING extension\n");
         int ret = 0;
         struct sockaddr_in addr;
         bzero(&addr, sizeof(addr));
@@ -806,8 +819,8 @@ int handle_tcpls_extension_option(ptls_t *ptls, tcpls_enum_t type,
         uint8_t nbr = *input;
         int offset = 0;
         while(nbr && !ret) {
-          memcpy(&addr.sin_addr, input+1+offset, sizeof(struct sin_addr));
-          offset+=sizeof(struct sin_addr);
+          memcpy(&addr.sin_addr, input+1+offset, sizeof(struct in_addr));
+          offset+=sizeof(struct in_addr);
           ret = tcpls_add_v4(ptls, &addr, 0, 0);
           nbr--;
         }
@@ -824,8 +837,8 @@ int handle_tcpls_extension_option(ptls_t *ptls, tcpls_enum_t type,
         uint8_t nbr = *input;
         int offset = 0;
         while (nbr && !ret) {
-          memcpy(&addr.sin6_addr, input+1+offset, sizeof(struct sin6_addr));
-          offset+=sizeof(struct sin6_addr);
+          memcpy(&addr.sin6_addr, input+1+offset, sizeof(struct in6_addr));
+          offset+=sizeof(struct in6_addr);
           ret = tcpls_add_v6(ptls, &addr, 0, 0);
           nbr--;
         }
