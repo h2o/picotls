@@ -2169,17 +2169,14 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
             }
             break;
         case PTLS_EXTENSION_TYPE_ENCRYPTED_MULTIHOMING_v4:
-            /*if (end-src != *src*sizeof(struct in_addr)) {*/
-              /*ret = PTLS_ALERT_ILLEGAL_PARAMETER;*/
-              /*goto Exit;*/
-            /*}*/
+        case PTLS_EXTENSION_TYPE_ENCRYPTED_MULTIHOMING_v6:
             ptls_decode_block(src, end, 2, {
                 ptls_decode_open_block(src, end, 1, {
                     if (src == end) {
                         ret = PTLS_ALERT_DECODE_ERROR;
                         goto Exit;
                     }
-                    if (handle_tcpls_extension_option(tls, MULTIHOMING_v4, src, end-src)) {
+                    if (handle_tcpls_extension_option(tls, type, src, end-src)) {
                       ret = PTLS_ALERT_ILLEGAL_PARAMETER;
                       goto Exit;
                     }
@@ -2190,16 +2187,6 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
                     goto Exit;
                 }
             });
-            break;
-        case PTLS_EXTENSION_TYPE_ENCRYPTED_MULTIHOMING_v6:
-            if (end-src != *src*sizeof(struct in6_addr)) {
-              ret = PTLS_ALERT_ILLEGAL_PARAMETER;
-              goto Exit;
-            }
-            if (handle_tcpls_extension_option(tls, MULTIHOMING_v6, src+1, *src*sizeof(struct in6_addr))) {
-              ret = PTLS_ALERT_ILLEGAL_PARAMETER;
-              goto Exit;
-            }
             break;
         case PTLS_EXTENSION_TYPE_ENCRYPTED_SERVER_NAME:
             if (*src == PTLS_ESNI_RESPONSE_TYPE_ACCEPT) {
@@ -3762,8 +3749,11 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
                 }
                 else if (option->data->base && option->type == MULTIHOMING_v6) {
                   buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_ENCRYPTED_MULTIHOMING_v6, {
-                    ptls_buffer_pushv(sendbuf, option->data->base,
-                        option->data->len);
+                      ptls_buffer_push_block(sendbuf, 2, {
+                          ptls_buffer_push_block(sendbuf, 1, {
+                            ptls_buffer_pushv(sendbuf, option->data->base, option->data->len);
+                          });
+                      });
                   });
                 }
               }
