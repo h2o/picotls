@@ -1958,17 +1958,16 @@ static void test_tcpls_addresses(void)
   addr2.sin_port = htons(443);
   inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
   inet_pton(AF_INET, "192.168.1.1", &addr2.sin_addr);
-  ok(tcpls_add_v4(tcpls_server->tls, &addr, 1, 1) == 0);
-  ok(tcpls_add_v4(tcpls->tls, &addr2, 1, 0) == 0);
-  ok(tcpls->v4_addr_llist->state == CLOSED);
+  ok(tcpls_add_v4(tcpls_server->tls, &addr, 1, 1, 1) == 0);
+  ok(tcpls_add_v4(tcpls->tls, &addr2, 1, 0, 0) == 0);
   ok(tcpls->v4_addr_llist->is_primary == 1);
   ok(tcpls->v4_addr_llist->next == NULL);
   struct sockaddr_in6 addr6;
   bzero(&addr6, sizeof(addr6));
   addr6.sin6_port = htons(443);
   inet_pton(AF_INET, "::1", &addr6.sin6_addr);
-  ok(tcpls_add_v6(tcpls->tls, &addr6, 0, 1) == 0);
-  ok(tcpls_add_v6(tcpls->tls, &addr6, 0, 1) == -1);
+  ok(tcpls_add_v6(tcpls->tls, &addr6, 0, 1, 0) == 0);
+  ok(tcpls_add_v6(tcpls->tls, &addr6, 0, 1, 0) == -1);
   ok(tcpls->tcpls_options->size == 1);
   tcpls_options_t *option;
   for (int i = 0; i < tcpls->tcpls_options->size; i++) {

@@ -47,26 +47,36 @@ struct st_tcpls_options_t {
 
 typedef struct st_tcpls_v4_addr_t {
   struct sockaddr_in addr;
-  unsigned is_primary : 1;
-  tcpls_tcp_state_t state;
-  struct timeval connect_time;
-  int socket;
+  unsigned is_primary : 1; /* whether this is our primary address */
+  unsigned is_ours : 1;  /* is this our address? */
   struct st_tcpls_v4_addr_t *next;
 } tcpls_v4_addr_t;
 
 typedef struct st_tcpls_v6_addr_t {
   struct sockaddr_in6 addr;
   unsigned is_primary : 1;
-  tcpls_tcp_state_t state;
-  struct timeval connect_time;
-  int socket;
+  unsigned is_ours : 1;
   struct st_tcpls_v6_addr_t *next;
 } tcpls_v6_addr_t;
+
+typedef struct st_connect_info_t {
+  tcpls_tcp_state_t state; /* Connection state */
+  int socket;
+  unsigned is_primary : 1;
+  struct timeval connect_time;
+  /** Only one is used */
+  tcpls_v4_addr_t *src;
+  tcpls_v6_addr_t *src6;
+  /** only one is used */
+  tcpls_v4_addr_t *dest;
+  tcpls_v6_addr_t *dest6;
+
+} connect_info_t;
 
 typedef struct st_tcpls_stream {
   /** Buffer for potentially lost records in case of failover, loss of
    * connection. Also potentially used for fair usage of the link w.r.t multiple
-   * streams  
+   * streams
    **/
   tcpls_record_fifo_t *send_queue;
   streamid_t streamid;
@@ -80,9 +90,8 @@ typedef struct st_tcpls_stream {
   ptls_aead_context_t *aead_enc;
   /* Context for decryption */
   ptls_aead_context_t *aead_dec;
-  /** Attached to v4_addr or a v6_addr; */
-  tcpls_v4_addr_t *v4_addr;
-  tcpls_v6_addr_t *v6_addr;
+  /** Attached connection */
+  connect_info_t *con;
 } tcpls_stream_t;
 
 
@@ -95,13 +104,20 @@ struct st_tcpls_t {
   /** Linked List of address to be used for happy eyeball
    * and for failover 
    */
+  /** Destination addresses */
   tcpls_v4_addr_t *v4_addr_llist;
   tcpls_v6_addr_t *v6_addr_llist;
+  /** Our addresses */
+  tcpls_v4_addr_t *ours_v4_addr_llist;
+  tcpls_v6_addr_t *ours_v6_addr_llist;
+
   /** carry a list of tcpls_option_t */
   list_t *tcpls_options;
   /** Should contain all streams */
   list_t *streams;
-
+  /** Contains the state of connected src and dest addresses */
+  list_t *connect_infos;
+ 
   /** value of the next stream id :) */
   uint32_t next_stream_id;
   /** count the number of times we attached a stream from the peer*/
@@ -124,18 +140,23 @@ struct st_ptls_record_t;
 
 void *tcpls_new();
 
-int tcpls_connect(ptls_t *tls, struct timeval *timeout);
+int tcpls_connect(ptls_t *tls, struct sockaddr *src, struct sockaddr *dest,
+    struct timeval *timeout);
 
-int tcpls_add_v4(ptls_t *tls, struct sockaddr_in *addr, int is_primary, int settopeer);
+int tcpls_add_v4(ptls_t *tls, struct sockaddr_in *addr, int is_primary, int
+    settopeer, int is_ours);
 
-int tcpls_add_v6(ptls_t *tls, struct sockaddr_in6 *addr, int is_primary, int settopeer);
+int tcpls_add_v6(ptls_t *tls, struct sockaddr_in6 *addr, int is_primary, int
+    settopeer, int is_ours);
 
-uint32_t tcpls_stream_new(ptls_t *tls, struct sockaddr *addr);
+uint32_t tcpls_stream_new(ptls_t *tls, struct sockaddr *src, struct sockaddr *addr);
 
 int tcpls_stream_close(ptls_t *tls, streamid_t streamid);
 
 /**
- * 
+ * tcpls_send can be called whether or not tcpls_stream_new has been called before
+ * by the application; but it must send a stream_attach record first to attach a
+ * stream.
  */
 
 ssize_t tcpls_send(ptls_t *tls, streamid_t streamid, const void *input, size_t nbytes);

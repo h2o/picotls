@@ -66,17 +66,23 @@ static int is_varlen(tcpls_enum_t type);
 static int setlocal_usertimeout(ptls_t *ptls, int val);
 static int setlocal_bpf_cc(ptls_t *ptls, const uint8_t *bpf_prog, size_t proglen);
 static void _set_primary(tcpls_t *tcpls);
-static tcpls_stream_t *stream_new(ptls_t *tcpls, streamid_t streamid, tcpls_v4_addr_t *addr,
-    tcpls_v6_addr_t *addr6, int is_ours);
+static tcpls_stream_t *stream_new(ptls_t *tcpls, streamid_t streamid,
+    connect_info_t *con, int is_ours);
 static void stream_free(tcpls_stream_t *stream);
 static int stream_send_control_message(tcpls_t *tcpls, tcpls_stream_t *stream,
     const void *inputinfo, tcpls_enum_t message, uint32_t message_len);
-static tcpls_v4_addr_t *get_v4_primary_addr(tcpls_t *tcpls);
-static tcpls_v4_addr_t *get_v4_addr(tcpls_t *tcpls, int socket);
-static tcpls_v6_addr_t *get_v6_primary_addr(tcpls_t *tcpls);
-static tcpls_v6_addr_t *get_v6_addr(tcpls_t *tcpls, int socket);
+static connect_info_t *get_con_info_from_socket(tcpls_t *tcpls, int socket);
+static int get_con_info_from_addrs(tcpls_t *tcpls, tcpls_v4_addr_t *src,
+    tcpls_v4_addr_t *dest, tcpls_v6_addr_t *src6, tcpls_v6_addr_t *dest6,
+    connect_info_t *coninfo);
+static tcpls_v4_addr_t *get_addr_from_sockaddr(tcpls_v4_addr_t *llist, struct sockaddr_in *addr);
+static tcpls_v6_addr_t *get_addr6_from_sockaddr(tcpls_v6_addr_t *llist, struct sockaddr_in6 *addr);
+static connect_info_t *get_primary_con_info(tcpls_t *tcpls);
 static tcpls_stream_t *stream_get(tcpls_t *tcpls, streamid_t streamid);
-static tcpls_stream_t *stream_helper_new(tcpls_t *tcpls, struct sockaddr *addr);
+static tcpls_stream_t *stream_helper_new(tcpls_t *tcpls, connect_info_t *con);
+static int handle_connect(tcpls_t *tcpls, tcpls_v4_addr_t *src, tcpls_v4_addr_t
+    *dest, tcpls_v6_addr_t *src6, tcpls_v6_addr_t *dest6, unsigned short sa_family,
+    int *nfds, int *maxfds, connect_info_t *coninfo, fd_set *wset);
 
 void *tcpls_new(void *ctx, int is_server) {
   ptls_context_t *ptls_ctx = (ptls_context_t *) ctx;
@@ -90,7 +96,7 @@ void *tcpls_new(void *ctx, int is_server) {
   }
   else {
     tls = ptls_client_new(ptls_ctx);
-    tcpls->next_stream_id = 0;
+    tcpls->next_stream_id = 1;
   }
   // init tcpls stuffs
   tcpls->sendbuf = malloc(sizeof(*tcpls->sendbuf));
@@ -107,6 +113,7 @@ void *tcpls_new(void *ctx, int is_server) {
   tcpls->nbr_tcp_streams = 0;
   tcpls->tcpls_options = new_list(sizeof(tcpls_options_t), NBR_SUPPORTED_TCPLS_OPTIONS);
   tcpls->streams = new_list(sizeof(tcpls_stream_t), 3);
+  tcpls->connect_infos = new_list(sizeof(connect_info_t), 2);
   tls->tcpls = tcpls;
   return tcpls;
 }
@@ -155,7 +162,8 @@ int static add_v6_to_options(tcpls_t *tcpls, uint8_t n) {
  * if settopeer is 0, then this address is the peer's one
  */
 
-int tcpls_add_v4(ptls_t *tls, struct sockaddr_in *addr, int is_primary, int settopeer) {
+int tcpls_add_v4(ptls_t *tls, struct sockaddr_in *addr, int is_primary, int
+    settopeer, int is_ours) {
   tcpls_t *tcpls = tls->tcpls;
   /* enable failover */
   if (!settopeer)
@@ -164,12 +172,14 @@ int tcpls_add_v4(ptls_t *tls, struct sockaddr_in *addr, int is_primary, int sett
   if (new_v4 == NULL)
     return PTLS_ERROR_NO_MEMORY;
   new_v4->is_primary = is_primary;
-  new_v4->state = CLOSED;
-  new_v4->socket = 0;
   memcpy(&new_v4->addr, addr, sizeof(*addr));
   new_v4->next = NULL;
-
-  tcpls_v4_addr_t *current = tcpls->v4_addr_llist;
+  new_v4->is_ours = is_ours;
+  tcpls_v4_addr_t *current;
+  if (is_ours)
+    current = tcpls->ours_v4_addr_llist;
+  else
+    current = tcpls->v4_addr_llist;
   if (!current) {
     tcpls->v4_addr_llist = new_v4;
     if (settopeer)
@@ -200,18 +210,21 @@ int tcpls_add_v4(ptls_t *tls, struct sockaddr_in *addr, int is_primary, int sett
   return 0;
 }
 
-int tcpls_add_v6(ptls_t *tls, struct sockaddr_in6 *addr, int is_primary, int settopeer) {
+int tcpls_add_v6(ptls_t *tls, struct sockaddr_in6 *addr, int is_primary, int
+    settopeer, int is_ours) {
   tcpls_t *tcpls = tls->tcpls;
   tcpls_v6_addr_t *new_v6 = malloc(sizeof(*new_v6));
   if (new_v6 == NULL)
     return PTLS_ERROR_NO_MEMORY;
   new_v6->is_primary = is_primary;
-  new_v6->state = CLOSED;
-  new_v6->socket = 0;
   memcpy(&new_v6->addr, addr, sizeof(*addr));
   new_v6->next = NULL;
-
-  tcpls_v6_addr_t *current = tcpls->v6_addr_llist;
+  new_v6->is_ours = is_ours;
+  tcpls_v6_addr_t *current;
+  if (is_ours)
+    current = tcpls->ours_v6_addr_llist;
+  else
+    current = tcpls->v6_addr_llist;
   if (!current) {
     tcpls->v6_addr_llist = new_v6;
     if (settopeer)
@@ -252,75 +265,120 @@ int tcpls_add_domain(ptls_t *tls, char* domain) {
  *         1 if the timeout fired but some address(es) connected
  *         0 if all addresses connected
  */
-int tcpls_connect(ptls_t *tls, struct timeval *timeout) {
+int tcpls_connect(ptls_t *tls, struct sockaddr *src, struct sockaddr *dest,
+    struct timeval *timeout) {
   tcpls_t *tcpls = tls->tcpls;
   int maxfds = 0;
   int nfds = 0;
+  int ret;
   fd_set wset;
   FD_ZERO(&wset);
-#define HANDLE_CONNECTS(current, afinet) do {                                               \
-  while (current) {                                                                 \
-    if (current->state == CLOSED){                                                  \
-      if (!current->socket) {                                                       \
-        if ((current->socket = socket(afinet, SOCK_STREAM|SOCK_NONBLOCK, 0)) < 0) {\
-          current = current->next;                                                  \
-          continue;                                                                 \
-        }                                                                           \
-        FD_SET(current->socket, &wset);                                             \
-        nfds++;                                                                     \
-        if (current->socket > maxfds)                                               \
-          maxfds = current->socket;                                                 \
-      }                                                                             \
-      if (connect(current->socket, (struct sockaddr*) &current->addr, sizeof(current->addr)) < 0 && errno != EINPROGRESS) {\
-        close(current->socket);                                                     \
-        current = current->next;                                                    \
-        continue;                                                                   \
-      }                                                                             \
-      current->state = CONNECTING;                                                  \
-    }                                                                               \
-    else if (current->state == CONNECTING) {                                        \
-      FD_SET(current->socket, &wset);                                               \
-      nfds++;                                                                       \
-      if (current->socket > maxfds)                                                 \
-        maxfds = current->socket;                                                   \
-    }                                                                               \
-    current = current->next;                                                        \
-  }                                                                                 \
-} while (0)
-
-  // Connect with v4 addresses first
-  tcpls_v4_addr_t *current_v4 = tcpls->v4_addr_llist;
-  HANDLE_CONNECTS(current_v4, AF_INET);
-  tcpls_v6_addr_t *current_v6 = tcpls->v6_addr_llist;
-  // Connect with v6 addresses
-  HANDLE_CONNECTS(current_v6, AF_INET6);
-#undef HANDLE_CONNECTS
-
+  connect_info_t coninfo;
+  memset(&coninfo, 0, sizeof(connect_info_t));
+  if (!src && !dest) {
+    // FULL MESH CONNECT YOLO
+    tcpls_v4_addr_t *current_v4 = tcpls->v4_addr_llist;
+    tcpls_v4_addr_t *ours_current_v4 = tcpls->ours_v4_addr_llist;
+    tcpls_v6_addr_t *current_v6 = tcpls->v6_addr_llist;
+    tcpls_v6_addr_t *ours_current_v6 = tcpls->ours_v6_addr_llist;
+    while (ours_current_v4 || ours_current_v6) {
+      while (current_v4 || current_v6) {
+        if (ours_current_v4 && current_v4) {
+          if (handle_connect(tcpls, ours_current_v4, current_v4, NULL, NULL, AF_INET, &nfds, &maxfds, &coninfo, &wset) < 0) {
+            return -1;
+          }
+        }
+        if (ours_current_v6 && current_v6) {
+          if(handle_connect(tcpls, NULL, NULL, ours_current_v6, current_v6, AF_INET6, &nfds, &maxfds, &coninfo, &wset) < 0) {
+            return -1;
+          }
+        }
+        /** move forward */
+        if (current_v4)
+          current_v4 = current_v4->next;
+        if (current_v6)
+          current_v6 = current_v6->next;
+      }
+      if (ours_current_v4)
+        ours_current_v4 = ours_current_v4->next;
+      if (ours_current_v6)
+        ours_current_v6 = ours_current_v6->next;
+    }
+  }
+  else if (src && !dest) {
+    /** Connect to all destination from one particular src addr */
+    if (src->sa_family == AF_INET) {
+      tcpls_v4_addr_t *current_v4 = tcpls->v4_addr_llist;
+      tcpls_v4_addr_t* ours_v4 = get_addr_from_sockaddr(tcpls->ours_v4_addr_llist, (struct sockaddr_in *)src);
+      if (!ours_v4)
+        return -1;
+      while (current_v4) {
+        if (handle_connect(tcpls, ours_v4, current_v4, NULL, NULL, AF_INET, &nfds, &maxfds, &coninfo, &wset) < 0) {
+          return -1;
+        }
+        current_v4 = current_v4->next;
+      }
+    }
+    else if (src->sa_family == AF_INET6) {
+      tcpls_v6_addr_t *current_v6 = tcpls->v6_addr_llist;
+      tcpls_v6_addr_t *ours_v6 = get_addr6_from_sockaddr(tcpls->ours_v6_addr_llist, (struct sockaddr_in6 *) src);
+      if (!ours_v6)
+        return -1;
+      while (current_v6) {
+        if (handle_connect(tcpls, NULL, NULL, ours_v6, current_v6, AF_INET6, &nfds, &maxfds, &coninfo, &wset) < 0) {
+          return -1;
+        }
+        current_v6 = current_v6->next;
+      }
+    }
+  }
+  else if (src && dest) {
+    /** Connect to a provided src and addr */
+    if (src->sa_family == AF_INET && dest->sa_family == AF_INET) {
+      tcpls_v4_addr_t *our_addr = get_addr_from_sockaddr(tcpls->ours_v4_addr_llist, (struct sockaddr_in *) src);
+      tcpls_v4_addr_t *dest_addr = get_addr_from_sockaddr(tcpls->v4_addr_llist, (struct sockaddr_in *) dest);
+      if (!our_addr || !dest_addr)
+        return -1;
+      if (handle_connect(tcpls, our_addr, dest_addr, NULL, NULL, AF_INET, &nfds, &maxfds, &coninfo, &wset) < 0) {
+        return -1;
+      }
+    }
+    else if (src->sa_family == AF_INET6 && dest->sa_family == AF_INET6) {
+      tcpls_v6_addr_t *our_addr = get_addr6_from_sockaddr(tcpls->ours_v6_addr_llist, (struct sockaddr_in6 *) src);
+      tcpls_v6_addr_t *dest_addr = get_addr6_from_sockaddr(tcpls->v6_addr_llist, (struct sockaddr_in6 *) dest);
+      if (!our_addr || !dest_addr)
+        return -1;
+      if (handle_connect(tcpls, NULL, NULL, our_addr, dest_addr, AF_INET6, &nfds, &maxfds, &coninfo, &wset) < 0) {
+        return -1;
+      }
+    }
+  }
+  else if (!src && dest) {
+    /** Connect to a provided dest from default src */
+    if (dest->sa_family == AF_INET) {
+      tcpls_v4_addr_t *dest_addr = get_addr_from_sockaddr(tcpls->v4_addr_llist, (struct sockaddr_in *)dest);
+      if (!dest_addr)
+        return -1;
+      if (handle_connect(tcpls, NULL, dest_addr, NULL, NULL, AF_INET, &nfds, &maxfds, &coninfo, &wset) < 0) {
+        return -1;
+      }
+    }
+    else {
+      tcpls_v6_addr_t *dest_addr = get_addr6_from_sockaddr(tcpls->v6_addr_llist, (struct sockaddr_in6 *) dest);
+      if (!dest_addr)
+        return -1;
+      if (handle_connect(tcpls, NULL, NULL, NULL, dest_addr, AF_INET6, &nfds, &maxfds, &coninfo, &wset) < 0) {
+        return -1;
+      }
+    }
+  }
   /* wait until all connected or the timeout fired */
-  int ret;
   int remaining_nfds = nfds;
-  current_v4 = tcpls->v4_addr_llist;
-  current_v6 = tcpls->v6_addr_llist;
   struct timeval t_initial, t_previous, t_current;
   gettimeofday(&t_initial, NULL);
   memcpy(&t_previous, &t_initial, sizeof(t_previous));
   tcpls->nbr_tcp_streams = nfds;
-
-#define CHECK_WHICH_CONNECTED(current) do {                                         \
-  while (current) {                                                                 \
-    if (current->state == CONNECTING && FD_ISSET(current->socket,                   \
-          &wset)) {                                                                 \
-      current->connect_time.tv_sec = sec;                                           \
-      current->connect_time.tv_usec = rtt - sec*(uint64_t)1000000;                  \
-      current->state = CONNECTED;                                                   \
-      int flags = fcntl(current->socket, F_GETFL);                                  \
-      flags &= ~O_NONBLOCK;                                                         \
-      fcntl(current->socket, F_SETFL, flags);                                       \
-    }                                                                               \
-    current = current->next;                                                        \
-  }                                                                                 \
-} while(0) 
- 
+  connect_info_t *con;
   while (remaining_nfds) {
     if ((ret = select(maxfds+1, NULL, &wset, NULL, timeout)) < 0) {
       return -1;
@@ -351,13 +409,21 @@ int tcpls_connect(ptls_t *tls, struct timeval *timeout) {
       timeout->tv_usec = new_val - timeout->tv_sec*(uint64_t)1000000;
 
       sec = rtt / 1000000;
-
-      CHECK_WHICH_CONNECTED(current_v4);
-      CHECK_WHICH_CONNECTED(current_v6);
+      for (int i = 0; i < tcpls->connect_infos->size; i++) {
+        con = list_get(tcpls->connect_infos, i);
+        if (con->state == CONNECTING && FD_ISSET(con->socket, &wset)) {
+          /* it is the right con =) */
+          con->connect_time.tv_sec = sec;
+          con->connect_time.tv_usec = rtt - sec*(uint64_t)1000000;
+          con->state = CONNECTED;
+          int flags = fcntl(con->socket, F_GETFL);
+          flags &= ~O_NONBLOCK;
+          fcntl(con->socket, F_SETFL, flags);
+        }
+      }
       remaining_nfds--;
     }
   }
-#undef CHECK_WHICH_CONNECTED
   _set_primary(tcpls);
   return 0;
 }
@@ -366,20 +432,86 @@ int tcpls_connect(ptls_t *tls, struct timeval *timeout) {
 /**
  * Create and attach locally a new stream to the main address if no addr
  * is provided; else attach to addr if we have a connection open to it
+ * 
+ * src might be NULL to indicate default
  *
- * returns -1 if a stream is alreay attached for addr
+ * returns 0 if a stream is alreay attached for addr, or if some error occured
  */
 
-streamid_t tcpls_stream_new(ptls_t *tls, struct sockaddr *addr) {
+streamid_t tcpls_stream_new(ptls_t *tls, struct sockaddr *src, struct sockaddr *dest) {
   /** Check first whether a stream isn't already attach to this addr */
   tcpls_t *tcpls = tls->tcpls;
   assert(tcpls);
-  tcpls_stream_t *stream = stream_helper_new(tcpls, addr);
+  connect_info_t coninfo;
+  connect_info_t *con_stored;
+  int ret;
+  tcpls_v4_addr_t *src_addr = NULL;
+  tcpls_v6_addr_t *src6_addr = NULL;
+  tcpls_v4_addr_t *dest_addr = NULL;
+  tcpls_v6_addr_t *dest6_addr = NULL;
+  if (src->sa_family == AF_INET && dest->sa_family == AF_INET) {
+    if (src)
+      src_addr = get_addr_from_sockaddr(tcpls->ours_v4_addr_llist, (struct sockaddr_in *)src);
+    tcpls_v4_addr_t *dest_addr = get_addr_from_sockaddr(tcpls->v4_addr_llist,
+        (struct sockaddr_in *) dest);
+    assert(dest_addr); /**debugging mode*/
+    if (!dest_addr)
+      return 0;
+    ret = get_con_info_from_addrs(tcpls, src_addr, dest_addr, NULL, NULL, &coninfo);
+  }
+  else if (src->sa_family ==  AF_INET6 && dest->sa_family == AF_INET6) {
+    if (src)
+      src6_addr = get_addr6_from_sockaddr(tcpls->ours_v6_addr_llist, (struct sockaddr_in6*) src);
+    dest6_addr = get_addr6_from_sockaddr(tcpls->v6_addr_llist, (struct sockaddr_in6 *) dest);
+    assert(dest6_addr);
+    if (!dest6_addr)
+      return 0;
+    ret = get_con_info_from_addrs(tcpls, NULL, NULL, src6_addr, dest6_addr, &coninfo);
+  }
+  else
+    return 0;
+  /** If we do not have any connection, let's create it */
+  if (ret) {
+    coninfo.socket = 0;
+    coninfo.state = CLOSED;
+    if (dest->sa_family == AF_INET) {
+      /** NULL src means we use the default one */
+      coninfo.src = src_addr;
+      coninfo.dest = dest_addr;
+      coninfo.src6 = NULL;
+      coninfo.dest6 = NULL;
+      /** Is this con using the primary addresses? */
+      if (src && src_addr->is_primary && dest_addr->is_primary) {
+        coninfo.is_primary = 1;
+      }
+      else if (!src && dest_addr->is_primary) {
+        coninfo.is_primary = 1;
+      }
+    }
+    else {
+      /** We attach a stream to v6 interfaces */
+      coninfo.src6 = src6_addr;
+      coninfo.dest6 = dest6_addr;
+      coninfo.src = NULL;
+      coninfo.dest = NULL;
+      if (src && src6_addr->is_primary && dest6_addr->is_primary) {
+        coninfo.is_primary = 1;
+      }
+      else if (!src && dest6_addr->is_primary) {
+        coninfo.is_primary = 1;
+      }
+    }
+    /** copy coninfo into the heap allocated list */
+    list_add(tcpls->connect_infos, &coninfo);
+    /** get back this copy */
+    con_stored = list_get(tcpls->connect_infos, tcpls->connect_infos->size-1);
+  }
+  tcpls_stream_t *stream = stream_helper_new(tcpls, con_stored);
   if (!stream)
     return -1;
   list_add(tcpls->streams, stream);
   /** send a stream new if we already connected */
-  //todo
+  //TODO
 
   return stream->streamid;
 }
@@ -417,10 +549,9 @@ ssize_t tcpls_send(ptls_t *tls, streamid_t streamid, const void *input, size_t n
   //TODO
   if (!tcpls->streams->size) {
     // Create a stream with the default context, attached to primary IP
-    tcpls_v4_addr_t *addr = get_v4_primary_addr(tcpls);
-    tcpls_v6_addr_t *addr6 = get_v6_primary_addr(tcpls);
-    assert(addr || addr6);
-    stream = stream_new(tls, tcpls->next_stream_id++, addr, addr6, 1);
+    connect_info_t *con = get_primary_con_info(tcpls);
+    assert(con);
+    stream = stream_new(tls, tcpls->next_stream_id++, con, 1);
 
     stream->aead_enc =  tcpls->tls->traffic_protection.enc.aead;
     stream->aead_dec =  tcpls->tls->traffic_protection.dec.aead;
@@ -451,15 +582,7 @@ ssize_t tcpls_send(ptls_t *tls, streamid_t streamid, const void *input, size_t n
     default: return ret;
   }
   /** Send over the socket's stream */
-  int sock_to_use;
-  if (stream->v4_addr) {
-    sock_to_use = stream->v4_addr->socket;
-  }
-  else if (stream->v6_addr) {
-    sock_to_use = stream->v6_addr->socket;
-  }
-  /** Get the primary address */
-  ret = send(sock_to_use, tcpls->sendbuf->base, tcpls->sendbuf->off, 0);
+  ret = send(stream->con->socket, tcpls->sendbuf->base, tcpls->sendbuf->off, 0);
   if (ret < 0) {
     /** The peer reset the connection */
     if (errno == ECONNRESET) {
@@ -489,18 +612,12 @@ ssize_t tcpls_receive(ptls_t *tls, void *buf, size_t nbytes, struct timeval *tv)
   tcpls_t *tcpls = tls->tcpls;
   list_t *socklist = new_list(sizeof(int), tcpls->nbr_tcp_streams);
   FD_ZERO(&rset);
-#define ADD_TO_RSET(current) do {                                     \
-  while (current) {                                                   \
-    FD_SET(current->socket, &rset);                                   \
-    list_add(socklist, &current->socket);                             \
-    current = current->next;                                          \
-  }                                                                   \
-} while(0);
-  tcpls_v4_addr_t *current = tcpls->v4_addr_llist;
-  ADD_TO_RSET(current);
-  tcpls_v6_addr_t *current_v6 = tcpls->v6_addr_llist;
-  ADD_TO_RSET(current_v6);
-#undef ADD_TO_RSET
+  connect_info_t *con;
+  for (int i = 0; i < tcpls->connect_infos->size; i++) {
+    con = list_get(tcpls->connect_infos, i);
+    list_add(socklist, &con->socket);
+    FD_SET(con->socket, &rset);
+  }
   ret = select(socklist->size+1, &rset, NULL, NULL, tv);
   if (ret == -1) {
     list_free(socklist);
@@ -657,54 +774,105 @@ int ptls_set_bpf_cc(ptls_t *ptls, const uint8_t *bpf_prog_bytecode, size_t bytec
 /*===================================Internal========================================*/
 
 
+static tcpls_v4_addr_t *get_addr_from_sockaddr(tcpls_v4_addr_t *llist, struct sockaddr_in *addr) {
+  tcpls_v4_addr_t *current = llist;
+  while (current) {
+    if (!memcmp(&current->addr, addr, sizeof(*addr)))
+      return current;
+    current = current->next;
+  }
+  return NULL;
+}
 
-static tcpls_stream_t *stream_helper_new(tcpls_t *tcpls, struct sockaddr *addr) {
+static tcpls_v6_addr_t *get_addr6_from_sockaddr(tcpls_v6_addr_t *llist, struct sockaddr_in6 *addr6) {
+  tcpls_v6_addr_t *current = llist;
+  while (current) {
+    if (!memcmp(&current->addr, addr6, sizeof(*addr6)))
+      return current;
+    current = current->next;
+  }
+  return NULL;
+}
+
+static int handle_connect(tcpls_t *tcpls, tcpls_v4_addr_t *src, tcpls_v4_addr_t
+    *dest, tcpls_v6_addr_t *src6, tcpls_v6_addr_t *dest6, unsigned short afinet,
+    int *nfds, int *maxfds, connect_info_t *coninfo, fd_set *wset) {
+  int ret = get_con_info_from_addrs(tcpls, src, dest, src6, dest6, coninfo);
+  if (ret) {
+    coninfo->socket = 0;
+    coninfo->state = CLOSED;
+    if (afinet == AF_INET) {
+      coninfo->src = src;
+      coninfo->dest = dest;
+      coninfo->src6 = NULL;
+      coninfo->dest6 = NULL;
+      if (src->is_primary && dest->is_primary)
+        coninfo->is_primary = 1;
+    }
+    else {
+      coninfo->src6 = src6;
+      coninfo->dest6 = dest6;
+      coninfo->src = NULL;
+      coninfo->dest = NULL;
+      if (src6->is_primary && dest6->is_primary)
+        coninfo->is_primary = 1;
+    }
+  }
+  if (coninfo->state == CLOSED) {
+    /** we can connect */
+    if (!coninfo->socket) {
+      if ((coninfo->socket = socket(afinet, SOCK_STREAM|SOCK_NONBLOCK, 0)) < 0) {
+        return -1;
+      }
+    }
+    FD_SET(coninfo->socket, wset);
+    /** try to connect */
+    if (src || src6) {
+      src ? bind(coninfo->socket, (struct sockaddr*) &src->addr,
+          sizeof(src->addr)) : bind(coninfo->socket, (struct sockaddr *)
+          &src6->addr, sizeof(src6->addr));
+    }
+    if (afinet == AF_INET) {
+      if (connect(coninfo->socket, (struct sockaddr*) &dest->addr,
+            sizeof(dest->addr)) < 0 && errno != EINPROGRESS) {
+        return -1;
+      }
+    }
+    else {
+      if (connect(coninfo->socket, (struct sockaddr*) &dest6->addr,
+            sizeof(dest6->addr)) < 0 && errno != EINPROGRESS) {
+        return -1;
+      }
+    }
+    coninfo->state = CONNECTING;
+    *nfds = *nfds + 1;
+    if (coninfo->socket > *maxfds)
+      *maxfds = coninfo->socket;
+  }
+  else if (coninfo->state == CONNECTING) {
+    FD_SET(coninfo->socket, wset);
+    if (coninfo->socket > *maxfds)
+      *maxfds = coninfo->socket;
+    *nfds = *nfds + 1;
+  }
+  if (ret) {
+    list_add(tcpls->connect_infos, coninfo);
+  }
+}
+
+/**
+ * Note: con should point to the element in tcpls->connect_info
+ */
+
+static tcpls_stream_t *stream_helper_new(tcpls_t *tcpls, connect_info_t *con) {
   tcpls_stream_t *stream = NULL;
   for (int i = 0; i < tcpls->streams->size; i++) {
     stream = list_get(tcpls->streams, i);
-    if (addr->sa_family == AF_INET && stream->v4_addr && !memcmp(&stream->v4_addr->addr,
-          addr, sizeof(struct sockaddr_in)))
-    {
+    /* we alreay have a stream attached with this con! */
+    if (!memcmp(stream->con, con, sizeof(*con)))
       return NULL;
-    }
-    else if (addr->sa_family == AF_INET6  && stream->v6_addr &&
-        !memcpy(&stream->v6_addr->addr, addr, sizeof(struct sockaddr_in6))) {
-      return NULL;
-    }
   }
-  if (addr->sa_family == AF_INET) {
-    tcpls_v4_addr_t *current = tcpls->v4_addr_llist;
-    if (!current) {
-      return NULL;
-    }
-    int found = 0;
-    while (current) {
-      if (!memcmp(&current->addr, (struct sockaddr_in*) addr, sizeof(struct sockaddr_in))) {
-        found = 1;
-        break;
-      }
-      current = current->next;
-    }
-    if (!found)
-      return NULL;
-    stream = stream_new(tcpls->tls, tcpls->next_stream_id++, current, NULL, 1);
-  }
-  else {
-    tcpls_v6_addr_t *current = tcpls->v6_addr_llist;
-    if (!current)
-      return NULL;
-    int found = 0;
-    while (current) {
-      if (!memcmp(&current->addr, (struct sockaddr_in6 *) addr, sizeof(struct sockaddr_in6))) {
-        found = 1;
-        break;
-      }
-      current = current->next;
-    }
-    if (!found)
-      return NULL;
-    stream = stream_new(tcpls->tls, tcpls->next_stream_id++, NULL, current, 1);
-  }
+  stream = stream_new(tcpls->tls, tcpls->next_stream_id++, con, 1);
   return stream;
 }
 
@@ -830,7 +998,6 @@ int handle_tcpls_extension_option(ptls_t *ptls, tcpls_enum_t type,
     case MULTIHOMING_v4:
       {
         /** input should contain a list of v4 IP addresses */
-        printf("Receiving MULTIHOMING extension\n");
         int ret = 0;
         struct sockaddr_in addr;
         bzero(&addr, sizeof(addr));
@@ -842,7 +1009,7 @@ int handle_tcpls_extension_option(ptls_t *ptls, tcpls_enum_t type,
         while(nbr && !ret) {
           memcpy(&addr.sin_addr, input+1+offset, sizeof(struct in_addr));
           offset+=sizeof(struct in_addr);
-          ret = tcpls_add_v4(ptls, &addr, 0, 0);
+          ret = tcpls_add_v4(ptls, &addr, 0, 0, 0);
           nbr--;
         }
         return ret;
@@ -860,7 +1027,7 @@ int handle_tcpls_extension_option(ptls_t *ptls, tcpls_enum_t type,
         while (nbr && !ret) {
           memcpy(&addr.sin6_addr, input+1+offset, sizeof(struct in6_addr));
           offset+=sizeof(struct in6_addr);
-          ret = tcpls_add_v6(ptls, &addr, 0, 0);
+          ret = tcpls_add_v6(ptls, &addr, 0, 0, 0);
           nbr--;
         }
         return ret;
@@ -888,12 +1055,8 @@ int handle_tcpls_extension_option(ptls_t *ptls, tcpls_enum_t type,
         //TODO fix this with sending with network order and receiving with host
         //order
         streamid_t streamid = (streamid_t) *input;
-        tcpls_v4_addr_t *addr = get_v4_addr(ptls->tcpls, ptls->tcpls->socket_rcv);
-        tcpls_v6_addr_t *addr6 = NULL;
-        if (!addr) {
-          addr6 = get_v6_addr(ptls->tcpls, ptls->tcpls->socket_rcv);
-        }
-        tcpls_stream_t *stream = stream_new(ptls, streamid, addr, addr6, 0);
+        connect_info_t *con = get_con_info_from_socket(ptls->tcpls, ptls->tcpls->socket_rcv);
+        tcpls_stream_t *stream = stream_new(ptls, streamid, con, 0);
         if (!stream) {
           return PTLS_ERROR_NO_MEMORY;
         }
@@ -1004,9 +1167,7 @@ static int setlocal_bpf_cc(ptls_t *ptls, const uint8_t *prog, size_t proglen) {
  * Compute the value IV to use for the next stream.
  *
  * It allows the counter to start at 0, and MIN_LOWIV_STREAM_INCREASE prevent
- * the AES counter to have a chance to overlap between calls. However, we must
- * have |sever_iv - client_iv| < max_nbr_streams * MIN_LOWIV_STREAM_INCREASE
- * that should be verified during the handshake (TODO)
+ * the AES counter to have a chance to overlap between calls.
  **/
 
 static void stream_derive_new_aead_iv(ptls_t *tls, uint8_t *iv, int iv_size, int is_ours) {
@@ -1044,19 +1205,14 @@ static void stream_derive_new_aead_iv(ptls_t *tls, uint8_t *iv, int iv_size, int
  */
 
 static tcpls_stream_t *stream_new(ptls_t *tls, streamid_t streamid,
-    tcpls_v4_addr_t *addr, tcpls_v6_addr_t *addr6, int is_ours) {
+    connect_info_t *con, int is_ours) {
   tcpls_stream_t *stream = malloc(sizeof(*stream));
   stream->streamid = streamid;
   stream->list_id = streamid;
 
   /** TODO figure out a good default size for the control flow */
   stream->send_queue = tcpls_record_queue_new(500);
-  if (addr) {
-    stream->v4_addr = addr;
-  }
-  else if (addr6) {
-    stream->v6_addr = addr6;
-  }
+  stream->con = con;
   /** Now derive a correct aead context for this stream */
   stream->aead_enc = (ptls_aead_context_t *) malloc(tls->cipher_suite->aead->context_size);
   if (!stream->aead_enc)
@@ -1097,55 +1253,59 @@ static void stream_free(tcpls_stream_t *stream) {
   free(stream);
 }
 
-tcpls_v4_addr_t *get_v4_primary_addr(tcpls_t *tcpls) {
-  tcpls_v4_addr_t *current = tcpls->v4_addr_llist;
-  int has_primary = 0;
-  while (current && !has_primary) {
-    if (current->is_primary) {
-      has_primary = 1;
-      continue;
+static connect_info_t *get_con_info_from_socket(tcpls_t *tcpls, int socket) {
+  connect_info_t *con;
+  for (int i = 0; i < tcpls->connect_infos->size; i++) {
+    con = list_get(tcpls->connect_infos, i);
+    if (con->socket == socket)
+      return con;
+  }
+  return NULL;
+}
+
+/**
+ * look over the connect_info list and set coninfo to the right connect_info
+ */
+static int get_con_info_from_addrs(tcpls_t *tcpls, tcpls_v4_addr_t *src,
+    tcpls_v4_addr_t *dest, tcpls_v6_addr_t *src6, tcpls_v6_addr_t *dest6,
+    connect_info_t *coninfo)
+{
+  connect_info_t *con;
+  for (int i = 0; i < tcpls->connect_infos->size; i++) {
+    con = list_get(tcpls->connect_infos, i);
+    if (dest && con->dest) {
+      if (src && !memcmp(src, con->src, sizeof(*src)) && !memcmp(dest,
+            con->dest, sizeof(*dest))) {
+        coninfo = con;
+        return 0;
+      }
+      else if (!src && !memcmp(dest, con->dest, sizeof(*dest))) {
+        coninfo = con;
+        return 0;
+      }
     }
-    current = current->next;
-  }
-  if (has_primary)
-    return current;
-  return NULL;
-}
-
-/** could do some code cleanup here */
-
-static tcpls_v4_addr_t *get_v4_addr(tcpls_t *tcpls, int socket) {
-  tcpls_v4_addr_t *current = tcpls->v4_addr_llist;
-  while (current) {
-    if (current->socket == socket)
-      return current;
-    current = current->next;
-  }
-  return NULL;
-}
-
-static tcpls_v6_addr_t *get_v6_addr(tcpls_t *tcpls, int socket) {
-  tcpls_v6_addr_t *current = tcpls->v6_addr_llist;
-  while (current) {
-    if (current->socket == socket)
-      return current;
-    current = current->next;
-  }
-  return NULL;
-}
-
-tcpls_v6_addr_t *get_v6_primary_addr(tcpls_t *tcpls) {
-  tcpls_v6_addr_t *current = tcpls->v6_addr_llist;
-  int has_primary = 0;
-  while (current && !has_primary) {
-    if (current->is_primary) {
-      has_primary = 1;
-      continue;
+    else if (dest6 && con->dest6) {
+      if (src6 && !memcmp(src6, con->src6, sizeof(*src6)) && !memcmp(dest6,
+            con->dest6, sizeof(*dest6))) {
+        coninfo = con;
+        return 0;
+      }
+      else if (!src6  && !memcmp(dest6, con->dest6, sizeof(*dest6))) {
+        coninfo = con;
+        return 0;
+      }
     }
-    current = current->next;
   }
-  if (has_primary)
-    return current;
+  return -1;
+}
+
+static connect_info_t * get_primary_con_info(tcpls_t *tcpls) {
+  connect_info_t *con;
+  for (int i = 0; i < tcpls->connect_infos->size; i++) {
+    con = list_get(tcpls->connect_infos, i);
+    if (con->is_primary)
+      return con;
+  }
   return NULL;
 }
 
@@ -1170,48 +1330,33 @@ static int cmp_times(struct timeval *t1, struct timeval *t2) {
  */
 
 static void _set_primary(tcpls_t *tcpls) {
-  tcpls_v4_addr_t *current_v4 = tcpls->v4_addr_llist;
-  tcpls_v6_addr_t *current_v6 = tcpls->v6_addr_llist;
-  tcpls_v4_addr_t *primary_v4 = current_v4;
-  tcpls_v6_addr_t *primary_v6 = current_v6;
   int has_primary = 0;
-#define CHECK_PRIMARY(current, primary) do {                                            \
-  while (current) {                                                                     \
-    if (current->is_primary) {                                                          \
-      has_primary = 1;                                                                  \
-      break;                                                                            \
-    }                                                                                   \
-    if (cmp_times(&primary->connect_time, &current->connect_time) < 0)                  \
-      primary = current;                                                                \
-                                                                                        \
-    current = current->next;                                                            \
-  }                                                                                     \
-} while(0)
-
-  CHECK_PRIMARY(current_v4, primary_v4);
-  if (has_primary)
-    return;
-  CHECK_PRIMARY(current_v6, primary_v6);
-  if (has_primary)
-    return;
-  assert(primary_v4 || primary_v6);
-  /* if we hav a v4 and a v6, compare them */
-  if (primary_v4 && primary_v6) {
-    switch (cmp_times(&primary_v4->connect_time, &primary_v6->connect_time)) {
-      case -1: primary_v4->is_primary = 1;
-               tcpls->socket_primary = primary_v4->socket; break;
-      case 0:
-      case 1: primary_v6->is_primary = 1;
-              tcpls->socket_primary = primary_v6->socket; break;
-      default: primary_v6->is_primary = 1;
-               tcpls->socket_primary = primary_v6->socket; break;
+  connect_info_t *con, *primary_con;
+  primary_con = list_get(tcpls->connect_infos, 0);
+  for (int i = 0; i < tcpls->connect_infos->size; i++) {
+    con = list_get(tcpls->connect_infos, i);
+    if (con->is_primary) {
+      has_primary = 1;
+      break;
     }
-  } else if (primary_v4) {
-    primary_v4->is_primary = 1;
-  } else if (primary_v6) {
-    primary_v6->is_primary = 1;
+    if (cmp_times(&primary_con->connect_time, &con->connect_time) < 0)
+      primary_con = con;
   }
-#undef CHEK_PRIMARY
+  if (has_primary) {
+    tcpls->socket_primary = primary_con->socket;
+    return;
+  }
+  
+  tcpls->socket_primary = primary_con->socket;
+  /* set the primary bit to the addresses */
+  if (primary_con->src)
+    primary_con->src->is_primary = 1;
+  if (primary_con->src6)
+    primary_con->src6->is_primary = 1;
+  if (primary_con->dest)
+    primary_con->dest->is_primary = 1;
+  if (primary_con->dest6)
+    primary_con->dest6->is_primary = 1;
 }
 
 static int is_varlen(tcpls_enum_t type) {
@@ -1241,6 +1386,7 @@ void tcpls_free(tcpls_t *tcpls) {
   free(tcpls->sendbuf);
   free(tcpls->recvbuf);
   list_free(tcpls->streams);
+  list_free(tcpls->connect_infos);
   ptls_tcpls_options_free(tcpls);
 #define FREE_ADDR_LLIST(current, next) do {              \
   if (!next) {                                           \
