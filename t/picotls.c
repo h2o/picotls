@@ -1960,8 +1960,11 @@ static void test_tcpls_addresses(void)
   inet_pton(AF_INET, "192.168.1.1", &addr2.sin_addr);
   ok(tcpls_add_v4(tcpls_server->tls, &addr, 1, 1, 1) == 0);
   ok(tcpls_add_v4(tcpls->tls, &addr2, 1, 0, 0) == 0);
+  assert(tcpls->v4_addr_llist);
   ok(tcpls->v4_addr_llist->is_primary == 1);
   ok(tcpls->v4_addr_llist->next == NULL);
+  assert(tcpls_server->ours_v4_addr_llist);
+  ok(tcpls_server->ours_v4_addr_llist->is_primary == 1);
   struct sockaddr_in6 addr6;
   bzero(&addr6, sizeof(addr6));
   addr6.sin6_port = htons(443);
@@ -1969,6 +1972,8 @@ static void test_tcpls_addresses(void)
   ok(tcpls_add_v6(tcpls->tls, &addr6, 0, 1, 0) == 0);
   ok(tcpls_add_v6(tcpls->tls, &addr6, 0, 1, 0) == -1);
   ok(tcpls->tcpls_options->size == 1);
+  tcpls_v6_addr_t *peer_v6 = get_addr6_from_sockaddr(tcpls->v6_addr_llist, &addr6);
+  assert(peer_v6);
   tcpls_options_t *option;
   for (int i = 0; i < tcpls->tcpls_options->size; i++) {
     option = list_get(tcpls->tcpls_options, i);
@@ -2028,6 +2033,10 @@ static void test_tcpls_addresses(void)
       ok(option->data->len == 2*sizeof(struct in_addr) + 1);
     }
   }
+  
+  tcpls_v4_addr_t *received_addr = get_addr_from_sockaddr(tcpls->v4_addr_llist, &addr2);
+  assert(received_addr);
+  ok(memcmp(&received_addr->addr, &addr2, sizeof(addr2)) == 0);
 
   ptls_buffer_dispose(&cbuf);
   ptls_buffer_dispose(&sbuf);
