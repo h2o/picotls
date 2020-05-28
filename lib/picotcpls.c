@@ -80,6 +80,7 @@ static tcpls_v6_addr_t *get_addr6_from_sockaddr(tcpls_v6_addr_t *llist, struct s
 static connect_info_t *get_primary_con_info(tcpls_t *tcpls);
 static tcpls_stream_t *stream_get(tcpls_t *tcpls, streamid_t streamid);
 static tcpls_stream_t *stream_helper_new(tcpls_t *tcpls, connect_info_t *con);
+static int new_stream_derive_aead_context(ptls_t *tls, tcpls_stream_t *stream, int is_ours);
 static int handle_connect(tcpls_t *tcpls, tcpls_v4_addr_t *src, tcpls_v4_addr_t
     *dest, tcpls_v6_addr_t *src6, tcpls_v6_addr_t *dest6, unsigned short sa_family,
     int *nfds, int *maxfds, connect_info_t *coninfo, fd_set *wset);
@@ -126,7 +127,10 @@ int static add_v4_to_options(tcpls_t *tcpls, uint8_t n) {
   uint8_t *addresses = malloc(sizeof(struct in_addr)+1);
   if (!addresses)
     return PTLS_ERROR_NO_MEMORY;
-  tcpls_v4_addr_t *current = tcpls->v4_addr_llist;
+  tcpls_v4_addr_t *current = tcpls->ours_v4_addr_llist;
+  if (!current) {
+    return -1;
+  }
   int i = 1;
   while (current && i < sizeof(struct in_addr)+1) {
     memcpy(&addresses[i], &current->addr.sin_addr, sizeof(struct in_addr));
@@ -142,9 +146,11 @@ int static add_v6_to_options(tcpls_t *tcpls, uint8_t n) {
   uint8_t *addresses = malloc(sizeof(struct in6_addr)+1);
   if (!addresses)
     return PTLS_ERROR_NO_MEMORY;
-  tcpls_v6_addr_t *current = tcpls->v6_addr_llist;
+  tcpls_v6_addr_t *current = tcpls->ours_v6_addr_llist;
+  if (!current)
+    return -1;
   int i = 1;
-  while (current &&i < 16*n+1) {
+  while (current && i < sizeof(struct in6_addr)+1) {
     memcpy(&addresses[i], &current->addr.sin6_addr.s6_addr, sizeof(struct in6_addr));
     i+=sizeof(struct in6_addr);
     current = current->next;
@@ -318,6 +324,7 @@ int tcpls_connect(ptls_t *tls, struct sockaddr *src, struct sockaddr *dest,
     if (src->sa_family == AF_INET) {
       tcpls_v4_addr_t *current_v4 = tcpls->v4_addr_llist;
       tcpls_v4_addr_t* ours_v4 = get_addr_from_sockaddr(tcpls->ours_v4_addr_llist, (struct sockaddr_in *)src);
+      /** src should have been added with tcpls_add_v4 first */
       if (!ours_v4)
         return -1;
       while (current_v4) {
@@ -450,26 +457,36 @@ streamid_t tcpls_stream_new(ptls_t *tls, struct sockaddr *src, struct sockaddr *
   /** Check first whether a stream isn't already attach to this addr */
   tcpls_t *tcpls = tls->tcpls;
   assert(tcpls);
+  if (!dest)
+    return 0;
   connect_info_t coninfo;
+  memset(&coninfo, 0, sizeof(coninfo));
   connect_info_t *con_stored;
   int ret;
   tcpls_v4_addr_t *src_addr = NULL;
   tcpls_v6_addr_t *src6_addr = NULL;
   tcpls_v4_addr_t *dest_addr = NULL;
   tcpls_v6_addr_t *dest6_addr = NULL;
-  if (src->sa_family == AF_INET && dest->sa_family == AF_INET) {
-    if (src)
-      src_addr = get_addr_from_sockaddr(tcpls->ours_v4_addr_llist, (struct sockaddr_in *)src);
-    tcpls_v4_addr_t *dest_addr = get_addr_from_sockaddr(tcpls->v4_addr_llist,
+  if (src && src->sa_family == AF_INET) {
+    src_addr = get_addr_from_sockaddr(tcpls->ours_v4_addr_llist, (struct sockaddr_in *)src);
+    if (!src_addr) 
+      return 0;
+  }
+  else if (src && src->sa_family == AF_INET6) {
+    src6_addr = get_addr6_from_sockaddr(tcpls->ours_v6_addr_llist, (struct sockaddr_in6*) src);
+    if (!src6_addr)
+      return 0;
+  }
+
+  if (dest->sa_family == AF_INET) {
+    dest_addr = get_addr_from_sockaddr(tcpls->v4_addr_llist,
         (struct sockaddr_in *) dest);
     assert(dest_addr); /**debugging mode*/
     if (!dest_addr)
       return 0;
     ret = get_con_info_from_addrs(tcpls, src_addr, dest_addr, NULL, NULL, &coninfo);
   }
-  else if (src->sa_family ==  AF_INET6 && dest->sa_family == AF_INET6) {
-    if (src)
-      src6_addr = get_addr6_from_sockaddr(tcpls->ours_v6_addr_llist, (struct sockaddr_in6*) src);
+  else if (dest->sa_family == AF_INET6) {
     dest6_addr = get_addr6_from_sockaddr(tcpls->v6_addr_llist, (struct sockaddr_in6 *) dest);
     assert(dest6_addr);
     if (!dest6_addr)
@@ -514,9 +531,11 @@ streamid_t tcpls_stream_new(ptls_t *tls, struct sockaddr *src, struct sockaddr *
     /** get back this copy */
     con_stored = list_get(tcpls->connect_infos, tcpls->connect_infos->size-1);
   }
+  if (!ret)
+    con_stored = &coninfo;
   tcpls_stream_t *stream = stream_helper_new(tcpls, con_stored);
   if (!stream)
-    return -1;
+    return 0;
   list_add(tcpls->streams, stream);
   /** send a stream new if we already connected */
   //TODO
@@ -549,7 +568,7 @@ ssize_t tcpls_send(ptls_t *tls, streamid_t streamid, const void *input, size_t n
   tcpls_stream_t *stream;
   /*int is_failover_enabled = 0;*/
   /** Check the state of connections first do we have our primary connected tcp? */
-  if (!streamid && !tcpls->socket_primary) {
+  if ((!streamid && !tcpls->socket_primary) || !ptls_handshake_is_complete(tls)) {
     return -1;
   }
   /** Check whether we already have a stream open; if not, build a stream
@@ -573,6 +592,13 @@ ssize_t tcpls_send(ptls_t *tls, streamid_t streamid, const void *input, size_t n
   }
   else {
     stream = stream_get(tcpls, streamid);
+    /** check whether we have to initiate this stream; it might have been
+     * created before the handshake */
+    if (!stream->aead_initialized) {
+      if (new_stream_derive_aead_context(tls, stream, 1)) {
+        return -1;
+      }
+    }
   }
   if (!stream)
     return -1;
@@ -1069,6 +1095,8 @@ int handle_tcpls_extension_option(ptls_t *ptls, tcpls_enum_t type,
         if (!stream) {
           return PTLS_ERROR_NO_MEMORY;
         }
+        /** an absolute number that should not reduce at stream close */
+        ptls->tcpls->nbr_of_peer_streams_attached++;
         list_add(ptls->tcpls->streams, stream);
         return 0;
       }
@@ -1204,6 +1232,28 @@ static void stream_derive_new_aead_iv(ptls_t *tls, uint8_t *iv, int iv_size, int
   }
 }
 
+
+static int new_stream_derive_aead_context(ptls_t *tls, tcpls_stream_t *stream, int is_ours) {
+  
+  stream->aead_enc = (ptls_aead_context_t *) malloc(tls->cipher_suite->aead->context_size);
+  if (!stream->aead_enc)
+    return PTLS_ERROR_NO_MEMORY;
+  memcpy(stream->aead_enc, &tls->traffic_protection.enc, sizeof(tls->traffic_protection.enc));
+  /** restart the counter */
+  stream->aead_enc->seq = 0;
+  /** now change the lower half bits of the IV to avoid collisions */
+  stream_derive_new_aead_iv(tls, stream->aead_enc->static_iv,
+      tls->cipher_suite->aead->iv_size, is_ours);
+  stream->aead_dec = (ptls_aead_context_t *) malloc(tls->cipher_suite->aead->context_size);
+  if (stream->aead_dec)
+    return PTLS_ERROR_NO_MEMORY;
+  memcpy(stream->aead_dec, &tls->traffic_protection.dec, sizeof(tls->traffic_protection.dec));
+  stream->aead_dec->seq = 0;
+  stream_derive_new_aead_iv(tls, stream->aead_dec->static_iv,
+      tls->cipher_suite->aead->iv_size, is_ours);
+  return 0;
+}
+
 /**
  * Create a new stream and attach it to a local addr.
  * if addr is set, addr6 must be NULL;
@@ -1222,25 +1272,23 @@ static tcpls_stream_t *stream_new(ptls_t *tls, streamid_t streamid,
   /** TODO figure out a good default size for the control flow */
   stream->send_queue = tcpls_record_queue_new(500);
   stream->con = con;
+  if (ptls_handshake_is_complete(tls)) {
   /** Now derive a correct aead context for this stream */
-  stream->aead_enc = (ptls_aead_context_t *) malloc(tls->cipher_suite->aead->context_size);
-  if (!stream->aead_enc)
-    return NULL;
-  memcpy(stream->aead_enc, &tls->traffic_protection.enc, sizeof(tls->traffic_protection.enc));
-  /** restart the counter */
-  stream->aead_enc->seq = 0;
-  /** now change the lower half bits of the IV to avoid collisions */
-  stream_derive_new_aead_iv(tls, stream->aead_enc->static_iv,
-      tls->cipher_suite->aead->iv_size, is_ours);
-  stream->aead_dec = (ptls_aead_context_t *) malloc(tls->cipher_suite->aead->context_size);
-  if (stream->aead_dec)
-    return NULL;
-  memcpy(stream->aead_dec, &tls->traffic_protection.dec, sizeof(tls->traffic_protection.dec));
-  stream->aead_dec->seq = 0;
-  stream_derive_new_aead_iv(tls, stream->aead_dec->static_iv,
-      tls->cipher_suite->aead->iv_size, is_ours);
+    new_stream_derive_aead_context(tls, stream, is_ours);
+    stream->aead_initialized = 1;
+  }
+  else {
+    stream->aead_enc = NULL;
+    stream->aead_dec = NULL;
+    stream->aead_initialized = 0;
+  }
   return stream;
 }
+
+
+/**
+ * TODO: improve by adding an offset to stream id and get streams in O(1)
+ */
 
 tcpls_stream_t *stream_get(tcpls_t *tcpls, streamid_t streamid) {
   if (!tcpls->streams)

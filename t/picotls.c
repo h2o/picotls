@@ -1954,8 +1954,11 @@ static void test_tcpls_addresses(void)
   tcpls_t *tcpls_server = tcpls_new(ctx_peer, 1);
   struct sockaddr_in addr, addr2;
   bzero(&addr, sizeof(addr));
+  bzero(&addr2, sizeof(addr2));
   addr.sin_port = htons(443);
+  addr.sin_family = AF_INET;
   addr2.sin_port = htons(443);
+  addr2.sin_family = AF_INET;
   inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
   inet_pton(AF_INET, "192.168.1.1", &addr2.sin_addr);
   ok(tcpls_add_v4(tcpls_server->tls, &addr, 1, 1, 1) == 0);
@@ -1968,23 +1971,20 @@ static void test_tcpls_addresses(void)
   struct sockaddr_in6 addr6;
   bzero(&addr6, sizeof(addr6));
   addr6.sin6_port = htons(443);
-  inet_pton(AF_INET, "::1", &addr6.sin6_addr);
-  ok(tcpls_add_v6(tcpls->tls, &addr6, 0, 1, 0) == 0);
-  ok(tcpls_add_v6(tcpls->tls, &addr6, 0, 1, 0) == -1);
-  ok(tcpls->tcpls_options->size == 1);
+  addr6.sin6_family = AF_INET6;
+  inet_pton(AF_INET6, "::1", &addr6.sin6_addr);
+  ok(tcpls_add_v6(tcpls->tls, &addr6, 0, 0, 0) == 0);
+  ok(tcpls_add_v6(tcpls->tls, &addr6, 0, 0, 0) == -1);
+  ok(tcpls->tcpls_options->size == 0);
   tcpls_v6_addr_t *peer_v6 = get_addr6_from_sockaddr(tcpls->v6_addr_llist, &addr6);
   assert(peer_v6);
   tcpls_options_t *option;
-  for (int i = 0; i < tcpls->tcpls_options->size; i++) {
-    option = list_get(tcpls->tcpls_options, i);
+  for (int i = 0; i < tcpls_server->tcpls_options->size; i++) {
+    option = list_get(tcpls_server->tcpls_options, i);
     ok(option->type == MULTIHOMING_v4 || option->type == MULTIHOMING_v6);
     if (option->type == MULTIHOMING_v4) {
       ok(*(uint8_t*) option->data->base == 1);
       ok(memcmp(&option->data->base[1], &addr.sin_addr, sizeof(addr.sin_addr)) == 0);
-    }
-    else if (option->type == MULTIHOMING_v6) {
-      ok(*(uint8_t*) option->data->base == 1);
-      ok(memcmp(&option->data->base[1], &addr6.sin6_addr, sizeof(addr6.sin6_addr)) == 0);
     }
   }
   ptls_t *client, *server;
@@ -1992,7 +1992,7 @@ static void test_tcpls_addresses(void)
   ctx_peer->support_tcpls_options = 1;
   /** Activate failover  for exchanging addresses */
   ctx_peer->failover = 1;
-  /*ctx->failover = 1;*/
+  ctx->failover = 1;
 
   ptls_buffer_t cbuf, sbuf;
   size_t coffs[5] = {0}, soffs[5];
@@ -2034,9 +2034,9 @@ static void test_tcpls_addresses(void)
     }
   }
   
-  tcpls_v4_addr_t *received_addr = get_addr_from_sockaddr(tcpls->v4_addr_llist, &addr2);
+  tcpls_v4_addr_t *received_addr = get_addr_from_sockaddr(tcpls->v4_addr_llist, &addr);
   assert(received_addr);
-  ok(memcmp(&received_addr->addr, &addr2, sizeof(addr2)) == 0);
+  ok(memcmp(&received_addr->addr, &addr, sizeof(addr)) == 0);
 
   ptls_buffer_dispose(&cbuf);
   ptls_buffer_dispose(&sbuf);
@@ -2053,8 +2053,76 @@ static void test_tcpls_addresses(void)
 static void test_tcpls_stream_api(void)
 {
   tcpls_t *tcpls = tcpls_new(ctx, 0);
+  tcpls_t *tcpls_server = tcpls_new(ctx_peer, 1);
   ok(tcpls != NULL);
+  struct sockaddr_in addr, addr2;
+  bzero(&addr, sizeof(addr));
+  bzero(&addr2, sizeof(addr2));
+  addr.sin_port = htons(443);
+  addr.sin_family = AF_INET;
+  addr2.sin_port = htons(443);
+  addr2.sin_family = AF_INET;
+  inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+  inet_pton(AF_INET, "192.168.1.1", &addr2.sin_addr);
+  ok(tcpls_add_v4(tcpls_server->tls, &addr, 1, 1, 1) == 0);
+  ok(tcpls_add_v4(tcpls->tls, &addr2, 1, 0, 0) == 0);
+  struct sockaddr_in6 addr6;
+  bzero(&addr6, sizeof(addr6));
+  addr6.sin6_port = htons(443);
+  addr6.sin6_family = AF_INET6;
+  inet_pton(AF_INET6, "::1", &addr6.sin6_addr);
+  ok(tcpls_add_v6(tcpls->tls, &addr6, 0, 0, 0) == 0);
+  /** Add a stream to the known address before the handshake took place */
+  ok(tcpls_stream_new(tcpls->tls, NULL, (struct sockaddr *) &addr2) == 1);
+  ptls_t *client, *server;
+  ctx->support_tcpls_options = 1;
+  ctx_peer->support_tcpls_options = 1;
+  /** Activate failover  for exchanging addresses */
+  ctx_peer->failover = 1;
+  ctx->failover = 1;
+
+  ptls_buffer_t cbuf, sbuf;
+  size_t coffs[5] = {0}, soffs[5];
+  /*static ptls_on_extension_t cb = {on_extension_cb};*/
+  ctx_peer->on_extension = NULL;
+  ctx->on_extension = NULL;
+  int ret;
+
+  ptls_buffer_init(&cbuf, "", 0);
+  ptls_buffer_init(&sbuf, "", 0);
+  client = tcpls->tls;
+  server = tcpls_server->tls;
+
+  ret = ptls_handle_message(client, &cbuf, coffs, 0, NULL, 0, NULL);
+  ok(ret == PTLS_ERROR_IN_PROGRESS);
+  ret = feed_messages(server, &sbuf, soffs, cbuf.base, coffs, NULL);
+  ok(ret == 0);
+  ok(sbuf.off != 0);
+  ok(!ptls_handshake_is_complete(server));
+  ok(ctx_peer->tcpls_options_confirmed == 1);
+  ret = feed_messages(client, &cbuf, coffs, sbuf.base, soffs, NULL);
+  ok(ret == 0);
+  ok(cbuf.off != 0);
+  ok(ptls_handshake_is_complete(client));
+  ok(ctx->tcpls_options_confirmed == 1);
+
+  ret = feed_messages(server, &sbuf, soffs, cbuf.base, coffs, NULL);
+  ok(ret == 0);
+  ok(sbuf.off == 0);
+  ok(ptls_handshake_is_complete(server));
+  
+  ok(tcpls_stream_new(tcpls->tls, NULL, (struct sockaddr *) &addr) == 2);
+
+  ptls_buffer_dispose(&cbuf);
+  ptls_buffer_dispose(&sbuf);
+  ctx->tcpls_options_confirmed = 0;
+  ctx_peer->tcpls_options_confirmed = 0;
+  ctx->support_tcpls_options = 0;
+  ctx_peer->support_tcpls_options = 0;
+  ctx->failover = 0;
+  ctx_peer->failover = 0;
   tcpls_free(tcpls);
+  tcpls_free(tcpls_server);
 }
 
 static void test_tcpls_api(void)

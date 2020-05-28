@@ -83,6 +83,11 @@ typedef struct st_tcpls_stream {
   /** if put within a list_t, this structure should have a list_id for
    * genericity */
   uint32_t list_id;
+  /**
+   * Whether we still have to initialize the aead context for this stream.
+   * That may happen if this stream is created before the handshake took place.
+   */
+  unsigned aead_initialized : 1;
   /** Note: The following contexts use the same key; but a different counter and
    * IV
    */
