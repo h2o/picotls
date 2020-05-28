@@ -107,6 +107,8 @@ void *tcpls_new(void *ctx, int is_server) {
   ptls_ctx->output_decrypted_tcpls_data = 1;
   tcpls->socket_primary = 0;
   tcpls->socket_rcv = 0;
+  tcpls->ours_v4_addr_llist = NULL;
+  tcpls->ours_v6_addr_llist = NULL;
   tcpls->v4_addr_llist = NULL;
   tcpls->v6_addr_llist = NULL;
   tcpls->nbr_of_peer_streams_attached = 0;
@@ -858,6 +860,7 @@ static int handle_connect(tcpls_t *tcpls, tcpls_v4_addr_t *src, tcpls_v4_addr_t
   if (ret) {
     list_add(tcpls->connect_infos, coninfo);
   }
+  return 0;
 }
 
 /**
@@ -1408,6 +1411,16 @@ void tcpls_free(tcpls_t *tcpls) {
   if (tcpls->v6_addr_llist) {
     tcpls_v6_addr_t *current = tcpls->v6_addr_llist;
     tcpls_v6_addr_t *next = current->next;
+    FREE_ADDR_LLIST(current, next);
+  }
+  if (tcpls->ours_v4_addr_llist) {
+    tcpls_v4_addr_t *current = tcpls->ours_v4_addr_llist;
+    tcpls_v4_addr_t *next = tcpls->ours_v4_addr_llist->next;
+    FREE_ADDR_LLIST(current, next);
+  }
+  if (tcpls->ours_v6_addr_llist) {
+    tcpls_v6_addr_t *current = tcpls->ours_v6_addr_llist;
+    tcpls_v6_addr_t *next = tcpls->ours_v6_addr_llist->next;
     FREE_ADDR_LLIST(current, next);
   }
 #undef FREE_ADDR_LLIST
