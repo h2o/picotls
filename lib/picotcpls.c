@@ -79,6 +79,7 @@ static int get_con_info_from_addrs(tcpls_t *tcpls, tcpls_v4_addr_t *src,
 static tcpls_v4_addr_t *get_addr_from_sockaddr(tcpls_v4_addr_t *llist, struct sockaddr_in *addr);
 static tcpls_v6_addr_t *get_addr6_from_sockaddr(tcpls_v6_addr_t *llist, struct sockaddr_in6 *addr);
 static connect_info_t *get_primary_con_info(tcpls_t *tcpls);
+static tcpls_stream_t *get_stream_from_socket(tcpls_t *tcpls, int socket);
 static tcpls_stream_t *stream_get(tcpls_t *tcpls, streamid_t streamid);
 static tcpls_stream_t *stream_helper_new(tcpls_t *tcpls, connect_info_t *con);
 static void check_stream_attach_have_been_sent(tcpls_t *tcpls, int consumed);
@@ -594,6 +595,15 @@ int tcpls_streams_attach(ptls_t *tls, int sendnow) {
     }
     /** Mark streams usables */
     check_stream_attach_have_been_sent(tcpls, ret);
+    /** did we sent everything? =) */
+    if (tcpls->sendbuf->off == tcpls->send_start + ret) {
+      tcpls->sendbuf->off = 0;
+      tcpls->send_start = 0;
+      tcpls->check_stream_attach_sent = 0;
+    }
+    else if (ret+tcpls->send_start < tcpls->sendbuf->off) {
+      tcpls->send_start += ret;
+    }
   }
   return ret;
 }
@@ -678,7 +688,8 @@ ssize_t tcpls_send(ptls_t *tls, streamid_t streamid, const void *input, size_t n
     default: return ret;
   }
   /** Send over the socket's stream */
-  ret = send(stream->con->socket, tcpls->sendbuf->base, tcpls->sendbuf->off, 0);
+  ret = send(stream->con->socket, tcpls->sendbuf->base+tcpls->send_start,
+      tcpls->sendbuf->off-tcpls->send_start, 0);
   if (ret < 0) {
     /** The peer reset the connection */
     if (errno == ECONNRESET) {
@@ -695,6 +706,15 @@ ssize_t tcpls_send(ptls_t *tls, streamid_t streamid, const void *input, size_t n
   }
   if (tcpls->check_stream_attach_sent) {
     check_stream_attach_have_been_sent(tcpls, ret);
+  }
+  /** did we sent everything? =) */
+  if (tcpls->sendbuf->off == tcpls->send_start + ret) {
+    tcpls->sendbuf->off = 0;
+    tcpls->send_start = 0;
+    tcpls->check_stream_attach_sent = 0;
+  }
+  else if (ret+tcpls->send_start < tcpls->sendbuf->off) {
+    tcpls->send_start += ret;
   }
   return 0;
 }
@@ -743,11 +763,20 @@ ssize_t tcpls_receive(ptls_t *tls, void *buf, size_t nbytes, struct timeval *tv)
     ptls_buffer_t decryptbuf;
     ptls_buffer_init(&decryptbuf, "", ret);
     //TODO put the right decryption context
+    tcpls_stream_t *stream = get_stream_from_socket(tcpls, tcpls->socket_rcv);
+    if (!stream)
+      return -1;
+
+    ptls_aead_context_t *remember_aead = tcpls->tls->traffic_protection.dec.aead;
+    // get the right  aead context matching the stream id
+    // This is done for compabitility with original PTLS's unit tests
+    tcpls->tls->traffic_protection.dec.aead = stream->aead_dec;
     if ((ptls_receive(tls, &decryptbuf, input, (size_t*)&ret) != 0)) {
       ptls_buffer_dispose(&decryptbuf);
       list_free(socklist);
       return ret;
     }
+    tcpls->tls->traffic_protection.dec.aead = remember_aead;
     memcpy(buf, decryptbuf.base, decryptbuf.off);
     ret = decryptbuf.off;
     ptls_buffer_dispose(&decryptbuf);
@@ -872,7 +901,11 @@ int ptls_set_bpf_cc(ptls_t *ptls, const uint8_t *bpf_prog_bytecode, size_t bytec
 
 /*===================================Internal========================================*/
 
-
+/**
+ * Verify whether the position of the stream attach event event has been
+ * consumed by a blocking send system call; as soon as it has been, the stream
+ * is usable
+ */
 static void check_stream_attach_have_been_sent(tcpls_t *tcpls, int consumed) {
   tcpls_stream_t *stream;
   for (int i = 0; i < tcpls->streams->size; i++) {
@@ -883,15 +916,6 @@ static void check_stream_attach_have_been_sent(tcpls_t *tcpls, int consumed) {
       stream->send_stream_attach_in_sendbuf_pos = 0; // reset it
       /** fire callback ! TODO */
     }
-  }
-  /** we sent everything =) */
-  if (tcpls->sendbuf->off == tcpls->send_start + consumed) {
-    tcpls->sendbuf->off = 0;
-    tcpls->send_start = 0;
-    tcpls->check_stream_attach_sent = 0;
-  }
-  else if (consumed+tcpls->send_start < tcpls->sendbuf->off) {
-    tcpls->send_start += consumed;
   }
 }
 
@@ -1396,6 +1420,18 @@ tcpls_stream_t *stream_get(tcpls_t *tcpls, streamid_t streamid) {
   for (int i = 0; i < tcpls->streams->size; i++) {
     stream = list_get(tcpls->streams, i);
     if (stream->streamid == streamid)
+      return stream;
+  }
+  return NULL;
+}
+
+static tcpls_stream_t *get_stream_from_socket(tcpls_t *tcpls, int socket) {
+  if (!tcpls->streams)
+    return NULL;
+  tcpls_stream_t *stream;
+  for (int i = 0; i < tcpls->streams->size; i++) {
+    stream = list_get(tcpls->streams, i);
+    if (stream->con->socket == socket)
       return stream;
   }
   return NULL;
