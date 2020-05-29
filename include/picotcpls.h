@@ -80,9 +80,20 @@ typedef struct st_tcpls_stream {
    **/
   tcpls_record_fifo_t *send_queue;
   streamid_t streamid;
-  /** if put within a list_t, this structure should have a list_id for
-   * genericity */
-  uint32_t list_id;
+  /** when this stream should first send an attach event before
+   * sending any packet */
+  unsigned need_sending_attach_event  : 1;
+  
+  /**
+   * As soon as we have sent a stream attach event to the other peer, this
+   * stream is usable
+   */
+  unsigned stream_usable : 1;
+  
+  /** end positio of the stream control event message in the current sending
+   * buffer*/
+  int send_stream_attach_in_sendbuf_pos;
+
   /**
    * Whether we still have to initialize the aead context for this stream.
    * That may happen if this stream is created before the handshake took place.
@@ -104,6 +115,10 @@ struct st_tcpls_t {
   ptls_t *tls;
   /* Sending buffer */
   ptls_buffer_t *sendbuf;
+  
+  /** If we did not manage to empty sendbuf in one send call */
+  int send_start;
+
   /* Receiving buffer */
   ptls_buffer_t *recvbuf;
   /** Linked List of address to be used for happy eyeball
@@ -120,6 +135,8 @@ struct st_tcpls_t {
   list_t *tcpls_options;
   /** Should contain all streams */
   list_t *streams;
+  /** We have stream control event to check */
+  unsigned check_stream_attach_sent : 1;
   /** Contains the state of connected src and dest addresses */
   list_t *connect_infos;
  
@@ -155,6 +172,8 @@ int tcpls_add_v6(ptls_t *tls, struct sockaddr_in6 *addr, int is_primary, int
     settopeer, int is_ours);
 
 uint32_t tcpls_stream_new(ptls_t *tls, struct sockaddr *src, struct sockaddr *addr);
+
+int tcpls_streams_attach(ptls_t *tls, int sendnow);
 
 int tcpls_stream_close(ptls_t *tls, streamid_t streamid);
 
