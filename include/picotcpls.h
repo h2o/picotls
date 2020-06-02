@@ -89,7 +89,11 @@ typedef struct st_tcpls_stream {
    * stream is usable
    */
   unsigned stream_usable : 1;
-  
+
+  /**
+   * the stream should be cleaned up the next time tcpls_send is called
+   */
+  unsigned marked_for_close : 1;
   /** end positio of the stream control event message in the current sending
    * buffer*/
   int send_stream_attach_in_sendbuf_pos;
@@ -137,6 +141,9 @@ struct st_tcpls_t {
   list_t *streams;
   /** We have stream control event to check */
   unsigned check_stream_attach_sent : 1;
+  /** We have stream marked for close; close them after sending the control
+   * message  */
+  unsigned streams_marked_for_close : 1;
   /** Contains the state of connected src and dest addresses */
   list_t *connect_infos;
  

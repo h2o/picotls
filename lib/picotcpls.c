@@ -119,6 +119,7 @@ void *tcpls_new(void *ctx, int is_server) {
   tcpls->nbr_of_peer_streams_attached = 0;
   tcpls->nbr_tcp_streams = 0;
   tcpls->check_stream_attach_sent = 0;
+  tcpls->streams_marked_for_close = 0;
   tcpls->tcpls_options = new_list(sizeof(tcpls_options_t), NBR_SUPPORTED_TCPLS_OPTIONS);
   tcpls->streams = new_list(sizeof(tcpls_stream_t), 3);
   tcpls->connect_infos = new_list(sizeof(connect_info_t), 2);
@@ -653,6 +654,14 @@ int tcpls_stream_close(ptls_t *tls, streamid_t streamid, int sendnow) {
     else if (ret+tcpls->send_start < tcpls->sendbuf->off) {
       tcpls->send_start += ret;
     }
+    close(stream->con->socket);
+    list_remove(tcpls->streams, stream);
+    stream_free(stream);
+  }
+  else {
+    stream->marked_for_close = 1;
+    stream->stream_usable = 0;
+    tcpls->streams_marked_for_close = 1;
   }
   return 0;
 }
@@ -753,6 +762,18 @@ ssize_t tcpls_send(ptls_t *tls, streamid_t streamid, const void *input, size_t n
     tcpls->sendbuf->off = 0;
     tcpls->send_start = 0;
     tcpls->check_stream_attach_sent = 0;
+    /** Do we have stream cleanup to do ? */
+    if (tcpls->streams_marked_for_close) {
+      for (int i = 0; i < tcpls->streams->size; i++) {
+        stream = list_get(tcpls->streams, i);
+        if (stream->marked_for_close) {
+          close(stream->con->socket);
+          list_remove(tcpls->streams, stream);
+          stream_free(stream);
+        }
+      }
+      tcpls->streams_marked_for_close = 0;
+    }
   }
   else if (ret+tcpls->send_start < tcpls->sendbuf->off) {
     tcpls->send_start += ret;
@@ -1230,7 +1251,7 @@ int handle_tcpls_extension_option(ptls_t *ptls, tcpls_enum_t type,
          return -1;
        }
        /** Note, we current assume only one stream per address */
-       close(ptls->tcpls->socket_rcv);
+       close(stream->con->socket);
        list_remove(ptls->tcpls->streams, stream);
        stream_free(stream);
        //TODO make an application callback
