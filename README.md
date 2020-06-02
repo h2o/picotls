@@ -1,33 +1,58 @@
-picotls
+picotcpls
 ===
 
-[![Build Status](https://travis-ci.org/h2o/picotls.svg?branch=master)](https://travis-ci.org/h2o/picotls)
+Picotcpls is a fork of [picotls](https://github.com/h2o/picotls), a  [TLS 1.3 (RFC 8446)](https://tools.ietf.org/html/rfc8446) protocol stack written in C, with the following features:
 
-Picotls is a [TLS 1.3 (RFC 8446)](https://tools.ietf.org/html/rfc8446) protocol stack written in C, with the following features:
-* support for two crypto engines
-  * "OpenSSL" backend using libcrypto for crypto and X.509 operations
-  * "minicrypto" backend using [cifra](https://github.com/ctz/cifra) for most crypto and [micro-ecc](https://github.com/kmackay/micro-ecc) for secp256r1
-* support for PSK, PSK-DHE resumption using 0-RTT
-* API for dealing directly with TLS handshake messages (essential for QUIC)
-* support for new extensions: Encrypted SNI (wg-draft-02), Certificate Compression (wg-draft-10)
+* From picotls:
+  * support for two crypto engines
+    * "OpenSSL" backend using libcrypto for crypto and X.509 operations
+    * "minicrypto" backend using [cifra](https://github.com/ctz/cifra) for most crypto and [micro-ecc](https://github.com/kmackay/micro-ecc) for secp256r1
+  * support for PSK, PSK-DHE resumption using 0-RTT
+  * API for dealing directly with TLS handshake messages (essential for QUIC)
+  * support for new extensions: Encrypted SNI (wg-draft-02), Certificate Compression (wg-draft-10)
+* From TCPLS:
+  * API to deal with a novel TCP extensibility mechanism
+    * Allows setting and configuring the peer's TCP stack for our
+      connections
+    * Can inject BPF bytecode to the peer to set a new congestion
+      control mechanism
+    * Essentially any TCP socket option (a few are supported so far)
+  * A wrapper to handle network connections
+  * QUIC-like streams
+  * A Failover mechanism
+  * (ongoing: Authenticated connection closing)
+  * (ongoing: multipathing)
 
-Primary goal of the project is to create a fast, tiny, low-latency TLS 1.3 implementation that can be used with the HTTP/2 protocol stack and the upcoming QUIC stack of the [H2O HTTP/2 server](https://h2o.examp1e.net).
 
-The TLS protocol implementation of picotls is licensed under the MIT license.
+picotcpls is a research-level implementation of TCPLS, a novel
+cross-layer extensibility mechanism for TCP designed to offer a
+fine-grained control of the transport protocol to the application layer.
+The mere existence of this research comes from several observations:
 
-License and the cryptographic algorithms supported by the crypto bindings are as follows:
+* TLS is now massively deployed, and we should not expect unsecure TCP
+  connections to occur over untrusted networks anymore.
+* TCP suffers from severe extensibility issues caused by middlebox
+  interferences, lack of space in its header and the difficulty to
+  propagate new implementation features
+* There is a performance gap between what some application usage get
+  (e.g., web), and what they could expect to get with proper
+  configuration of the transport layer to match their usage of the
+  network.
 
-| Binding | License | Key Exchange | Certificate | AEAD cipher |
-|:-----:|:-----:|:-----:|:-----:|:-----:|
-| minicrypto | [CC0](https://github.com/ctz/cifra/) / [2-clause BSD](https://github.com/kmackay/micro-ecc) | secp256r1, x25519 | ECDSA (P256)<sup>1</sup> | AES-128-GCM, chacha20-poly1305 |
-| OpenSSL | OpenSSL | secp256r1, secp384r1, secp521r1, x25519 | RSA, ECDSA (P256) | AES-128-GCM, AES-256-GCM, chacha20-poly1305 |
+The goals of TCPLS are threefolds:
 
-Note 1: Minicrypto binding is capable of signing a handshake using the certificate's key, but cannot verify a signature sent by the peer.
+* Providing a simple API to the application layer
+* Showing that alternative extensibility mechanisms can be powerful
+* Showing the quest for maximum Web performance with QUIC can be matched by
+  TCPLS, or even improved under several metrics.
 
-Building picotls
+Like picotls, the implementation of picotcpls is licensed under the MIT license.
+
+
+Building picotcpls
 ---
 
-If you have cloned picotls from git then ensure that you have initialised the submodules:
+If you have cloned picotpls from git then ensure that you have initialised the submodules:
 ```
 % git submodule init
 % git submodule update
@@ -40,12 +65,10 @@ Build using cmake:
 % make check
 ```
 
-A dedicated documentation for using picotls with Visual Studio can be found in [WindowsPort.md](WindowsPort.md).
-
 Developer documentation
 ---
 
-Developer documentation should be available on [the wiki](https://github.com/h2o/picotls/wiki).
+TODO
 
 Using the cli command
 ---
