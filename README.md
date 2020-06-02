@@ -68,21 +68,21 @@ Build using cmake:
 Usage documentation
 ---
 
-# Overview
+### Overview
 
-# Initializing the Context
+### Initializing the Context
 
-# Managing the Connection Object
+### Managing the Connection Object
 
-# Adding addresses
+### Adding addresses
 
-# Connecting with multiple addresses
+### Connecting with multiple addresses
 
-# Handshake
+### Handshake
 
-# Adding / closing streams
+### Adding / closing streams
 
-# Sendng / receiving data
+### Sending / receiving data
 
 Using the cli command
 ---
