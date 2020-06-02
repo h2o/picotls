@@ -464,6 +464,8 @@ int tcpls_handshake(ptls_t *tls) {
   ptls_buffer_t sendbuf;
   int ret;
   connect_info_t *con = get_primary_con_info(tcpls);
+  if (!con)
+    goto Exit;
   do {
     while ((rret = read(con->socket, recvbuf, sizeof(recvbuf))) == -1 && errno == EINTR)
         ;
