@@ -2113,9 +2113,15 @@ static void test_tcpls_stream_api(void)
   ok(tcpls_stream_new(tcpls->tls, NULL, (struct sockaddr *) &addr) == 2);
   tcpls_streams_attach(tcpls->tls, 0, 0);
   ok(tcpls->streams->size == 2);
-  size_t consumed = tcpls->sendbuf->off;
+  size_t input_off = 0;
+  size_t input_size  = tcpls->sendbuf->off;
+  size_t consumed;
   ptls_buffer_init(&decbuf, "", 0);
-  ret = ptls_receive(server, &decbuf, tcpls->sendbuf->base, &consumed);
+  do {
+    consumed = input_size - input_off;
+    ret = ptls_receive(server, &decbuf, tcpls->sendbuf->base + input_off, &consumed);
+    input_off += consumed;
+  } while (ret == 0 && input_off < input_size);
   ok(ret == 0);
   /* a stream has been attached */
   ok(tcpls_server->streams->size == 2);

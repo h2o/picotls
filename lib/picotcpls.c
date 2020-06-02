@@ -11,6 +11,7 @@
  *   <li> tcpls_add_v4 </li>
  *   <li> tcpls_add_v6 </li>
  *   <li> tcpls_connect </li>
+ *   <li> tcpls_handshake </li>
  *   <li> tcpls_send </li>
  *   <li> tcpls_receive </li>
  *   <li> tcpls_stream_new </li> (Optional)
@@ -449,6 +450,45 @@ int tcpls_connect(ptls_t *tls, struct sockaddr *src, struct sockaddr *dest,
   return 0;
 }
 
+/**
+ * Performs a TLS handshake upon the primary connection
+ *
+ */
+
+int tcpls_handshake(ptls_t *tls) {
+  tcpls_t *tcpls = tls->tcpls;
+  if (!tcpls)
+    return -1;
+  uint8_t recvbuf[8192];
+  ssize_t roff, rret;
+  ptls_buffer_t sendbuf;
+  int ret;
+  connect_info_t *con = get_primary_con_info(tcpls);
+  do {
+    while ((rret = read(con->socket, recvbuf, sizeof(recvbuf))) == -1 && errno == EINTR)
+        ;
+    if (rret == 0)
+      goto Exit;
+    roff = 0;
+    do {
+      ptls_buffer_init(&sendbuf, "", 0);
+      size_t consumed = rret - roff;
+      ret = ptls_handshake(tls, &sendbuf, recvbuf + roff, &consumed, NULL);
+      roff += consumed;
+      if ((ret == 0 || ret == PTLS_ERROR_IN_PROGRESS) && sendbuf.off != 0) {
+        if ((rret = send(con->socket, sendbuf.base, sendbuf.off, 0)) < 0) {
+           goto Exit;
+        }
+      }
+      ptls_buffer_dispose(&sendbuf);
+    } while (ret == PTLS_ERROR_IN_PROGRESS && rret != roff);
+  } while (ret == PTLS_ERROR_IN_PROGRESS);
+  ptls_buffer_dispose(&sendbuf);
+  return 0;
+Exit:
+  ptls_buffer_dispose(&sendbuf);
+  return -1;
+}
 
 /**
  * Create and attach locally a new stream to the main address if no addr
@@ -833,7 +873,16 @@ ssize_t tcpls_receive(ptls_t *tls, void *buf, size_t nbytes, struct timeval *tv)
     // get the right  aead context matching the stream id
     // This is done for compabitility with original PTLS's unit tests
     tcpls->tls->traffic_protection.dec.aead = stream->aead_dec;
-    if ((ptls_receive(tls, &decryptbuf, input, (size_t*)&ret) != 0)) {
+    size_t input_off = 0;
+    size_t input_size = ret;
+    size_t consumed;
+    do  {
+      consumed = input_size - input_off;
+      ret = ptls_receive(tls, &decryptbuf, input + input_off, &consumed);
+      input_off += consumed;
+    } while (ret == 0 && input_off < input_size);
+
+    if (ret != 0) {
       ptls_buffer_dispose(&decryptbuf);
       list_free(socklist);
       return ret;

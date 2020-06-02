@@ -65,7 +65,7 @@ Build using cmake:
 % make check
 ```
 
-Developer documentation
+Usage documentation
 ---
 
 TODO
