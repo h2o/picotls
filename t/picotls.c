@@ -2118,7 +2118,7 @@ static void test_tcpls_stream_api(void)
   ret = ptls_receive(server, &decbuf, tcpls->sendbuf->base, &consumed);
   ok(ret == 0);
   /* a stream has been attached */
-  ok(tcpls_server->streams->size == 1);
+  ok(tcpls_server->streams->size == 2);
   ptls_buffer_dispose(&cbuf);
   ptls_buffer_dispose(&sbuf);
   ptls_buffer_dispose(&decbuf);

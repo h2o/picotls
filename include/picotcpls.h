@@ -175,7 +175,7 @@ uint32_t tcpls_stream_new(ptls_t *tls, struct sockaddr *src, struct sockaddr *ad
 
 int tcpls_streams_attach(ptls_t *tls, streamid_t streamid, int sendnow);
 
-int tcpls_stream_close(ptls_t *tls, streamid_t streamid);
+int tcpls_stream_close(ptls_t *tls, streamid_t streamid, int sendnow);
 
 /**
  * tcpls_send can be called whether or not tcpls_stream_new has been called before

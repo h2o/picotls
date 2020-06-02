@@ -109,7 +109,7 @@ void *tcpls_new(void *ctx, int is_server) {
   ptls_buffer_init(tcpls->sendbuf, "", 0);
   ptls_buffer_init(tcpls->recvbuf, "", 0);
   tcpls->send_start = 0;
-  ptls_ctx->output_decrypted_tcpls_data = 1;
+  ptls_ctx->output_decrypted_tcpls_data = 0;
   tcpls->socket_primary = 0;
   tcpls->socket_rcv = 0;
   tcpls->ours_v4_addr_llist = NULL;
@@ -624,7 +624,36 @@ int tcpls_streams_attach(ptls_t *tls, streamid_t streamid, int sendnow) {
  * Close a stream. If no stream are attached to any address, then the connection
  * is closed, and the application should call tcpls_free
  */
-int tcpls_stream_close(ptls_t *tls, streamid_t streamid) {
+int tcpls_stream_close(ptls_t *tls, streamid_t streamid, int sendnow) {
+  tcpls_t *tcpls = tls->tcpls;
+  if (!tcpls->streams->size)
+    return 0;
+  int ret;
+  tcpls_stream_t *stream = stream_get(tcpls, streamid);
+  if (!stream)
+    return -1;
+  uint8_t input[4];
+  /** send the stream id to the peer */
+  memcpy(input, &stream->streamid, 4);
+  /** queue the message in the sending buffer */
+  stream_send_control_message(tcpls, stream->aead_enc, input, STREAM_CLOSE, 4);
+  if (sendnow) {
+    connect_info_t *con = get_primary_con_info(tcpls);
+    ret = send(con->socket, tcpls->sendbuf->base+tcpls->send_start,
+        tcpls->sendbuf->off-tcpls->send_start, 0);
+    if (ret < 0) {
+      /** Failover ?  */
+      return -1;
+    }
+    /* check whether we sent everything */
+    if (tcpls->sendbuf->off == tcpls->send_start + ret) {
+      tcpls->sendbuf->off = 0;
+      tcpls->send_start = 0;
+    }
+    else if (ret+tcpls->send_start < tcpls->sendbuf->off) {
+      tcpls->send_start += ret;
+    }
+  }
   return 0;
 }
 
@@ -1045,7 +1074,7 @@ static tcpls_stream_t *stream_helper_new(tcpls_t *tcpls, connect_info_t *con) {
 
 static int stream_send_control_message(tcpls_t *tcpls, ptls_aead_context_t *aead,
     const void *inputinfo, tcpls_enum_t tcpls_message, uint32_t message_len) {
-  uint8_t input[message_len];
+  uint8_t input[message_len+sizeof(tcpls_message)];
   memcpy(input, &tcpls_message, sizeof(tcpls_message));
   memcpy(input+sizeof(tcpls_message), inputinfo, message_len);
   return buffer_push_encrypted_records(tcpls->sendbuf,
