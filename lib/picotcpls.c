@@ -70,7 +70,7 @@ static void _set_primary(tcpls_t *tcpls);
 static tcpls_stream_t *stream_new(ptls_t *tcpls, streamid_t streamid,
     connect_info_t *con, int is_ours);
 static void stream_free(tcpls_stream_t *stream);
-static int stream_send_control_message(tcpls_t *tcpls, tcpls_stream_t *stream,
+static int stream_send_control_message(tcpls_t *tcpls, ptls_aead_context_t *enc,
     const void *inputinfo, tcpls_enum_t message, uint32_t message_len);
 static connect_info_t *get_con_info_from_socket(tcpls_t *tcpls, int socket);
 static int get_con_info_from_addrs(tcpls_t *tcpls, tcpls_v4_addr_t *src,
@@ -560,25 +560,36 @@ streamid_t tcpls_stream_new(ptls_t *tls, struct sockaddr *src, struct sockaddr *
  * 
  * Note, if stream attach events have not been sent, the application cannot use
  * the streamid to send messages
+ *
+ * if stream id is 0, sends towards the default connection, else sends in the
+ * stream streamid
  * 
  * TODO: add a notify callback event to notify the application about which
  * streams are usable
  */
 
-int tcpls_streams_attach(ptls_t *tls, int sendnow) {
+int tcpls_streams_attach(ptls_t *tls, streamid_t streamid, int sendnow) {
   if (!ptls_handshake_is_complete(tls))
     return -1;
   tcpls_t *tcpls = tls->tcpls;
   tcpls_stream_t *stream;
-  connect_info_t *con = get_primary_con_info(tcpls);
   int ret = 0;
+  ptls_aead_context_t *ctx_to_use;
+  if (!streamid)
+    ctx_to_use = tls->traffic_protection.enc.aead;
+  else {
+    stream = stream_get(tcpls, streamid);
+    if (!stream && !stream->aead_enc)
+      return -1;
+    ctx_to_use = stream->aead_enc;
+  }
   for (int i = 0; i < tcpls->streams->size; i++) {
     stream = list_get(tcpls->streams, i);
     if (stream->need_sending_attach_event) {
       uint8_t input[4];
       /** send the stream id to the peer */
       memcpy(input, &stream->streamid, 4);
-      stream_send_control_message(tcpls, stream, input, STREAM_ATTACH, 4);
+      stream_send_control_message(tcpls, ctx_to_use, input, STREAM_ATTACH, 4);
       stream->send_stream_attach_in_sendbuf_pos = tcpls->sendbuf->off;
       stream->need_sending_attach_event = 0;
       tcpls->check_stream_attach_sent = 1;
@@ -587,6 +598,7 @@ int tcpls_streams_attach(ptls_t *tls, int sendnow) {
   /** Send over the primary socket -- also send any remaining data within
    * sendbuf*/
   if (sendnow) {
+    connect_info_t *con = get_primary_con_info(tcpls);
     ret = send(con->socket, tcpls->sendbuf->base+tcpls->send_start,
         tcpls->sendbuf->off-tcpls->send_start, 0);
     if (ret < 0) {
@@ -653,7 +665,7 @@ ssize_t tcpls_send(ptls_t *tls, streamid_t streamid, const void *input, size_t n
     /** send the stream id to the peer */
     memcpy(input, &stream->streamid, 4);
     /** Add a stream message creation to the sending buffer ! */
-    stream_send_control_message(tcpls, stream, input, STREAM_ATTACH, 4);
+    stream_send_control_message(tcpls, stream->aead_enc, input, STREAM_ATTACH, 4);
     /** To check whether we sent it and if the stream becomes usable */
     stream->send_stream_attach_in_sendbuf_pos = tcpls->sendbuf->off;
     tcpls->check_stream_attach_sent = 1;
@@ -1031,14 +1043,14 @@ static tcpls_stream_t *stream_helper_new(tcpls_t *tcpls, connect_info_t *con) {
  * Note, currently we implement 1 stream per TCP connection
  */
 
-static int stream_send_control_message(tcpls_t *tcpls, tcpls_stream_t *stream,
+static int stream_send_control_message(tcpls_t *tcpls, ptls_aead_context_t *aead,
     const void *inputinfo, tcpls_enum_t tcpls_message, uint32_t message_len) {
   uint8_t input[message_len];
   memcpy(input, &tcpls_message, sizeof(tcpls_message));
   memcpy(input+sizeof(tcpls_message), inputinfo, message_len);
   return buffer_push_encrypted_records(tcpls->sendbuf,
       PTLS_CONTENT_TYPE_TCPLS_OPTION, input,
-      message_len+sizeof(tcpls_message), stream->aead_enc);
+      message_len+sizeof(tcpls_message), aead);
 }
 
 static int  tcpls_init_context(ptls_t *ptls, const void *data, size_t datalen,
@@ -1279,7 +1291,6 @@ int handle_tcpls_record(ptls_t *tls, struct st_ptls_record_t *rec)
         goto Exit;
       memcpy(tls->tcpls_buf->base+tls->tcpls_buf->off, rec->fragment+sizeof(type)+4, rec->length-sizeof(type)-4);
       tls->tcpls_buf->off += rec->length - sizeof(type)-4;
-      
       if (ret)
         goto Exit;
       if (tls->tcpls_buf->off == optsize) {

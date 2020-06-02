@@ -2081,7 +2081,7 @@ static void test_tcpls_stream_api(void)
   ctx_peer->failover = 1;
   ctx->failover = 1;
 
-  ptls_buffer_t cbuf, sbuf;
+  ptls_buffer_t cbuf, sbuf, decbuf;
   size_t coffs[5] = {0}, soffs[5];
   /*static ptls_on_extension_t cb = {on_extension_cb};*/
   ctx_peer->on_extension = NULL;
@@ -2110,11 +2110,18 @@ static void test_tcpls_stream_api(void)
   ok(ret == 0);
   ok(sbuf.off == 0);
   ok(ptls_handshake_is_complete(server));
-  
   ok(tcpls_stream_new(tcpls->tls, NULL, (struct sockaddr *) &addr) == 2);
-
+  tcpls_streams_attach(tcpls->tls, 0, 0);
+  ok(tcpls->streams->size == 2);
+  size_t consumed = tcpls->sendbuf->off;
+  ptls_buffer_init(&decbuf, "", 0);
+  ret = ptls_receive(server, &decbuf, tcpls->sendbuf->base, &consumed);
+  ok(ret == 0);
+  /* a stream has been attached */
+  ok(tcpls_server->streams->size == 1);
   ptls_buffer_dispose(&cbuf);
   ptls_buffer_dispose(&sbuf);
+  ptls_buffer_dispose(&decbuf);
   ctx->tcpls_options_confirmed = 0;
   ctx_peer->tcpls_options_confirmed = 0;
   ctx->support_tcpls_options = 0;

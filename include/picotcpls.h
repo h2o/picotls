@@ -173,7 +173,7 @@ int tcpls_add_v6(ptls_t *tls, struct sockaddr_in6 *addr, int is_primary, int
 
 uint32_t tcpls_stream_new(ptls_t *tls, struct sockaddr *src, struct sockaddr *addr);
 
-int tcpls_streams_attach(ptls_t *tls, int sendnow);
+int tcpls_streams_attach(ptls_t *tls, streamid_t streamid, int sendnow);
 
 int tcpls_stream_close(ptls_t *tls, streamid_t streamid);
 
