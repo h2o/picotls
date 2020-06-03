@@ -84,11 +84,11 @@ SSL. This context is meant to be a static attribute common to many TCPLS
 connections; hence its configuration is supposed to be common to all of
 them.
 
-Regarding TCPLS, client and serveur must advertise support for TCPLS. In
+Regarding TCPLS, client and server must advertise support for TCPLS. In
 our implementation, this exchange of information is going to be
-triggered by  
+triggered by setting  
 
-`ctx.support_t$cpls_options = 1`  
+`ctx.support_tcpls_options = 1`  
 
 The TLS handshake is designed to only expose the information that we're
 doing TCPLS, but not how exactly we configure the new TLS/TCP stack, for
@@ -113,13 +113,33 @@ connections.
 ### Adding addresses
 
 picotls supports both v4 and v6 IP addresses, which the application can
-advertize by calling `tcpls_add_v4(ptls_t *tls, struct sockaddr_in
-*addr, int is_primary, int settopeer, int is_ours)` or
+advertize by calling   
+
+`tcpls_add_v4(ptls_t *tls, struct sockaddr_in
+*addr, int is_primary, int settopeer, int is_ours)`  
+
+or  
+
 `tcpls_add_v6(ptls_t *tls, struct sockaddr_in6 *addr, int is_primary,
 int settopeer, int is_ours)`.  
 
+`is_primary` sets this address as the default. `settopeer` tells TCPLS
+to announce this address to the peer. If this connection is a
+server-side connection, and if this function is called before the
+hanshake, then TCPLS will send this address as part of a new
+EncryptedExtension. The client application is advertised of the new
+address through an connection event mechanism that we will discuss below.  
 
+If this function called before the handshake and the connection is
+client-side, then the information will be sent as part of the first data
+sent during this connection. This restriction is designed to avoid
+making more entropy for fingerprinting, avoiding the client-side handshake to look
+different depending on the number of encrypted addresses advertized.  
 
+If these functions nare called after the handshake, then the application
+can either call `tcpls_send_addresses` to send addresses right away or
+wait the next exchange of application-level data, in which new addresses
+will be also included.
 
 ### Connecting with multiple addresses
 
