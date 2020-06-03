@@ -149,7 +149,7 @@ to the server. The bi-partite graph connection can be made explicit by
 calling several times `tcpls_connect` with a `NULL` timeout. For
 example, assuming that both the client and the server have a v4 and v6:  
 
-`tcpls_connect(tls, src_v4, dest_v4, NULL);
+`tcpls_connect(tls, src_v4, dest_v4, NULL);  
  tcpls_connect(tls, src_v6, dest_v6, timeout);
 `
 spawns two TCP connections between the two pairs of addresses, for which
@@ -163,7 +163,7 @@ which ones require to call tcpls_connect again in case the timeout fired.
 Note that this design allows the application to implement various
 connectivity policies, such as happy eyeball with a `timeout1` of 50ms:
 
-`if (tcpls_connect(tls, src_v4, dest_v4, timout1) > 0)
+`if (tcpls_connect(tls, src_v4, dest_v4, timout1) > 0)  
    tcpls_connect(tls, src_v6, dest_v6, timeout2);
 `
 This code instructs TCPLS to connect to the IPv4 and use it if the
