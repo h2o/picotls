@@ -165,14 +165,18 @@ Note that this design allows the application to implement various
 connectivity policies, such as happy eyeball with a `timeout1` of 50ms:
 
 ```
-if (tcpls_connect(tls, src_v4, dest_v4, timout1) > 0)
+if (tcpls_connect(tls, src_v4, dest_v4, timeout1) > 0)
    tcpls_connect(tls, src_v6, dest_v6, timeout2);
 ```
 This code instructs TCPLS to connect to the IPv4 and use it if the
 connection is successful under 50ms. If it is not, it tries the v6 and
 then set as primary the fastest of the two (assuming both connected in
-the second call).
+the second call).  
 
+Setting src and dest to `NULL` would make tcpls_connect tries a full
+mesh TCP connections between all addresses added with `tcpls_add_v4` and `tcpls_add_v6`.  
+Setting only src to `NULL` makes tcpls_connect uses the default system's
+routing rules to select a src address.
 
 ### Handshake
 
