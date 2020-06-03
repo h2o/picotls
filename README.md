@@ -146,7 +146,7 @@ will be also included.
 picotcpls provides `tcpls_connect(ptls_t *tls, struct sockaddr *src,
 struct sockaddr *dest, struct timeval *timeout)` to make TCP connections
 to the server. The bi-partite graph connection can be made explicit by
-calling several times `tcpls_connect` with a `NULL` timeout. For
+calling several times `tcpls_connect`. For
 example, assuming that both the client and the server have a v4 and v6:  
 
 ```
@@ -178,7 +178,20 @@ mesh TCP connections between all addresses added with `tcpls_add_v4` and `tcpls_
 Setting only src to `NULL` makes tcpls_connect uses the default system's
 routing rules to select a src address.
 
+New connections can be made at any time of the initial connection
+lifetime and may offer to the application an easy interface to program
+failback mechanism (or let TCPLS automatically handle failback) or
+aggregation of bandwidth with multipathing.
+
 ### Handshake
+
+picotcpls simply offer a wrapper around picotls's `ptls_handshake`:  
+
+`tcpls_handshake(ptls_t *tls);`
+
+this function waits until the handshake is complete or an error occured.
+It may also triggers various callbacks depending on events occuring in
+the handshake.
 
 ### Adding / closing streams
 
