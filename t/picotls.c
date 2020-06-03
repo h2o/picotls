@@ -2117,6 +2117,7 @@ static void test_tcpls_stream_api(void)
   size_t input_size  = tcpls->sendbuf->off;
   size_t consumed;
   ptls_buffer_init(&decbuf, "", 0);
+  ok(tcpls_server->streams->size == 0);
   do {
     consumed = input_size - input_off;
     ret = ptls_receive(server, &decbuf, tcpls->sendbuf->base + input_off, &consumed);
@@ -2125,6 +2126,29 @@ static void test_tcpls_stream_api(void)
   ok(ret == 0);
   /* a stream has been attached */
   ok(tcpls_server->streams->size == 2);
+  /** try to encrypt something with a new stream */
+  tcpls_stream_t *stream = list_get(tcpls->streams, 1);
+  assert(stream);
+  sbuf.off = 0;
+  cbuf.off = 0;
+  decbuf.off = 0;
+  ptls_aead_context_t *remember_cli = client->traffic_protection.enc.aead;
+  ptls_aead_context_t *remember_serv = server->traffic_protection.dec.aead;
+  client->traffic_protection.enc.aead = stream->aead_enc;
+  tcpls_stream_t *stream_s = list_get(tcpls_server->streams, 1);
+  assert(stream_s);
+  ok(stream->streamid == stream_s->streamid);
+  ret = ptls_send(client, &cbuf, "hello", 5);
+  ok(ret == 0);
+  consumed = cbuf.off;
+  server->traffic_protection.dec.aead = stream_s->aead_dec;
+  ret = ptls_receive(server, &decbuf, cbuf.base, &consumed);
+  ok(ret == 0);
+  ok(cbuf.off == consumed);
+  ok(decbuf.off == 5);
+  ok(memcmp(decbuf.base, "hello", 5) == 0);
+  client->traffic_protection.enc.aead = remember_cli;
+  server->traffic_protection.dec.aead = remember_serv;
   ptls_buffer_dispose(&cbuf);
   ptls_buffer_dispose(&sbuf);
   ptls_buffer_dispose(&decbuf);
@@ -2140,78 +2164,78 @@ static void test_tcpls_stream_api(void)
 
 static void test_tcpls_api(void)
 {
-    subtest("addresses_api", test_tcpls_addresses);
-    subtest("stream_api", test_tcpls_stream_api);
+  subtest("addresses_api", test_tcpls_addresses);
+  subtest("stream_api", test_tcpls_stream_api);
 }
 
 static void test_list_t(void)
 {
-  list_t *list64 = new_list(sizeof(uint64_t), 10);
-  assert(list64);
-  ok(list64->size == 0);
-  uint64_t item1 = 42;
-  ok(list_add(list64, &item1) == 0);
-  ok(list64->size == 1);
-  for (int i = 0; i < 20; i++) {
-    item1++;
-    list_add(list64, &item1);
-  }
-  ok(list64->size == 21);
-  uint64_t item2 = 64;
-  list_add(list64, &item2);
+list_t *list64 = new_list(sizeof(uint64_t), 10);
+assert(list64);
+ok(list64->size == 0);
+uint64_t item1 = 42;
+ok(list_add(list64, &item1) == 0);
+ok(list64->size == 1);
+for (int i = 0; i < 20; i++) {
+  item1++;
   list_add(list64, &item1);
-  uint64_t *item3 = list_get(list64, 21);
-  ok(*item3 == item2);
-  item1 = 42;
-  uint64_t item4 = 4242424242;
-  ok(list_remove(list64, &item1) == 0);
-  ok(list64->size == 22);
-  ok(*(uint64_t*) list_get(list64, 0) == 43);
-  ok(*(uint64_t*) list_get(list64, 2) == 45);
-  ok(list_remove(list64, &item4) == -1);
-  list_free(list64);
+}
+ok(list64->size == 21);
+uint64_t item2 = 64;
+list_add(list64, &item2);
+list_add(list64, &item1);
+uint64_t *item3 = list_get(list64, 21);
+ok(*item3 == item2);
+item1 = 42;
+uint64_t item4 = 4242424242;
+ok(list_remove(list64, &item1) == 0);
+ok(list64->size == 22);
+ok(*(uint64_t*) list_get(list64, 0) == 43);
+ok(*(uint64_t*) list_get(list64, 2) == 45);
+ok(list_remove(list64, &item4) == -1);
+list_free(list64);
 }
 
 static void test_record_fifo_t(void)
 {
-  tcpls_record_fifo_t *r_fifo = tcpls_record_queue_new(3);
-  ok(r_fifo->size == 0);
-  ok(r_fifo->max_record_num == 3);
-  struct st_ptls_record_t rec;
-  memset(&rec, 0, sizeof(rec));
-  ok(tcpls_record_queue_push(r_fifo, &rec) == OK);
-  ok(tcpls_record_queue_push(r_fifo, &rec) == OK);
-  ok(tcpls_record_queue_push(r_fifo, &rec) == OK);
-  ok(r_fifo->front_idx == 0);
-  ok(tcpls_record_queue_del(r_fifo, 1) == OK);
-  ok(tcpls_record_queue_del(r_fifo, 2) == OK);
-  ok(tcpls_record_queue_del(r_fifo, 1) == EMPTY);
-  ok(tcpls_record_queue_push(r_fifo, &rec) == OK);
-  ok(tcpls_record_queue_del(r_fifo, 1) == OK);
-  ok(r_fifo->front_idx == r_fifo->back_idx);
-  tcpls_record_fifo_free(r_fifo);
+tcpls_record_fifo_t *r_fifo = tcpls_record_queue_new(3);
+ok(r_fifo->size == 0);
+ok(r_fifo->max_record_num == 3);
+struct st_ptls_record_t rec;
+memset(&rec, 0, sizeof(rec));
+ok(tcpls_record_queue_push(r_fifo, &rec) == OK);
+ok(tcpls_record_queue_push(r_fifo, &rec) == OK);
+ok(tcpls_record_queue_push(r_fifo, &rec) == OK);
+ok(r_fifo->front_idx == 0);
+ok(tcpls_record_queue_del(r_fifo, 1) == OK);
+ok(tcpls_record_queue_del(r_fifo, 2) == OK);
+ok(tcpls_record_queue_del(r_fifo, 1) == EMPTY);
+ok(tcpls_record_queue_push(r_fifo, &rec) == OK);
+ok(tcpls_record_queue_del(r_fifo, 1) == OK);
+ok(r_fifo->front_idx == r_fifo->back_idx);
+tcpls_record_fifo_free(r_fifo);
 }
 
 static void test_containers(void)
 {
-  subtest("list_t", test_list_t);
-  subtest("record_fifo_t", test_record_fifo_t);
+subtest("list_t", test_list_t);
+subtest("record_fifo_t", test_record_fifo_t);
 }
 
 static void test_quic(void)
 {
-    subtest("varint", test_quicint);
-    subtest("block", test_quicblock);
+  subtest("varint", test_quicint);
+  subtest("block", test_quicblock);
 }
 
 void test_picotls(void)
 {
-    subtest("is_ipaddr", test_is_ipaddr);
-    subtest("sha256", test_sha256);
-    subtest("sha384", test_sha384);
-    subtest("hmac-sha256", test_hmac_sha256);
-    subtest("hkdf", test_hkdf);
-    subtest("aes128gcm", test_aes128gcm);
+  subtest("is_ipaddr", test_is_ipaddr);
+  subtest("sha256", test_sha256);
+  subtest("sha384", test_sha384);
+  subtest("hmac-sha256", test_hmac_sha256);
+  subtest("hkdf", test_hkdf);
+  subtest("aes128gcm", test_aes128gcm);
     subtest("aes256gcm", test_aes256gcm);
     subtest("chacha20poly1305", test_chacha20poly1305);
     subtest("aes128ecb", test_aes128ecb);

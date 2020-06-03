@@ -70,11 +70,56 @@ Usage documentation
 
 ### Overview
 
+This is an overview of an ongoing research and development project. Many
+things are missing and some features may change in the future. The
+current description is intented to provide an intuition of the potential usefulness
+TCPLS.
+
 ### Initializing the Context
+
+picotcpls currently use picotls's context. First, follow the
+[guideline](https://github.com/h2o/picotls/wiki/Using-picotls#initializing-the-context)
+provided by picotls's wiki to manipulate a `ptls_context_t ctx` to setup
+SSL. This context is meant to be a static attribute common to many TCPLS
+connections; hence its configuration is supposed to be common to all of
+them.
+
+Regarding TCPLS, client and serveur must advertise support for TCPLS. In
+our implementation, this exchange of information is going to be
+triggered by  
+
+`ctx.support_t$cpls_options = 1`  
+
+The TLS handshake is designed to only expose the information that we're
+doing TCPLS, but not how exactly we configure the new TLS/TCP stack, for
+which the information is private to a passive observer (assuming no
+side-channels).  
 
 ### Managing the Connection Object
 
+Similarly to picotls, we offer a creation and a destruction function.
+The `tcpls_new` function takes as argument a `ptls_context_t*` and a
+boolean value indicating whether the connection is server side or not.  
+
+`tcpls_t *tcpls = tcpls_new(&ctx, is_server);`  
+
+The application is responsible for freeing its memory, using
+`tcpls_free(tcpls)` when the connection wants to be closed.  
+
+A tcpls connection may have multiple addresses and streams attached
+them. Addresses require to be added first if we expect to use them for
+connections.  
+
 ### Adding addresses
+
+picotls supports both v4 and v6 IP addresses, which the application can
+advertize by calling `tcpls_add_v4(ptls_t *tls, struct sockaddr_in
+*addr, int is_primary, int settopeer, int is_ours)` or
+`tcpls_add_v6(ptls_t *tls, struct sockaddr_in6 *addr, int is_primary,
+int settopeer, int is_ours)`.  
+
+
+
 
 ### Connecting with multiple addresses
 
@@ -83,6 +128,8 @@ Usage documentation
 ### Adding / closing streams
 
 ### Sending / receiving data
+
+### Handling events
 
 Using the cli command
 ---
