@@ -71,16 +71,18 @@ static void _set_primary(tcpls_t *tcpls);
 static tcpls_stream_t *stream_new(ptls_t *tcpls, streamid_t streamid,
     connect_info_t *con, int is_ours);
 static void stream_free(tcpls_stream_t *stream);
+static int cmp_times(struct timeval *t1, struct timeval *t2);
 static int stream_send_control_message(tcpls_t *tcpls, ptls_aead_context_t *enc,
     const void *inputinfo, tcpls_enum_t message, uint32_t message_len);
 static connect_info_t *get_con_info_from_socket(tcpls_t *tcpls, int socket);
+static connect_info_t *get_best_con(tcpls_t *tcpls);
 static int get_con_info_from_addrs(tcpls_t *tcpls, tcpls_v4_addr_t *src,
     tcpls_v4_addr_t *dest, tcpls_v6_addr_t *src6, tcpls_v6_addr_t *dest6,
     connect_info_t *coninfo);
 static tcpls_v4_addr_t *get_addr_from_sockaddr(tcpls_v4_addr_t *llist, struct sockaddr_in *addr);
 static tcpls_v6_addr_t *get_addr6_from_sockaddr(tcpls_v6_addr_t *llist, struct sockaddr_in6 *addr);
 static connect_info_t *get_primary_con_info(tcpls_t *tcpls);
-static tcpls_stream_t *get_stream_from_socket(tcpls_t *tcpls, int socket);
+static list_t *get_streams_from_socket(tcpls_t *tcpls, int socket);
 static tcpls_stream_t *stream_get(tcpls_t *tcpls, streamid_t streamid);
 static tcpls_stream_t *stream_helper_new(tcpls_t *tcpls, connect_info_t *con);
 static void check_stream_attach_have_been_sent(tcpls_t *tcpls, int consumed);
@@ -783,12 +785,46 @@ ssize_t tcpls_send(ptls_t *tls, streamid_t streamid, const void *input, size_t n
       tcpls->sendbuf->off-tcpls->send_start, 0);
   if (ret < 0) {
     /** The peer reset the connection */
+    stream->con->state = CLOSED;
     if (errno == ECONNRESET) {
       /** We might still have data in the socket, and we don't how much the
        * server read */
-      //TODO send the last unacked records from streamid x the buffer
+      /* Send a FAILOVER SIGNAL indicating the stream id */
+      //send the last unacked records from streamid x the buffer
       //over the secondary path
-    
+      if (tls->ctx->failover == 1) {
+        close(stream->con->socket);
+        /** get the fastest CONNECTED connection */
+        connect_info_t *failover_con = get_best_con(tcpls);
+        if (!failover_con) {
+          /** We don't have anymore connection to failover ... this connection
+           * can be closed */
+          return -1;
+        }
+        /** TODO do this in a while loop until it eventually succeeded, or all
+         * streams have been consumed */
+        list_t *stream_list = get_streams_from_socket(tcpls, failover_con->socket);
+        tcpls_stream_t *stream_signal = list_get(stream_list, 0);
+        uint8_t input[4];
+        memcpy(input, &stream->streamid, 4);
+        /** save sendbuf content */
+        ptls_buffer_t sendbuf_backup;
+        uint8_t buf_backup[tcpls->sendbuf->off-tcpls->send_start];
+        size_t backup_size = tcpls->sendbuf->off-tcpls->send_start;
+        ptls_buffer_init(&sendbuf_backup, buf_backup, backup_size);
+        ptls_buffer__do_pushv(&sendbuf_backup, tcpls->sendbuf->base+tcpls->send_start,
+            tcpls->sendbuf->off-tcpls->send_start);
+        tcpls->sendbuf->off = tcpls->send_start;
+        stream_send_control_message(tcpls, stream_signal->aead_enc, input, FAILOVER, 4);
+        ptls_buffer__do_pushv(tcpls->sendbuf, sendbuf_backup.base, sendbuf_backup.off);
+        ret = send(stream_signal->con->socket, tcpls->sendbuf->base+tcpls->send_start,
+            tcpls->sendbuf->off-tcpls->send_start, 0);
+        /** CALLBACK stream moved over another TCP connection TODO*/
+        stream->con = stream_signal->con;
+        list_free(stream_list);
+        if (ret < 0)
+          return -1;
+      }
       errno = 0; // reset after the problem is resolved =)
     }
     else if (errno == EPIPE) {
@@ -851,11 +887,17 @@ ssize_t tcpls_receive(ptls_t *tls, void *buf, size_t nbytes, struct timeval *tv)
   for (int i =  0; i < socklist->size; i++) {
      socket = list_get(socklist, i);
      if (FD_ISSET(*socket, &rset)) {
-       ret = read(*socket, input, nbytes);
+       ret = recv(*socket, input, nbytes, 0);
        if (ret == -1) {
-         //things TODO ?
          list_free(socklist);
+         if (errno == ECONNRESET) {
+           /** TODO need to update the timer */
+           ret = tcpls_receive(tls, buf, nbytes, tv);
+         }
          return ret;
+       }
+       else if (ret == 0) {
+         list_free(socklist);
        }
        break;
      }
@@ -865,30 +907,33 @@ ssize_t tcpls_receive(ptls_t *tls, void *buf, size_t nbytes, struct timeval *tv)
   if (ret > 0) {
     ptls_buffer_t decryptbuf;
     ptls_buffer_init(&decryptbuf, "", ret);
-    //TODO put the right decryption context
-    tcpls_stream_t *stream = get_stream_from_socket(tcpls, tcpls->socket_rcv);
-    if (!stream)
-      return -1;
+    int rret = 1;
+    list_t *streams_ptr = get_streams_from_socket(tcpls, tcpls->socket_rcv);
+    for (int i = 0; i < streams_ptr->size && rret; i++) {
+      tcpls_stream_t *stream = list_get(streams_ptr, i);
+      if (!stream)
+        return -1;
 
-    ptls_aead_context_t *remember_aead = tcpls->tls->traffic_protection.dec.aead;
-    // get the right  aead context matching the stream id
-    // This is done for compabitility with original PTLS's unit tests
-    tcpls->tls->traffic_protection.dec.aead = stream->aead_dec;
-    size_t input_off = 0;
-    size_t input_size = ret;
-    size_t consumed;
-    do  {
-      consumed = input_size - input_off;
-      ret = ptls_receive(tls, &decryptbuf, input + input_off, &consumed);
-      input_off += consumed;
-    } while (ret == 0 && input_off < input_size);
+      ptls_aead_context_t *remember_aead = tcpls->tls->traffic_protection.dec.aead;
+      // get the right  aead context matching the stream id
+      // This is done for compabitility with original PTLS's unit tests
+      tcpls->tls->traffic_protection.dec.aead = stream->aead_dec;
+      size_t input_off = 0;
+      size_t input_size = ret;
+      size_t consumed;
+      do  {
+        consumed = input_size - input_off;
+        rret = ptls_receive(tls, &decryptbuf, input + input_off, &consumed);
+        input_off += consumed;
+      } while (rret == 0 && input_off < input_size);
 
-    if (ret != 0) {
+      tcpls->tls->traffic_protection.dec.aead = remember_aead;
+    }
+    if (rret != 0) {
       ptls_buffer_dispose(&decryptbuf);
       list_free(socklist);
       return ret;
     }
-    tcpls->tls->traffic_protection.dec.aead = remember_aead;
     memcpy(buf, decryptbuf.base, decryptbuf.off);
     ret = decryptbuf.off;
     ptls_buffer_dispose(&decryptbuf);
@@ -1321,14 +1366,25 @@ int handle_tcpls_extension_option(ptls_t *ptls, tcpls_enum_t type,
         stream->need_sending_attach_event = 0;
         /** TODO TRIGGER CALLBACK */
         if (!stream) {
-          return PTLS_ERROR_NO_MEMORY;
+          return PTLS_ERROR_STREAM_NOT_FOUND;
         }
         list_add(ptls->tcpls->streams, stream);
         return 0;
       }
       break;
     case FAILOVER:
-      break;
+      {
+        streamid_t streamid = (streamid_t) *input;
+        connect_info_t *con = get_con_info_from_socket(ptls->tcpls, ptls->tcpls->socket_rcv);
+        /** move streamid's con to this con */
+        tcpls_stream_t *stream = stream_get(ptls->tcpls, streamid);
+        if (!stream)
+          return PTLS_ERROR_STREAM_NOT_FOUND;
+        stream->con = con;
+        //TODO callback notification that the stream has moved
+        return 0;
+      }
+        break;
     case BPF_CC:
       {
         int ret;
@@ -1562,16 +1618,17 @@ tcpls_stream_t *stream_get(tcpls_t *tcpls, streamid_t streamid) {
   return NULL;
 }
 
-static tcpls_stream_t *get_stream_from_socket(tcpls_t *tcpls, int socket) {
+static list_t *get_streams_from_socket(tcpls_t *tcpls, int socket) {
   if (!tcpls->streams)
     return NULL;
+  list_t *streams_ptr = new_list(sizeof(tcpls_stream_t *), 3);
   tcpls_stream_t *stream;
   for (int i = 0; i < tcpls->streams->size; i++) {
     stream = list_get(tcpls->streams, i);
     if (stream->con->socket == socket)
-      return stream;
+       list_add(streams_ptr, stream);
   }
-  return NULL;
+  return streams_ptr;
 }
 
 static void stream_free(tcpls_stream_t *stream) {
@@ -1580,6 +1637,22 @@ static void stream_free(tcpls_stream_t *stream) {
   ptls_aead_free(stream->aead_enc);
   ptls_aead_free(stream->aead_dec);
   free(stream);
+}
+
+/**
+ * Get the fastest CONNECTED con
+ */
+
+static connect_info_t *get_best_con(tcpls_t *tcpls) {
+  connect_info_t *con;
+  connect_info_t *con_fastest = list_get(tcpls->connect_infos, 0);
+  for (int i = 1; i < tcpls->connect_infos->size; i++) {
+    con = list_get(tcpls->connect_infos, i);
+    if (con->state == CONNECTED && (cmp_times(&con_fastest->connect_time,
+            &con->connect_time) < 0 || con_fastest->state != CONNECTED))
+      con_fastest = con;
+  }
+  return con_fastest;
 }
 
 static connect_info_t *get_con_info_from_socket(tcpls_t *tcpls, int socket) {

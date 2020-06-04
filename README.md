@@ -180,20 +180,23 @@ routing rules to select a src address.
 
 New connections can be made at any time of the initial connection
 lifetime and may offer to the application an easy interface to program
-failback mechanism (or let TCPLS automatically handle failback) or
+failover mechanism (or let TCPLS automatically handle failover) or
 aggregation of bandwidth with multipathing.
 
 ### Handshake
 
-picotcpls simply offer a wrapper around picotls's `ptls_handshake`:  
+picotcpls simply offer a wrapper around picotls's interactive hanshake (`ptls_handshake`):  
 
 `tcpls_handshake(ptls_t *tls);`
 
 this function waits until the handshake is complete or an error occured.
 It may also triggers various callbacks depending on events occuring in
-the handshake.
+the handshake. Note that if an interactive mode is requirer,
+ptls_handshake is still available to use.
 
 ### Adding / closing streams
+
+
 
 ### Sending / receiving data
 

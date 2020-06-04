@@ -83,7 +83,6 @@ typedef struct st_tcpls_stream {
   /** when this stream should first send an attach event before
    * sending any packet */
   unsigned need_sending_attach_event  : 1;
-  
   /**
    * As soon as we have sent a stream attach event to the other peer, this
    * stream is usable
