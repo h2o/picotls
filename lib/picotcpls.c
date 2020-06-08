@@ -11,6 +11,7 @@
  *   <li> tcpls_add_v4 </li>
  *   <li> tcpls_add_v6 </li>
  *   <li> tcpls_connect </li>
+ *   <li> tcpls_accept </li>
  *   <li> tcpls_handshake </li>
  *   <li> tcpls_send </li>
  *   <li> tcpls_receive </li>
@@ -97,6 +98,7 @@ void *tcpls_new(void *ctx, int is_server) {
   tcpls_t *tcpls  = malloc(sizeof(*tcpls));
   if (tcpls == NULL)
     return NULL;
+  tcpls->cookies = new_list(128, 4);
   if (is_server) {
     tls = ptls_server_new(ptls_ctx);
     tcpls->next_stream_id = 2147483649;  // 2**31 +1
@@ -104,6 +106,13 @@ void *tcpls_new(void *ctx, int is_server) {
   else {
     tls = ptls_client_new(ptls_ctx);
     tcpls->next_stream_id = 1;
+    /** Generate connid and cookie */
+    ptls_ctx->random_bytes(tcpls->connid, 128);
+    uint8_t rand_cookies[128];
+    for (int i = 0; i < 4; i++) {
+      ptls_ctx->random_bytes(rand_cookies, 128);
+      list_add(tcpls->cookies, rand_cookies);
+    }
   }
   // init tcpls stuffs
   tcpls->sendbuf = malloc(sizeof(*tcpls->sendbuf));
@@ -119,6 +128,7 @@ void *tcpls_new(void *ctx, int is_server) {
   tcpls->ours_v6_addr_llist = NULL;
   tcpls->v4_addr_llist = NULL;
   tcpls->v6_addr_llist = NULL;
+  tcpls->cookie_counter = 0;
   tcpls->nbr_of_peer_streams_attached = 0;
   tcpls->nbr_tcp_streams = 0;
   tcpls->check_stream_attach_sent = 0;
@@ -169,13 +179,13 @@ int static add_v6_to_options(tcpls_t *tcpls, uint8_t n) {
       MULTIHOMING_v6, 0, 1);
 }
 
-/** 
+/**
  * Copy Sockaddr_in into our structures. If is_primary is set, flip that bit
  * from any other v4 address if set.
  *
  * if settopeer is enabled, it means that this address is actually ours and meant to
  * be sent to the peer
- * 
+ *
  * if settopeer is 0, then this address is the peer's one
  */
 
@@ -299,7 +309,7 @@ int tcpls_connect(ptls_t *tls, struct sockaddr *src, struct sockaddr *dest,
   connect_info_t coninfo;
   memset(&coninfo, 0, sizeof(connect_info_t));
   if (!src && !dest) {
-    // FULL MESH CONNECT YOLO
+    // FULL MESH CONNECT
     tcpls_v4_addr_t *current_v4 = tcpls->v4_addr_llist;
     tcpls_v4_addr_t *ours_current_v4 = tcpls->ours_v4_addr_llist;
     tcpls_v6_addr_t *current_v6 = tcpls->v6_addr_llist;
@@ -453,23 +463,48 @@ int tcpls_connect(ptls_t *tls, struct sockaddr *src, struct sockaddr *dest,
 }
 
 /**
- * Performs a TLS handshake upon the primary connection
+ * accept connection and call tcpls_join to trigger the join procedure if a
+ * tcpls connection already exist
  *
+ * Server-side, those connection informations must be grouped together at
+ * handshake time once we know which client owns which set of addresses
  */
 
-int tcpls_handshake(ptls_t *tls) {
+int tcpls_accept(int listenfd, struct sockaddr *cliaddr, void
+    (*tcpls_join)(tcpls_t *, struct sockaddr*, int)) {
+  int socket;
+  if ((socket = accept(listenfd, cliaddr, 0)) != -1)
+    tcpls_join(NULL, cliaddr, socket);
+  else
+    return -1;
+  return 0;
+}
+
+
+/**
+ * Performs a TLS handshake upon the primary connection. If this handshake is
+ * server-side, the server must provide tcpls_join tu support multihoming
+ * connections. Note that, server side, then the handshake message might either
+ * be the start of a new hanshake, or a MPJOIN.
+ */
+
+int tcpls_handshake(ptls_t *tls, int socket) {
   tcpls_t *tcpls = tls->tcpls;
   if (!tcpls)
     return -1;
   uint8_t recvbuf[8192];
-  ssize_t roff, rret;
+  ssize_t rret;
   ptls_buffer_t sendbuf;
   int ret;
-  connect_info_t *con = get_primary_con_info(tcpls);
-  if (!con)
-    goto Exit;
+  ssize_t roff;
+  if (!tls->is_server && !socket) {
+    connect_info_t *con = get_primary_con_info(tcpls);
+    if (!con)
+      goto Exit;
+    socket = con->socket;
+  }
   do {
-    while ((rret = read(con->socket, recvbuf, sizeof(recvbuf))) == -1 && errno == EINTR)
+    while ((rret = read(socket, recvbuf, sizeof(recvbuf))) == -1 && errno == EINTR)
         ;
     if (rret == 0)
       goto Exit;
@@ -480,7 +515,7 @@ int tcpls_handshake(ptls_t *tls) {
       ret = ptls_handshake(tls, &sendbuf, recvbuf + roff, &consumed, NULL);
       roff += consumed;
       if ((ret == 0 || ret == PTLS_ERROR_IN_PROGRESS) && sendbuf.off != 0) {
-        if ((rret = send(con->socket, sendbuf.base, sendbuf.off, 0)) < 0) {
+        if ((rret = send(socket, sendbuf.base, sendbuf.off, 0)) < 0) {
            goto Exit;
         }
       }
@@ -488,6 +523,7 @@ int tcpls_handshake(ptls_t *tls) {
     } while (ret == PTLS_ERROR_IN_PROGRESS && rret != roff);
   } while (ret == PTLS_ERROR_IN_PROGRESS);
   ptls_buffer_dispose(&sendbuf);
+/** TODO If multiple addresses; we should send them now? */
   return 0;
 Exit:
   ptls_buffer_dispose(&sendbuf);
@@ -495,19 +531,19 @@ Exit:
 }
 
 /**
- * Create and attach locally a new stream to the main address if no addr
- * is provided; else attach to addr if we have a connection open to it
- *
- * src might be NULL to indicate default
- *
- * returns 0 if a stream is alreay attached for addr, or if some error occured
- */
+* Create and attach locally a new stream to the main address if no addr
+* is provided; else attach to addr if we have a connection open to it
+*
+* src might be NULL to indicate default
+*
+* returns 0 if a stream is alreay attached for addr, or if some error occured
+*/
 
 streamid_t tcpls_stream_new(ptls_t *tls, struct sockaddr *src, struct sockaddr *dest) {
-  /** Check first whether a stream isn't already attach to this addr */
-  tcpls_t *tcpls = tls->tcpls;
-  assert(tcpls);
-  if (!dest)
+/** Check first whether a stream isn't already attach to this addr */
+tcpls_t *tcpls = tls->tcpls;
+assert(tcpls);
+if (!dest)
     return 0;
   connect_info_t coninfo;
   memset(&coninfo, 0, sizeof(coninfo));
@@ -895,7 +931,7 @@ ssize_t tcpls_receive(ptls_t *tls, void *buf, size_t nbytes, struct timeval *tv)
            ret = tcpls_receive(tls, buf, nbytes, tv);
          }
          return ret;
-       }
+         }
        else if (ret == 0) {
          list_free(socklist);
        }
@@ -1286,6 +1322,21 @@ int handle_tcpls_extension_option(ptls_t *ptls, tcpls_enum_t type,
   if (!ptls->ctx->tcpls_options_confirmed)
     return -1;
   switch (type) {
+    case CONNID:
+      {
+        assert(inputlen == 128); /*debug*/
+        if (inputlen != 128)
+          return PTLS_ALERT_ILLEGAL_PARAMETER;
+        memcpy(ptls->tcpls->connid, input, inputlen);
+        return 0;
+      }
+    case COOKIE:
+      {
+        assert(inputlen == 128);
+        uint8_t *cookie = (uint8_t*) input;
+        list_add(ptls->tcpls->cookies, cookie);
+        return 0;
+      }
     case USER_TIMEOUT:
       {
         uint16_t *nval = malloc(inputlen);
@@ -1336,6 +1387,11 @@ int handle_tcpls_extension_option(ptls_t *ptls, tcpls_enum_t type,
         return ret;
       }
       break;
+    case MPJOIN:
+      {
+        /** Sent on a new connection to prove ownership of the cli address*/
+        break;
+      }
     case STREAM_CLOSE:
       {
        // TODO encoding with network order and decoding to host order

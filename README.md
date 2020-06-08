@@ -196,7 +196,7 @@ ptls_handshake is still available to use.
 
 ### Adding / closing streams
 
-
+Streams can be 
 
 ### Sending / receiving data
 
@@ -210,7 +210,7 @@ Run the test server (at 127.0.0.1:8443):
 % ./cli -c /path/to/certificate.pem -k /path/to/private-key.pem  127.0.0.1 8443
 ```
 
-Connect to the test server:
+Connect to the mtest server:
 ```
 % ./cli 127.0.0.1 8443
 ```

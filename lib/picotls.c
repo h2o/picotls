@@ -2168,14 +2168,20 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
               goto Exit;
             }
             break;
+        case PTLS_EXTENSION_TYPE_ENCRYPTED_CONNID:
+        case PTLS_EXTENSION_TYPE_ENCRYPTED_COOKIE:
         case PTLS_EXTENSION_TYPE_ENCRYPTED_MULTIHOMING_v4:
         case PTLS_EXTENSION_TYPE_ENCRYPTED_MULTIHOMING_v6:
             {
               tcpls_enum_t exttype;
               if (type == PTLS_EXTENSION_TYPE_ENCRYPTED_MULTIHOMING_v6)
                 exttype = MULTIHOMING_v6;
-              else
+              else if (type == PTLS_EXTENSION_TYPE_ENCRYPTED_MULTIHOMING_v4)
                 exttype = MULTIHOMING_v4;
+              else if (type == PTLS_EXTENSION_TYPE_ENCRYPTED_CONNID)
+                exttype = CONNID;
+              else if (type == PTLS_EXTENSION_TYPE_ENCRYPTED_COOKIE)
+                exttype = COOKIE;
               ptls_decode_block(src, end, 2, {
                   ptls_decode_open_block(src, end, 1, {
                       if (src == end) {
@@ -3728,8 +3734,28 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
             if (tls->pending_handshake_secret != NULL)
                 buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_EARLY_DATA, {});
             /** Push encrypted TCP options if we have some */
-           // TCPLS
+            // TCPLS
             if (tls->ctx->support_tcpls_options && tls->tcpls) {
+              /** Push connid */
+              buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_ENCRYPTED_CONNID, {
+                  ptls_buffer_push_block(sendbuf, 2, {
+                      ptls_buffer_push_block(sendbuf, 1, {
+                        ptls_buffer_pushv(sendbuf, tls->tcpls->connid, 128);
+                      });
+                  });
+              });
+              /** push cookies */
+              uint8_t *cookie;
+              for (int i = 0; i < tls->tcpls->cookies->size; i++) {
+                cookie = list_get(tls->tcpls->cookies, i);
+                buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_ENCRYPTED_COOKIE, {
+                    ptls_buffer_push_block(sendbuf, 2, {
+                        ptls_buffer_push_block(sendbuf, 1, {
+                          ptls_buffer_pushv(sendbuf, cookie, 128);
+                        });
+                    });
+                });
+              }
               for (int i = 0; i < tls->tcpls->tcpls_options->size; i++) {
                 option = list_get(tls->tcpls->tcpls_options, i);
                 if (option->data->base && option->type == USER_TIMEOUT) {

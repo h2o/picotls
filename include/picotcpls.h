@@ -22,11 +22,14 @@
 
 /** TCP options we would support in the TLS context */
 typedef enum tcpls_enum_t {
-  USER_TIMEOUT,
-  MULTIHOMING_v4,
-  MULTIHOMING_v6,
-  FAILOVER,
   BPF_CC,
+  CONNID,
+  COOKIE,
+  FAILOVER,
+  MPJOIN,
+  MULTIHOMING_v6,
+  MULTIHOMING_v4,
+  USER_TIMEOUT,
   STREAM_ATTACH,
   STREAM_CLOSE
 } tcpls_enum_t;
@@ -143,9 +146,15 @@ struct st_tcpls_t {
   /** We have stream marked for close; close them after sending the control
    * message  */
   unsigned streams_marked_for_close : 1;
+  /** Connection ID used for MPJOIN */
+  uint8_t connid[128];
+  /** Multihoming Cookie */
+  list_t *cookies;
+  /** Indicates the position of the current cookie value within the
+   * HMAC chain of cookies */
+  int cookie_counter;
   /** Contains the state of connected src and dest addresses */
   list_t *connect_infos;
- 
   /** value of the next stream id :) */
   uint32_t next_stream_id;
   /** count the number of times we attached a stream from the peer*/
@@ -171,7 +180,10 @@ void *tcpls_new();
 int tcpls_connect(ptls_t *tls, struct sockaddr *src, struct sockaddr *dest,
     struct timeval *timeout);
 
-int tcpls_handshake(ptls_t *tls);
+int tcpls_accept(int listenfd, struct sockaddr *addr, void
+    (*tcpls_join)(tcpls_t*, struct sockaddr*, int));
+
+int tcpls_handshake(ptls_t *tls, int socket);
 
 int tcpls_add_v4(ptls_t *tls, struct sockaddr_in *addr, int is_primary, int
     settopeer, int is_ours);
