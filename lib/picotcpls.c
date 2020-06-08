@@ -483,48 +483,71 @@ int tcpls_accept(int listenfd, struct sockaddr *cliaddr, void
 
 /**
  * Performs a TLS handshake upon the primary connection. If this handshake is
- * server-side, the server must provide tcpls_join tu support multihoming
- * connections. Note that, server side, then the handshake message might either
- * be the start of a new hanshake, or a MPJOIN.
+ * server-side, the server must provide a callback function in the handshake
+ * properties tu support multihoming connections. Note that, server side, then
+ * the handshake message might either be the start of a new hanshake, or a
+ * MPJOIN.
+ *
+ * Client-side: the client must provide handshake properties for MPJOIN
+ * handshake
  */
 
-int tcpls_handshake(ptls_t *tls, int socket) {
+// TODO move socket in handshake properties
+
+int tcpls_handshake(ptls_t *tls, int socket, ptls_handshake_properties_t *properties) {
   tcpls_t *tcpls = tls->tcpls;
   if (!tcpls)
     return -1;
-  uint8_t recvbuf[8192];
-  ssize_t rret;
-  ptls_buffer_t sendbuf;
-  int ret;
-  ssize_t roff;
+  /** Get the right socket */
   if (!tls->is_server && !socket) {
     connect_info_t *con = get_primary_con_info(tcpls);
     if (!con)
       goto Exit;
     socket = con->socket;
   }
-  do {
-    while ((rret = read(socket, recvbuf, sizeof(recvbuf))) == -1 && errno == EINTR)
-        ;
-    if (rret == 0)
-      goto Exit;
-    roff = 0;
-    do {
-      ptls_buffer_init(&sendbuf, "", 0);
-      size_t consumed = rret - roff;
-      ret = ptls_handshake(tls, &sendbuf, recvbuf + roff, &consumed, NULL);
-      roff += consumed;
-      if ((ret == 0 || ret == PTLS_ERROR_IN_PROGRESS) && sendbuf.off != 0) {
-        if ((rret = send(socket, sendbuf.base, sendbuf.off, 0)) < 0) {
-           goto Exit;
-        }
-      }
+  ssize_t rret;
+  int ret;
+  ptls_buffer_t sendbuf;
+  /** Sends the client hello (or the mpjoin client hello */
+  ptls_buffer_init(&sendbuf, "", 0);
+  if ((ret = ptls_handshake(tls, &sendbuf, NULL, NULL, properties)) == PTLS_ERROR_IN_PROGRESS) {
+    rret = 0;
+    while (rret < sendbuf.off) {
+      if ((ret = send(socket, sendbuf.base, sendbuf.off, 0)) < 0)
+          goto Exit;
+      rret += ret;
+    }
+    if (properties && properties->client.mpjoin) {
+      /* We're done :-) */
       ptls_buffer_dispose(&sendbuf);
-    } while (ret == PTLS_ERROR_IN_PROGRESS && rret != roff);
-  } while (ret == PTLS_ERROR_IN_PROGRESS);
-  ptls_buffer_dispose(&sendbuf);
-/** TODO If multiple addresses; we should send them now? */
-  return 0;
+      return 0;
+    }
+    sendbuf.off = 0;
+    ssize_t roff;
+    uint8_t recvbuf[8192];
+    do {
+      while ((rret = read(socket, recvbuf, sizeof(recvbuf))) == -1 && errno == EINTR)
+          ;
+      if (rret == 0)
+        goto Exit;
+      roff = 0;
+      do {
+        ptls_buffer_init(&sendbuf, "", 0);
+        size_t consumed = rret - roff;
+        ret = ptls_handshake(tls, &sendbuf, recvbuf + roff, &consumed, properties);
+        roff += consumed;
+        if ((ret == 0 || ret == PTLS_ERROR_IN_PROGRESS) && sendbuf.off != 0) {
+          if ((rret = send(socket, sendbuf.base, sendbuf.off, 0)) < 0) {
+             goto Exit;
+          }
+        }
+        ptls_buffer_dispose(&sendbuf);
+      } while (ret == PTLS_ERROR_IN_PROGRESS && rret != roff);
+    } while (ret == PTLS_ERROR_IN_PROGRESS);
+    ptls_buffer_dispose(&sendbuf);
+    /** TODO If multiple addresses; we should send them now? */
+    return 0;
+  }
 Exit:
   ptls_buffer_dispose(&sendbuf);
   return -1;

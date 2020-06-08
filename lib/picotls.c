@@ -4560,12 +4560,13 @@ static void init_record_message_emitter(ptls_t *tls, struct
           begin_record_message, commit_record_message}};
 }
 
-int ptls_handshake(ptls_t *tls, ptls_buffer_t *_sendbuf, const void *input, size_t *inlen, ptls_handshake_properties_t *properties)
+int ptls_handshake(ptls_t *tls, ptls_buffer_t *_sendbuf, const void *input,
+    size_t *inlen, ptls_handshake_properties_t *properties)
 {
     struct st_ptls_record_message_emitter_t emitter;
     int ret;
 
-    assert(tls->state < PTLS_STATE_POST_HANDSHAKE_MIN);
+    assert(tls->state < PTLS_STATE_POST_HANDSHAKE_MIN || properties->client.mpjoin);
 
     init_record_message_emitter(tls, &emitter, _sendbuf);
     size_t sendbuf_orig_off = emitter.super.buf->off;
@@ -4579,6 +4580,10 @@ int ptls_handshake(ptls_t *tls, ptls_buffer_t *_sendbuf, const void *input, size
     }
     default:
         break;
+    }
+
+    if (properties->client.mpjoin && tls->ctx->tcpls_options_confirmed) {
+        return send_client_hello(tls, &emitter.super, properties, NULL);
     }
 
     const uint8_t *src = input, *const src_end = src + *inlen;
