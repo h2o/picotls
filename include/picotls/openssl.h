@@ -113,9 +113,9 @@ int ptls_openssl_init_verify_certificate(ptls_openssl_verify_certificate_t *self
 void ptls_openssl_dispose_verify_certificate(ptls_openssl_verify_certificate_t *self);
 X509_STORE *ptls_openssl_create_default_certificate_store(void);
 
-int ptls_openssl_encrypt_ticket(ptls_buffer_t *dst, ptls_iovec_t src,
+int ptls_openssl_encrypt_ticket(ptls_buffer_t *dst, ptls_iovec_t src, ptls_iovec_t *auth_data,
                                 int (*cb)(unsigned char *, unsigned char *, EVP_CIPHER_CTX *, HMAC_CTX *, int));
-int ptls_openssl_decrypt_ticket(ptls_buffer_t *dst, ptls_iovec_t src,
+int ptls_openssl_decrypt_ticket(ptls_buffer_t *dst, ptls_iovec_t src, ptls_iovec_t *auth_data,
                                 int (*cb)(unsigned char *, unsigned char *, EVP_CIPHER_CTX *, HMAC_CTX *, int));
 
 #ifdef __cplusplus

@@ -1279,7 +1279,29 @@ Error:
 #define TICKET_LABEL_SIZE 16
 #define TICKET_IV_SIZE EVP_MAX_IV_LENGTH
 
-int ptls_openssl_encrypt_ticket(ptls_buffer_t *buf, ptls_iovec_t src,
+static int calc_ticket_hmac(HMAC_CTX *hctx, void *tag, const void *encrypted, size_t encrypted_len, ptls_iovec_t *auth_data)
+{
+    /* Feed len(auth_data) + auth_data, if auth_data is to be used. For backward compatibility, a zero length is not fed to HMAC
+     * if auth_data is set to NULL. */
+    if (auth_data != NULL) {
+        uint8_t lenbuf[8];
+        size_t lenlen = ptls_encode_quicint(lenbuf, auth_data->len) - lenbuf;
+        if (!(HMAC_Update(hctx, lenbuf, lenlen) && HMAC_Update(hctx, auth_data->base, auth_data->len)))
+            return PTLS_ERROR_LIBRARY;
+    }
+
+    /* feed encrypted text */
+    if (!HMAC_Update(hctx, encrypted, encrypted_len))
+        return PTLS_ERROR_LIBRARY;
+
+    /* write HMAC tag to dst */
+    if (!HMAC_Final(hctx, tag, NULL))
+        return PTLS_ERROR_LIBRARY;
+
+    return 0;
+}
+
+int ptls_openssl_encrypt_ticket(ptls_buffer_t *buf, ptls_iovec_t src, ptls_iovec_t *auth_data,
                                 int (*cb)(unsigned char *key_name, unsigned char *iv, EVP_CIPHER_CTX *ctx, HMAC_CTX *hctx, int enc))
 {
     EVP_CIPHER_CTX *cctx = NULL;
@@ -1321,10 +1343,8 @@ int ptls_openssl_encrypt_ticket(ptls_buffer_t *buf, ptls_iovec_t src,
     dst += clen;
 
     /* append hmac */
-    if (!HMAC_Update(hctx, buf->base + buf->off, dst - (buf->base + buf->off)) || !HMAC_Final(hctx, dst, NULL)) {
-        ret = PTLS_ERROR_LIBRARY;
+    if ((ret = calc_ticket_hmac(hctx, dst, buf->base + buf->off, dst - (buf->base + buf->off), auth_data)) != 0)
         goto Exit;
-    }
     dst += HMAC_size(hctx);
 
     assert(dst <= buf->base + buf->capacity);
@@ -1339,7 +1359,7 @@ Exit:
     return ret;
 }
 
-int ptls_openssl_decrypt_ticket(ptls_buffer_t *buf, ptls_iovec_t src,
+int ptls_openssl_decrypt_ticket(ptls_buffer_t *buf, ptls_iovec_t src, ptls_iovec_t *auth_data,
                                 int (*cb)(unsigned char *key_name, unsigned char *iv, EVP_CIPHER_CTX *ctx, HMAC_CTX *hctx, int enc))
 {
     EVP_CIPHER_CTX *cctx = NULL;
@@ -1374,10 +1394,8 @@ int ptls_openssl_decrypt_ticket(ptls_buffer_t *buf, ptls_iovec_t src,
     }
     src.len -= hmac_size;
     uint8_t hmac[EVP_MAX_MD_SIZE];
-    if (!HMAC_Update(hctx, src.base, src.len) || !HMAC_Final(hctx, hmac, NULL)) {
-        ret = PTLS_ERROR_LIBRARY;
+    if ((ret = calc_ticket_hmac(hctx, hmac, src.base, src.len, auth_data)) != 0)
         goto Exit;
-    }
     if (!ptls_mem_equal(src.base + src.len, hmac, hmac_size)) {
         ret = PTLS_ALERT_HANDSHAKE_FAILURE;
         goto Exit;
