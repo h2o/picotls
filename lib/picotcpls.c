@@ -1549,6 +1549,19 @@ Exit:
 }
 
 static int setlocal_usertimeout(ptls_t *ptls, int val) {
+  struct timeval timeout;      
+  timeout.tv_sec = val;
+  timeout.tv_usec = 0;
+
+  if(ptls->tcpls->socket_rcv == 0)
+	return(0);
+  if (setsockopt (ptls->tcpls->socket_rcv, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout,
+                sizeof(timeout)) < 0)
+       return -1;
+
+  if (setsockopt (ptls->tcpls->socket_rcv, SOL_SOCKET, SO_SNDTIMEO, (char *)&timeout,
+                sizeof(timeout)) < 0)
+        return -1;
   return 0;
 }
 
