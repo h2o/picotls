@@ -929,6 +929,8 @@ static int aesgcm_setup(ptls_aead_context_t *_ctx, int is_enc, const void *key, 
 
     ctx->static_iv = loadn(iv, PTLS_AESGCM_IV_SIZE);
     ctx->static_iv = _mm_shuffle_epi8(ctx->static_iv, bswap8);
+    if (key == NULL)
+        return 0;
 
     ctx->super.dispose_crypto = aesgcm_dispose_crypto;
     ctx->super.do_encrypt_init = aead_do_encrypt_init;

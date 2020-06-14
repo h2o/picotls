@@ -859,6 +859,10 @@ static int aead_setup_crypto(ptls_aead_context_t *_ctx, int is_enc, const void *
     struct aead_crypto_context_t *ctx = (struct aead_crypto_context_t *)_ctx;
     int ret;
 
+    memcpy(ctx->static_iv, iv, ctx->super.algo->iv_size);
+    if (key == NULL)
+        return 0;
+
     ctx->super.dispose_crypto = aead_dispose_crypto;
     if (is_enc) {
         ctx->super.do_encrypt_init = aead_do_encrypt_init;
@@ -893,7 +897,6 @@ static int aead_setup_crypto(ptls_aead_context_t *_ctx, int is_enc, const void *
         ret = PTLS_ERROR_LIBRARY;
         goto Error;
     }
-    memcpy(ctx->static_iv, iv, ctx->super.algo->iv_size);
 
     return 0;
 
