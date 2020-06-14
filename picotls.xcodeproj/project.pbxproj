@@ -116,10 +116,6 @@
 		E9B43DC824619D5100824E51 /* picotest.c in Sources */ = {isa = PBXBuildFile; fileRef = 106530E31D9B4021005B2C60 /* picotest.c */; };
 		E9B43DE424619D7E00824E51 /* fusion.c in Sources */ = {isa = PBXBuildFile; fileRef = E9B43DE224619D7E00824E51 /* fusion.c */; };
 		E9B43DE524619E1600824E51 /* minicrypto.c in Sources */ = {isa = PBXBuildFile; fileRef = 1059003D1DC8D4E300FB4085 /* minicrypto.c */; };
-		E9B43E0C24689E8900824E51 /* fusionbench.c in Sources */ = {isa = PBXBuildFile; fileRef = E9B43E0B24689E8900824E51 /* fusionbench.c */; };
-		E9B43E0D24689EDA00824E51 /* fusion.c in Sources */ = {isa = PBXBuildFile; fileRef = E9B43DBF24619D1700824E51 /* fusion.c */; };
-		E9B43E0E24689F9500824E51 /* picotls-probes.d in Sources */ = {isa = PBXBuildFile; fileRef = E95EBCC0227B71170022C32D /* picotls-probes.d */; };
-		E9B43E0F24689FAC00824E51 /* picotls.c in Sources */ = {isa = PBXBuildFile; fileRef = 106530BF1D998641005B2C60 /* picotls.c */; };
 		E9B43E1024689FE700824E51 /* picotls.c in Sources */ = {isa = PBXBuildFile; fileRef = 106530BF1D998641005B2C60 /* picotls.c */; };
 		E9BC76CF1EF3A35E00EB7A09 /* chacha20.c in Sources */ = {isa = PBXBuildFile; fileRef = E9BC76C61EF3A2F700EB7A09 /* chacha20.c */; };
 		E9BC76D21EF3A36A00EB7A09 /* chacha20.c in Sources */ = {isa = PBXBuildFile; fileRef = E9BC76C61EF3A2F700EB7A09 /* chacha20.c */; };
@@ -223,15 +219,6 @@
 			);
 			runOnlyForDeploymentPostprocessing = 1;
 		};
-		E9B43E0624689E5900824E51 /* CopyFiles */ = {
-			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
-			dstPath = /usr/share/man/man1/;
-			dstSubfolderSpec = 0;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 1;
-		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
@@ -300,8 +287,6 @@
 		E9B43DE124619D5100824E51 /* test-fusion */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = "test-fusion"; sourceTree = BUILT_PRODUCTS_DIR; };
 		E9B43DE224619D7E00824E51 /* fusion.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = fusion.c; sourceTree = "<group>"; };
 		E9B43DE62461A06800824E51 /* fusion.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = fusion.h; sourceTree = "<group>"; };
-		E9B43E0A24689E5900824E51 /* fusionbench */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = fusionbench; sourceTree = BUILT_PRODUCTS_DIR; };
-		E9B43E0B24689E8900824E51 /* fusionbench.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = fusionbench.c; sourceTree = "<group>"; };
 		E9BC76C61EF3A2F700EB7A09 /* chacha20.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = chacha20.c; path = src/chacha20.c; sourceTree = "<group>"; };
 		E9BC76CC1EF3A31000EB7A09 /* salsa20.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = salsa20.h; path = src/salsa20.h; sourceTree = "<group>"; };
 		E9BC76D61EF3C1C200EB7A09 /* poly1305.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = poly1305.c; path = src/poly1305.c; sourceTree = "<group>"; };
@@ -378,13 +363,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				E973651E246E37300039AA49 /* libpicotls-minicrypto.a in Frameworks */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		E9B43E0524689E5900824E51 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -466,7 +444,6 @@
 				10EACB171DCEAF0F00CA0341 /* libpicotls-minicrypto.a */,
 				E992F7A920E99A7C0008154D /* picotls-esni */,
 				E9B43DE124619D5100824E51 /* test-fusion */,
-				E9B43E0A24689E5900824E51 /* fusionbench */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -504,7 +481,6 @@
 				106530FE1DAD8A3C005B2C60 /* cli.c */,
 				E97577072213148800D1EF74 /* e2e.t */,
 				E9B43DE224619D7E00824E51 /* fusion.c */,
-				E9B43E0B24689E8900824E51 /* fusionbench.c */,
 				106530E91D9B7C13005B2C60 /* picotls.c */,
 				1059003D1DC8D4E300FB4085 /* minicrypto.c */,
 				106530C51D9B1A98005B2C60 /* openssl.c */,
@@ -805,23 +781,6 @@
 			productReference = E9B43DE124619D5100824E51 /* test-fusion */;
 			productType = "com.apple.product-type.tool";
 		};
-		E9B43DE824689E5900824E51 /* fusionbench */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = E9B43E0724689E5900824E51 /* Build configuration list for PBXNativeTarget "fusionbench" */;
-			buildPhases = (
-				E9B43DE924689E5900824E51 /* Sources */,
-				E9B43E0524689E5900824E51 /* Frameworks */,
-				E9B43E0624689E5900824E51 /* CopyFiles */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-			);
-			name = fusionbench;
-			productName = "test-crypto-openssl";
-			productReference = E9B43E0A24689E5900824E51 /* fusionbench */;
-			productType = "com.apple.product-type.tool";
-		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -860,7 +819,6 @@
 				105900411DC8D57000FB4085 /* test-minicrypto */,
 				E992F79B20E99A7C0008154D /* picotls-esni */,
 				E9B43DC024619D5100824E51 /* test-fusion */,
-				E9B43DE824689E5900824E51 /* fusionbench */,
 			);
 		};
 /* End PBXProject section */
@@ -1008,17 +966,6 @@
 				E9B43E1024689FE700824E51 /* picotls.c in Sources */,
 				E9B43DE424619D7E00824E51 /* fusion.c in Sources */,
 				E9B43DC824619D5100824E51 /* picotest.c in Sources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		E9B43DE924689E5900824E51 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				E9B43E0E24689F9500824E51 /* picotls-probes.d in Sources */,
-				E9B43E0F24689FAC00824E51 /* picotls.c in Sources */,
-				E9B43E0D24689EDA00824E51 /* fusion.c in Sources */,
-				E9B43E0C24689E8900824E51 /* fusionbench.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1355,26 +1302,6 @@
 			};
 			name = Release;
 		};
-		E9B43E0824689E5900824E51 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				GCC_PREPROCESSOR_DEFINITIONS = "$(inherited)";
-				OTHER_CFLAGS = "-march=native";
-				OTHER_LDFLAGS = "";
-				PRODUCT_NAME = "$(TARGET_NAME)";
-			};
-			name = Debug;
-		};
-		E9B43E0924689E5900824E51 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				GCC_PREPROCESSOR_DEFINITIONS = "$(inherited)";
-				OTHER_CFLAGS = "-march=native";
-				OTHER_LDFLAGS = "";
-				PRODUCT_NAME = "$(TARGET_NAME)";
-			};
-			name = Release;
-		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -1455,15 +1382,6 @@
 			buildConfigurations = (
 				E9B43DDF24619D5100824E51 /* Debug */,
 				E9B43DE024619D5100824E51 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		E9B43E0724689E5900824E51 /* Build configuration list for PBXNativeTarget "fusionbench" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				E9B43E0824689E5900824E51 /* Debug */,
-				E9B43E0924689E5900824E51 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
