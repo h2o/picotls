@@ -114,7 +114,6 @@
 		E99B75E51F5CE64E00CF503E /* pembase64.c in Sources */ = {isa = PBXBuildFile; fileRef = E99B75DF1F5CDDB500CF503E /* pembase64.c */; };
 		E9B43DC224619D5100824E51 /* picotls-probes.d in Sources */ = {isa = PBXBuildFile; fileRef = E95EBCC0227B71170022C32D /* picotls-probes.d */; };
 		E9B43DC824619D5100824E51 /* picotest.c in Sources */ = {isa = PBXBuildFile; fileRef = 106530E31D9B4021005B2C60 /* picotest.c */; };
-		E9B43DE324619D7E00824E51 /* fusion.c in Sources */ = {isa = PBXBuildFile; fileRef = E9B43DE224619D7E00824E51 /* fusion.c */; };
 		E9B43DE424619D7E00824E51 /* fusion.c in Sources */ = {isa = PBXBuildFile; fileRef = E9B43DE224619D7E00824E51 /* fusion.c */; };
 		E9B43DE524619E1600824E51 /* minicrypto.c in Sources */ = {isa = PBXBuildFile; fileRef = 1059003D1DC8D4E300FB4085 /* minicrypto.c */; };
 		E9B43E0C24689E8900824E51 /* fusionbench.c in Sources */ = {isa = PBXBuildFile; fileRef = E9B43E0B24689E8900824E51 /* fusionbench.c */; };
@@ -947,7 +946,6 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				E9B43DE324619D7E00824E51 /* fusion.c in Sources */,
 				E99B75E01F5CDDB500CF503E /* asn1.c in Sources */,
 				E99B75E11F5CDDB500CF503E /* pembase64.c in Sources */,
 				E95E95382290456B00215ACD /* picotls-probes.d in Sources */,
