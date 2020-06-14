@@ -46,8 +46,13 @@ extern "C" {
 #define PTLS_BUILD_ASSERT(cond) 1
 #endif
 
-/* __builtin_types_compatible_p yields incorrect results when older versions of GCC is used; see #303 */
-#if defined(__clang__) || __GNUC__ >= 6
+/* __builtin_types_compatible_p yields incorrect results when older versions of GCC is used; see #303.
+ * Clang with Xcode 9.4 or prior is known to not work correctly when a pointer is const-qualified; see
+ * https://github.com/h2o/quicly/pull/306#issuecomment-626037269. Older versions of clang upstream works fine, but we do not need
+ * best coverage. This macro is for preventing misuse going into the master branch, having it work one of the compilers supported in
+ * our CI is enough.
+ */
+#if (defined(__clang__) && __clang_major__ >= 10) || __GNUC__ >= 6
 #define PTLS_ASSERT_IS_ARRAY_EXPR(a) PTLS_BUILD_ASSERT_EXPR(__builtin_types_compatible_p(__typeof__(a[0])[], __typeof__(a)))
 #else
 #define PTLS_ASSERT_IS_ARRAY_EXPR(a) 1
@@ -515,6 +520,10 @@ typedef struct st_ptls_on_client_hello_parameters_t {
      * if ESNI was used
      */
     unsigned esni : 1;
+    /**
+     * set to 1 if ClientHello is too old (or too new) to be handled by picotls
+     */
+    unsigned incompatible_version : 1;
 } ptls_on_client_hello_parameters_t;
 
 /**
