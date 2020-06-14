@@ -2955,7 +2955,7 @@ static int client_handle_new_session_ticket(ptls_t *tls, ptls_iovec_t message)
 
     /* save the extension, along with the key of myself */
     ptls_buffer_t ticket_buf;
-    uint8_t ticket_buf_small[512];
+    uint8_t ticket_buf_small[200];
     ptls_buffer_init(&ticket_buf, ticket_buf_small, sizeof(ticket_buf_small));
     ptls_buffer_push64(&ticket_buf, tls->ctx->get_time->cb(tls->ctx->get_time));
     ptls_buffer_push16(&ticket_buf, tls->key_share->id);
@@ -5063,7 +5063,7 @@ int hkdf_expand_label(ptls_hash_algorithm_t *algo, void *output, size_t outlen, 
                       ptls_iovec_t hash_value, const char *label_prefix)
 {
     ptls_buffer_t hkdf_label;
-    uint8_t hkdf_label_buf[512];
+    uint8_t hkdf_label_buf[80];
     int ret;
 
     assert(label_prefix != NULL);
