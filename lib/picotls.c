@@ -4754,9 +4754,8 @@ int ptls_handshake(ptls_t *tls, ptls_buffer_t *_sendbuf, const void *input, size
 
     const uint8_t *src = input, *const src_end = src + *inlen;
     ptls_buffer_t decryptbuf;
-    uint8_t decryptbuf_small[256];
 
-    ptls_buffer_init(&decryptbuf, decryptbuf_small, sizeof(decryptbuf_small));
+    ptls_buffer_init(&decryptbuf, "", 0);
 
     /* perform handhake until completion or until all the input has been swallowed */
     ret = PTLS_ERROR_IN_PROGRESS;
