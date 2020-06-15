@@ -3765,8 +3765,8 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
         if (ch->cookie.all.len != 0 && key_share.algorithm != NULL) {
 
             /* use cookie to check the integrity of the handshake, and update the context */
-            uint8_t sig[PTLS_MAX_DIGEST_SIZE];
             size_t sigsize = tls->ctx->cipher_suites[0]->hash->digest_size;
+            uint8_t *sig = alloca(sigsize);
             if ((ret = calc_cookie_signature(tls, properties, key_share.algorithm, ch->cookie.tbs, sig)) != 0)
                 goto Exit;
             if (!(ch->cookie.signature.len == sigsize && ptls_mem_equal(ch->cookie.signature.base, sig, sigsize))) {
