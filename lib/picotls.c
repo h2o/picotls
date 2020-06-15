@@ -2966,8 +2966,7 @@ static int client_handle_new_session_ticket(ptls_t *tls, ptls_iovec_t message)
 
     /* save the extension, along with the key of myself */
     ptls_buffer_t ticket_buf;
-    uint8_t ticket_buf_small[200];
-    ptls_buffer_init(&ticket_buf, ticket_buf_small, sizeof(ticket_buf_small));
+    ptls_buffer_init(&ticket_buf, "", 0);
     ptls_buffer_push64(&ticket_buf, tls->ctx->get_time->cb(tls->ctx->get_time));
     ptls_buffer_push16(&ticket_buf, tls->key_share->id);
     ptls_buffer_push16(&ticket_buf, tls->cipher_suite->id);
