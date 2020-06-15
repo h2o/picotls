@@ -2385,21 +2385,24 @@ Exit:
     return ret;
 }
 
-static int handle_unknown_extension(ptls_t *tls, ptls_handshake_properties_t *properties, uint16_t type, const uint8_t *src,
-                                    const uint8_t *const end, ptls_raw_extension_t *slots)
+static int should_collect_unknown_extension(ptls_t *tls, ptls_handshake_properties_t *properties, uint16_t type)
 {
-    if (properties != NULL && properties->collect_extension != NULL && properties->collect_extension(tls, properties, type)) {
-        size_t i;
-        for (i = 0; slots[i].type != UINT16_MAX; ++i) {
-            assert(i < MAX_UNKNOWN_EXTENSIONS);
-            if (slots[i].type == type)
-                return PTLS_ALERT_ILLEGAL_PARAMETER;
-        }
-        if (i < MAX_UNKNOWN_EXTENSIONS) {
-            slots[i].type = type;
-            slots[i].data = ptls_iovec_init(src, end - src);
-            slots[i + 1].type = UINT16_MAX;
-        }
+    return properties != NULL && properties->collect_extension != NULL && properties->collect_extension(tls, properties, type);
+}
+
+static int collect_unknown_extension(ptls_t *tls, uint16_t type, const uint8_t *src, const uint8_t *const end,
+                                     ptls_raw_extension_t *slots)
+{
+    size_t i;
+    for (i = 0; slots[i].type != UINT16_MAX; ++i) {
+        assert(i < MAX_UNKNOWN_EXTENSIONS);
+        if (slots[i].type == type)
+            return PTLS_ALERT_ILLEGAL_PARAMETER;
+    }
+    if (i < MAX_UNKNOWN_EXTENSIONS) {
+        slots[i].type = type;
+        slots[i].data = ptls_iovec_init(src, end - src);
+        slots[i + 1].type = UINT16_MAX;
     }
     return 0;
 }
@@ -2418,10 +2421,9 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
 {
     const uint8_t *src = message.base + PTLS_HANDSHAKE_HEADER_SIZE, *const end = message.base + message.len, *esni_nonce = NULL;
     uint16_t type;
-    ptls_raw_extension_t unknown_extensions[MAX_UNKNOWN_EXTENSIONS + 1];
+    static const ptls_raw_extension_t no_unknown_extensions = {UINT16_MAX};
+    ptls_raw_extension_t *unknown_extensions = (ptls_raw_extension_t *)&no_unknown_extensions;
     int ret, skip_early_data = 1;
-
-    unknown_extensions[0].type = UINT16_MAX;
 
     decode_extensions(src, end, PTLS_HANDSHAKE_TYPE_ENCRYPTED_EXTENSIONS, &type, {
         if (tls->ctx->on_extension != NULL &&
@@ -2477,7 +2479,14 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
             skip_early_data = 0;
             break;
         default:
-            handle_unknown_extension(tls, properties, type, src, end, unknown_extensions);
+            if (should_collect_unknown_extension(tls, properties, type)) {
+                if (unknown_extensions == &no_unknown_extensions) {
+                    unknown_extensions = malloc(sizeof(*unknown_extensions) * (MAX_UNKNOWN_EXTENSIONS + 1));
+                    unknown_extensions[0].type = UINT16_MAX;
+                }
+                if ((ret = collect_unknown_extension(tls, type, src, end, unknown_extensions)) != 0)
+                    goto Exit;
+            }
             break;
         }
         src = end;
@@ -2511,6 +2520,8 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
     ret = PTLS_ERROR_IN_PROGRESS;
 
 Exit:
+    if (unknown_extensions != &no_unknown_extensions)
+        free(unknown_extensions);
     return ret;
 }
 
@@ -3401,7 +3412,10 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
             ch->status_request = 1;
             break;
         default:
-            handle_unknown_extension(tls, properties, exttype, src, end, ch->unknown_extensions);
+            if (should_collect_unknown_extension(tls, properties, exttype)) {
+                if ((ret = collect_unknown_extension(tls, exttype, src, end, ch->unknown_extensions)) != 0)
+                    goto Exit;
+            }
             break;
         }
         src = end;
