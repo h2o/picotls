@@ -1236,7 +1236,7 @@ static int commission_handshake_secret(ptls_t *tls)
     return setup_traffic_protection(tls, is_enc, NULL, 2, 1);
 }
 
-static inline void log_client_random(ptls_t *tls)
+static void log_client_random(ptls_t *tls)
 {
     PTLS_PROBE(CLIENT_RANDOM, tls,
                ptls_hexdump(alloca(sizeof(tls->client_random) * 2 + 1), tls->client_random, sizeof(tls->client_random)));
