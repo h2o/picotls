@@ -2481,7 +2481,10 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
         default:
             if (should_collect_unknown_extension(tls, properties, type)) {
                 if (unknown_extensions == &no_unknown_extensions) {
-                    unknown_extensions = malloc(sizeof(*unknown_extensions) * (MAX_UNKNOWN_EXTENSIONS + 1));
+                    if ((unknown_extensions = malloc(sizeof(*unknown_extensions) * (MAX_UNKNOWN_EXTENSIONS + 1))) == NULL) {
+                        ret = PTLS_ERROR_NO_MEMORY;
+                        goto Exit;
+                    }
                     unknown_extensions[0].type = UINT16_MAX;
                 }
                 if ((ret = collect_unknown_extension(tls, type, src, end, unknown_extensions)) != 0)
