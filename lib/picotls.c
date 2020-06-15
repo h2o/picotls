@@ -3425,10 +3425,10 @@ static int try_psk_handshake(ptls_t *tls, size_t *psk_index, int *accept_early_d
     uint64_t issue_at, now = tls->ctx->get_time->cb(tls->ctx->get_time);
     uint32_t age_add;
     uint16_t ticket_key_exchange_id, ticket_csid;
-    uint8_t decbuf_small[256], binder_key[PTLS_MAX_DIGEST_SIZE], verify_data[PTLS_MAX_DIGEST_SIZE];
+    uint8_t binder_key[PTLS_MAX_DIGEST_SIZE];
     int ret;
 
-    ptls_buffer_init(&decbuf, decbuf_small, sizeof(decbuf_small));
+    ptls_buffer_init(&decbuf, "", 0);
 
     for (*psk_index = 0; *psk_index < ch->psk.identities.count; ++*psk_index) {
         struct st_ptls_client_hello_psk_t *identity = ch->psk.identities.list + *psk_index;
@@ -3512,9 +3512,10 @@ Found:
     if ((ret = derive_secret(tls->key_schedule, binder_key, "res binder")) != 0)
         goto Exit;
     ptls__key_schedule_update_hash(tls->key_schedule, ch_trunc.base, ch_trunc.len);
-    if ((ret = calc_verify_data(verify_data, tls->key_schedule, binder_key)) != 0)
+    if ((ret = calc_verify_data(binder_key /* to conserve space, reuse binder_key for storing verify_data */, tls->key_schedule,
+                                binder_key)) != 0)
         goto Exit;
-    if (!ptls_mem_equal(ch->psk.identities.list[*psk_index].binder.base, verify_data,
+    if (!ptls_mem_equal(ch->psk.identities.list[*psk_index].binder.base, binder_key,
                         tls->key_schedule->hashes[0].algo->digest_size)) {
         ret = PTLS_ALERT_DECRYPT_ERROR;
         goto Exit;
@@ -3524,7 +3525,6 @@ Found:
 Exit:
     ptls_buffer_dispose(&decbuf);
     ptls_clear_memory(binder_key, sizeof(binder_key));
-    ptls_clear_memory(verify_data, sizeof(verify_data));
     return ret;
 }
 
