@@ -38,6 +38,7 @@
  * IN THE SOFTWARE.
  */
 #include <stdint.h>
+    
 #include <stdlib.h>
 #include <string.h>
 #include <immintrin.h>
@@ -293,11 +294,7 @@ void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, void *output,
 
     __m128i ek0, bits0, bits1, bits2, bits3, bits4, bits5 = _mm_setzero_si128();
     const __m128i *bits4keys = ctx->ecb.keys; /* is changed to supp->ctx.keys when calcurating suppout */
-#ifdef _WINDOWS
-    struct ptls_fusion_gfmul_state gstate = {0};
-#else
-    struct ptls_fusion_gfmul_state gstate = {};
-#endif
+    struct ptls_fusion_gfmul_state gstate = { 0 };
     __m128i gdatabuf[6];
     __m128i ac = _mm_shuffle_epi8(_mm_set_epi32(0, (int)aadlen * 8, 0, (int)inlen * 8), bswap8);
 
@@ -495,11 +492,7 @@ int ptls_fusion_aesgcm_decrypt(ptls_fusion_aesgcm_context_t *ctx, void *output, 
 {
     __m128i ek0 = _mm_setzero_si128(), bits0, bits1 = _mm_setzero_si128(), bits2 = _mm_setzero_si128(), bits3 = _mm_setzero_si128(),
             bits4 = _mm_setzero_si128(), bits5 = _mm_setzero_si128();
-#ifdef _WINDOWS
     struct ptls_fusion_gfmul_state gstate = { 0 };
-#else
-    struct ptls_fusion_gfmul_state gstate = {};
-#endif
     __m128i gdatabuf[6];
     __m128i ac = _mm_shuffle_epi8(_mm_set_epi32(0, (int)aadlen * 8, 0, (int)inlen * 8), bswap8);
     struct ptls_fusion_aesgcm_ghash_precompute *ghash_precompute = ctx->ghash + (aadlen + 15) / 16 + (inlen + 15) / 16 + 1;
@@ -991,10 +984,39 @@ ptls_aead_algorithm_t ptls_fusion_aes256gcm = {"AES256-GCM",
                                                sizeof(struct aesgcm_context),
                                                aes256gcm_setup};
 
-#ifdef _WINDOWS
+/* #ifdef _WINDOWS */
+#if 1
+/**
+ * ptls_fusion_is_supported_by_cpu:
+ * Check that the CPU has extended instructions for PCMUL, AES and AVX2.
+ * This test assumes that the CPU is following the x86/x64 architecture.
+ * A slightly more refined test could check that the cpu_info spells out
+ * "genuineIntel" or "authenticAMD", but would fail in presence of
+ * little known CPU brands or some VM */
 int ptls_fusion_is_supported_by_cpu(void)
 {
-    return 1;
+    uint32_t cpu_info[4];
+    uint32_t nb_ids;
+    int is_supported = 0;
+
+    __cpuid(cpu_info, 0);
+    nb_ids = cpu_info[0];
+
+    if (nb_ids >= 7) {
+        uint32_t leaf1_ecx;
+        __cpuid(cpu_info, 1);
+        leaf1_ecx = cpu_info[2];
+        
+        if (/* PCLMUL */ (leaf1_ecx & (1 << 5)) != 0 && /* AES */ (leaf1_ecx & (1 << 25)) != 0) {
+            uint32_t leaf7_ebx;
+            __cpuid(cpu_info, 7);
+            leaf7_ebx = cpu_info[1];
+
+            is_supported = /* AVX2 */ (leaf7_ebx & (1 << 5)) != 0;
+        }
+    }
+
+    return is_supported;
 }
 #else
 int ptls_fusion_is_supported_by_cpu(void)

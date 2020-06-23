@@ -5140,11 +5140,7 @@ ptls_aead_context_t *new_aead(ptls_aead_algorithm_t *aead, ptls_hash_algorithm_t
                               ptls_iovec_t hash_value, const char *label_prefix)
 {
     ptls_aead_context_t *ctx = NULL;
-#ifdef _WINDOWS
-    uint8_t key_iv[PTLS_MAX_DIGEST_SIZE + PTLS_MAX_IV_SIZE];
-#else
-    uint8_t key_iv[aead->key_size + aead->iv_size];
-#endif
+    uint8_t key_iv[PTLS_MAX_SECRET_SIZE + PTLS_MAX_IV_SIZE];
     int ret;
 
     if ((ret = get_traffic_key(hash, key_iv, aead->key_size, 0, secret, hash_value, label_prefix)) != 0)
