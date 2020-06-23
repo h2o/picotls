@@ -984,8 +984,7 @@ ptls_aead_algorithm_t ptls_fusion_aes256gcm = {"AES256-GCM",
                                                sizeof(struct aesgcm_context),
                                                aes256gcm_setup};
 
-/* #ifdef _WINDOWS */
-#if 1
+#ifdef _WINDOWS
 /**
  * ptls_fusion_is_supported_by_cpu:
  * Check that the CPU has extended instructions for PCMUL, AES and AVX2.
