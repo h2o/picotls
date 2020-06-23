@@ -828,7 +828,10 @@ typedef struct st_ptls_handshake_properties_t {
 #ifdef _WINDOWS
 #pragma warning(pop)
 #endif
-
+#ifdef _WINDOWS
+/* suppress warning C4293: >> shift count negative or too big */
+#pragma warning(disable : 4293)
+#endif
 /**
  * builds a new ptls_iovec_t instance using the supplied parameters
  */
