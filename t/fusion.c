@@ -50,7 +50,7 @@ static const char *tostr(const void *_p, size_t len)
 
 static void test_loadn(void)
 {
-    uint8_t buf[8192] = {};
+    uint8_t buf[8192] = { 0 };
 
     for (size_t off = 0; off < 8192 - 15; ++off) {
         uint8_t *src = buf + off;
@@ -65,7 +65,7 @@ static void test_loadn(void)
     ok(!!"success");
 }
 
-static const uint8_t zero[16384] = {};
+static const uint8_t zero[16384] = { 0 };
 
 static void test_ecb(void)
 {
@@ -208,11 +208,14 @@ static void test_generated(int aes256)
         ptls_cipher_encrypt(rand, &aadlen, zero, sizeof(aadlen));
         ptls_cipher_encrypt(rand, &textlen, zero, sizeof(textlen));
         ptls_cipher_encrypt(rand, &seq, zero, sizeof(seq));
-        uint8_t aad[aadlen], text[textlen];
+
+        uint8_t aad[256], text[256];
+
         ptls_cipher_encrypt(rand, aad, zero, sizeof(aad));
         ptls_cipher_encrypt(rand, text, zero, sizeof(text));
 
-        uint8_t encrypted[textlen + 16], decrypted[textlen];
+        uint8_t encrypted[272], decrypted[256];
+
         memset(encrypted, 0x55, sizeof(encrypted));
         memset(decrypted, 0xcc, sizeof(decrypted));
 
