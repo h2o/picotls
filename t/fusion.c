@@ -24,8 +24,13 @@
 #include <string.h>
 #include "picotls/fusion.h"
 #include "picotls/minicrypto.h"
+#ifdef _WINDOWS
+#include "deps/picotest/picotest.h"
+#include "lib/fusion.c"
+#else
 #include "../deps/picotest/picotest.h"
 #include "../lib/fusion.c"
+#endif
 
 static const char *tostr(const void *_p, size_t len)
 {
@@ -50,7 +55,11 @@ static const char *tostr(const void *_p, size_t len)
 
 static void test_loadn(void)
 {
+#ifdef _WINDOWS
+    uint8_t buf[8192] = { 0 };
+#else
     uint8_t buf[8192] = {};
+#endif
 
     for (size_t off = 0; off < 8192 - 15; ++off) {
         uint8_t *src = buf + off;
@@ -64,9 +73,11 @@ static void test_loadn(void)
     }
     ok(!!"success");
 }
-
+#ifdef _WINDOWS
+static const uint8_t zero[16384] = { 0 };
+#else
 static const uint8_t zero[16384] = {};
-
+#endif
 static void test_ecb(void)
 {
     ptls_fusion_aesecb_context_t ecb;
@@ -208,11 +219,19 @@ static void test_generated(int aes256)
         ptls_cipher_encrypt(rand, &aadlen, zero, sizeof(aadlen));
         ptls_cipher_encrypt(rand, &textlen, zero, sizeof(textlen));
         ptls_cipher_encrypt(rand, &seq, zero, sizeof(seq));
+#ifdef _WINDOWS
+        uint8_t aad[256], text[256];
+#else
         uint8_t aad[aadlen], text[textlen];
+#endif
         ptls_cipher_encrypt(rand, aad, zero, sizeof(aad));
         ptls_cipher_encrypt(rand, text, zero, sizeof(text));
 
+#ifdef _WINDOWS
+        uint8_t encrypted[272], decrypted[256];
+#else
         uint8_t encrypted[textlen + 16], decrypted[textlen];
+#endif
         memset(encrypted, 0x55, sizeof(encrypted));
         memset(decrypted, 0xcc, sizeof(decrypted));
 
