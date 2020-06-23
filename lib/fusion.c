@@ -293,7 +293,11 @@ void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, void *output,
 
     __m128i ek0, bits0, bits1, bits2, bits3, bits4, bits5 = _mm_setzero_si128();
     const __m128i *bits4keys = ctx->ecb.keys; /* is changed to supp->ctx.keys when calcurating suppout */
+#ifdef _WINDOWS
+    struct ptls_fusion_gfmul_state gstate = {0};
+#else
     struct ptls_fusion_gfmul_state gstate = {};
+#endif
     __m128i gdatabuf[6];
     __m128i ac = _mm_shuffle_epi8(_mm_set_epi32(0, (int)aadlen * 8, 0, (int)inlen * 8), bswap8);
 
@@ -491,7 +495,11 @@ int ptls_fusion_aesgcm_decrypt(ptls_fusion_aesgcm_context_t *ctx, void *output, 
 {
     __m128i ek0 = _mm_setzero_si128(), bits0, bits1 = _mm_setzero_si128(), bits2 = _mm_setzero_si128(), bits3 = _mm_setzero_si128(),
             bits4 = _mm_setzero_si128(), bits5 = _mm_setzero_si128();
+#ifdef _WINDOWS
+    struct ptls_fusion_gfmul_state gstate = { 0 };
+#else
     struct ptls_fusion_gfmul_state gstate = {};
+#endif
     __m128i gdatabuf[6];
     __m128i ac = _mm_shuffle_epi8(_mm_set_epi32(0, (int)aadlen * 8, 0, (int)inlen * 8), bswap8);
     struct ptls_fusion_aesgcm_ghash_precompute *ghash_precompute = ctx->ghash + (aadlen + 15) / 16 + (inlen + 15) / 16 + 1;
@@ -983,6 +991,12 @@ ptls_aead_algorithm_t ptls_fusion_aes256gcm = {"AES256-GCM",
                                                sizeof(struct aesgcm_context),
                                                aes256gcm_setup};
 
+#ifdef _WINDOWS
+int ptls_fusion_is_supported_by_cpu(void)
+{
+    return 1;
+}
+#else
 int ptls_fusion_is_supported_by_cpu(void)
 {
     unsigned leaf1_ecx, leaf7_ebx;
@@ -1008,3 +1022,4 @@ int ptls_fusion_is_supported_by_cpu(void)
 
     return 1;
 }
+#endif
