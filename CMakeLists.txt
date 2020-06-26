@@ -145,7 +145,9 @@ IF ((CMAKE_SIZEOF_VOID_P EQUAL 8) AND
         t/fusion.c)
     TARGET_LINK_LIBRARIES(test-fusion.t picotls-minicrypto)
     SET_TARGET_PROPERTIES(test-fusion.t PROPERTIES COMPILE_FLAGS "-mavx2 -maes -mpclmul")
-    ADD_DEPENDENCIES(test-fusion.t generate-picotls-probes)
+    IF (WITH_DTRACE)
+        ADD_DEPENDENCIES(test-fusion.t generate-picotls-probes)
+    ENDIF ()
     SET(TEST_EXES ${TEST_EXES} test-fusion.t)
 ENDIF ()
 
