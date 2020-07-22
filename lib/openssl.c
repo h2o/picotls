@@ -229,7 +229,7 @@ static int x9_62_create_context(ptls_key_exchange_algorithm_t *algo, struct st_x
 
     ret = 0;
 Exit:
-    if (ret != 0) {
+    if (ret != 0 && *ctx != NULL) {
         x9_62_free_context(*ctx);
         *ctx = NULL;
     }
