@@ -1016,6 +1016,13 @@ typedef struct st_ptls_handshake_properties_t {
      * an optional callback that reports the extensions being collected
      */
     int (*collected_extensions)(ptls_t *tls, struct st_ptls_handshake_properties_t *properties, ptls_raw_extension_t *extensions);
+    /**
+     * [optional] if set, the endpoints negotiate using the provided pre-shared key only
+     */
+    struct {
+        ptls_iovec_t identity;
+        ptls_iovec_t key;
+    } pre_shared_key;
 } ptls_handshake_properties_t;
 #ifdef _WINDOWS
 #pragma warning(pop)
