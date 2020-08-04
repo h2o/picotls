@@ -1139,6 +1139,98 @@ static void test_stateless_hrr_aad_change(void)
     ptls_buffer_dispose(&sbuf);
 }
 
+static void test_pre_shared_key(void)
+{
+    uint32_t max_early_data_size_backup = ctx->max_early_data_size;
+    ctx->max_early_data_size = 16384;
+
+    ptls_t *client = ptls_new(ctx, 0), *server = ptls_new(ctx, 1);
+    ptls_buffer_t cbuf, sbuf, decbuf;
+    ptls_buffer_init(&cbuf, "", 0);
+    ptls_buffer_init(&sbuf, "", 0);
+    ptls_buffer_init(&decbuf, "", 0);
+
+    ptls_handshake_properties_t client_prop = {};
+    size_t client_max_early_data_size = 0;
+    client_prop.pre_shared_key.identity = ptls_iovec_init("", 1);
+    client_prop.pre_shared_key.key = ptls_iovec_init("hello world", 11);
+    client_prop.client.max_early_data_size = &client_max_early_data_size;
+
+    ptls_handshake_properties_t server_prop = {.pre_shared_key = client_prop.pre_shared_key};
+
+    /* [client] send CH and early data */
+    int ret = ptls_handshake(client, &cbuf, NULL, NULL, &client_prop);
+    ok(ret == PTLS_ERROR_IN_PROGRESS);
+    ok(client_prop.client.early_data_acceptance == PTLS_EARLY_DATA_ACCEPTANCE_UNKNOWN);
+    ok(client_max_early_data_size == SIZE_MAX);
+    ret = ptls_send(client, &cbuf, "hello", 5);
+    ok(ret == 0);
+
+    /* [server] read CH and generate up to ServerFinished */
+    size_t consumed = cbuf.off;
+    ret = ptls_handshake(server, &sbuf, cbuf.base, &consumed, &server_prop);
+    ok(ret == 0);
+    ok(consumed < cbuf.off);
+    memmove(cbuf.base, cbuf.base + consumed, cbuf.off - consumed);
+    cbuf.off -= consumed;
+
+    /* [server] read early data */
+    consumed = cbuf.off;
+    ret = ptls_receive(server, &decbuf, cbuf.base, &consumed);
+    ok(ret == 0);
+    ok(consumed == cbuf.off);
+    cbuf.off = 0;
+    ok(decbuf.off == 5);
+    ok(memcmp(decbuf.base, "hello", 5) == 0);
+    decbuf.off = 0;
+
+    /* [server] write 0.5-RTT data */
+    ret = ptls_send(server, &sbuf, "hi", 2);
+    ok(ret == 0);
+
+    /* [client] read up to ServerFinished */
+    consumed = sbuf.off;
+    ret = ptls_handshake(client, &cbuf, sbuf.base, &consumed, &client_prop);
+    ok(ret == 0);
+    ok(client_prop.client.early_data_acceptance == PTLS_EARLY_DATA_ACCEPTED);
+    ok(consumed < sbuf.off);
+    memmove(sbuf.base, sbuf.base + consumed, sbuf.off - consumed);
+    sbuf.off -= consumed;
+
+    /* [client] read 0.5-RTT data */
+    consumed = sbuf.off;
+    ret = ptls_receive(client, &decbuf, sbuf.base, &consumed);
+    ok(ret == 0);
+    ok(consumed == sbuf.off);
+    sbuf.off = 0;
+    ok(decbuf.off == 2);
+    ok(memcmp(decbuf.base, "hi", 2) == 0);
+    decbuf.off = 0;
+
+    /* [client] write 1-RTT data */
+    ret = ptls_send(client, &cbuf, "bye", 3);
+    ok(ret == 0);
+
+    /* [server] read ClientFinished and 1-RTT data */
+    ok(!ptls_handshake_is_complete(server));
+    consumed = cbuf.off;
+    ret = ptls_receive(server, &decbuf, cbuf.base, &consumed);
+    ok(ret == 0);
+    ok(ptls_handshake_is_complete(server));
+    ok(consumed == cbuf.off);
+    cbuf.off = 0;
+    ok(decbuf.off == 3);
+    ok(memcmp(decbuf.base, "bye", 3) == 0);
+
+    ptls_buffer_dispose(&cbuf);
+    ptls_buffer_dispose(&sbuf);
+    ptls_buffer_dispose(&decbuf);
+    ptls_free(client);
+    ptls_free(server);
+
+    ctx->max_early_data_size = max_early_data_size_backup;
+}
+
 typedef uint8_t traffic_secrets_t[2 /* is_enc */][4 /* epoch */][PTLS_MAX_DIGEST_SIZE /* octets */];
 
 static int on_update_traffic_key(ptls_update_traffic_key_t *self, ptls_t *tls, int is_enc, size_t epoch, const void *secret)
@@ -1450,6 +1542,8 @@ static void test_all_handshakes(void)
     subtest("stateless-hrr-aad-change", test_stateless_hrr_aad_change);
 
     subtest("key-update", test_key_update);
+
+    subtest("pre-shared-key", test_pre_shared_key);
 
     subtest("handshake-api", test_handshake_api);
 
