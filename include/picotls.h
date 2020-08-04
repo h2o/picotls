@@ -825,7 +825,7 @@ typedef struct st_ptls_handshake_properties_t {
      */
     int (*collected_extensions)(ptls_t *tls, struct st_ptls_handshake_properties_t *properties, ptls_raw_extension_t *extensions);
     /**
-     * [optional] if set, the endpoints negotiate using the provided pre-shared key only
+     * [optional] if set, the endpoints negotiate using the provided pre-shared key
      */
     struct st_ptls_external_psk_t {
         ptls_iovec_t identity;
