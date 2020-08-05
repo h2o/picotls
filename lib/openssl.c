@@ -1234,14 +1234,6 @@ Exit:
     return ret;
 }
 
-static void cleanup_cipher_ctx(EVP_CIPHER_CTX *ctx)
-{
-    if (!EVP_CIPHER_CTX_reset(ctx)) {
-        fprintf(stderr, "EVP_CIPHER_CTX_reset() failed\n");
-        abort();
-    }
-}
-
 int ptls_openssl_init_verify_certificate(ptls_openssl_verify_certificate_t *self, X509_STORE *store)
 {
     *self = (ptls_openssl_verify_certificate_t){{verify_cert}};
@@ -1341,7 +1333,7 @@ int ptls_openssl_encrypt_ticket(ptls_buffer_t *buf, ptls_iovec_t src,
 
 Exit:
     if (cctx != NULL)
-        cleanup_cipher_ctx(cctx);
+        EVP_CIPHER_CTX_free(cctx);
     if (hctx != NULL)
         HMAC_CTX_free(hctx);
     return ret;
@@ -1411,7 +1403,7 @@ int ptls_openssl_decrypt_ticket(ptls_buffer_t *buf, ptls_iovec_t src,
 
 Exit:
     if (cctx != NULL)
-        cleanup_cipher_ctx(cctx);
+        EVP_CIPHER_CTX_free(cctx);
     if (hctx != NULL)
         HMAC_CTX_free(hctx);
     return ret;
