@@ -1290,12 +1290,12 @@ Error:
 int ptls_openssl_encrypt_ticket(ptls_buffer_t *buf, ptls_iovec_t src,
                                 int (*cb)(unsigned char *key_name, unsigned char *iv, EVP_CIPHER_CTX *ctx, HMAC_CTX *hctx, int enc))
 {
-    static __thread EVP_CIPHER_CTX *cctx = NULL;
+    EVP_CIPHER_CTX *cctx = NULL;
     HMAC_CTX *hctx = NULL;
     uint8_t *dst;
     int clen, ret;
 
-    if (!cctx && (cctx = EVP_CIPHER_CTX_new()) == NULL) {
+    if ((cctx = EVP_CIPHER_CTX_new()) == NULL) {
         ret = PTLS_ERROR_NO_MEMORY;
         goto Exit;
     }
@@ -1350,11 +1350,11 @@ Exit:
 int ptls_openssl_decrypt_ticket(ptls_buffer_t *buf, ptls_iovec_t src,
                                 int (*cb)(unsigned char *key_name, unsigned char *iv, EVP_CIPHER_CTX *ctx, HMAC_CTX *hctx, int enc))
 {
-    static __thread EVP_CIPHER_CTX *cctx = NULL;
+    EVP_CIPHER_CTX *cctx = NULL;
     HMAC_CTX *hctx = NULL;
     int clen, ret;
 
-    if (!cctx && (cctx = EVP_CIPHER_CTX_new()) == NULL) {
+    if ((cctx = EVP_CIPHER_CTX_new()) == NULL) {
         ret = PTLS_ERROR_NO_MEMORY;
         goto Exit;
     }
