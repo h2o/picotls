@@ -342,11 +342,11 @@ typedef const struct st_ptls_aead_algorithm_t {
      */
     const char *name;
     /**
-     * confidentiality_limit (max packets sent before re-key)
+     * confidentiality_limit (max records / packets sent before re-key)
      */
     const uint64_t confidentiality_limit;
     /**
-     * integrity_limit (max decryption failure packets before re-key)
+     * integrity_limit (max decryption failure records / packets before re-key)
      */
     const uint64_t integrity_limit;
     /**
