@@ -206,6 +206,8 @@ ptls_cipher_algorithm_t ptls_minicrypto_chacha20 = {
     "CHACHA20",           PTLS_CHACHA20_KEY_SIZE, 1 /* block size */, PTLS_CHACHA20_IV_SIZE, sizeof(struct chacha20_context_t),
     chacha20_setup_crypto};
 ptls_aead_algorithm_t ptls_minicrypto_chacha20poly1305 = {"CHACHA20-POLY1305",
+                                                          PTLS_CHACHA20POLY1305_CONFIDENTIALITY_LIMIT,
+                                                          PTLS_CHACHA20POLY1305_INTEGRITY_LIMIT,
                                                           &ptls_minicrypto_chacha20,
                                                           NULL,
                                                           PTLS_CHACHA20_KEY_SIZE,

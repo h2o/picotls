@@ -750,6 +750,8 @@ ptls_cipher_algorithm_t ptls_bcrypt_aes256ctr = {"AES256-CTR",
                                                  ptls_bcrypt_cipher_setup_crypto_aes_ctr};
 
 ptls_aead_algorithm_t ptls_bcrypt_aes128gcm = {"AES128-GCM",
+                                               PTLS_AESGCM_CONFIDENTIALITY_LIMIT,
+                                               PTLS_AESGCM_INTEGRITY_LIMIT,
                                                &ptls_bcrypt_aes128ecb,
                                                &ptls_bcrypt_aes128ctr,
                                                PTLS_AES128_KEY_SIZE,
@@ -759,6 +761,8 @@ ptls_aead_algorithm_t ptls_bcrypt_aes128gcm = {"AES128-GCM",
                                                ptls_bcrypt_aead_setup_crypto_aesgcm};
 
 ptls_aead_algorithm_t ptls_bcrypt_aes256gcm = {"AES256-GCM",
+                                               PTLS_AESGCM_CONFIDENTIALITY_LIMIT,
+                                               PTLS_AESGCM_INTEGRITY_LIMIT,
                                                &ptls_bcrypt_aes256ecb,
                                                &ptls_bcrypt_aes256ctr,
                                                PTLS_AES256_KEY_SIZE,
