@@ -38,7 +38,7 @@
  * IN THE SOFTWARE.
  */
 #include <stdint.h>
-    
+
 #include <stdlib.h>
 #include <string.h>
 #include <immintrin.h>
@@ -294,7 +294,7 @@ void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, void *output,
 
     __m128i ek0, bits0, bits1, bits2, bits3, bits4, bits5 = _mm_setzero_si128();
     const __m128i *bits4keys = ctx->ecb.keys; /* is changed to supp->ctx.keys when calcurating suppout */
-    struct ptls_fusion_gfmul_state gstate = { 0 };
+    struct ptls_fusion_gfmul_state gstate = {0};
     __m128i gdatabuf[6];
     __m128i ac = _mm_shuffle_epi8(_mm_set_epi32(0, (int)aadlen * 8, 0, (int)inlen * 8), bswap8);
 
@@ -492,7 +492,7 @@ int ptls_fusion_aesgcm_decrypt(ptls_fusion_aesgcm_context_t *ctx, void *output, 
 {
     __m128i ek0 = _mm_setzero_si128(), bits0, bits1 = _mm_setzero_si128(), bits2 = _mm_setzero_si128(), bits3 = _mm_setzero_si128(),
             bits4 = _mm_setzero_si128(), bits5 = _mm_setzero_si128();
-    struct ptls_fusion_gfmul_state gstate = { 0 };
+    struct ptls_fusion_gfmul_state gstate = {0};
     __m128i gdatabuf[6];
     __m128i ac = _mm_shuffle_epi8(_mm_set_epi32(0, (int)aadlen * 8, 0, (int)inlen * 8), bswap8);
     struct ptls_fusion_aesgcm_ghash_precompute *ghash_precompute = ctx->ghash + (aadlen + 15) / 16 + (inlen + 15) / 16 + 1;
@@ -1009,7 +1009,7 @@ int ptls_fusion_is_supported_by_cpu(void)
         uint32_t leaf1_ecx;
         __cpuid(cpu_info, 1);
         leaf1_ecx = cpu_info[2];
-        
+
         if (/* PCLMUL */ (leaf1_ecx & (1 << 5)) != 0 && /* AES */ (leaf1_ecx & (1 << 25)) != 0) {
             uint32_t leaf7_ebx;
             __cpuid(cpu_info, 7);
