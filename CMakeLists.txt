@@ -93,9 +93,13 @@ ADD_EXECUTABLE(test-minicrypto.t
     lib/cifra/random.c)
 SET(TEST_EXES test-minicrypto.t)
 
+SET(PTLSINSTALL_LIBS
+    picotls-core
+    picotls-minicrypto)
 
 SET(PTLSBENCH_LIBS
-    picotls-minicrypto picotls-core)
+    picotls-core
+    picotls-minicrypto)
 
 FIND_PACKAGE(OpenSSL)
 IF (OPENSSL_FOUND AND NOT (OPENSSL_VERSION VERSION_LESS "1.0.1"))
@@ -127,6 +131,7 @@ IF (OPENSSL_FOUND AND NOT (OPENSSL_VERSION VERSION_LESS "1.0.1"))
     TARGET_LINK_LIBRARIES(test-openssl.t ${OPENSSL_LIBRARIES} ${CMAKE_DL_LIBS})
 
     LIST(APPEND PTLSBENCH_LIBS picotls-openssl ${OPENSSL_LIBRARIES} ${CMAKE_DL_LIBS})
+    LIST(APPEND PTLSINSTALL_LIBS picotls-openssl)
 
     SET(TEST_EXES ${TEST_EXES} test-openssl.t)
 ELSE ()
@@ -151,8 +156,9 @@ IF ((CMAKE_SIZEOF_VOID_P EQUAL 8) AND
         ADD_DEPENDENCIES(test-fusion.t generate-picotls-probes)
     ENDIF ()
     SET(TEST_EXES ${TEST_EXES} test-fusion.t)
-    
+
     LIST(APPEND PTLSBENCH_LIBS picotls-fusion)
+    LIST(APPEND PTLSINSTALL_LIBS picotls-fusion)
 ENDIF ()
 
 ADD_EXECUTABLE(ptlsbench t/ptlsbench.c)
@@ -207,4 +213,13 @@ IF (BUILD_FUZZER)
     TARGET_LINK_LIBRARIES(fuzz-server-hello picotls-core picotls-openssl ${OPENSSL_LIBRARIES} ${LIB_FUZZER})
     TARGET_LINK_LIBRARIES(fuzz-client-hello picotls-core picotls-openssl ${OPENSSL_LIBRARIES} ${LIB_FUZZER})
 
+ENDIF()
+
+IF (NOT (CMAKE_VERSION VERSION_LESS "3.0.1"))
+    INSTALL(TARGETS ${PTLSINSTALL_LIBS}
+            RUNTIME DESTINATION bin
+            LIBRARY DESTINATION lib
+            ARCHIVE DESTINATION lib)
+ELSE()
+    MESSAGE(WARNING "CANNOT MAKE INSTALL (requires CMAKE 3.0.1 or newer)")
 ENDIF()
