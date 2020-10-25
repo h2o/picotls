@@ -831,6 +831,10 @@ typedef struct st_ptls_handshake_properties_t {
      */
     ptls_raw_extension_t *additional_extensions;
     /**
+     * an optional list of extensions to send in NST, terminated by type == UINT16_MAX
+     */
+    ptls_raw_extension_t *nst_extensions;
+    /**
      * an optional callback that returns a boolean value indicating if a particular extension should be collected
      */
     int (*collect_extension)(ptls_t *tls, struct st_ptls_handshake_properties_t *properties, uint16_t type);
