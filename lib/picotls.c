@@ -1467,7 +1467,8 @@ Exit:
     return ret;
 }
 
-static int send_session_ticket(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_handshake_properties_t *properties)
+
+static int send_new_session_ticket(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_handshake_properties_t *properties)
 {
     ptls_hash_context_t *msghash_backup = tls->key_schedule->hashes[0].ctx->clone_(tls->key_schedule->hashes[0].ctx);
     ptls_buffer_t session_id;
@@ -1477,25 +1478,6 @@ static int send_session_ticket(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
 
     assert(tls->ctx->ticket_lifetime != 0);
     assert(tls->ctx->encrypt_ticket != NULL);
-
-    { /* calculate verify-data that will be sent by the client */
-        size_t orig_off = emitter->buf->off;
-        if (tls->pending_handshake_secret != NULL && !tls->ctx->omit_end_of_early_data) {
-            assert(tls->state == PTLS_STATE_SERVER_EXPECT_END_OF_EARLY_DATA);
-            ptls_buffer_push_message_body(emitter->buf, tls->key_schedule, PTLS_HANDSHAKE_TYPE_END_OF_EARLY_DATA, {});
-            emitter->buf->off = orig_off;
-        }
-        ptls_buffer_push_message_body(emitter->buf, tls->key_schedule, PTLS_HANDSHAKE_TYPE_FINISHED, {
-            if ((ret = ptls_buffer_reserve(emitter->buf, tls->key_schedule->hashes[0].algo->digest_size)) != 0)
-                goto Exit;
-            if ((ret = calc_verify_data(emitter->buf->base + emitter->buf->off, tls->key_schedule,
-                                        tls->pending_handshake_secret != NULL ? tls->pending_handshake_secret
-                                                                              : tls->traffic_protection.dec.secret)) != 0)
-                goto Exit;
-            emitter->buf->off += tls->key_schedule->hashes[0].algo->digest_size;
-        });
-        emitter->buf->off = orig_off;
-    }
 
     tls->ctx->random_bytes(&ticket_age_add, sizeof(ticket_age_add));
 
@@ -1527,13 +1509,55 @@ static int send_session_ticket(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
 
 Exit:
     ptls_buffer_dispose(&session_id);
+    /* restore handshake state */
+    tls->key_schedule->hashes[0].ctx->final(tls->key_schedule->hashes[0].ctx, NULL, PTLS_HASH_FINAL_MODE_FREE);
+    tls->key_schedule->hashes[0].ctx = msghash_backup;
 
+
+    return ret;
+}
+
+
+static int send_session_ticket(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_handshake_properties_t *properties)
+{
+    ptls_hash_context_t *msghash_backup = tls->key_schedule->hashes[0].ctx->clone_(tls->key_schedule->hashes[0].ctx);
+    int ret = 0;
+
+    assert(tls->ctx->ticket_lifetime != 0);
+    assert(tls->ctx->encrypt_ticket != NULL);
+
+    { /* calculate verify-data that will be sent by the client */
+        size_t orig_off = emitter->buf->off;
+        if (tls->pending_handshake_secret != NULL && !tls->ctx->omit_end_of_early_data) {
+            assert(tls->state == PTLS_STATE_SERVER_EXPECT_END_OF_EARLY_DATA);
+            ptls_buffer_push_message_body(emitter->buf, tls->key_schedule, PTLS_HANDSHAKE_TYPE_END_OF_EARLY_DATA, {});
+            emitter->buf->off = orig_off;
+        }
+        ptls_buffer_push_message_body(emitter->buf, tls->key_schedule, PTLS_HANDSHAKE_TYPE_FINISHED, {
+            if ((ret = ptls_buffer_reserve(emitter->buf, tls->key_schedule->hashes[0].algo->digest_size)) != 0)
+                goto Exit;
+            if ((ret = calc_verify_data(emitter->buf->base + emitter->buf->off, tls->key_schedule,
+                                        tls->pending_handshake_secret != NULL ? tls->pending_handshake_secret
+                                                                              : tls->traffic_protection.dec.secret)) != 0)
+                goto Exit;
+            emitter->buf->off += tls->key_schedule->hashes[0].algo->digest_size;
+        });
+        emitter->buf->off = orig_off;
+    }
+
+    {/* Send New Session Ticket */ 
+      if ((ret = send_new_session_ticket(tls, emitter, properties) != 0))
+          goto Exit;
+    }
+
+Exit:
     /* restore handshake state */
     tls->key_schedule->hashes[0].ctx->final(tls->key_schedule->hashes[0].ctx, NULL, PTLS_HASH_FINAL_MODE_FREE);
     tls->key_schedule->hashes[0].ctx = msghash_backup;
 
     return ret;
 }
+
 
 static int push_change_cipher_spec(ptls_t *tls, ptls_message_emitter_t *emitter)
 {
@@ -5368,6 +5392,10 @@ int ptls_server_handle_message(ptls_t *tls, ptls_buffer_t *sendbuf, size_t epoch
     struct st_ptls_raw_message_emitter_t emitter = {
         {sendbuf, &tls->traffic_protection.enc, 0, begin_raw_message, commit_raw_message}, SIZE_MAX, epoch_offsets};
     struct st_ptls_record_t rec = {PTLS_CONTENT_TYPE_HANDSHAKE, 0, inlen, input};
+
+    /* If necessary, can be used to send multiple session tickets during the same connection */
+    if (input == NULL)
+        return send_new_session_ticket(tls, &emitter.super, properties);
 
     assert(input);
 
