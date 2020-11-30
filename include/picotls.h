@@ -324,6 +324,7 @@ typedef struct st_ptls_aead_context_t {
     const struct st_ptls_aead_algorithm_t *algo;
     /* field above this line must not be altered by the crypto binding */
     void (*dispose_crypto)(struct st_ptls_aead_context_t *ctx);
+    void (*do_xor_iv)(struct st_ptls_aead_context_t *ctx, const void *xor, size_t xorlen);
     void (*do_encrypt_init)(struct st_ptls_aead_context_t *ctx, uint64_t seq, const void *aad, size_t aadlen);
     size_t (*do_encrypt_update)(struct st_ptls_aead_context_t *ctx, void *output, const void *input, size_t inlen);
     size_t (*do_encrypt_final)(struct st_ptls_aead_context_t *ctx, void *output);
@@ -1229,6 +1230,11 @@ ptls_aead_context_t *ptls_aead_new_direct(ptls_aead_algorithm_t *aead, int is_en
  */
 void ptls_aead_free(ptls_aead_context_t *ctx);
 /**
+ * Permutates the static IV by applying given bytes using bit-wise XOR. This API can be used for supplying nonces longer than 64-
+ * bits.
+ */
+static void ptls_aead_xor_iv(ptls_aead_context_t *ctx, const void *bytes, size_t len);
+/**
  *
  */
 static size_t ptls_aead_encrypt(ptls_aead_context_t *ctx, void *output, const void *input, size_t inlen, uint64_t seq,
@@ -1411,6 +1417,11 @@ inline void ptls_cipher_init(ptls_cipher_context_t *ctx, const void *iv)
 inline void ptls_cipher_encrypt(ptls_cipher_context_t *ctx, void *output, const void *input, size_t len)
 {
     ctx->do_transform(ctx, output, input, len);
+}
+
+inline void ptls_aead_xor_iv(ptls_aead_context_t *ctx, const void *bytes, size_t len)
+{
+    ctx->do_xor_iv(ctx, bytes, len);
 }
 
 inline size_t ptls_aead_encrypt(ptls_aead_context_t *ctx, void *output, const void *input, size_t inlen, uint64_t seq,

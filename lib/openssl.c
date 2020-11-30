@@ -779,6 +779,15 @@ static void aead_dispose_crypto(ptls_aead_context_t *_ctx)
         EVP_CIPHER_CTX_free(ctx->evp_ctx);
 }
 
+static void aead_xor_iv(ptls_aead_context_t *_ctx, const void *_bytes, size_t len)
+{
+    struct aead_crypto_context_t *ctx = (struct aead_crypto_context_t *)_ctx;
+    const uint8_t *bytes = _bytes;
+
+    for (size_t i = 0; i < len; ++i)
+        ctx->static_iv[i] ^= bytes[i];
+}
+
 static void aead_do_encrypt_init(ptls_aead_context_t *_ctx, uint64_t seq, const void *aad, size_t aadlen)
 {
     struct aead_crypto_context_t *ctx = (struct aead_crypto_context_t *)_ctx;
@@ -864,6 +873,7 @@ static int aead_setup_crypto(ptls_aead_context_t *_ctx, int is_enc, const void *
         return 0;
 
     ctx->super.dispose_crypto = aead_dispose_crypto;
+    ctx->super.do_xor_iv = aead_xor_iv;
     if (is_enc) {
         ctx->super.do_encrypt_init = aead_do_encrypt_init;
         ctx->super.do_encrypt_update = aead_do_encrypt_update;
