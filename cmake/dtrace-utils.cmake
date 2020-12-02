@@ -28,7 +28,7 @@ FUNCTION (DEFINE_DTRACE_DEPENDENCIES d_file prefix)
 
     ADD_CUSTOM_COMMAND(
         OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${prefix}-probes.h
-        COMMAND dtrace -o ${CMAKE_CURRENT_BINARY_DIR}/${prefix}-probes.h -s ${d_file} -h
+        COMMAND dtrace -k -o ${CMAKE_CURRENT_BINARY_DIR}/${prefix}-probes.h -s ${d_file} -h
         DEPENDS ${d_file})
     SET_SOURCE_FILES_PROPERTIES(${prefix}-probes.h PROPERTIES GENERATED TRUE)
     ADD_CUSTOM_TARGET(_generate-${prefix}-probes_h DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/${prefix}-probes.h)
@@ -36,7 +36,7 @@ FUNCTION (DEFINE_DTRACE_DEPENDENCIES d_file prefix)
     IF (DTRACE_USES_OBJFILE)
         ADD_CUSTOM_COMMAND(
             OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${prefix}-probes.o
-            COMMAND dtrace -o ${CMAKE_CURRENT_BINARY_DIR}/${prefix}-probes.o -s ${d_file} -G
+            COMMAND dtrace -k -o ${CMAKE_CURRENT_BINARY_DIR}/${prefix}-probes.o -s ${d_file} -G
             DEPENDS ${d_file})
         SET_SOURCE_FILES_PROPERTIES(${CMAKE_CURRENT_BINARY_DIR}/${prefix}-probes.o PROPERTIES GENERATED TRUE)
         ADD_CUSTOM_TARGET(_generate-${prefix}-probes_o)
