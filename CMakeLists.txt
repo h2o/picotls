@@ -1,5 +1,6 @@
 CMAKE_MINIMUM_REQUIRED(VERSION 2.8.11)
 CMAKE_POLICY(SET CMP0003 NEW)
+CMAKE_POLICY(SET CMP0046 NEW)
 
 PROJECT(picotls)
 
@@ -151,7 +152,7 @@ IF ((CMAKE_SIZEOF_VOID_P EQUAL 8) AND
         ADD_DEPENDENCIES(test-fusion.t generate-picotls-probes)
     ENDIF ()
     SET(TEST_EXES ${TEST_EXES} test-fusion.t)
-    
+
     LIST(APPEND PTLSBENCH_LIBS picotls-fusion)
 ENDIF ()
 
