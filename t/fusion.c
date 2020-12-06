@@ -24,7 +24,7 @@
 #include <stdio.h>
 int main(int argc, char **argv)
 {
-    printf("Fusion is disabled on x66 32 bits builds.\n");
+    printf("Fusion is disabled on x86 32 bits builds.\n");
 }
 #else
 #include <assert.h>
