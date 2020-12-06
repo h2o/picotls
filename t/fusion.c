@@ -205,6 +205,7 @@ static void gcm_iv96(void)
     uint8_t encrypted[sizeof(plaintext) + 16], decrypted[sizeof(plaintext)];
     uint8_t seq32[4] = {0x11, 0x23, 0x45, 0x67};
     uint8_t seq32_bad[4] = {0x89, 0xab, 0xcd, 0xef};
+
     ptls_aead_xor_iv(aead, seq32, sizeof(seq32));
     ptls_aead_encrypt(aead, encrypted, plaintext, sizeof(plaintext), 0, aad, sizeof(aad));
     ok(ptls_aead_decrypt(aead, decrypted, encrypted, sizeof(encrypted), 0, aad, sizeof(aad)) == sizeof(plaintext));

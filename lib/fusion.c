@@ -927,8 +927,8 @@ static size_t aead_do_decrypt(ptls_aead_context_t *_ctx, void *output, const voi
 static inline void aesgcm_fusion_aead_xor_iv(ptls_aead_context_t *_ctx, const void *_bytes, size_t len)
 {
     struct aesgcm_context *ctx = (struct aesgcm_context *)_ctx;
-    const uint8_t *bytes = _bytes;
     __m128i xor_mask = loadn(_bytes, len);
+    xor_mask = _mm_shuffle_epi8(xor_mask, bswap8);
     ctx->static_iv = _mm_xor_si128(ctx->static_iv, xor_mask);
 }
 
