@@ -193,6 +193,31 @@ static void gcm_test_vectors(void)
     ptls_fusion_aesgcm_free(aead);
 }
 
+static void gcm_iv96(void)
+{
+    static const uint8_t key[16] = {0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff},
+                         aad[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19},
+                         iv[] = {20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31},
+                         plaintext[] =
+                             "hello world\nhello world\nhello world\nhello world\nhello world\nhello world\nhello world\n";
+
+    ptls_aead_context_t *aead = ptls_aead_new_direct(&ptls_fusion_aes128gcm, 0, key, iv);
+    uint8_t encrypted[sizeof(plaintext) + 16], decrypted[sizeof(plaintext)];
+    uint8_t seq32[4] = {0x11, 0x23, 0x45, 0x67};
+    uint8_t seq32_bad[4] = {0x89, 0xab, 0xcd, 0xef};
+    ptls_aead_xor_iv(aead, seq32, sizeof(seq32));
+    ptls_aead_encrypt(aead, encrypted, plaintext, sizeof(plaintext), 0, aad, sizeof(aad));
+    ok(ptls_aead_decrypt(aead, decrypted, encrypted, sizeof(encrypted), 0, aad, sizeof(aad)) == sizeof(plaintext));
+    ok(memcmp(decrypted, plaintext, sizeof(plaintext)) == 0);
+    ptls_aead_xor_iv(aead, seq32, sizeof(seq32));
+    ptls_aead_xor_iv(aead, seq32_bad, sizeof(seq32_bad));
+    ok(ptls_aead_decrypt(aead, decrypted, encrypted, sizeof(encrypted), 0, aad, sizeof(aad)) == SIZE_MAX);
+    ptls_aead_xor_iv(aead, seq32_bad, sizeof(seq32_bad));
+    ptls_aead_xor_iv(aead, seq32, sizeof(seq32));
+    ok(ptls_aead_decrypt(aead, decrypted, encrypted, sizeof(encrypted), 0, aad, sizeof(aad)) == sizeof(plaintext));
+    ptls_aead_free(aead);
+}
+
 static void test_generated(int aes256)
 {
     ptls_cipher_context_t *rand = ptls_cipher_new(&ptls_minicrypto_aes128ctr, 1, zero);
@@ -274,6 +299,7 @@ int main(int argc, char **argv)
     subtest("gcm-basic", gcm_basic);
     subtest("gcm-capacity", gcm_capacity);
     subtest("gcm-test-vectors", gcm_test_vectors);
+    subtest("gcm-iv96", gcm_iv96);
     subtest("generated-128", test_generated_aes128);
     subtest("generated-256", test_generated_aes256);
 
