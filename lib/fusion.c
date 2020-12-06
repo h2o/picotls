@@ -45,6 +45,10 @@
 #include <tmmintrin.h>
 #include <nmmintrin.h>
 #include <wmmintrin.h>
+#ifdef _WINDOWS
+#include "wincompat.h"
+__m128i _mm_insert_epi64(__m128i a, __int64 i, const int imm8);
+#endif
 #include "picotls.h"
 #include "picotls/fusion.h"
 

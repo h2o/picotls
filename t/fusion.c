@@ -19,6 +19,14 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
+
+#if defined(_WINDOWS) && !defined(_WINDOWS64)
+#include <stdio.h>
+int main(int argc, char **argv)
+{
+    printf("Fusion is disabled on x66 32 bits builds.\n");
+}
+#else
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
@@ -306,3 +314,4 @@ int main(int argc, char **argv)
 
     return done_testing();
 }
+#endif /* Windows and not 64 bits */
