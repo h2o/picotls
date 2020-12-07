@@ -476,6 +476,15 @@ static size_t ptls_bcrypt_aead_do_decrypt(struct st_ptls_aead_context_t *_ctx, v
     }
 }
 
+static void ptls_bcrypt_aead_xor_iv(ptls_aead_context_t *_ctx, const void *_bytes, size_t len)
+{
+    struct ptls_bcrypt_aead_context_t *ctx = (struct ptls_bcrypt_aead_context_t *)_ctx;
+    const uint8_t *bytes = _bytes;
+
+    for (size_t i = 0; i < len; ++i)
+        ctx->bctx.iv[i] ^= bytes[i];
+}
+
 static int ptls_bcrypt_aead_setup_crypto(ptls_aead_context_t *_ctx, int is_enc, const void *key, const void *iv,
                                          wchar_t const *bcrypt_name, wchar_t const *bcrypt_mode, size_t bcrypt_mode_size)
 {
@@ -530,6 +539,7 @@ static int ptls_bcrypt_aead_setup_crypto(ptls_aead_context_t *_ctx, int is_enc, 
         memcpy(ctx->bctx.iv_static, iv, ctx->super.algo->iv_size);
         if (is_enc) {
             ctx->super.dispose_crypto = ptls_bcrypt_aead_dispose_crypto;
+            ctx->super.do_xor_iv = ptls_bcrypt_aead_xor_iv;
             ctx->super.do_decrypt = NULL;
             ctx->super.do_encrypt_init = ptls_bcrypt_aead_do_encrypt_init;
             ctx->super.do_encrypt_update = ptls_bcrypt_aead_do_encrypt_update;
