@@ -946,7 +946,7 @@ static int aesgcm_setup(ptls_aead_context_t *_ctx, int is_enc, const void *key, 
         return 0;
 
     ctx->super.dispose_crypto = aesgcm_dispose_crypto;
-    ctx->super.do_xor_iv = aesgcm_fusion_aead_xor_iv;
+    ctx->super.do_xor_iv = aesgcm_xor_iv;
     ctx->super.do_encrypt_init = aead_do_encrypt_init;
     ctx->super.do_encrypt_update = aead_do_encrypt_update;
     ctx->super.do_encrypt_final = aead_do_encrypt_final;
