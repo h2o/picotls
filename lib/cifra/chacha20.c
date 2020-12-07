@@ -179,7 +179,7 @@ static size_t chacha20poly1305_decrypt(ptls_aead_context_t *_ctx, void *output, 
     return ret;
 }
 
-static void minicrypto_chacha20_aead_xor_iv(ptls_aead_context_t *_ctx, const void *_bytes, size_t len)
+static void chacha20poly1305_xor_iv(ptls_aead_context_t *_ctx, const void *_bytes, size_t len)
 {
     struct chacha20poly1305_context_t *ctx = (struct chacha20poly1305_context_t *)_ctx;
     const uint8_t *bytes = _bytes;
