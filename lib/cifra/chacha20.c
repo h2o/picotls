@@ -193,7 +193,7 @@ static int aead_chacha20poly1305_setup_crypto(ptls_aead_context_t *_ctx, int is_
     struct chacha20poly1305_context_t *ctx = (struct chacha20poly1305_context_t *)_ctx;
 
     ctx->super.dispose_crypto = chacha20poly1305_dispose_crypto;
-    ctx->super.do_xor_iv = minicrypto_chacha20_aead_xor_iv;
+    ctx->super.do_xor_iv = chacha20poly1305_xor_iv;
     if (is_enc) {
         ctx->super.do_encrypt_init = chacha20poly1305_init;
         ctx->super.do_encrypt_update = chacha20poly1305_encrypt_update;
