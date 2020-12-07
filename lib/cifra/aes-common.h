@@ -168,7 +168,7 @@ static inline int aead_aesgcm_setup_crypto(ptls_aead_context_t *_ctx, int is_enc
     struct aesgcm_context_t *ctx = (struct aesgcm_context_t *)_ctx;
 
     ctx->super.dispose_crypto = aesgcm_dispose_crypto;
-    ctx->super.do_xor_iv = minicrypto_aesgcm_aead_xor_iv;
+    ctx->super.do_xor_iv = aesgcm_xor_iv;
     if (is_enc) {
         ctx->super.do_encrypt_init = aesgcm_encrypt_init;
         ctx->super.do_encrypt_update = aesgcm_encrypt_update;
