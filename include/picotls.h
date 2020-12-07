@@ -1230,7 +1230,7 @@ ptls_aead_context_t *ptls_aead_new_direct(ptls_aead_algorithm_t *aead, int is_en
  */
 void ptls_aead_free(ptls_aead_context_t *ctx);
 /**
- * Permutates the static IV by applying given bytes using bit-wise XOR. This API can be used for supplying nonces longer than 64-
+ * Permutes the static IV by applying given bytes using bit-wise XOR. This API can be used for supplying nonces longer than 64-
  * bits.
  */
 static void ptls_aead_xor_iv(ptls_aead_context_t *ctx, const void *bytes, size_t len); 
