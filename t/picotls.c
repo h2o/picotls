@@ -325,7 +325,7 @@ static void test_chacha20(void)
 static void test_aes128gcm(void)
 {
     ptls_cipher_suite_t *cs = find_cipher(ctx, PTLS_CIPHER_SUITE_AES_128_GCM_SHA256),
-                        *cs_peer = find_cipher(ctx, PTLS_CIPHER_SUITE_AES_128_GCM_SHA256);
+                        *cs_peer = find_cipher(ctx_peer, PTLS_CIPHER_SUITE_AES_128_GCM_SHA256);
 
     test_ciphersuite(cs, cs_peer);
     test_aad_ciphersuite(cs, cs_peer);
@@ -335,7 +335,7 @@ static void test_aes128gcm(void)
 static void test_aes256gcm(void)
 {
     ptls_cipher_suite_t *cs = find_cipher(ctx, PTLS_CIPHER_SUITE_AES_256_GCM_SHA384),
-                        *cs_peer = find_cipher(ctx, PTLS_CIPHER_SUITE_AES_256_GCM_SHA384);
+                        *cs_peer = find_cipher(ctx_peer, PTLS_CIPHER_SUITE_AES_256_GCM_SHA384);
 
     if (cs != NULL && cs_peer != NULL) {
         test_ciphersuite(cs, cs_peer);
@@ -347,7 +347,7 @@ static void test_aes256gcm(void)
 static void test_chacha20poly1305(void)
 {
     ptls_cipher_suite_t *cs = find_cipher(ctx, PTLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256),
-                        *cs_peer = find_cipher(ctx, PTLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256);
+                        *cs_peer = find_cipher(ctx_peer, PTLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256);
 
     if (cs != NULL && cs_peer != NULL) {
         test_ciphersuite(cs, cs_peer);
