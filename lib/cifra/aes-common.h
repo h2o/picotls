@@ -154,7 +154,7 @@ static inline size_t aesgcm_decrypt(ptls_aead_context_t *_ctx, void *output, con
     return tag_offset;
 }
 
-static inline void minicrypto_aesgcm_aead_xor_iv(ptls_aead_context_t *_ctx, const void *_bytes, size_t len)
+static inline void aesgcm_xor_iv(ptls_aead_context_t *_ctx, const void *_bytes, size_t len)
 {
     struct aesgcm_context_t *ctx = (struct aesgcm_context_t *)_ctx;
     const uint8_t *bytes = _bytes;
