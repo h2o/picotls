@@ -26,7 +26,7 @@
 extern "C" {
 #endif
 
-#if defined(__x86_64__) || defined(__amd64__)
+#if defined(_WINDOWS64) || defined(__x86_64__) || defined(__amd64__)
 #include <stddef.h>
 #include <emmintrin.h>
 #include "../picotls.h"
