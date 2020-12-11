@@ -26,6 +26,7 @@
 extern "C" {
 #endif
 
+#if defined(__x86_64__) || defined(__amd64__)
 #include <stddef.h>
 #include <emmintrin.h>
 #include "../picotls.h"
@@ -91,6 +92,7 @@ extern ptls_aead_algorithm_t ptls_fusion_aes128gcm, ptls_fusion_aes256gcm;
  * Returns a boolean indicating if fusion can be used.
  */
 int ptls_fusion_is_supported_by_cpu(void);
+#endif
 
 #ifdef __cplusplus
 }

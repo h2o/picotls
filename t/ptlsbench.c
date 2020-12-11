@@ -255,7 +255,7 @@ static ptls_bench_entry_t aead_list[] = {
     {"ptlsbcrypt", "aes128gcm", &ptls_bcrypt_aes128gcm, &ptls_bcrypt_sha256, 1},
     {"ptlsbcrypt", "aes256gcm", &ptls_bcrypt_aes256gcm, &ptls_bcrypt_sha384, 1},
 #endif
-#if !defined(_WINDOWS) || defined(_WINDOWS64)
+#if (defined(__x86_64__) || defined(__amd64__)) && (!defined(_WINDOWS) || defined(_WINDOWS64))
     {"fusion", "aes128gcm", &ptls_fusion_aes128gcm, &ptls_minicrypto_sha256, 1},
     {"fusion", "aes256gcm", &ptls_fusion_aes256gcm, &ptls_minicrypto_sha384, 1},
 #endif
