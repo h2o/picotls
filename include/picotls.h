@@ -153,6 +153,7 @@ extern "C" {
 #define PTLS_ALERT_BAD_RECORD_MAC 20
 #define PTLS_ALERT_HANDSHAKE_FAILURE 40
 #define PTLS_ALERT_BAD_CERTIFICATE 42
+#define PTLS_ALERT_UNSUPPORTED_CERTIFICATE 43
 #define PTLS_ALERT_CERTIFICATE_REVOKED 44
 #define PTLS_ALERT_CERTIFICATE_EXPIRED 45
 #define PTLS_ALERT_CERTIFICATE_UNKNOWN 46
@@ -209,6 +210,9 @@ extern "C" {
 #define PTLS_HANDSHAKE_TYPE_KEY_UPDATE 24
 #define PTLS_HANDSHAKE_TYPE_COMPRESSED_CERTIFICATE 25
 #define PTLS_HANDSHAKE_TYPE_MESSAGE_HASH 254
+
+#define PTLS_CERTIFICATE_TYPE_X509 0
+#define PTLS_CERTIFICATE_TYPE_RAW_PUBLIC_KEY 2
 
 #define PTLS_ZERO_DIGEST_SHA256                                                                                                    \
     {                                                                                                                              \
@@ -554,7 +558,7 @@ PTLS_CALLBACK_TYPE(int, on_client_hello, ptls_t *tls, ptls_on_client_hello_param
  * callback to generate the certificate message. `ptls_context::certificates` are set when the callback is set to NULL.
  */
 PTLS_CALLBACK_TYPE(int, emit_certificate, ptls_t *tls, ptls_message_emitter_t *emitter, ptls_key_schedule_t *key_sched,
-                   ptls_iovec_t context, int push_status_request, const uint16_t *compress_algos, size_t num_compress_algos);
+                   ptls_iovec_t context, int push_status_request, const uint16_t *compress_algos, size_t num_compress_algos, int send_raw_cert);
 /**
  * when gerenating CertificateVerify, the core calls the callback to sign the handshake context using the certificate.
  */
@@ -739,6 +743,10 @@ struct st_ptls_context_t {
      *
      */
     ptls_on_extension_t *on_extension;
+    /**
+     * An optional certificate in raw format - RFC7250
+     */
+    ptls_iovec_t raw_certificate;
 };
 
 typedef struct st_ptls_raw_extension_t {
@@ -794,6 +802,10 @@ typedef struct st_ptls_handshake_properties_t {
              * ESNIKeys (the value of the TXT record, after being base64-"decoded")
              */
             ptls_iovec_t esni_keys;
+            struct {
+                const uint8_t *list;
+                size_t count;
+            } supported_certificate_types;
         } client;
         struct {
             /**
@@ -825,6 +837,7 @@ typedef struct st_ptls_handshake_properties_t {
              * if retry should be stateless (cookie.key MUST be set when this option is used)
              */
             unsigned retry_uses_cookie : 1;
+            uint8_t server_certificate_type;
         } server;
     };
     /**
@@ -1168,7 +1181,7 @@ int ptls_export_secret(ptls_t *tls, void *output, size_t outlen, const char *lab
  * build the body of a Certificate message. Can be called with tls set to NULL in order to create a precompressed message.
  */
 int ptls_build_certificate_message(ptls_buffer_t *buf, ptls_iovec_t request_context, ptls_iovec_t *certificates,
-                                   size_t num_certificates, ptls_iovec_t ocsp_status);
+                                   size_t num_certificates, ptls_iovec_t ocsp_status, ptls_iovec_t raw_cert);
 /**
  *
  */

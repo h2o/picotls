@@ -115,11 +115,67 @@ static inline void setup_session_file(ptls_context_t *ctx, ptls_handshake_proper
     }
 }
 
-static inline void setup_verify_certificate(ptls_context_t *ctx)
+
+static ptls_iovec_t raw_cert_from_file(const char *fn)
 {
+    FILE *fp;
+
+    fp = fopen(fn, "rb");
+    if (fp == NULL)
+        goto Err;
+
+    RSA *pubkey = PEM_read_RSA_PUBKEY(fp, NULL, NULL, NULL);
+    if (pubkey == NULL) {
+        ERR_print_errors_fp(stderr);
+        goto Err;
+    }
+
+    unsigned char *out = NULL;
+    int outlen;
+    outlen = i2d_RSA_PUBKEY(pubkey, &out);
+
+    if (outlen == 0) {
+        ERR_print_errors_fp(stderr);
+        goto Err;
+    }
+    fclose(fp);
+
+    return ptls_iovec_init(out, outlen);
+Err:
+    fprintf(stderr, "failed to load raw cert from file:%s\n", fn);
+    exit(1);
+    return ptls_iovec_init(NULL, 0);
+}
+
+static void setup_raw_cert_file(ptls_context_t *ctx, const char *fn)
+{
+    ctx->raw_certificate = raw_cert_from_file(fn);
+}
+
+static inline void setup_verify_certificate(ptls_context_t *ctx, const char *cafile)
+{
+    X509_STORE *store = NULL;
+
+    if (cafile != NULL) {
+        store = X509_STORE_new();
+        int ret = X509_STORE_load_locations(store, cafile, NULL);
+        if (ret != 1) {
+            fprintf(stderr, "failed to load CA from file: %s\n", cafile);
+            exit(1);
+        }
+    }
     static ptls_openssl_verify_certificate_t vc;
-    ptls_openssl_init_verify_certificate(&vc, NULL);
+    ptls_openssl_init_verify_certificate(&vc, store);
     ctx->verify_certificate = &vc.super;
+}
+
+static inline void setup_raw_pubkey_verify_certificate(ptls_context_t *ctx, const char *fn)
+{
+    static ptls_raw_pubkey_verify_certificate_t vc;
+    ptls_raw_pubkey_init_verify_certificate(&vc);
+    vc.expected_pubkey = raw_cert_from_file(fn);
+    ctx->verify_certificate = &vc.super;
+
 }
 
 static inline void setup_esni(ptls_context_t *ctx, const char *esni_fn, ptls_key_exchange_context_t **key_exchanges)

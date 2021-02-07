@@ -49,7 +49,7 @@ ptls_decompress_certificate_t ptls_decompress_certificate = {algorithms, decompr
 
 static int emit_compressed_certificate(ptls_emit_certificate_t *_self, ptls_t *tls, ptls_message_emitter_t *emitter,
                                        ptls_key_schedule_t *key_sched, ptls_iovec_t context, int push_status_request,
-                                       const uint16_t *compress_algos, size_t num_compress_algos)
+                                       const uint16_t *compress_algos, size_t num_compress_algos, int send_raw_cert)
 {
     ptls_emit_compressed_certificate_t *self = (void *)_self;
     struct st_ptls_compressed_certificate_entry_t *entry;
@@ -91,8 +91,8 @@ static int build_compressed(struct st_ptls_compressed_certificate_entry_t *entry
     ptls_buffer_init(&uncompressed, "", 0);
 
     /* build uncompressed */
-    if ((ret = ptls_build_certificate_message(&uncompressed, ptls_iovec_init(NULL, 0), certificates, num_certificates,
-                                              ocsp_status)) != 0)
+    if ((ret = ptls_build_certificate_message(&uncompressed, ptls_iovec_init(NULL, 0), certificates, num_certificates, ocsp_status,
+                                              ptls_iovec_init(NULL, 0))) != 0)
         goto Exit;
     entry->uncompressed_length = (uint32_t)uncompressed.off;
 

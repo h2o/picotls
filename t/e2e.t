@@ -16,7 +16,7 @@ my $port = empty_port();
 my $tempdir = tempdir(CLEANUP => 1);
 
 subtest "hello" => sub {
-    my $guard = spawn_server(qw(-i t/assets/hello.txt));
+    my $guard = spawn_server("-c", qw(-i t/assets/hello.txt));
     subtest "full-handshake" => sub {
         my $resp = `$cli 127.0.0.1 $port 2> /dev/null`;
         is $resp, "hello";
@@ -35,7 +35,7 @@ subtest "early-data" => sub {
     subtest "success" => sub {
         plan skip_all => "faketime not found"
             unless system("which faketime > /dev/null 2>&1") == 0;
-        my $guard = spawn_server(qw(-i t/assets/hello.txt -l), "$tempdir/events");
+        my $guard = spawn_server("-c", qw(-i t/assets/hello.txt -l), "$tempdir/events");
         my $resp = `$cli -s $tempdir/session 127.0.0.1 $port`;
         is $resp, "hello";
         $resp = `$cli -e -s $tempdir/session 127.0.0.1 $port`;
@@ -63,17 +63,38 @@ subtest "early-data" => sub {
 subtest "certificate-compression" => sub {
     plan skip_all => "feature disabled"
         unless system("$cli -b -h > /dev/null 2>&1") == 0;
-    my $guard = spawn_server(qw(-i t/assets/hello.txt -b));
+    my $guard = spawn_server("-c", qw(-i t/assets/hello.txt -b));
     my $resp = `$cli 127.0.0.1 $port 2> /dev/null`;
     is $resp, "hello";
     $resp = `$cli -b 127.0.0.1 $port 2> /dev/null`;
     is $resp, "hello";
 };
 
+subtest "certificate-compression" => sub {
+    plan skip_all => "feature disabled"
+        unless system("$cli -b -h > /dev/null 2>&1") == 0;
+    my $guard = spawn_server("-c", qw(-i t/assets/hello.txt -b));
+    my $resp = `$cli 127.0.0.1 $port 2> /dev/null`;
+    is $resp, "hello";
+    $resp = `$cli -b 127.0.0.1 $port 2> /dev/null`;
+    is $resp, "hello";
+};
+
+subtest "raw-certificates" => sub {
+    my $guard = spawn_server("-R", qw(-i t/assets/hello.txt));
+    my $resp = `$cli -r 2 -V t/assets/server.pub 127.0.0.1 $port 2> /dev/null`;
+    is $resp, "hello";
+};
+
 done_testing;
 
 sub spawn_server {
-    my @cmd = ($cli, "-k", "t/assets/server.key", "-c", "t/assets/server.crt", @_, "127.0.0.1", $port);
+    my $cert_option = shift;
+    my $pub = "t/assets/server.crt";
+    if ($cert_option eq "-R") {
+        $pub = "t/assets/server.pub";
+    }
+    my @cmd = ($cli, "-k", "t/assets/server.key", $cert_option, $pub, @_, "127.0.0.1", $port);
     my $pid = fork;
     die "fork failed:$!"
         unless defined $pid;
