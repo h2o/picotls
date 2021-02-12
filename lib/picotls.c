@@ -3311,7 +3311,8 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
             ptls_decode_block(src, end, 1, {
                 int found = 0;
                 for (size_t i = 0; i < end - src; i++) {
-                    if ((*src == PTLS_CERTIFICATE_TYPE_X509 && !tls->ctx->cert0_is_raw_certificate) || (*src == PTLS_CERTIFICATE_TYPE_RAW_PUBLIC_KEY && tls->ctx->cert0_is_raw_certificate)) {
+                    if ((*src == PTLS_CERTIFICATE_TYPE_X509 && !tls->ctx->cert0_is_raw_certificate) ||
+                        (*src == PTLS_CERTIFICATE_TYPE_RAW_PUBLIC_KEY && tls->ctx->cert0_is_raw_certificate)) {
                         found = 1;
                         break;
                     }
@@ -3673,7 +3674,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
         goto Exit;
     }
 
-    *ch = (struct st_ptls_client_hello_t){0,      NULL,   {NULL},     {NULL}, 0,     {NULL},   {NULL}, {NULL}, {{0}},
+    *ch = (struct st_ptls_client_hello_t){0,      NULL,   {NULL},     {NULL}, 0,     {NULL},   {NULL}, {NULL},        {{0}},
                                           {NULL}, {NULL}, {{{NULL}}}, {{0}},  {{0}}, {{NULL}}, {NULL}, {{UINT16_MAX}}};
 
     /* decode ClientHello */

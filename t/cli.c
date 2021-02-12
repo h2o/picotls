@@ -402,7 +402,8 @@ int main(int argc, char **argv)
         ptls_key_exchange_context_t *elements[16];
         size_t count;
     } esni_key_exchanges;
-    int is_server = 0, use_early_data = 0, request_key_update = 0, keep_sender_open = 0, ch, use_raw_public_keys = 0, verify_certificate = 0;
+    int is_server = 0, use_early_data = 0, request_key_update = 0, keep_sender_open = 0, ch, use_raw_public_keys = 0,
+        verify_certificate = 0;
     struct sockaddr_storage sa;
     socklen_t salen;
     int family = 0;
