@@ -285,7 +285,7 @@ struct st_ptls_client_hello_psk_t {
 
 #define MAX_UNKNOWN_EXTENSIONS 16
 #define MAX_CLIENT_CIPHERS 32
-#define MAX_SERVER_CERTIFICATE_TYPES 2
+
 struct st_ptls_client_hello_t {
     uint16_t legacy_version;
     const uint8_t *random_bytes;
@@ -336,10 +336,6 @@ struct st_ptls_client_hello_t {
         unsigned early_data_indication : 1;
         unsigned is_last_extension : 1;
     } psk;
-    struct {
-        uint8_t list[MAX_SERVER_CERTIFICATE_TYPES];
-        size_t count;
-    } supported_server_certificate_types;
     ptls_raw_extension_t unknown_extensions[MAX_UNKNOWN_EXTENSIONS + 1];
     unsigned status_request : 1;
 };
@@ -3316,14 +3312,14 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
             break;
         case PTLS_EXTENSION_TYPE_SERVER_CERTIFICATE_TYPE:
             ptls_decode_block(src, end, 1, {
+                int found = 0;
                 for (size_t i = 0; i < end - src; i++) {
-                    if (*src == PTLS_CERTIFICATE_TYPE_X509 || *src == PTLS_CERTIFICATE_TYPE_RAW_PUBLIC_KEY)
-                        ch->supported_server_certificate_types.list[ch->supported_server_certificate_types.count++] = *src;
-                    if (ch->supported_server_certificate_types.count ==
-                        PTLS_ELEMENTSOF(ch->supported_server_certificate_types.list))
+                    if ((*src == PTLS_CERTIFICATE_TYPE_X509 && !tls->ctx->cert0_is_raw_certificate) || (*src == PTLS_CERTIFICATE_TYPE_RAW_PUBLIC_KEY && tls->ctx->cert0_is_raw_certificate)) {
+                        found = 1;
                         break;
+                    }
                 }
-                if (ch->supported_server_certificate_types.count == 0) {
+                if (!found) {
                     ret = PTLS_ALERT_UNSUPPORTED_CERTIFICATE;
                     goto Exit;
                 }
@@ -3681,7 +3677,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
     }
 
     *ch = (struct st_ptls_client_hello_t){0,      NULL,   {NULL},     {NULL}, 0,     {NULL},   {NULL}, {NULL}, {{0}},
-                                          {NULL}, {NULL}, {{{NULL}}}, {{0}},  {{0}}, {{NULL}}, {NULL}, {{0}},  {{UINT16_MAX}}};
+                                          {NULL}, {NULL}, {{{NULL}}}, {{0}},  {{0}}, {{NULL}}, {NULL}, {{UINT16_MAX}}};
 
     /* decode ClientHello */
     if ((ret = decode_client_hello(tls, ch, message.base + PTLS_HANDSHAKE_HEADER_SIZE, message.base + message.len, properties)) !=
