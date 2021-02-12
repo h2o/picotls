@@ -123,7 +123,6 @@ static inline void setup_session_file(ptls_context_t *ctx, ptls_handshake_proper
     }
 }
 
-
 static ptls_iovec_t raw_cert_from_file(const char *fn)
 {
     FILE *fp;
@@ -174,7 +173,6 @@ static inline void setup_raw_pubkey_verify_certificate(ptls_context_t *ctx, cons
     ptls_raw_pubkey_init_verify_certificate(&vc);
     vc.expected_pubkey = raw_cert_from_file(fn);
     ctx->verify_certificate = &vc.super;
-
 }
 
 static inline void setup_esni(ptls_context_t *ctx, const char *esni_fn, ptls_key_exchange_context_t **key_exchanges)

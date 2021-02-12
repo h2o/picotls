@@ -1287,7 +1287,7 @@ Error:
 }
 
 static int verify_raw_cert(ptls_verify_certificate_t *_self, ptls_t *tls, int (**verifier)(void *, ptls_iovec_t, ptls_iovec_t),
-                       void **verify_data, ptls_iovec_t *certs, size_t num_certs)
+                           void **verify_data, ptls_iovec_t *certs, size_t num_certs)
 {
     ptls_raw_pubkey_verify_certificate_t *self = (ptls_raw_pubkey_verify_certificate_t *)_self;
     int ret = PTLS_ALERT_BAD_CERTIFICATE;

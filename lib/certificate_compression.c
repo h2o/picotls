@@ -91,7 +91,8 @@ static int build_compressed(struct st_ptls_compressed_certificate_entry_t *entry
     ptls_buffer_init(&uncompressed, "", 0);
 
     /* build uncompressed */
-    if ((ret = ptls_build_certificate_message(&uncompressed, ptls_iovec_init(NULL, 0), certificates, num_certificates, ocsp_status)) != 0)
+    if ((ret = ptls_build_certificate_message(&uncompressed, ptls_iovec_init(NULL, 0), certificates, num_certificates,
+                                              ocsp_status)) != 0)
         goto Exit;
     entry->uncompressed_length = (uint32_t)uncompressed.off;
 
