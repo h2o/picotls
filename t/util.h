@@ -123,43 +123,6 @@ static inline void setup_session_file(ptls_context_t *ctx, ptls_handshake_proper
     }
 }
 
-static ptls_iovec_t raw_cert_from_file(const char *fn)
-{
-    FILE *fp;
-
-    fp = fopen(fn, "rb");
-    if (fp == NULL)
-        goto Err;
-
-    RSA *pubkey = PEM_read_RSA_PUBKEY(fp, NULL, NULL, NULL);
-    if (pubkey == NULL) {
-        ERR_print_errors_fp(stderr);
-        goto Err;
-    }
-
-    unsigned char *out = NULL;
-    int outlen;
-    outlen = i2d_RSA_PUBKEY(pubkey, &out);
-
-    if (outlen == 0) {
-        ERR_print_errors_fp(stderr);
-        goto Err;
-    }
-    fclose(fp);
-
-    return ptls_iovec_init(out, outlen);
-Err:
-    fprintf(stderr, "failed to load raw cert from file:%s\n", fn);
-    exit(1);
-    return ptls_iovec_init(NULL, 0);
-}
-
-void setup_raw_cert_file(ptls_context_t *ctx, const char *fn)
-{
-    ctx->certificates.list[0] = raw_cert_from_file(fn);
-    ctx->certificates.count = 1;
-}
-
 static inline void setup_verify_certificate(ptls_context_t *ctx)
 {
     static ptls_openssl_verify_certificate_t vc;

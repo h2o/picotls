@@ -2440,7 +2440,6 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
             (ret = tls->ctx->on_extension->cb(tls->ctx->on_extension, tls, PTLS_HANDSHAKE_TYPE_ENCRYPTED_EXTENSIONS, type,
                                               ptls_iovec_init(src, end - src)) != 0))
             goto Exit;
-
         switch (type) {
         case PTLS_EXTENSION_TYPE_SERVER_NAME:
             if (src != end) {
@@ -2733,8 +2732,6 @@ static int handle_certificate(ptls_t *tls, const uint8_t *src, const uint8_t *en
                     certs[num_certs++] = ptls_iovec_init(src, end - src);
                 src = end;
             });
-            if (src == end)
-                break;
             uint16_t type;
             decode_open_extensions(src, end, PTLS_HANDSHAKE_TYPE_CERTIFICATE, &type, {
                 if (tls->ctx->on_extension != NULL &&
