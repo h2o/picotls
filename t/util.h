@@ -48,6 +48,14 @@ static inline void load_certificate_chain(ptls_context_t *ctx, const char *fn)
     }
 }
 
+static inline void load_raw_public_key(ptls_context_t *ctx, const char *fn)
+{
+    if (ptls_load_raw_public_key(ctx, (char *)fn) != 0) {
+        fprintf(stderr, "failed to load public key:%s:%s\n", fn, strerror(errno));
+        exit(1);
+    }
+}
+
 static inline void load_private_key(ptls_context_t *ctx, const char *fn)
 {
     static ptls_openssl_sign_certificate_t sc;
@@ -147,25 +155,16 @@ Err:
     return ptls_iovec_init(NULL, 0);
 }
 
-static void setup_raw_cert_file(ptls_context_t *ctx, const char *fn)
+void setup_raw_cert_file(ptls_context_t *ctx, const char *fn)
 {
-    ctx->raw_certificate = raw_cert_from_file(fn);
+    ctx->certificates.list[0] = raw_cert_from_file(fn);
+    ctx->certificates.count = 1;
 }
 
-static inline void setup_verify_certificate(ptls_context_t *ctx, const char *cafile)
+static inline void setup_verify_certificate(ptls_context_t *ctx)
 {
-    X509_STORE *store = NULL;
-
-    if (cafile != NULL) {
-        store = X509_STORE_new();
-        int ret = X509_STORE_load_locations(store, cafile, NULL);
-        if (ret != 1) {
-            fprintf(stderr, "failed to load CA from file: %s\n", cafile);
-            exit(1);
-        }
-    }
     static ptls_openssl_verify_certificate_t vc;
-    ptls_openssl_init_verify_certificate(&vc, store);
+    ptls_openssl_init_verify_certificate(&vc, NULL);
     ctx->verify_certificate = &vc.super;
 }
 

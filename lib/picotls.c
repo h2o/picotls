@@ -285,7 +285,7 @@ struct st_ptls_client_hello_psk_t {
 
 #define MAX_UNKNOWN_EXTENSIONS 16
 #define MAX_CLIENT_CIPHERS 32
-
+#define MAX_SERVER_CERTIFICATE_TYPES 2
 struct st_ptls_client_hello_t {
     uint16_t legacy_version;
     const uint8_t *random_bytes;
@@ -337,7 +337,7 @@ struct st_ptls_client_hello_t {
         unsigned is_last_extension : 1;
     } psk;
     struct {
-        const uint8_t *list;
+        uint8_t list[MAX_SERVER_CERTIFICATE_TYPES];
         size_t count;
     } supported_server_certificate_types;
     ptls_raw_extension_t unknown_extensions[MAX_UNKNOWN_EXTENSIONS + 1];
@@ -355,7 +355,6 @@ struct st_ptls_server_hello_t {
             ptls_iovec_t cookie;
         } retry_request;
     };
-    const uint8_t *certtype;
 };
 
 struct st_ptls_key_schedule_t {
@@ -2074,11 +2073,10 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
                     ptls_buffer_push_block(sendbuf, 2, { ptls_buffer_pushv(sendbuf, cookie->base, cookie->len); });
                 });
             }
-            if (properties && properties->client.supported_certificate_types.list != NULL) {
+            if (tls->ctx->cert0_is_raw_certificate) {
                 buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SERVER_CERTIFICATE_TYPE, {
                     ptls_buffer_push_block(sendbuf, 1, {
-                        ptls_buffer_pushv(sendbuf, properties->client.supported_certificate_types.list,
-                                          properties->client.supported_certificate_types.count);
+                        ptls_buffer_push(sendbuf, PTLS_CERTIFICATE_TYPE_RAW_PUBLIC_KEY);
                     });
                 });
             }
@@ -2448,6 +2446,7 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
             (ret = tls->ctx->on_extension->cb(tls->ctx->on_extension, tls, PTLS_HANDSHAKE_TYPE_ENCRYPTED_EXTENSIONS, type,
                                               ptls_iovec_init(src, end - src)) != 0))
             goto Exit;
+
         switch (type) {
         case PTLS_EXTENSION_TYPE_SERVER_NAME:
             if (src != end) {
@@ -2501,7 +2500,10 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
                 ret = PTLS_ALERT_DECODE_ERROR;
                 goto Exit;
             }
-            properties->server.server_certificate_type = *src;
+            if ((tls->ctx->cert0_is_raw_certificate && *src != PTLS_CERTIFICATE_TYPE_RAW_PUBLIC_KEY) && *src != PTLS_CERTIFICATE_TYPE_X509) {
+                ret = PTLS_ALERT_UNSUPPORTED_CERTIFICATE;
+                goto Exit;
+            }
             src = end;
             break;
         default:
@@ -2602,34 +2604,25 @@ Exit:
 }
 
 int ptls_build_certificate_message(ptls_buffer_t *buf, ptls_iovec_t context, ptls_iovec_t *certificates, size_t num_certificates,
-                                   ptls_iovec_t ocsp_status, ptls_iovec_t raw_cert)
+                                   ptls_iovec_t ocsp_status)
 {
     int ret;
 
     ptls_buffer_push_block(buf, 1, { ptls_buffer_pushv(buf, context.base, context.len); });
-    if (raw_cert.base) {
-        ptls_buffer_push_block(buf, 3, {
-                char *debug = alloca(raw_cert.len * 2 + 1);
-                ptls_hexdump(debug, raw_cert.base, raw_cert.len);
-            ptls_buffer_push_block(buf, 3, { ptls_buffer_pushv(buf, raw_cert.base, raw_cert.len); });
-            ptls_buffer_push_block(buf, 2, { } );
-        });
-    } else {
-        ptls_buffer_push_block(buf, 3, {
-            size_t i;
-            for (i = 0; i != num_certificates; ++i) {
-                ptls_buffer_push_block(buf, 3, { ptls_buffer_pushv(buf, certificates[i].base, certificates[i].len); });
-                ptls_buffer_push_block(buf, 2, {
-                    if (i == 0 && ocsp_status.len != 0) {
-                        buffer_push_extension(buf, PTLS_EXTENSION_TYPE_STATUS_REQUEST, {
-                            ptls_buffer_push(buf, 1); /* status_type == ocsp */
-                            ptls_buffer_push_block(buf, 3, { ptls_buffer_pushv(buf, ocsp_status.base, ocsp_status.len); });
-                        });
-                    }
-                });
-            }
-        });
-    }
+    ptls_buffer_push_block(buf, 3, {
+        size_t i;
+        for (i = 0; i != num_certificates; ++i) {
+            ptls_buffer_push_block(buf, 3, { ptls_buffer_pushv(buf, certificates[i].base, certificates[i].len); });
+            ptls_buffer_push_block(buf, 2, {
+                if (i == 0 && ocsp_status.len != 0) {
+                    buffer_push_extension(buf, PTLS_EXTENSION_TYPE_STATUS_REQUEST, {
+                        ptls_buffer_push(buf, 1); /* status_type == ocsp */
+                        ptls_buffer_push_block(buf, 3, { ptls_buffer_pushv(buf, ocsp_status.base, ocsp_status.len); });
+                    });
+                }
+            });
+        }
+    });
 
     ret = 0;
 Exit:
@@ -2638,14 +2631,13 @@ Exit:
 
 static int default_emit_certificate_cb(ptls_emit_certificate_t *_self, ptls_t *tls, ptls_message_emitter_t *emitter,
                                        ptls_key_schedule_t *key_sched, ptls_iovec_t context, int push_status_request,
-                                       const uint16_t *compress_algos, size_t num_compress_algos, int send_raw_cert)
+                                       const uint16_t *compress_algos, size_t num_compress_algos)
 {
     int ret;
 
     ptls_push_message(emitter, key_sched, PTLS_HANDSHAKE_TYPE_CERTIFICATE, {
         if ((ret = ptls_build_certificate_message(
-                 emitter->buf, context, tls->ctx->certificates.list, tls->ctx->certificates.count, ptls_iovec_init(NULL, 0),
-                 send_raw_cert ? tls->ctx->raw_certificate : ptls_iovec_init(NULL, 0))) != 0)
+                 emitter->buf, context, tls->ctx->certificates.list, tls->ctx->certificates.count, ptls_iovec_init(NULL, 0))) != 0)
             goto Exit;
     });
 
@@ -2657,7 +2649,7 @@ Exit:
 static int send_certificate_and_certificate_verify(ptls_t *tls, ptls_message_emitter_t *emitter,
                                                    struct st_ptls_signature_algorithms_t *signature_algorithms,
                                                    ptls_iovec_t context, const char *context_string, int push_status_request,
-                                                   const uint16_t *compress_algos, size_t num_compress_algos, int send_raw_cert)
+                                                   const uint16_t *compress_algos, size_t num_compress_algos)
 {
     int ret;
 
@@ -2672,7 +2664,7 @@ static int send_certificate_and_certificate_verify(ptls_t *tls, ptls_message_emi
             tls->ctx->emit_certificate != NULL ? tls->ctx->emit_certificate : &default_emit_certificate;
     Redo:
         if ((ret = emit_certificate->cb(emit_certificate, tls, emitter, tls->key_schedule, context, push_status_request,
-                                        compress_algos, num_compress_algos, send_raw_cert)) != 0) {
+                                        compress_algos, num_compress_algos)) != 0) {
             if (ret == PTLS_ERROR_DELEGATE) {
                 assert(emit_certificate != &default_emit_certificate);
                 emit_certificate = &default_emit_certificate;
@@ -2967,7 +2959,7 @@ static int client_handle_finished(ptls_t *tls, ptls_message_emitter_t *emitter, 
         }
         ret = send_certificate_and_certificate_verify(tls, emitter, &tls->client.certificate_request.signature_algorithms,
                                                       tls->client.certificate_request.context,
-                                                      PTLS_CLIENT_CERTIFICATE_VERIFY_CONTEXT_STRING, 0, NULL, 0, 0);
+                                                      PTLS_CLIENT_CERTIFICATE_VERIFY_CONTEXT_STRING, 0, NULL, 0);
         free(tls->client.certificate_request.context.base);
         tls->client.certificate_request.context = ptls_iovec_init(NULL, 0);
         if (ret != 0)
@@ -3324,8 +3316,19 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
             });
             break;
         case PTLS_EXTENSION_TYPE_SERVER_CERTIFICATE_TYPE:
-            ch->supported_server_certificate_types.list = src;
-            ch->supported_server_certificate_types.count = end - src;
+            ptls_decode_block(src, end, 1, {
+                for (size_t i = 0; i < end - src; i++) {
+                    if (*src == PTLS_CERTIFICATE_TYPE_X509 || *src == PTLS_CERTIFICATE_TYPE_RAW_PUBLIC_KEY)
+                        ch->supported_server_certificate_types.list[ch->supported_server_certificate_types.count++] = *src;
+                    if (ch->supported_server_certificate_types.count == PTLS_ELEMENTSOF(ch->supported_server_certificate_types.list))
+                        break;
+                }
+                if (ch->supported_server_certificate_types.count == 0) {
+                    ret = PTLS_ALERT_UNSUPPORTED_CERTIFICATE;
+                    goto Exit;
+                }
+                src = end;
+            });
             break;
         case PTLS_EXTENSION_TYPE_COMPRESS_CERTIFICATE:
             ptls_decode_block(src, end, 1, {
@@ -3677,24 +3680,8 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
         goto Exit;
     }
 
-    *ch = (struct st_ptls_client_hello_t){.legacy_version = 0,
-                                          .random_bytes = NULL,
-                                          .legacy_session_id = {NULL},
-                                          .compression_methods = {NULL},
-                                          .selected_version = 0,
-                                          .cipher_suites = {NULL},
-                                          .negotiated_groups = {NULL},
-                                          .key_shares = {NULL},
-                                          .signature_algorithms = {{0}},
-                                          .server_name = {NULL},
-                                          .esni = {NULL},
-                                          .alpn = {{{NULL}}},
-                                          .cert_compression_algos = {{0}},
-                                          .client_ciphers = {{0}},
-                                          .cookie = {{NULL}},
-                                          .psk = {NULL},
-                                          .supported_server_certificate_types = {NULL},
-                                          .unknown_extensions = {{UINT16_MAX}}};
+    *ch = (struct st_ptls_client_hello_t){0,      NULL,   {NULL},     {NULL}, 0,     {NULL},   {NULL}, {NULL},        {{0}},
+                                          {NULL}, {NULL}, {{{NULL}}}, {{0}},  {{0}}, {{NULL}}, {NULL}, {{0}}, {{UINT16_MAX}}};
 
     /* decode ClientHello */
     if ((ret = decode_client_hello(tls, ch, message.base + PTLS_HANDSHAKE_HEADER_SIZE, message.base + message.len, properties)) !=
@@ -3996,45 +3983,23 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
             goto Exit;
         tls->key_share = key_share.algorithm;
     }
-    int send_raw_cert = 0;
-    if (mode == HANDSHAKE_MODE_FULL) {
-        if (ch->supported_server_certificate_types.list) {
-            int x509_ok = 0;
-            int raw_ok = 0;
-            for (size_t i = 0; i < ch->supported_server_certificate_types.count; i++) {
-                if (ch->supported_server_certificate_types.list[i] == PTLS_CERTIFICATE_TYPE_X509) {
-                    x509_ok = 1;
-                } else if (ch->supported_server_certificate_types.list[i] == PTLS_CERTIFICATE_TYPE_RAW_PUBLIC_KEY) {
-                    raw_ok = 1;
-                }
-            }
-            if ((!x509_ok && !raw_ok) || (!x509_ok && !tls->ctx->raw_certificate.base) ||
-                (!raw_ok && !tls->ctx->certificates.count)) {
-                ret = PTLS_ALERT_UNSUPPORTED_CERTIFICATE;
-                goto Exit;
-            }
-            if (raw_ok && tls->ctx->raw_certificate.base) {
-                send_raw_cert = 1;
-            }
-        }
-    }
 
     /* send ServerHello */
-    EMIT_SERVER_HELLO(
-        tls->key_schedule, { tls->ctx->random_bytes(emitter->buf->base + emitter->buf->off, PTLS_HELLO_RANDOM_SIZE); },
-        {
-            ptls_buffer_t *sendbuf = emitter->buf;
-            if (mode != HANDSHAKE_MODE_PSK) {
-                buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_KEY_SHARE, {
-                    ptls_buffer_push16(sendbuf, key_share.algorithm->id);
-                    ptls_buffer_push_block(sendbuf, 2, { ptls_buffer_pushv(sendbuf, pubkey.base, pubkey.len); });
-                });
-            }
-            if (mode != HANDSHAKE_MODE_FULL) {
-                buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_PRE_SHARED_KEY,
-                                      { ptls_buffer_push16(sendbuf, (uint16_t)psk_index); });
-            }
-        });
+    EMIT_SERVER_HELLO(tls->key_schedule,
+                      { tls->ctx->random_bytes(emitter->buf->base + emitter->buf->off, PTLS_HELLO_RANDOM_SIZE); },
+                      {
+                          ptls_buffer_t *sendbuf = emitter->buf;
+                          if (mode != HANDSHAKE_MODE_PSK) {
+                              buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_KEY_SHARE, {
+                                  ptls_buffer_push16(sendbuf, key_share.algorithm->id);
+                                  ptls_buffer_push_block(sendbuf, 2, { ptls_buffer_pushv(sendbuf, pubkey.base, pubkey.len); });
+                              });
+                          }
+                          if (mode != HANDSHAKE_MODE_FULL) {
+                              buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_PRE_SHARED_KEY,
+                                                    { ptls_buffer_push16(sendbuf, (uint16_t)psk_index); });
+                          }
+                      });
     if ((ret = push_change_cipher_spec(tls, emitter)) != 0)
         goto Exit;
 
@@ -4074,9 +4039,10 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
                  * The "extension_data" field of this extension SHALL be empty. (RFC 6066 section 3) */
                 buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SERVER_NAME, {});
             }
-            if (send_raw_cert) {
-                buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SERVER_CERTIFICATE_TYPE,
-                                      { ptls_buffer_push(sendbuf, PTLS_CERTIFICATE_TYPE_RAW_PUBLIC_KEY); });
+            if (tls->ctx->cert0_is_raw_certificate) {
+                buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SERVER_CERTIFICATE_TYPE, {
+                    ptls_buffer_push(sendbuf, PTLS_CERTIFICATE_TYPE_RAW_PUBLIC_KEY);
+                });
             }
             if (tls->negotiated_protocol != NULL) {
                 buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_ALPN, {
@@ -4119,7 +4085,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
 
         ret = send_certificate_and_certificate_verify(tls, emitter, &ch->signature_algorithms, ptls_iovec_init(NULL, 0),
                                                       PTLS_SERVER_CERTIFICATE_VERIFY_CONTEXT_STRING, ch->status_request,
-                                                      ch->cert_compression_algos.list, ch->cert_compression_algos.count, send_raw_cert);
+                                                      ch->cert_compression_algos.list, ch->cert_compression_algos.count);
 
         if (ret != 0) {
             goto Exit;

@@ -558,7 +558,7 @@ PTLS_CALLBACK_TYPE(int, on_client_hello, ptls_t *tls, ptls_on_client_hello_param
  * callback to generate the certificate message. `ptls_context::certificates` are set when the callback is set to NULL.
  */
 PTLS_CALLBACK_TYPE(int, emit_certificate, ptls_t *tls, ptls_message_emitter_t *emitter, ptls_key_schedule_t *key_sched,
-                   ptls_iovec_t context, int push_status_request, const uint16_t *compress_algos, size_t num_compress_algos, int send_raw_cert);
+                   ptls_iovec_t context, int push_status_request, const uint16_t *compress_algos, size_t num_compress_algos);
 /**
  * when gerenating CertificateVerify, the core calls the callback to sign the handshake context using the certificate.
  */
@@ -714,6 +714,10 @@ struct st_ptls_context_t {
     /**
      *
      */
+    unsigned cert0_is_raw_certificate : 1;
+    /**
+     *
+     */
     ptls_encrypt_ticket_t *encrypt_ticket;
     /**
      *
@@ -743,10 +747,6 @@ struct st_ptls_context_t {
      *
      */
     ptls_on_extension_t *on_extension;
-    /**
-     * An optional certificate in raw format - RFC7250
-     */
-    ptls_iovec_t raw_certificate;
 };
 
 typedef struct st_ptls_raw_extension_t {
@@ -802,10 +802,6 @@ typedef struct st_ptls_handshake_properties_t {
              * ESNIKeys (the value of the TXT record, after being base64-"decoded")
              */
             ptls_iovec_t esni_keys;
-            struct {
-                const uint8_t *list;
-                size_t count;
-            } supported_certificate_types;
         } client;
         struct {
             /**
@@ -837,7 +833,6 @@ typedef struct st_ptls_handshake_properties_t {
              * if retry should be stateless (cookie.key MUST be set when this option is used)
              */
             unsigned retry_uses_cookie : 1;
-            uint8_t server_certificate_type;
         } server;
     };
     /**
@@ -1181,7 +1176,7 @@ int ptls_export_secret(ptls_t *tls, void *output, size_t outlen, const char *lab
  * build the body of a Certificate message. Can be called with tls set to NULL in order to create a precompressed message.
  */
 int ptls_build_certificate_message(ptls_buffer_t *buf, ptls_iovec_t request_context, ptls_iovec_t *certificates,
-                                   size_t num_certificates, ptls_iovec_t ocsp_status, ptls_iovec_t raw_cert);
+                                   size_t num_certificates, ptls_iovec_t ocsp_status);
 /**
  *
  */
@@ -1335,6 +1330,10 @@ int ptls_server_name_is_ipaddr(const char *name);
  * malloc.  It is the responsibility of the user to free them when discarding the TLS context.
  */
 int ptls_load_certificates(ptls_context_t *ctx, char const *cert_pem_file);
+/**
+ *
+ */
+int ptls_load_raw_public_key(ptls_context_t *ctx, char const *cert_pem_file);
 /**
  *
  */

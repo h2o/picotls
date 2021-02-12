@@ -368,3 +368,19 @@ int ptls_load_certificates(ptls_context_t *ctx, char const *cert_pem_file)
 
     return ret;
 }
+
+int ptls_load_raw_public_key(ptls_context_t *ctx, char const *cert_pem_file)
+{
+    int ret = 0;
+
+    ctx->certificates.list = (ptls_iovec_t *)malloc(sizeof(ptls_iovec_t));
+
+    if (ctx->certificates.list == NULL) {
+        ret = PTLS_ERROR_NO_MEMORY;
+    } else {
+        ret = ptls_load_pem_objects(cert_pem_file, "PUBLIC KEY", ctx->certificates.list, PTLS_MAX_CERTS_IN_CONTEXT,
+                                    &ctx->certificates.count);
+    }
+
+    return ret;
+}
