@@ -402,13 +402,13 @@ int main(int argc, char **argv)
         ptls_key_exchange_context_t *elements[16];
         size_t count;
     } esni_key_exchanges;
-    int is_server = 0, use_early_data = 0, request_key_update = 0, keep_sender_open = 0, ch, use_raw_public_keys = 0;
+    int is_server = 0, use_early_data = 0, request_key_update = 0, keep_sender_open = 0, ch, use_raw_public_keys = 0, verify_certificate = 0;
     struct sockaddr_storage sa;
     socklen_t salen;
     int family = 0;
     const char *cert_location = NULL;
 
-    while ((ch = getopt(argc, argv, "46abBC:c:i:Ik:nN:es:SrE:K:l:y:vV:h")) != -1) {
+    while ((ch = getopt(argc, argv, "46abBC:c:i:Ik:nN:es:SrE:K:l:y:vh")) != -1) {
         switch (ch) {
         case '4':
             family = AF_INET;
@@ -489,10 +489,7 @@ int main(int argc, char **argv)
             setup_log_event(&ctx, optarg);
             break;
         case 'v':
-            setup_verify_certificate(&ctx);
-            break;
-        case 'V':
-            setup_raw_pubkey_verify_certificate(&ctx, optarg);
+            verify_certificate = 1;
             break;
         case 'N': {
             ptls_key_exchange_algorithm_t *algo = NULL;
@@ -562,6 +559,12 @@ int main(int argc, char **argv)
     if (!ctx.cert0_is_raw_certificate && (ctx.certificates.count == 0) != (ctx.sign_certificate == NULL)) {
         fprintf(stderr, "-C/-c and -k options must be used together\n");
         return 1;
+    }
+    if (verify_certificate) {
+        if (ctx.cert0_is_raw_certificate)
+            setup_raw_pubkey_verify_certificate(&ctx);
+        else
+            setup_verify_certificate(&ctx);
     }
     if (is_server) {
         if (ctx.certificates.count == 0) {

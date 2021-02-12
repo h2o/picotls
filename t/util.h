@@ -167,11 +167,15 @@ static inline void setup_verify_certificate(ptls_context_t *ctx)
     ctx->verify_certificate = &vc.super;
 }
 
-static inline void setup_raw_pubkey_verify_certificate(ptls_context_t *ctx, const char *fn)
+static inline void setup_raw_pubkey_verify_certificate(ptls_context_t *ctx)
 {
     static ptls_raw_pubkey_verify_certificate_t vc;
     ptls_raw_pubkey_init_verify_certificate(&vc);
-    vc.expected_pubkey = raw_cert_from_file(fn);
+    if (ctx->certificates.count == 0) {
+        fprintf(stderr, "Cannot verify raw public key: no key found\n");
+        exit(1);
+    }
+    vc.expected_pubkey = ctx->certificates.list[0];
     ctx->verify_certificate = &vc.super;
 }
 
