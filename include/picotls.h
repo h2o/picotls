@@ -712,9 +712,18 @@ struct st_ptls_context_t {
      */
     unsigned omit_end_of_early_data : 1;
     /**
+     * This option turns on support for Raw Public Keys (RFC 7250).
      *
+     * When running as a client, this option instructs the client to request the server to send raw public keys in place of X.509
+     * certificate chain. The client should set its `certificate_verify` callback to one that is capable of validating the raw
+     * public key that will be sent by the server.
+     *
+     * When running as a server, this option instructs the server to only handle clients requesting the use of raw public keys. If
+     * the client does not, the handshake is rejected. Note however that the rejection happens only after the `on_client_hello`
+     * callback is being called. Therefore, applications can support both X.509 and raw public keys by swapping `ptls_context_t` to
+     * the correct one when that callback is being called (like handling swapping the contexts based on the value of SNI).
      */
-    unsigned cert0_is_raw_certificate : 1;
+    unsigned use_raw_public_keys : 1;
     /**
      *
      */

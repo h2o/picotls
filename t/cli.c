@@ -553,16 +553,16 @@ int main(int argc, char **argv)
             load_certificate_chain(&ctx, cert_location);
         } else {
             load_raw_public_key(&ctx, cert_location);
-            ctx.cert0_is_raw_certificate = 1;
+            ctx.use_raw_public_keys = 1;
         }
     }
 
-    if (!ctx.cert0_is_raw_certificate && (ctx.certificates.count == 0) != (ctx.sign_certificate == NULL)) {
+    if (!ctx.use_raw_public_keys && (ctx.certificates.count == 0) != (ctx.sign_certificate == NULL)) {
         fprintf(stderr, "-C/-c and -k options must be used together\n");
         return 1;
     }
     if (verify_certificate) {
-        if (ctx.cert0_is_raw_certificate)
+        if (ctx.use_raw_public_keys)
             setup_raw_pubkey_verify_certificate(&ctx);
         else
             setup_verify_certificate(&ctx);

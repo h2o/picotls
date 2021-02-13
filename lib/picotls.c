@@ -2069,7 +2069,7 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
                     ptls_buffer_push_block(sendbuf, 2, { ptls_buffer_pushv(sendbuf, cookie->base, cookie->len); });
                 });
             }
-            if (tls->ctx->cert0_is_raw_certificate) {
+            if (tls->ctx->use_raw_public_keys) {
                 buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SERVER_CERTIFICATE_TYPE, {
                     ptls_buffer_push_block(sendbuf, 1, { ptls_buffer_push(sendbuf, PTLS_CERTIFICATE_TYPE_RAW_PUBLIC_KEY); });
                 });
@@ -2493,7 +2493,7 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
                 ret = PTLS_ALERT_DECODE_ERROR;
                 goto Exit;
             }
-            if ((tls->ctx->cert0_is_raw_certificate && *src != PTLS_CERTIFICATE_TYPE_RAW_PUBLIC_KEY) &&
+            if ((tls->ctx->use_raw_public_keys && *src != PTLS_CERTIFICATE_TYPE_RAW_PUBLIC_KEY) &&
                 *src != PTLS_CERTIFICATE_TYPE_X509) {
                 ret = PTLS_ALERT_UNSUPPORTED_CERTIFICATE;
                 goto Exit;
@@ -3311,8 +3311,8 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
             ptls_decode_block(src, end, 1, {
                 int found = 0;
                 for (size_t i = 0; i < end - src; i++) {
-                    if ((*src == PTLS_CERTIFICATE_TYPE_X509 && !tls->ctx->cert0_is_raw_certificate) ||
-                        (*src == PTLS_CERTIFICATE_TYPE_RAW_PUBLIC_KEY && tls->ctx->cert0_is_raw_certificate)) {
+                    if ((*src == PTLS_CERTIFICATE_TYPE_X509 && !tls->ctx->use_raw_public_keys) ||
+                        (*src == PTLS_CERTIFICATE_TYPE_RAW_PUBLIC_KEY && tls->ctx->use_raw_public_keys)) {
                         found = 1;
                         break;
                     }
@@ -4033,7 +4033,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
                  * The "extension_data" field of this extension SHALL be empty. (RFC 6066 section 3) */
                 buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SERVER_NAME, {});
             }
-            if (tls->ctx->cert0_is_raw_certificate) {
+            if (tls->ctx->use_raw_public_keys) {
                 buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SERVER_CERTIFICATE_TYPE,
                                       { ptls_buffer_push(sendbuf, PTLS_CERTIFICATE_TYPE_RAW_PUBLIC_KEY); });
             }
