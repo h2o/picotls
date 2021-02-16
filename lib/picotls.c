@@ -3335,8 +3335,8 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
                     if (ch->server_certificate_types.count < PTLS_ELEMENTSOF(ch->server_certificate_types.list))
                         ch->server_certificate_types.list[ch->server_certificate_types.count++] = *src;
                     src++;
-                } while(src != end);
-                });
+                } while (src != end);
+            });
             break;
         case PTLS_EXTENSION_TYPE_COMPRESS_CERTIFICATE:
             ptls_decode_block(src, end, 1, {
@@ -3688,8 +3688,8 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
         goto Exit;
     }
 
-    *ch = (struct st_ptls_client_hello_t){0,      NULL,   {NULL},     {NULL}, 0,     {NULL},   {NULL}, {NULL},        {{0}},
-                                          {NULL}, {NULL}, {{{NULL}}}, {{0}},  {{0}}, {{NULL}}, {NULL}, {{0}}, {{UINT16_MAX}}};
+    *ch = (struct st_ptls_client_hello_t){0,      NULL,   {NULL},     {NULL}, 0,     {NULL},   {NULL}, {NULL}, {{0}},
+                                          {NULL}, {NULL}, {{{NULL}}}, {{0}},  {{0}}, {{NULL}}, {NULL}, {{0}},  {{UINT16_MAX}}};
 
     /* decode ClientHello */
     if ((ret = decode_client_hello(tls, ch, message.base + PTLS_HANDSHAKE_HEADER_SIZE, message.base + message.len, properties)) !=
