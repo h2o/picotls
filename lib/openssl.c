@@ -1303,6 +1303,12 @@ static int verify_raw_cert(ptls_verify_certificate_t *_self, ptls_t *tls, int (*
     if (!ptls_mem_equal(self->expected_pubkey.base, certs[0].base, certs[0].len))
         goto Exit;
 
+    const unsigned char *p = self->expected_pubkey.base;
+    if ((*verify_data = d2i_PUBKEY(NULL, &p, self->expected_pubkey.len)) == NULL) {
+        ret = PTLS_ALERT_BAD_CERTIFICATE;
+        goto Exit;
+    }
+    *verifier = verify_sign;
     ret = 0;
 Exit:
     return ret;
