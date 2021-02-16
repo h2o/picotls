@@ -48,10 +48,11 @@ static inline void load_certificate_chain(ptls_context_t *ctx, const char *fn)
     }
 }
 
-static inline void load_raw_public_key(ptls_context_t *ctx, const char *fn)
+static inline void load_raw_public_key(ptls_iovec_t *raw_public_key, char const *cert_pem_file)
 {
-    if (ptls_load_raw_public_key(ctx, (char *)fn) != 0) {
-        fprintf(stderr, "failed to load public key:%s:%s\n", fn, strerror(errno));
+    size_t count;
+    if (ptls_load_pem_objects(cert_pem_file, "PUBLIC KEY", raw_public_key, 1, &count) != 0) {
+        fprintf(stderr, "failed to load public key:%s:%s\n", cert_pem_file, strerror(errno));
         exit(1);
     }
 }
@@ -130,15 +131,11 @@ static inline void setup_verify_certificate(ptls_context_t *ctx)
     ctx->verify_certificate = &vc.super;
 }
 
-static inline void setup_raw_pubkey_verify_certificate(ptls_context_t *ctx)
+static inline void setup_raw_pubkey_verify_certificate(ptls_context_t *ctx, ptls_iovec_t raw_pub_key)
 {
     static ptls_raw_pubkey_verify_certificate_t vc;
     ptls_raw_pubkey_init_verify_certificate(&vc);
-    if (ctx->certificates.count == 0) {
-        fprintf(stderr, "Cannot verify raw public key: no key found\n");
-        exit(1);
-    }
-    vc.expected_pubkey = ctx->certificates.list[0];
+    vc.expected_pubkey = raw_pub_key;
     ctx->verify_certificate = &vc.super;
 }
 

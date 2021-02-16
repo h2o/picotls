@@ -3331,11 +3331,12 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
                     goto Exit;
                 }
 
-                for (size_t i = 0; i < end - src; i++) {
+                do {
                     if (ch->server_certificate_types.count < PTLS_ELEMENTSOF(ch->server_certificate_types.list))
                         ch->server_certificate_types.list[ch->server_certificate_types.count++] = *src;
-                }
-            });
+                    src++;
+                } while(src != end);
+                });
             break;
         case PTLS_EXTENSION_TYPE_COMPRESS_CERTIFICATE:
             ptls_decode_block(src, end, 1, {

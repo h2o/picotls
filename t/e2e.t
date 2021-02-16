@@ -71,8 +71,8 @@ subtest "certificate-compression" => sub {
 };
 
 subtest "raw-certificates" => sub {
-    my $guard = spawn_server(qw(-r -i t/assets/hello.txt));
-    my $resp = `$cli -r -v -C t/assets/server.pub 127.0.0.1 $port 2> /dev/null`;
+    my $guard = spawn_server(qw(-r - -i t/assets/hello.txt));
+    my $resp = `$cli -v -r t/assets/server.pub 127.0.0.1 $port 2> /dev/null`;
     is $resp, "hello";
 };
 
