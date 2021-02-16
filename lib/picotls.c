@@ -3310,6 +3310,14 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
         case PTLS_EXTENSION_TYPE_SERVER_CERTIFICATE_TYPE:
             ptls_decode_block(src, end, 1, {
                 int found = 0;
+                size_t list_size = end - src;
+
+                /* RFC7250 4.1: No empty list, no list with single x509 element */
+                if (list_size == 0 || (list_size == 1 && *src == PTLS_CERTIFICATE_TYPE_X509)) {
+                    ret = PTLS_ALERT_DECODE_ERROR;
+                    goto Exit;
+                }
+
                 for (size_t i = 0; i < end - src; i++) {
                     if ((*src == PTLS_CERTIFICATE_TYPE_X509 && !tls->ctx->use_raw_public_keys) ||
                         (*src == PTLS_CERTIFICATE_TYPE_RAW_PUBLIC_KEY && tls->ctx->use_raw_public_keys)) {
