@@ -2434,6 +2434,7 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
     static const ptls_raw_extension_t no_unknown_extensions = {UINT16_MAX};
     ptls_raw_extension_t *unknown_extensions = (ptls_raw_extension_t *)&no_unknown_extensions;
     int ret, skip_early_data = 1;
+    const uint8_t *server_offered_cert_type = NULL;
 
     decode_extensions(src, end, PTLS_HANDSHAKE_TYPE_ENCRYPTED_EXTENSIONS, &type, {
         if (tls->ctx->on_extension != NULL &&
@@ -2493,11 +2494,7 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
                 ret = PTLS_ALERT_DECODE_ERROR;
                 goto Exit;
             }
-            if ((tls->ctx->use_raw_public_keys && *src != PTLS_CERTIFICATE_TYPE_RAW_PUBLIC_KEY) &&
-                *src != PTLS_CERTIFICATE_TYPE_X509) {
-                ret = PTLS_ALERT_UNSUPPORTED_CERTIFICATE;
-                goto Exit;
-            }
+            server_offered_cert_type = src;
             src = end;
             break;
         default:
@@ -2516,6 +2513,18 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
         }
         src = end;
     });
+
+    if (tls->ctx->use_raw_public_keys) {
+        if (server_offered_cert_type == NULL || *server_offered_cert_type != PTLS_CERTIFICATE_TYPE_RAW_PUBLIC_KEY) {
+            ret = PTLS_ALERT_UNSUPPORTED_CERTIFICATE;
+            goto Exit;
+        }
+    } else {
+        if (server_offered_cert_type != NULL && *server_offered_cert_type != PTLS_CERTIFICATE_TYPE_X509) {
+            ret = PTLS_ALERT_UNSUPPORTED_CERTIFICATE;
+            goto Exit;
+        }
+    }
 
     if (tls->esni != NULL) {
         if (esni_nonce == NULL || !ptls_mem_equal(esni_nonce, tls->esni->nonce, PTLS_ESNI_NONCE_SIZE)) {
