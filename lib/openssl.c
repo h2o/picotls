@@ -1324,6 +1324,10 @@ int ptls_openssl_raw_pubkey_init_verify_certificate(ptls_openssl_raw_pubkey_veri
     *self = (ptls_openssl_raw_pubkey_verify_certificate_t){{verify_raw_cert}, expected_pubkey};
     return 0;
 }
+void ptls_openssl_raw_pubkey_dispose_verify_certificate(ptls_openssl_raw_pubkey_verify_certificate_t *self)
+{
+    EVP_PKEY_free(self->expected_pubkey);
+}
 
 #define TICKET_LABEL_SIZE 16
 #define TICKET_IV_SIZE EVP_MAX_IV_LENGTH

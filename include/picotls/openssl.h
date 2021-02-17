@@ -119,6 +119,7 @@ void ptls_openssl_dispose_verify_certificate(ptls_openssl_verify_certificate_t *
 X509_STORE *ptls_openssl_create_default_certificate_store(void);
 
 int ptls_openssl_raw_pubkey_init_verify_certificate(ptls_openssl_raw_pubkey_verify_certificate_t *self, EVP_PKEY *pubkey);
+void ptls_openssl_raw_pubkey_dispose_verify_certificate(ptls_openssl_raw_pubkey_verify_certificate_t *self);
 
 int ptls_openssl_encrypt_ticket(ptls_buffer_t *dst, ptls_iovec_t src,
                                 int (*cb)(unsigned char *, unsigned char *, EVP_CIPHER_CTX *, HMAC_CTX *, int));
