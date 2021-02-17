@@ -285,7 +285,7 @@ struct st_ptls_client_hello_psk_t {
 
 #define MAX_UNKNOWN_EXTENSIONS 16
 #define MAX_CLIENT_CIPHERS 32
-#define MAX_CERTIFICATE_TYPES 2
+#define MAX_CERTIFICATE_TYPES 8
 
 struct st_ptls_client_hello_t {
     uint16_t legacy_version;
@@ -2439,7 +2439,7 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
     static const ptls_raw_extension_t no_unknown_extensions = {UINT16_MAX};
     ptls_raw_extension_t *unknown_extensions = (ptls_raw_extension_t *)&no_unknown_extensions;
     int ret, skip_early_data = 1;
-    const uint8_t *server_offered_cert_type = NULL;
+    uint8_t server_offered_cert_type = PTLS_CERTIFICATE_TYPE_X509;
 
     decode_extensions(src, end, PTLS_HANDSHAKE_TYPE_ENCRYPTED_EXTENSIONS, &type, {
         if (tls->ctx->on_extension != NULL &&
@@ -2499,7 +2499,7 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
                 ret = PTLS_ALERT_DECODE_ERROR;
                 goto Exit;
             }
-            server_offered_cert_type = src;
+            server_offered_cert_type = *src;
             src = end;
             break;
         default:
@@ -2519,16 +2519,9 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
         src = end;
     });
 
-    if (tls->ctx->use_raw_public_keys) {
-        if (server_offered_cert_type == NULL || *server_offered_cert_type != PTLS_CERTIFICATE_TYPE_RAW_PUBLIC_KEY) {
+    if (server_offered_cert_type != (tls->ctx->use_raw_public_keys ? PTLS_CERTIFICATE_TYPE_RAW_PUBLIC_KEY : PTLS_CERTIFICATE_TYPE_X509)) {
             ret = PTLS_ALERT_UNSUPPORTED_CERTIFICATE;
-            goto Exit;
-        }
-    } else {
-        if (server_offered_cert_type != NULL && *server_offered_cert_type != PTLS_CERTIFICATE_TYPE_X509) {
-            ret = PTLS_ALERT_UNSUPPORTED_CERTIFICATE;
-            goto Exit;
-        }
+                goto Exit;
     }
 
     if (tls->esni != NULL) {
@@ -3636,6 +3629,18 @@ static int calc_cookie_signature(ptls_t *tls, ptls_handshake_properties_t *prope
     return 0;
 }
 
+static int certificate_type_exists(uint8_t *list, size_t count, uint8_t desired_type)
+{
+    /* empty type list means that we default to x509 */
+    if (desired_type == PTLS_CERTIFICATE_TYPE_X509 && count == 0)
+        return 1;
+    for (size_t i = 0; i < count; i++) {
+        if (list[i] == desired_type)
+            return 1;
+    }
+    return 0;
+}
+
 static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_iovec_t message,
                                ptls_handshake_properties_t *properties)
 {
@@ -3786,27 +3791,8 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
             free(server_name.base);
         if (ret != 0)
             goto Exit;
-        int cert_type_found = 0;
-        if (tls->ctx->use_raw_public_keys) {
-            for (size_t i = 0; i < ch->server_certificate_types.count; i++) {
-                if (ch->server_certificate_types.list[i] == PTLS_CERTIFICATE_TYPE_RAW_PUBLIC_KEY) {
-                    cert_type_found = 1;
-                    break;
-                }
-            }
-        } else {
-            if (ch->server_certificate_types.count != 0) {
-                for (size_t i = 0; i < ch->server_certificate_types.count; i++) {
-                    if (ch->server_certificate_types.list[i] == PTLS_CERTIFICATE_TYPE_X509) {
-                        cert_type_found = 1;
-                        break;
-                    }
-                }
-            } else {
-                cert_type_found = 1;
-            }
-        }
-        if (!cert_type_found) {
+
+        if (!certificate_type_exists(ch->server_certificate_types.list, ch->server_certificate_types.count, tls->ctx->use_raw_public_keys ? PTLS_CERTIFICATE_TYPE_RAW_PUBLIC_KEY : PTLS_CERTIFICATE_TYPE_X509)) {
             ret = PTLS_ALERT_UNSUPPORTED_CERTIFICATE;
             goto Exit;
         }
