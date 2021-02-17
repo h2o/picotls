@@ -555,8 +555,14 @@ int main(int argc, char **argv)
             ctx.certificates.count = 1;
         } else if (!is_dash) {
             ptls_iovec_t raw_pub_key;
+            EVP_PKEY *pubkey;
             load_raw_public_key(&raw_pub_key, raw_pub_key_file);
-            setup_raw_pubkey_verify_certificate(&ctx, raw_pub_key);
+            pubkey = d2i_PUBKEY(NULL, (const unsigned char **)&raw_pub_key.base, raw_pub_key.len);
+            if (pubkey == NULL) {
+                fprintf(stderr, "Failed to create an EVP_PKEY from the key found in %s\n", raw_pub_key_file);
+                return 1;
+            }
+            setup_raw_pubkey_verify_certificate(&ctx, pubkey);
         }
         ctx.use_raw_public_keys = 1;
     } else {

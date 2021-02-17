@@ -104,10 +104,10 @@ int ptls_openssl_init_sign_certificate(ptls_openssl_sign_certificate_t *self, EV
 void ptls_openssl_dispose_sign_certificate(ptls_openssl_sign_certificate_t *self);
 int ptls_openssl_load_certificates(ptls_context_t *ctx, X509 *cert, STACK_OF(X509) * chain);
 
-typedef struct st_ptls_raw_pubkey_verify_certificate_t {
+typedef struct st_ptls_openssl_raw_pubkey_verify_certificate_t {
     ptls_verify_certificate_t super;
-    ptls_iovec_t expected_pubkey;
-} ptls_raw_pubkey_verify_certificate_t;
+    EVP_PKEY *expected_pubkey;
+} ptls_openssl_raw_pubkey_verify_certificate_t;
 
 typedef struct st_ptls_openssl_verify_certificate_t {
     ptls_verify_certificate_t super;
@@ -118,7 +118,7 @@ int ptls_openssl_init_verify_certificate(ptls_openssl_verify_certificate_t *self
 void ptls_openssl_dispose_verify_certificate(ptls_openssl_verify_certificate_t *self);
 X509_STORE *ptls_openssl_create_default_certificate_store(void);
 
-int ptls_raw_pubkey_init_verify_certificate(ptls_raw_pubkey_verify_certificate_t *self);
+int ptls_openssl_raw_pubkey_init_verify_certificate(ptls_openssl_raw_pubkey_verify_certificate_t *self, EVP_PKEY *pubkey);
 
 int ptls_openssl_encrypt_ticket(ptls_buffer_t *dst, ptls_iovec_t src,
                                 int (*cb)(unsigned char *, unsigned char *, EVP_CIPHER_CTX *, HMAC_CTX *, int));

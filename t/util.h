@@ -131,11 +131,10 @@ static inline void setup_verify_certificate(ptls_context_t *ctx)
     ctx->verify_certificate = &vc.super;
 }
 
-static inline void setup_raw_pubkey_verify_certificate(ptls_context_t *ctx, ptls_iovec_t raw_pub_key)
+static inline void setup_raw_pubkey_verify_certificate(ptls_context_t *ctx, EVP_PKEY *pubkey)
 {
-    static ptls_raw_pubkey_verify_certificate_t vc;
-    ptls_raw_pubkey_init_verify_certificate(&vc);
-    vc.expected_pubkey = raw_pub_key;
+    static ptls_openssl_raw_pubkey_verify_certificate_t vc;
+    ptls_openssl_raw_pubkey_init_verify_certificate(&vc, pubkey);
     ctx->verify_certificate = &vc.super;
 }
 

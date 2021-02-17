@@ -1289,34 +1289,39 @@ Error:
 static int verify_raw_cert(ptls_verify_certificate_t *_self, ptls_t *tls, int (**verifier)(void *, ptls_iovec_t, ptls_iovec_t),
                            void **verify_data, ptls_iovec_t *certs, size_t num_certs)
 {
-    ptls_raw_pubkey_verify_certificate_t *self = (ptls_raw_pubkey_verify_certificate_t *)_self;
+    ptls_openssl_raw_pubkey_verify_certificate_t *self = (ptls_openssl_raw_pubkey_verify_certificate_t *)_self;
     int ret = PTLS_ALERT_BAD_CERTIFICATE;
+    ptls_iovec_t expected_pubkey = {};
 
     assert(num_certs != 0);
 
     if (num_certs != 1)
         goto Exit;
 
-    if (certs[0].len != self->expected_pubkey.len)
-        goto Exit;
-
-    if (!ptls_mem_equal(self->expected_pubkey.base, certs[0].base, certs[0].len))
-        goto Exit;
-
-    const unsigned char *p = self->expected_pubkey.base;
-    if ((*verify_data = d2i_PUBKEY(NULL, &p, self->expected_pubkey.len)) == NULL) {
+    int r = i2d_PUBKEY(self->expected_pubkey, &expected_pubkey.base);
+    if (r <= 0) {
         ret = PTLS_ALERT_BAD_CERTIFICATE;
         goto Exit;
     }
+
+    expected_pubkey.len = r;
+    if (certs[0].len != expected_pubkey.len)
+        goto Exit;
+
+    if (!ptls_mem_equal(expected_pubkey.base, certs[0].base, certs[0].len))
+        goto Exit;
+
+    *verify_data = self->expected_pubkey;
     *verifier = verify_sign;
     ret = 0;
 Exit:
+    free(expected_pubkey.base);
     return ret;
 }
 
-int ptls_raw_pubkey_init_verify_certificate(ptls_raw_pubkey_verify_certificate_t *self)
+int ptls_openssl_raw_pubkey_init_verify_certificate(ptls_openssl_raw_pubkey_verify_certificate_t *self, EVP_PKEY *expected_pubkey)
 {
-    *self = (ptls_raw_pubkey_verify_certificate_t){{verify_raw_cert}};
+    *self = (ptls_openssl_raw_pubkey_verify_certificate_t){{verify_raw_cert}, expected_pubkey};
     return 0;
 }
 
