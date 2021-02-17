@@ -2519,9 +2519,10 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
         src = end;
     });
 
-    if (server_offered_cert_type != (tls->ctx->use_raw_public_keys ? PTLS_CERTIFICATE_TYPE_RAW_PUBLIC_KEY : PTLS_CERTIFICATE_TYPE_X509)) {
-            ret = PTLS_ALERT_UNSUPPORTED_CERTIFICATE;
-                goto Exit;
+    if (server_offered_cert_type !=
+        (tls->ctx->use_raw_public_keys ? PTLS_CERTIFICATE_TYPE_RAW_PUBLIC_KEY : PTLS_CERTIFICATE_TYPE_X509)) {
+        ret = PTLS_ALERT_UNSUPPORTED_CERTIFICATE;
+        goto Exit;
     }
 
     if (tls->esni != NULL) {
@@ -3792,7 +3793,9 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
         if (ret != 0)
             goto Exit;
 
-        if (!certificate_type_exists(ch->server_certificate_types.list, ch->server_certificate_types.count, tls->ctx->use_raw_public_keys ? PTLS_CERTIFICATE_TYPE_RAW_PUBLIC_KEY : PTLS_CERTIFICATE_TYPE_X509)) {
+        if (!certificate_type_exists(ch->server_certificate_types.list, ch->server_certificate_types.count,
+                                     tls->ctx->use_raw_public_keys ? PTLS_CERTIFICATE_TYPE_RAW_PUBLIC_KEY
+                                                                   : PTLS_CERTIFICATE_TYPE_X509)) {
             ret = PTLS_ALERT_UNSUPPORTED_CERTIFICATE;
             goto Exit;
         }
