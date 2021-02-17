@@ -1346,10 +1346,6 @@ int ptls_load_certificates(ptls_context_t *ctx, char const *cert_pem_file);
 /**
  *
  */
-int ptls_load_raw_public_key(ptls_context_t *ctx, char const *cert_pem_file);
-/**
- *
- */
 int ptls_esni_init_context(ptls_context_t *ctx, ptls_esni_context_t *esni, ptls_iovec_t esni_keys,
                            ptls_key_exchange_context_t **key_exchanges);
 /**
