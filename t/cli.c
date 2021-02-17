@@ -574,7 +574,7 @@ int main(int argc, char **argv)
             load_certificate_chain(&ctx, cert_location);
     }
 
-    if (!ctx.use_raw_public_keys && (ctx.certificates.count == 0) != (ctx.sign_certificate == NULL)) {
+    if ((ctx.certificates.count == 0) != (ctx.sign_certificate == NULL)) {
         fprintf(stderr, "-C/-c and -k options must be used together\n");
         return 1;
     }
