@@ -555,7 +555,7 @@ int main(int argc, char **argv)
         int is_dash = !strcmp(raw_pub_key_file, "-");
         if (is_server) {
             ctx.certificates.list = malloc(sizeof(*ctx.certificates.list));
-            load_raw_public_key(ctx.certificates.list, is_dash ? cert_location : raw_pub_key_file);
+            load_raw_public_key(ctx.certificates.list, cert_location);
             ctx.certificates.count = 1;
         } else if (!is_dash) {
             ptls_iovec_t raw_pub_key;
