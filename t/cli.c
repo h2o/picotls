@@ -567,6 +567,7 @@ int main(int argc, char **argv)
                 return 1;
             }
             setup_raw_pubkey_verify_certificate(&ctx, pubkey);
+            EVP_PKEY_free(pubkey);
         }
         ctx.use_raw_public_keys = 1;
     } else {

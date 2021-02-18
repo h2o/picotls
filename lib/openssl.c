@@ -1311,6 +1311,7 @@ static int verify_raw_cert(ptls_verify_certificate_t *_self, ptls_t *tls, int (*
     if (!ptls_mem_equal(expected_pubkey.base, certs[0].base, certs[0].len))
         goto Exit;
 
+    EVP_PKEY_up_ref(self->expected_pubkey);
     *verify_data = self->expected_pubkey;
     *verifier = verify_sign;
     ret = 0;
@@ -1321,6 +1322,7 @@ Exit:
 
 int ptls_openssl_raw_pubkey_init_verify_certificate(ptls_openssl_raw_pubkey_verify_certificate_t *self, EVP_PKEY *expected_pubkey)
 {
+    EVP_PKEY_up_ref(expected_pubkey);
     *self = (ptls_openssl_raw_pubkey_verify_certificate_t){{verify_raw_cert}, expected_pubkey};
     return 0;
 }
