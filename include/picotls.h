@@ -153,6 +153,7 @@ extern "C" {
 #define PTLS_ALERT_BAD_RECORD_MAC 20
 #define PTLS_ALERT_HANDSHAKE_FAILURE 40
 #define PTLS_ALERT_BAD_CERTIFICATE 42
+#define PTLS_ALERT_UNSUPPORTED_CERTIFICATE 43
 #define PTLS_ALERT_CERTIFICATE_REVOKED 44
 #define PTLS_ALERT_CERTIFICATE_EXPIRED 45
 #define PTLS_ALERT_CERTIFICATE_UNKNOWN 46
@@ -209,6 +210,9 @@ extern "C" {
 #define PTLS_HANDSHAKE_TYPE_KEY_UPDATE 24
 #define PTLS_HANDSHAKE_TYPE_COMPRESSED_CERTIFICATE 25
 #define PTLS_HANDSHAKE_TYPE_MESSAGE_HASH 254
+
+#define PTLS_CERTIFICATE_TYPE_X509 0
+#define PTLS_CERTIFICATE_TYPE_RAW_PUBLIC_KEY 2
 
 #define PTLS_ZERO_DIGEST_SHA256                                                                                                    \
     {                                                                                                                              \
@@ -531,6 +535,10 @@ typedef struct st_ptls_on_client_hello_parameters_t {
         const uint16_t *list;
         size_t count;
     } cipher_suites;
+    struct {
+        const uint8_t *list;
+        size_t count;
+    } server_certificate_types;
     /**
      * if ESNI was used
      */
@@ -707,6 +715,19 @@ struct st_ptls_context_t {
      * if set, EOED will not be emitted or accepted
      */
     unsigned omit_end_of_early_data : 1;
+    /**
+     * This option turns on support for Raw Public Keys (RFC 7250).
+     *
+     * When running as a client, this option instructs the client to request the server to send raw public keys in place of X.509
+     * certificate chain. The client should set its `certificate_verify` callback to one that is capable of validating the raw
+     * public key that will be sent by the server.
+     *
+     * When running as a server, this option instructs the server to only handle clients requesting the use of raw public keys. If
+     * the client does not, the handshake is rejected. Note however that the rejection happens only after the `on_client_hello`
+     * callback is being called. Therefore, applications can support both X.509 and raw public keys by swapping `ptls_context_t` to
+     * the correct one when that callback is being called (like handling swapping the contexts based on the value of SNI).
+     */
+    unsigned use_raw_public_keys : 1;
     /**
      *
      */
