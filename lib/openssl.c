@@ -1068,7 +1068,7 @@ SchemeFound:
             ret = PTLS_ERROR_LIBRARY;
             goto Exit;
         }
-        if (EVP_PKEY_CTX_set_rsa_mgf1_md(pkey_ctx, EVP_sha256()) != 1) {
+        if (EVP_PKEY_CTX_set_rsa_mgf1_md(pkey_ctx, scheme->scheme_md()) != 1) {
             ret = PTLS_ERROR_LIBRARY;
             goto Exit;
         }
