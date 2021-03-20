@@ -170,6 +170,31 @@ static void test_ecdsa_sign(void)
     EVP_PKEY_free(pkey);
 }
 
+static void test_ed25519_sign(void)
+{
+    EVP_PKEY *pkey = NULL;
+
+    { /* create pkey */
+        EVP_PKEY_CTX *pctx = EVP_PKEY_CTX_new_id(EVP_PKEY_ED25519, NULL);
+        EVP_PKEY_keygen_init(pctx);
+        EVP_PKEY_keygen(pctx, &pkey);
+        EVP_PKEY_CTX_free(pctx);
+    }
+
+    const char *message = "hello world";
+    ptls_buffer_t sigbuf;
+  
+    uint8_t sigbuf_small[1024];
+
+    ptls_buffer_init(&sigbuf, sigbuf_small, sizeof(sigbuf_small));
+    ok(do_sign(pkey, &sigbuf, ptls_iovec_init(message, strlen(message)), NULL) == 0);
+    EVP_PKEY_up_ref(pkey);
+    ok(verify_sign(pkey, ptls_iovec_init(message, strlen(message)), ptls_iovec_init(sigbuf.base, sigbuf.off), NULL) == 0);
+
+    ptls_buffer_dispose(&sigbuf);
+    EVP_PKEY_free(pkey);
+}
+
 static X509 *x509_from_pem(const char *pem)
 {
     BIO *bio = BIO_new_mem_buf((void *)pem, (int)strlen(pem));
@@ -308,6 +333,7 @@ int main(int argc, char **argv)
 
     subtest("rsa-sign", test_rsa_sign);
     subtest("ecdsa-sign", test_ecdsa_sign);
+    subtest("ed25519-sign", test_ed25519_sign);
     subtest("cert-verify", test_cert_verify);
     subtest("picotls", test_picotls);
     test_picotls_esni(esni_private_keys);
