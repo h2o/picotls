@@ -1091,7 +1091,7 @@ int ptls_openssl_init_sign_certificate(ptls_openssl_sign_certificate_t *self, EV
     } break;
 #if defined EVP_PKEY_ED25519
     case EVP_PKEY_ED25519:
-        PUSH_SCHEME(PTLS_SIGNATURE_ED25519, EVP_sha512());
+        PUSH_SCHEME(PTLS_SIGNATURE_ED25519, NULL);
         break;
 #endif
     default:
