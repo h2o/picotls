@@ -1519,15 +1519,16 @@ Exit:
     return ret;
 }
 
-static int push_signature_algorithms(ptls_buffer_t *sendbuf)
+static int push_signature_algorithms(ptls_verify_certificate_t *vc, ptls_buffer_t *sendbuf)
 {
+    /* The list sent when verify callback is not registered */
+    static const uint16_t default_algos[] = {PTLS_SIGNATURE_RSA_PSS_RSAE_SHA256, PTLS_SIGNATURE_ECDSA_SECP256R1_SHA256,
+                                             PTLS_SIGNATURE_RSA_PKCS1_SHA256, PTLS_SIGNATURE_RSA_PKCS1_SHA1, UINT16_MAX};
     int ret;
 
     ptls_buffer_push_block(sendbuf, 2, {
-        ptls_buffer_push16(sendbuf, PTLS_SIGNATURE_RSA_PSS_RSAE_SHA256);
-        ptls_buffer_push16(sendbuf, PTLS_SIGNATURE_ECDSA_SECP256R1_SHA256);
-        ptls_buffer_push16(sendbuf, PTLS_SIGNATURE_RSA_PKCS1_SHA256);
-        ptls_buffer_push16(sendbuf, PTLS_SIGNATURE_RSA_PKCS1_SHA1);
+        for (const uint16_t *p = vc != NULL ? vc->algos : default_algos; *p != UINT16_MAX; ++p)
+            ptls_buffer_push16(sendbuf, *p);
     });
 
     ret = 0;
@@ -2059,7 +2060,7 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
                 });
             });
             buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SIGNATURE_ALGORITHMS, {
-                if ((ret = push_signature_algorithms(sendbuf)) != 0)
+                if ((ret = push_signature_algorithms(tls->ctx->verify_certificate, sendbuf)) != 0)
                     goto Exit;
             });
             buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SUPPORTED_GROUPS, {
@@ -4095,7 +4096,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
                 /* extensions */
                 ptls_buffer_push_block(sendbuf, 2, {
                     buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SIGNATURE_ALGORITHMS, {
-                        if ((ret = push_signature_algorithms(sendbuf)) != 0)
+                        if ((ret = push_signature_algorithms(tls->ctx->verify_certificate, sendbuf)) != 0)
                             goto Exit;
                     });
                 });

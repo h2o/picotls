@@ -103,6 +103,19 @@ static const struct st_ptls_openssl_signature_scheme_t secp521r1_signature_schem
     {PTLS_SIGNATURE_ECDSA_SECP521R1_SHA512, EVP_sha512}, {UINT16_MAX, NULL}};
 #endif
 
+/**
+ * The default list sent in ClientHello.signature_algorithms. ECDSA certificates are preferred.
+ */
+static const uint16_t default_signature_schemes[] = {PTLS_SIGNATURE_ECDSA_SECP256R1_SHA256,
+#if PTLS_OPENSSL_HAVE_SECP384R1
+                                                     PTLS_SIGNATURE_ECDSA_SECP384R1_SHA384,
+#endif
+#if PTLS_OPENSSL_HAVE_SECP521R1
+                                                     PTLS_SIGNATURE_ECDSA_SECP521R1_SHA512,
+#endif
+                                                     PTLS_SIGNATURE_RSA_PSS_RSAE_SHA512,    PTLS_SIGNATURE_RSA_PSS_RSAE_SHA384,
+                                                     PTLS_SIGNATURE_RSA_PSS_RSAE_SHA256,    UINT16_MAX};
+
 static const struct st_ptls_openssl_signature_scheme_t *lookup_signature_schemes(EVP_PKEY *key)
 {
     static const struct st_ptls_openssl_signature_scheme_t *schemes = NULL;
@@ -1270,7 +1283,7 @@ Exit:
 
 int ptls_openssl_init_verify_certificate(ptls_openssl_verify_certificate_t *self, X509_STORE *store)
 {
-    *self = (ptls_openssl_verify_certificate_t){{verify_cert}};
+    *self = (ptls_openssl_verify_certificate_t){{verify_cert, default_signature_schemes}};
 
     if (store != NULL) {
         X509_STORE_up_ref(store);
@@ -1348,7 +1361,7 @@ Exit:
 int ptls_openssl_raw_pubkey_init_verify_certificate(ptls_openssl_raw_pubkey_verify_certificate_t *self, EVP_PKEY *expected_pubkey)
 {
     EVP_PKEY_up_ref(expected_pubkey);
-    *self = (ptls_openssl_raw_pubkey_verify_certificate_t){{verify_raw_cert}, expected_pubkey};
+    *self = (ptls_openssl_raw_pubkey_verify_certificate_t){{verify_raw_cert, default_signature_schemes}, expected_pubkey};
     return 0;
 }
 void ptls_openssl_raw_pubkey_dispose_verify_certificate(ptls_openssl_raw_pubkey_verify_certificate_t *self)
