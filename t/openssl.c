@@ -172,10 +172,10 @@ static void do_test_ecdsa_sign(int nid, const struct st_ptls_openssl_signature_s
 static void test_ecdsa_sign(void)
 {
     do_test_ecdsa_sign(NID_X9_62_prime256v1, secp256r1_signature_schemes);
-#if defined(NID_secp384r1) && !OPENSSL_NO_SHA384
+#if PTLS_OPENSSL_HAVE_SECP384R1
     do_test_ecdsa_sign(NID_secp384r1, secp384r1_signature_schemes);
 #endif
-#if defined(NID_secp521r1) && !OPENSSL_NO_SHA512
+#if PTLS_OPENSSL_HAVE_SECP521R1
     do_test_ecdsa_sign(NID_secp521r1, secp521r1_signature_schemes);
 #endif
 }

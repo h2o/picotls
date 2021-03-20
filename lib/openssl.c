@@ -94,11 +94,11 @@ static const struct st_ptls_openssl_signature_scheme_t rsa_signature_schemes[] =
                                                                                   {UINT16_MAX, NULL}};
 static const struct st_ptls_openssl_signature_scheme_t secp256r1_signature_schemes[] = {
     {PTLS_SIGNATURE_ECDSA_SECP256R1_SHA256, EVP_sha256}, {UINT16_MAX, NULL}};
-#if defined(NID_secp384r1) && !OPENSSL_NO_SHA384
+#if PTLS_OPENSSL_HAVE_SECP384R1
 static const struct st_ptls_openssl_signature_scheme_t secp384r1_signature_schemes[] = {
     {PTLS_SIGNATURE_ECDSA_SECP384R1_SHA384, EVP_sha384}, {UINT16_MAX, NULL}};
 #endif
-#if defined(NID_secp521r1) && !OPENSSL_NO_SHA512
+#if PTLS_OPENSSL_HAVE_SECP521R1
 static const struct st_ptls_openssl_signature_scheme_t secp521r1_signature_schemes[] = {
     {PTLS_SIGNATURE_ECDSA_SECP521R1_SHA512, EVP_sha512}, {UINT16_MAX, NULL}};
 #endif
@@ -117,12 +117,12 @@ static const struct st_ptls_openssl_signature_scheme_t *lookup_signature_schemes
         case NID_X9_62_prime256v1:
             schemes = secp256r1_signature_schemes;
             break;
-#if defined(NID_secp384r1) && !OPENSSL_NO_SHA384
+#if PTLS_OPENSSL_HAVE_SECP384R1
         case NID_secp384r1:
             schemes = secp384r1_signature_schemes;
             break;
 #endif
-#if defined(NID_secp521r1) && !OPENSSL_NO_SHA512
+#if PTLS_OPENSSL_HAVE_SECP521R1
         case NID_secp521r1:
             schemes = secp521r1_signature_schemes;
             break;
