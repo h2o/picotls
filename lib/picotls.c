@@ -257,7 +257,7 @@ struct st_ptls_t {
      * will be used by the client and the server (if require_client_authentication is set).
      */
     struct {
-        int (*cb)(void *verify_ctx, ptls_iovec_t data, ptls_iovec_t signature);
+        int (*cb)(void *verify_ctx, uint16_t algo, ptls_iovec_t data, ptls_iovec_t signature);
         void *verify_ctx;
     } certificate_verify;
     /**
@@ -2879,7 +2879,8 @@ static int handle_certificate_verify(ptls_t *tls, ptls_iovec_t message, const ch
     }
     signdata_size = build_certificate_verify_signdata(signdata, tls->key_schedule, context_string);
     if (tls->certificate_verify.cb != NULL) {
-        ret = tls->certificate_verify.cb(tls->certificate_verify.verify_ctx, ptls_iovec_init(signdata, signdata_size), signature);
+        ret = tls->certificate_verify.cb(tls->certificate_verify.verify_ctx, algo, ptls_iovec_init(signdata, signdata_size),
+                                         signature);
     } else {
         ret = 0;
     }
@@ -4387,7 +4388,7 @@ void ptls_free(ptls_t *tls)
             free(tls->client.certificate_request.context.base);
     }
     if (tls->certificate_verify.cb != NULL) {
-        tls->certificate_verify.cb(tls->certificate_verify.verify_ctx, ptls_iovec_init(NULL, 0), ptls_iovec_init(NULL, 0));
+        tls->certificate_verify.cb(tls->certificate_verify.verify_ctx, 0, ptls_iovec_init(NULL, 0), ptls_iovec_init(NULL, 0));
     }
     if (tls->pending_handshake_secret != NULL) {
         ptls_clear_memory(tls->pending_handshake_secret, PTLS_MAX_DIGEST_SIZE);

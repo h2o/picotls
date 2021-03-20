@@ -576,7 +576,7 @@ PTLS_CALLBACK_TYPE(int, sign_certificate, ptls_t *tls, uint16_t *selected_algori
  * callback.
  */
 PTLS_CALLBACK_TYPE(int, verify_certificate, ptls_t *tls,
-                   int (**verify_sign)(void *verify_ctx, ptls_iovec_t data, ptls_iovec_t sign), void **verify_data,
+                   int (**verify_sign)(void *verify_ctx, uint16_t algo, ptls_iovec_t data, ptls_iovec_t sign), void **verify_data,
                    ptls_iovec_t *certs, size_t num_certs);
 /**
  * Encrypt-and-signs (or verify-and-decrypts) a ticket (server-only).

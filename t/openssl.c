@@ -140,7 +140,8 @@ static void test_sign_verify(EVP_PKEY *key, const struct st_ptls_openssl_signatu
         ptls_buffer_init(&sigbuf, sigbuf_small, sizeof(sigbuf_small));
         ok(do_sign(key, &sigbuf, ptls_iovec_init(message, strlen(message)), schemes[i].scheme_md()) == 0);
         EVP_PKEY_up_ref(key);
-        ok(verify_sign(key, ptls_iovec_init(message, strlen(message)), ptls_iovec_init(sigbuf.base, sigbuf.off)) == 0);
+        ok(verify_sign(key, schemes[i].scheme_id, ptls_iovec_init(message, strlen(message)),
+                       ptls_iovec_init(sigbuf.base, sigbuf.off)) == 0);
 
         ptls_buffer_dispose(&sigbuf);
     }
