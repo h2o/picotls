@@ -987,7 +987,7 @@ static X509 *to_x509(ptls_iovec_t vec)
     return d2i_X509(NULL, &p, (long)vec.len);
 }
 
-static int verify_sign(void *verify_ctx, ptls_iovec_t data, ptls_iovec_t signature, const EVP_MD *md)
+static int verify_sign(void *verify_ctx, ptls_iovec_t data, ptls_iovec_t signature)
 {
     EVP_PKEY *key = verify_ctx;
     EVP_MD_CTX *ctx = NULL;
@@ -1001,14 +1001,15 @@ static int verify_sign(void *verify_ctx, ptls_iovec_t data, ptls_iovec_t signatu
         ret = PTLS_ERROR_NO_MEMORY;
         goto Exit;
     }
-    if (EVP_DigestVerifyInit(ctx, &pkey_ctx, md, NULL, key) != 1) {
-        ret = PTLS_ERROR_LIBRARY;
-        goto Exit;
-    }
 
 #if defined EVP_PKEY_ED25519
     if (EVP_PKEY_id(key) == EVP_PKEY_ED25519)
     {
+        if (EVP_DigestVerifyInit(ctx, &pkey_ctx, NULL, NULL, key) != 1) {
+            ret = PTLS_ERROR_LIBRARY;
+            goto Exit;
+        }
+        
         if (EVP_DigestVerify(ctx, signature.base, signature.len, data.base, data.len) != 1) {
             ret = PTLS_ERROR_LIBRARY;
             goto Exit;
@@ -1017,6 +1018,11 @@ static int verify_sign(void *verify_ctx, ptls_iovec_t data, ptls_iovec_t signatu
     else
 #endif
     {
+        if (EVP_DigestVerifyInit(ctx, &pkey_ctx, EVP_sha256(), NULL, key) != 1) {
+            ret = PTLS_ERROR_LIBRARY;
+            goto Exit;
+        }
+        
         if (EVP_PKEY_id(key) == EVP_PKEY_RSA) {
             if (EVP_PKEY_CTX_set_rsa_padding(pkey_ctx, RSA_PKCS1_PSS_PADDING) != 1) {
                 ret = PTLS_ERROR_LIBRARY;
