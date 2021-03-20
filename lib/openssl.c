@@ -1047,7 +1047,7 @@ static int verify_sign(void *verify_ctx, uint16_t algo, ptls_iovec_t data, ptls_
     for (; scheme->scheme_id != UINT16_MAX; ++scheme)
         if (scheme->scheme_id == algo)
             goto SchemeFound;
-    ret = PTLS_ERROR_LIBRARY;
+    ret = PTLS_ALERT_ILLEGAL_PARAMETER;
     goto Exit;
 
 SchemeFound:
