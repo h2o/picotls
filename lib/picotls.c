@@ -2868,16 +2868,6 @@ static int handle_certificate_verify(ptls_t *tls, ptls_iovec_t message, const ch
         src = end;
     });
 
-    /* validate */
-    switch (algo) {
-    case PTLS_SIGNATURE_RSA_PSS_RSAE_SHA256:
-    case PTLS_SIGNATURE_ECDSA_SECP256R1_SHA256:
-        /* ok */
-        break;
-    default:
-        ret = PTLS_ALERT_ILLEGAL_PARAMETER;
-        goto Exit;
-    }
     signdata_size = build_certificate_verify_signdata(signdata, tls->key_schedule, context_string);
     if (tls->certificate_verify.cb != NULL) {
         ret = tls->certificate_verify.cb(tls->certificate_verify.verify_ctx, algo, ptls_iovec_init(signdata, signdata_size),
