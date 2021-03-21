@@ -138,7 +138,7 @@ static void test_sign_verify(EVP_PKEY *key, const struct st_ptls_openssl_signatu
         uint8_t sigbuf_small[1024];
 
         ptls_buffer_init(&sigbuf, sigbuf_small, sizeof(sigbuf_small));
-        ok(do_sign(key, &sigbuf, ptls_iovec_init(message, strlen(message)), schemes[i].scheme_md()) == 0);
+        ok(do_sign(key, &sigbuf, ptls_iovec_init(message, strlen(message)), schemes[i].scheme_md != NULL ? schemes[i].scheme_md() : NULL) == 0);
         EVP_PKEY_up_ref(key);
         ok(verify_sign(key, schemes[i].scheme_id, ptls_iovec_init(message, strlen(message)),
                        ptls_iovec_init(sigbuf.base, sigbuf.off)) == 0);
@@ -177,6 +177,23 @@ static void test_ecdsa_sign(void)
 #endif
 #if PTLS_OPENSSL_HAVE_SECP521R1
     do_test_ecdsa_sign(NID_secp521r1, secp521r1_signature_schemes);
+#endif
+}
+
+static void test_ed25519_sign(void)
+{
+#if defined EVP_PKEY_ED25519
+    EVP_PKEY *pkey = NULL;
+
+    { /* create pkey */
+        EVP_PKEY_CTX *pctx = EVP_PKEY_CTX_new_id(EVP_PKEY_ED25519, NULL);
+        EVP_PKEY_keygen_init(pctx);
+        EVP_PKEY_keygen(pctx, &pkey);
+        EVP_PKEY_CTX_free(pctx);
+    }
+
+    test_sign_verify(pkey, ed25519_signature_schemes);
+    EVP_PKEY_free(pkey);
 #endif
 }
 
@@ -318,6 +335,7 @@ int main(int argc, char **argv)
 
     subtest("rsa-sign", test_rsa_sign);
     subtest("ecdsa-sign", test_ecdsa_sign);
+    subtest("ed25519-sign", test_ed25519_sign);
     subtest("cert-verify", test_cert_verify);
     subtest("picotls", test_picotls);
     test_picotls_esni(esni_private_keys);
