@@ -1008,7 +1008,7 @@ static int sign_certificate(ptls_sign_certificate_t *_self, ptls_t *tls, uint16_
     ptls_openssl_sign_certificate_t *self = (ptls_openssl_sign_certificate_t *)_self;
     const struct st_ptls_openssl_signature_scheme_t *scheme;
 
-    /* select the algorithm */
+    /* select the algorithm (driven by server-side preference of `self->schemes`) */
     for (scheme = self->schemes; scheme->scheme_id != UINT16_MAX; ++scheme) {
         size_t i;
         for (i = 0; i != num_algorithms; ++i)
