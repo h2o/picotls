@@ -701,7 +701,7 @@ static int do_sign(EVP_PKEY *key, ptls_buffer_t *outbuf, ptls_iovec_t input, con
             ret = PTLS_ERROR_LIBRARY;
             goto Exit;
         }
-        if (EVP_PKEY_CTX_set_rsa_mgf1_md(pkey_ctx, EVP_sha256()) != 1) {
+        if (EVP_PKEY_CTX_set_rsa_mgf1_md(pkey_ctx, md) != 1) {
             ret = PTLS_ERROR_LIBRARY;
             goto Exit;
         }
