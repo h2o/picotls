@@ -705,14 +705,13 @@ static int do_sign(EVP_PKEY *key, ptls_buffer_t *outbuf, ptls_iovec_t input, con
 
 #if defined EVP_PKEY_ED25519
     if (EVP_PKEY_id(key) == EVP_PKEY_ED25519) {
+        /* ED25519 requires the use of the all-at-once function that appeared in OpenSSL 1.1.1, hence different path */
         if (EVP_DigestSign(ctx, NULL, &siglen, input.base, input.len) != 1) {
             ret = PTLS_ERROR_LIBRARY;
             goto Exit;
         }
-
         if ((ret = ptls_buffer_reserve(outbuf, siglen)) != 0)
             goto Exit;
-
         if (EVP_DigestSign(ctx, outbuf->base + outbuf->off, &siglen, input.base, input.len) != 1) {
             ret = PTLS_ERROR_LIBRARY;
             goto Exit;
@@ -1087,11 +1086,11 @@ SchemeFound:
 
 #if defined EVP_PKEY_ED25519
     if (EVP_PKEY_id(key) == EVP_PKEY_ED25519) {
+        /* ED25519 requires the use of the all-at-once function that appeared in OpenSSL 1.1.1, hence different path */
         if (EVP_DigestVerifyInit(ctx, &pkey_ctx, NULL, NULL, key) != 1) {
             ret = PTLS_ERROR_LIBRARY;
             goto Exit;
         }
-
         if (EVP_DigestVerify(ctx, signature.base, signature.len, data.base, data.len) != 1) {
             ret = PTLS_ERROR_LIBRARY;
             goto Exit;
