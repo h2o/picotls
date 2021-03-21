@@ -141,7 +141,6 @@ static const struct st_ptls_openssl_signature_scheme_t *lookup_signature_schemes
             break;
 #endif
         default:
-            EC_KEY_free(eckey);
             break;
         }
         EC_KEY_free(eckey);
