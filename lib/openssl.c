@@ -118,7 +118,7 @@ static const uint16_t default_signature_schemes[] = {PTLS_SIGNATURE_ECDSA_SECP25
 
 static const struct st_ptls_openssl_signature_scheme_t *lookup_signature_schemes(EVP_PKEY *key)
 {
-    static const struct st_ptls_openssl_signature_scheme_t *schemes = NULL;
+    const struct st_ptls_openssl_signature_scheme_t *schemes = NULL;
 
     switch (EVP_PKEY_id(key)) {
     case EVP_PKEY_RSA:
