@@ -686,9 +686,11 @@ int ptls_openssl_create_key_exchange(ptls_key_exchange_context_t **ctx, EVP_PKEY
     }
 }
 
-static int do_sign(EVP_PKEY *key, ptls_buffer_t *outbuf, ptls_iovec_t input, const EVP_MD *md)
+static int do_sign(EVP_PKEY *key, const struct st_ptls_openssl_signature_scheme_t *scheme, ptls_buffer_t *outbuf,
+                   ptls_iovec_t input)
 {
     EVP_MD_CTX *ctx = NULL;
+    const EVP_MD *md = scheme->scheme_md != NULL ? scheme->scheme_md() : NULL;
     EVP_PKEY_CTX *pkey_ctx;
     size_t siglen;
     int ret;
@@ -1048,7 +1050,7 @@ static int sign_certificate(ptls_sign_certificate_t *_self, ptls_t *tls, uint16_
 
 Found:
     *selected_algorithm = scheme->scheme_id;
-    return do_sign(self->key, outbuf, input, scheme->scheme_md());
+    return do_sign(self->key, scheme, outbuf, input);
 }
 
 static X509 *to_x509(ptls_iovec_t vec)
