@@ -103,7 +103,8 @@ static const struct st_ptls_openssl_signature_scheme_t secp521r1_signature_schem
     {PTLS_SIGNATURE_ECDSA_SECP521R1_SHA512, EVP_sha512}, {UINT16_MAX, NULL}};
 #endif
 #if defined EVP_PKEY_ED25519
-static const struct st_ptls_openssl_signature_scheme_t ed25519_signature_schemes[] = {{PTLS_SIGNATURE_ED25519, NULL}, {UINT16_MAX, NULL}};
+static const struct st_ptls_openssl_signature_scheme_t ed25519_signature_schemes[] = {{PTLS_SIGNATURE_ED25519, NULL},
+                                                                                      {UINT16_MAX, NULL}};
 #endif
 
 /**
@@ -703,8 +704,7 @@ static int do_sign(EVP_PKEY *key, ptls_buffer_t *outbuf, ptls_iovec_t input, con
     }
 
 #if defined EVP_PKEY_ED25519
-    if (EVP_PKEY_id(key) == EVP_PKEY_ED25519)
-    {
+    if (EVP_PKEY_id(key) == EVP_PKEY_ED25519) {
         if (EVP_DigestSign(ctx, NULL, &siglen, input.base, input.len) != 1) {
             ret = PTLS_ERROR_LIBRARY;
             goto Exit;
@@ -712,13 +712,12 @@ static int do_sign(EVP_PKEY *key, ptls_buffer_t *outbuf, ptls_iovec_t input, con
 
         if ((ret = ptls_buffer_reserve(outbuf, siglen)) != 0)
             goto Exit;
-        
+
         if (EVP_DigestSign(ctx, outbuf->base + outbuf->off, &siglen, input.base, input.len) != 1) {
             ret = PTLS_ERROR_LIBRARY;
             goto Exit;
         }
-    }
-    else 
+    } else
 #endif
     {
         if (EVP_PKEY_id(key) == EVP_PKEY_RSA) {
@@ -1087,26 +1086,24 @@ SchemeFound:
     }
 
 #if defined EVP_PKEY_ED25519
-    if (EVP_PKEY_id(key) == EVP_PKEY_ED25519)
-    {
+    if (EVP_PKEY_id(key) == EVP_PKEY_ED25519) {
         if (EVP_DigestVerifyInit(ctx, &pkey_ctx, NULL, NULL, key) != 1) {
             ret = PTLS_ERROR_LIBRARY;
             goto Exit;
         }
-        
+
         if (EVP_DigestVerify(ctx, signature.base, signature.len, data.base, data.len) != 1) {
             ret = PTLS_ERROR_LIBRARY;
             goto Exit;
         }
-    }
-    else
+    } else
 #endif
     {
         if (EVP_DigestVerifyInit(ctx, &pkey_ctx, scheme->scheme_md(), NULL, key) != 1) {
             ret = PTLS_ERROR_LIBRARY;
             goto Exit;
         }
-        
+
         if (EVP_PKEY_id(key) == EVP_PKEY_RSA) {
             if (EVP_PKEY_CTX_set_rsa_padding(pkey_ctx, RSA_PKCS1_PSS_PADDING) != 1) {
                 ret = PTLS_ERROR_LIBRARY;
