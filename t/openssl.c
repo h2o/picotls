@@ -129,50 +129,60 @@ static void test_key_exchanges(void)
 #endif
 }
 
+static void test_sign_verify(EVP_PKEY *key, const struct st_ptls_openssl_signature_scheme_t *schemes)
+{
+    for (size_t i = 0; schemes[i].scheme_id != UINT16_MAX; ++i) {
+        note("scheme 0x%04x", schemes[i].scheme_id);
+        const void *message = "hello world";
+        ptls_buffer_t sigbuf;
+        uint8_t sigbuf_small[1024];
+
+        ptls_buffer_init(&sigbuf, sigbuf_small, sizeof(sigbuf_small));
+        ok(do_sign(key, schemes + i, &sigbuf, ptls_iovec_init(message, strlen(message))) == 0);
+        EVP_PKEY_up_ref(key);
+        ok(verify_sign(key, schemes[i].scheme_id, ptls_iovec_init(message, strlen(message)),
+                       ptls_iovec_init(sigbuf.base, sigbuf.off)) == 0);
+
+        ptls_buffer_dispose(&sigbuf);
+    }
+}
+
 static void test_rsa_sign(void)
 {
     ptls_openssl_sign_certificate_t *sc = (ptls_openssl_sign_certificate_t *)ctx->sign_certificate;
-
-    const void *message = "hello world";
-    ptls_buffer_t sigbuf;
-    uint8_t sigbuf_small[1024];
-
-    ptls_buffer_init(&sigbuf, sigbuf_small, sizeof(sigbuf_small));
-    ok(do_sign(sc->key, &sigbuf, ptls_iovec_init(message, strlen(message)), EVP_sha256()) == 0);
-    EVP_PKEY_up_ref(sc->key);
-    ok(verify_sign(sc->key, ptls_iovec_init(message, strlen(message)), ptls_iovec_init(sigbuf.base, sigbuf.off)) == 0);
-
-    ptls_buffer_dispose(&sigbuf);
+    test_sign_verify(sc->key, sc->schemes);
 }
 
-static void test_ecdsa_sign(void)
+static void do_test_ecdsa_sign(int nid, const struct st_ptls_openssl_signature_scheme_t *schemes)
 {
     EVP_PKEY *pkey;
 
     { /* create pkey */
-        EC_KEY *eckey = EC_KEY_new_by_curve_name(NID_X9_62_prime256v1);
+        EC_KEY *eckey = EC_KEY_new_by_curve_name(nid);
         EC_KEY_generate_key(eckey);
         pkey = EVP_PKEY_new();
         EVP_PKEY_set1_EC_KEY(pkey, eckey);
         EC_KEY_free(eckey);
     }
 
-    const char *message = "hello world";
-    ptls_buffer_t sigbuf;
-    uint8_t sigbuf_small[1024];
-
-    ptls_buffer_init(&sigbuf, sigbuf_small, sizeof(sigbuf_small));
-    ok(do_sign(pkey, &sigbuf, ptls_iovec_init(message, strlen(message)), EVP_sha256()) == 0);
-    EVP_PKEY_up_ref(pkey);
-    ok(verify_sign(pkey, ptls_iovec_init(message, strlen(message)), ptls_iovec_init(sigbuf.base, sigbuf.off)) == 0);
-
-    ptls_buffer_dispose(&sigbuf);
+    test_sign_verify(pkey, schemes);
     EVP_PKEY_free(pkey);
+}
+
+static void test_ecdsa_sign(void)
+{
+    do_test_ecdsa_sign(NID_X9_62_prime256v1, secp256r1_signature_schemes);
+#if PTLS_OPENSSL_HAVE_SECP384R1
+    do_test_ecdsa_sign(NID_secp384r1, secp384r1_signature_schemes);
+#endif
+#if PTLS_OPENSSL_HAVE_SECP521R1
+    do_test_ecdsa_sign(NID_secp521r1, secp521r1_signature_schemes);
+#endif
 }
 
 static void test_ed25519_sign(void)
 {
-#if defined EVP_PKEY_ED25519
+#if PTLS_OPENSSL_HAVE_ED25519
     EVP_PKEY *pkey = NULL;
 
     { /* create pkey */
@@ -182,17 +192,7 @@ static void test_ed25519_sign(void)
         EVP_PKEY_CTX_free(pctx);
     }
 
-    const char *message = "hello world";
-    ptls_buffer_t sigbuf;
-  
-    uint8_t sigbuf_small[1024];
-
-    ptls_buffer_init(&sigbuf, sigbuf_small, sizeof(sigbuf_small));
-    ok(do_sign(pkey, &sigbuf, ptls_iovec_init(message, strlen(message)), NULL) == 0);
-    EVP_PKEY_up_ref(pkey);
-    ok(verify_sign(pkey, ptls_iovec_init(message, strlen(message)), ptls_iovec_init(sigbuf.base, sigbuf.off)) == 0);
-
-    ptls_buffer_dispose(&sigbuf);
+    test_sign_verify(pkey, ed25519_signature_schemes);
     EVP_PKEY_free(pkey);
 #endif
 }
