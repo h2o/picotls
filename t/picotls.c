@@ -64,6 +64,15 @@ static void test_select_cipher(void)
         ok(selected == &ptls_minicrypto_chacha20poly1305sha256);
     }
 
+    {
+        static const uint8_t input[] = {C(PTLS_CIPHER_SUITE_AES_256_GCM_SHA384), C(PTLS_CIPHER_SUITE_AES_128_GCM_SHA256)};
+        ok(select_cipher(&selected, candidates, input, input + sizeof(input), 0) == 0);
+        ok(selected == &ptls_minicrypto_aes128gcmsha256);
+        ok(select_cipher(&selected, candidates, input, input + sizeof(input), 1) == 0);
+        ok(selected == &ptls_minicrypto_aes128gcmsha256);
+    }
+
+
 #undef C
 }
 
