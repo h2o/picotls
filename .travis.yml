@@ -39,6 +39,18 @@ matrix:
         - cd ..
       env:
         - PKG_CONFIG_PATH=/usr/local/openssl-1.0.2/lib/pkgconfig
+    - name: Linux (libressl 3.2)
+      os: linux
+      before_install:
+        - sudo apt-get install faketime libscope-guard-perl libtest-tcp-perl
+        - curl https://ftp.openbsd.org/pub/OpenBSD/LibreSSL/libressl-3.2.5.tar.gz | tar xzf -
+        - cd libressl-3.2.5
+        - ./configure --prefix=/usr/local/libressl-3.2
+        - make
+        - sudo make install
+        - cd ..
+      env:
+        - PKG_CONFIG_PATH=/usr/local/libressl-3.2/lib/pkgconfig
     - name: macOS (Xcode)
       os: osx
       addons: &addons_macos
