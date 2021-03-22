@@ -1220,7 +1220,7 @@ static int verify_cert_chain(X509_STORE *store, X509 *cert, STACK_OF(X509) * cha
     X509_STORE_CTX *verify_ctx;
     int ret;
 
-    assert(server_name != NULL && "ptls_set_server_name MUST be called");
+    //assert(server_name != NULL && "ptls_set_server_name MUST be called");
 
     /* verify certificate chain */
     if ((verify_ctx = X509_STORE_CTX_new()) == NULL) {
@@ -1231,7 +1231,7 @@ static int verify_cert_chain(X509_STORE *store, X509 *cert, STACK_OF(X509) * cha
         ret = PTLS_ERROR_LIBRARY;
         goto Exit;
     }
-    X509_STORE_CTX_set_purpose(verify_ctx, is_server ? X509_PURPOSE_SSL_SERVER : X509_PURPOSE_SSL_CLIENT);
+    X509_STORE_CTX_set_purpose(verify_ctx, is_server ? X509_PURPOSE_SSL_CLIENT : X509_PURPOSE_SSL_SERVER);
     if (X509_verify_cert(verify_ctx) != 1) {
         int x509_err = X509_STORE_CTX_get_error(verify_ctx);
         switch (x509_err) {
