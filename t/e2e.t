@@ -72,7 +72,7 @@ subtest "certificate-compression" => sub {
 
 # This test acts as an end-to-end testing of the certificate verifier of the OpenSSL backend.
 subtest "raw-public-keys" => sub {
-    for my $key_type (qw(rsa secp256r1 secp384r1 secp521r1)) {
+    for my $key_type (qw(rsa secp256r1 secp384r1 secp521r1 ed25519)) {
         subtest $key_type => sub {
             my $guard = spawn_server($key_type, qw(-r - -i t/assets/hello.txt));
             my $resp = `$cli -v -r t/assets/$key_type/pub.pem 127.0.0.1 $port 2> /dev/null`;
