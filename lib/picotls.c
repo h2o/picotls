@@ -1573,37 +1573,35 @@ static ptls_hash_context_t *create_sha256_context(ptls_context_t *ctx)
 static int select_cipher(ptls_cipher_suite_t **selected, ptls_cipher_suite_t **candidates, const uint8_t *src,
                          const uint8_t *const end, int server_preference)
 {
+    size_t found_index = SIZE_MAX;
     int ret;
 
-    if (server_preference) {
-        ptls_cipher_suite_t **c = candidates;
-        for (; *c != NULL; ++c) {
-            while (src != end) {
-                uint16_t id;
-                if ((ret = ptls_decode16(&id, &src, end)) != 0)
+    while (src != end) {
+        uint16_t id;
+        if ((ret = ptls_decode16(&id, &src, end)) != 0)
+            goto Exit;
+        for (size_t i = 0; candidates[i] != NULL; ++i) {
+            if (candidates[i]->id == id) {
+                if (server_preference) {
+                    /* preserve smallest matching index, and proceed to the next input */
+                    if (i < found_index) {
+                        found_index = i;
+                        break;
+                    }
+                } else {
+                    /* return the pointer matching to the first input that can be used */
+                    *selected = candidates[i];
                     goto Exit;
-                if ((*c)->id == id) {
-                    *selected = *c;
-                    return 0;
-                }
-            }
-        }
-    } else {
-        while (src != end) {
-            uint16_t id;
-            if ((ret = ptls_decode16(&id, &src, end)) != 0)
-                goto Exit;
-            ptls_cipher_suite_t **c = candidates;
-            for (; *c != NULL; ++c) {
-                if ((*c)->id == id) {
-                    *selected = *c;
-                    return 0;
                 }
             }
         }
     }
-
-    ret = PTLS_ALERT_HANDSHAKE_FAILURE;
+    if (found_index != SIZE_MAX) {
+        *selected = candidates[found_index];
+        ret = 0;
+    } else {
+        ret = PTLS_ALERT_HANDSHAKE_FAILURE;
+    }
 
 Exit:
     return ret;
