@@ -50,6 +50,9 @@ extern ptls_key_exchange_algorithm_t ptls_openssl_secp384r1;
 #define PTLS_OPENSSL_HAS_SECP521R1 1 /* deprecated; use HAVE_ */
 extern ptls_key_exchange_algorithm_t ptls_openssl_secp521r1;
 #endif
+#ifdef EVP_PKEY_ED25519
+#define PTLS_OPENSSL_HAVE_ED25519 1
+#endif
 #if defined(NID_X25519) && !defined(LIBRESSL_VERSION_NUMBER)
 #define PTLS_OPENSSL_HAVE_X25519 1
 #define PTLS_OPENSSL_HAS_X25519 1 /* deprecated; use HAVE_ */
