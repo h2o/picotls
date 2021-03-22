@@ -102,7 +102,7 @@ static const struct st_ptls_openssl_signature_scheme_t secp384r1_signature_schem
 static const struct st_ptls_openssl_signature_scheme_t secp521r1_signature_schemes[] = {
     {PTLS_SIGNATURE_ECDSA_SECP521R1_SHA512, EVP_sha512}, {UINT16_MAX, NULL}};
 #endif
-#if defined EVP_PKEY_ED25519
+#if PTLS_OPENSSL_HAVE_ED25519
 static const struct st_ptls_openssl_signature_scheme_t ed25519_signature_schemes[] = {{PTLS_SIGNATURE_ED25519, NULL},
                                                                                       {UINT16_MAX, NULL}};
 #endif
@@ -111,7 +111,7 @@ static const struct st_ptls_openssl_signature_scheme_t ed25519_signature_schemes
  * The default list sent in ClientHello.signature_algorithms. ECDSA certificates are preferred.
  */
 static const uint16_t default_signature_schemes[] = {
-#if EVP_PKEY_ED25519
+#if PTLS_OPENSSL_HAVE_ED25519
     PTLS_SIGNATURE_ED25519,
 #endif
     PTLS_SIGNATURE_ECDSA_SECP256R1_SHA256,
@@ -155,7 +155,7 @@ static const struct st_ptls_openssl_signature_scheme_t *lookup_signature_schemes
         }
         EC_KEY_free(eckey);
     } break;
-#if defined EVP_PKEY_ED25519
+#if PTLS_OPENSSL_HAVE_ED25519
     case EVP_PKEY_ED25519:
         schemes = ed25519_signature_schemes;
         break;
@@ -711,7 +711,7 @@ static int do_sign(EVP_PKEY *key, const struct st_ptls_openssl_signature_scheme_
         goto Exit;
     }
 
-#if defined EVP_PKEY_ED25519
+#if PTLS_OPENSSL_HAVE_ED25519
     if (EVP_PKEY_id(key) == EVP_PKEY_ED25519) {
         /* ED25519 requires the use of the all-at-once function that appeared in OpenSSL 1.1.1, hence different path */
         if (EVP_DigestSign(ctx, NULL, &siglen, input.base, input.len) != 1) {
@@ -1092,7 +1092,7 @@ SchemeFound:
         goto Exit;
     }
 
-#if defined EVP_PKEY_ED25519
+#if PTLS_OPENSSL_HAVE_ED25519
     if (EVP_PKEY_id(key) == EVP_PKEY_ED25519) {
         /* ED25519 requires the use of the all-at-once function that appeared in OpenSSL 1.1.1, hence different path */
         if (EVP_DigestVerifyInit(ctx, &pkey_ctx, NULL, NULL, key) != 1) {

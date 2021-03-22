@@ -182,7 +182,7 @@ static void test_ecdsa_sign(void)
 
 static void test_ed25519_sign(void)
 {
-#if defined EVP_PKEY_ED25519
+#if PTLS_OPENSSL_HAVE_ED25519
     EVP_PKEY *pkey = NULL;
 
     { /* create pkey */
