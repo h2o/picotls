@@ -1301,8 +1301,6 @@ static int verify_cert(ptls_verify_certificate_t *_self, ptls_t *tls,
 
     assert(num_certs != 0);
 
-    printf("verify_cert -> check point 1\n");
-
     /* convert certificates to OpenSSL representation */
     if ((cert = to_x509(certs[0])) == NULL) {
         ret = PTLS_ALERT_BAD_CERTIFICATE;
@@ -1317,13 +1315,9 @@ static int verify_cert(ptls_verify_certificate_t *_self, ptls_t *tls,
         sk_X509_push(chain, interm);
     }
 
-    printf("verify_cert -> check point 2\n");
-
     /* verify the chain */
     if ((ret = verify_cert_chain(self->cert_store, cert, chain, ptls_is_server(tls), ptls_get_server_name(tls))) != 0)
         goto Exit;
-
-    printf("verify_cert -> check point 3\n");
 
     /* extract public key for verifying the TLS handshake signature */
     if ((*verify_data = X509_get_pubkey(cert)) == NULL) {
