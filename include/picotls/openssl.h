@@ -117,6 +117,8 @@ typedef struct st_ptls_openssl_verify_certificate_t {
     X509_STORE *cert_store;
 } ptls_openssl_verify_certificate_t;
 
+void ptls_openssl_set_default_algos(ptls_verify_certificate_t *self);
+
 int ptls_openssl_init_verify_certificate(ptls_openssl_verify_certificate_t *self, X509_STORE *store);
 void ptls_openssl_dispose_verify_certificate(ptls_openssl_verify_certificate_t *self);
 X509_STORE *ptls_openssl_create_default_certificate_store(void);
