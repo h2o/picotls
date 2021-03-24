@@ -1275,8 +1275,8 @@ static int verify_cert_chain(X509_STORE *store, X509 *cert, STACK_OF(X509) * cha
         case X509_V_ERR_CERT_REJECTED:
             ret = PTLS_ALERT_UNKNOWN_CA;
             break;
+        case X509_V_ERR_HOSTNAME_MISMATCH:
         case X509_V_ERR_INVALID_CA:
-
             ret = PTLS_ALERT_BAD_CERTIFICATE;
             break;
         default:
