@@ -1238,9 +1238,8 @@ static int verify_cert_chain(X509_STORE *store, X509 *cert, STACK_OF(X509) * cha
     }
 
     X509_VERIFY_PARAM_set_purpose(params, is_server ? X509_PURPOSE_SSL_SERVER : X509_PURPOSE_SSL_CLIENT);
-    X509_VERIFY_PARAM_set_depth(params, 2);
+    X509_VERIFY_PARAM_set_depth(params, 1);
 
-#ifdef X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS
     if (server_name != NULL) {
         if (ptls_server_name_is_ipaddr(server_name)) {
             X509_VERIFY_PARAM_set1_ip_asc(params, server_name);
@@ -1250,9 +1249,6 @@ static int verify_cert_chain(X509_STORE *store, X509 *cert, STACK_OF(X509) * cha
             X509_VERIFY_PARAM_set_hostflags(params, X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS);
         }          
     }
-    #else
-#warning "hostname validation is disabled; OpenSSL >= 1.0.2 or LibreSSL >= 2.5.0 is required"
-#endif
 
     X509_STORE_CTX_set0_param(verify_ctx, params);
 
