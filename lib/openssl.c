@@ -1383,7 +1383,7 @@ static int verify_raw_cert(ptls_verify_certificate_t *_self, ptls_t *tls,
 {
     ptls_openssl_raw_pubkey_verify_certificate_t *self = (ptls_openssl_raw_pubkey_verify_certificate_t *)_self;
     int ret = PTLS_ALERT_BAD_CERTIFICATE;
-    ptls_iovec_t expected_pubkey = {};
+    ptls_iovec_t expected_pubkey = { 0 };
 
     assert(num_certs != 0);
 
