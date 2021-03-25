@@ -1337,11 +1337,6 @@ Exit:
     return ret;
 }
 
-void ptls_openssl_set_default_algos(ptls_verify_certificate_t *self)
-{
-    self->algos = default_signature_schemes;
-}
-
 int ptls_openssl_init_verify_certificate(ptls_openssl_verify_certificate_t *self, X509_STORE *store)
 {
     *self = (ptls_openssl_verify_certificate_t){{verify_cert, default_signature_schemes}};
