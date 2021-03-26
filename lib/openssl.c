@@ -1218,7 +1218,6 @@ Exit:
 static int verify_cert_chain(X509_STORE *store, X509 *cert, STACK_OF(X509) * chain, int is_server, const char *server_name)
 {
     X509_STORE_CTX *verify_ctx;
-    X509_VERIFY_PARAM *params;
     int ret;
 
     assert(server_name != NULL && "ptls_set_server_name MUST be called");
@@ -1228,29 +1227,30 @@ static int verify_cert_chain(X509_STORE *store, X509 *cert, STACK_OF(X509) * cha
         ret = PTLS_ERROR_NO_MEMORY;
         goto Exit;
     }
-    if ((params = X509_VERIFY_PARAM_new()) == NULL) {
-        ret = PTLS_ERROR_NO_MEMORY;
-        goto Exit;
-    }
     if (X509_STORE_CTX_init(verify_ctx, store, cert, chain) != 1) {
         ret = PTLS_ERROR_LIBRARY;
         goto Exit;
     }
 
-    X509_VERIFY_PARAM_set_purpose(params, is_server ? X509_PURPOSE_SSL_SERVER : X509_PURPOSE_SSL_CLIENT);
-    X509_VERIFY_PARAM_set_depth(params, 1);
-
-    if (server_name != NULL) {
-        if (ptls_server_name_is_ipaddr(server_name)) {
-            X509_VERIFY_PARAM_set1_ip_asc(params, server_name);
+    {
+        X509_VERIFY_PARAM *params;
+        if ((params = X509_VERIFY_PARAM_new()) == NULL) {
+            ret = PTLS_ERROR_NO_MEMORY;
+            goto Exit;
         }
-        else {
-            X509_VERIFY_PARAM_set1_host(params, server_name, 0);
-            X509_VERIFY_PARAM_set_hostflags(params, X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS);
-        }          
+        X509_VERIFY_PARAM_set_purpose(params, is_server ? X509_PURPOSE_SSL_SERVER : X509_PURPOSE_SSL_CLIENT);
+        X509_VERIFY_PARAM_set_depth(params, 1);
+        if (server_name != NULL) {
+            if (ptls_server_name_is_ipaddr(server_name)) {
+                X509_VERIFY_PARAM_set1_ip_asc(params, server_name);
+            }
+            else {
+                X509_VERIFY_PARAM_set1_host(params, server_name, 0);
+                X509_VERIFY_PARAM_set_hostflags(params, X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS);
+            }
+        }
+        X509_STORE_CTX_set0_param(verify_ctx, params); /* params will be freed alongside verify_ctx */
     }
-
-    X509_STORE_CTX_set0_param(verify_ctx, params);
 
     if (X509_verify_cert(verify_ctx) != 1) {
         int x509_err = X509_STORE_CTX_get_error(verify_ctx);
@@ -1285,10 +1285,8 @@ static int verify_cert_chain(X509_STORE *store, X509 *cert, STACK_OF(X509) * cha
     ret = 0;
 
 Exit:
-    // X509_VERIFY_PARAM *params is freed by the store
     if (verify_ctx != NULL)
         X509_STORE_CTX_free(verify_ctx);
-
     return ret;
 }
 
