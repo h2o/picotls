@@ -72,7 +72,6 @@ static void test_select_cipher(void)
         ok(selected == &ptls_minicrypto_aes128gcmsha256);
     }
 
-
 #undef C
 }
 
