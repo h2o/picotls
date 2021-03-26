@@ -1239,7 +1239,7 @@ static int verify_cert_chain(X509_STORE *store, X509 *cert, STACK_OF(X509) * cha
             goto Exit;
         }
         X509_VERIFY_PARAM_set_purpose(params, is_server ? X509_PURPOSE_SSL_SERVER : X509_PURPOSE_SSL_CLIENT);
-        X509_VERIFY_PARAM_set_depth(params, 1);
+        X509_VERIFY_PARAM_set_depth(params, 98); /* use the default of OpenSSL 1.0.2 and above; see `man SSL_CTX_set_verify` */
         if (server_name != NULL) {
             if (ptls_server_name_is_ipaddr(server_name)) {
                 X509_VERIFY_PARAM_set1_ip_asc(params, server_name);
