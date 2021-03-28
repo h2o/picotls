@@ -21,8 +21,11 @@ jobs:
     - name: openssl version
       run: |
         openssl version -a
+        dir "C:\Program Files\Common Files\SSL"
 
     - name: build picotlsvs
       run: |
+        $env:OPENSSLDIR = "C:\Program Files\Common Files\SSL"
+        $env:OPENSSL64DIR = "C:\Program Files\Common Files\SSL"
         cd picotlsvs
         msbuild picotlsvs.sln
