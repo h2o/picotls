@@ -18,10 +18,6 @@ jobs:
     - name: setup-msbuild
       uses: microsoft/setup-msbuild@v1
 
-    - name: setup-nmake
-      uses: actions/checkout@v1
-      uses: ilammy/msvc-dev-cmd@v1
-
     - name: setup-openssl
       run: |
         git clone https://github.com/openssl/openssl
