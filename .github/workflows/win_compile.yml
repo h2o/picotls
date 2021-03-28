@@ -25,11 +25,12 @@ jobs:
         perl Configure VC-WIN64A no-asm
         cd ..
 
-    -name: build-openssl
-     run: |
+    - name: build-openssl
+      run: |
         cd openssl
+        vcvars64.bat
         nmake
-     shell: "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvars64.bat"
+      shell: cmd
       
     - name: build picotlsvs
       run: |
