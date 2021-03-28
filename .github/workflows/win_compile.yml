@@ -12,15 +12,15 @@ jobs:
     runs-on: windows-latest
     steps:
     - uses: actions/checkout@v2
+      with:
+        submodules: recursive
 
     - name: setup-msbuild
       uses: microsoft/setup-msbuild@v1
 
-    - name: echo msbuild path
+    - name: openssl version
       run: |
-        echo "vswhere-path: ${{ steps.setup_msbuild_explicit.outputs.msbuildPath }}"
-        echo "PATH: ${{ steps.setup_msbuild_path.outputs.msbuildPath }}"
-        echo "Fallback: ${{ steps.setup_msbuild_fallback.outputs.msbuildPath }}"
+        openssl version
 
     - name: build picotlsvs
       run: |
