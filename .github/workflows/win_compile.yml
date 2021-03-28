@@ -20,8 +20,7 @@ jobs:
 
     - name: openssl version
       run: |
-        openssl version
-        Get-ChildItem "C:\Program Files" -recurse -include "openssl"
+        openssl version -a
 
     - name: build picotlsvs
       run: |
