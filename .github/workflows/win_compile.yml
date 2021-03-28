@@ -18,14 +18,20 @@ jobs:
     - name: setup-msbuild
       uses: microsoft/setup-msbuild@v1
 
-    - name: openssl version
-      run: |
-        openssl version -a
-        dir "C:\Program Files\Common Files\SSL"
+    - name: setup-nmake
+      uses: actions/checkout@v1
+      uses: ilammy/msvc-dev-cmd@v1
 
+    - name: setup-openssl
+      run: |
+        git clone https://github.com/openssl/openssl
+        cd openssl
+        perl Configure VC-WIN64A no-asm
+        nmake
+      
     - name: build picotlsvs
       run: |
-        $env:OPENSSLDIR = "C:\Program Files\Common Files\SSL"
-        $env:OPENSSL64DIR = "C:\Program Files\Common Files\SSL"
+        $env:OPENSSLDIR = "..\openssl"
+        $env:OPENSSL64DIR = "..\openssl"
         cd picotlsvs
         msbuild picotlsvs.sln
