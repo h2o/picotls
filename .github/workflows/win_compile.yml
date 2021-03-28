@@ -13,13 +13,16 @@ jobs:
     steps:
     - uses: actions/checkout@v2
 
+    - name: setup-msbuild
+      uses: microsoft/setup-msbuild@v1
+
     - name: echo msbuild path
       run: |
         echo "vswhere-path: ${{ steps.setup_msbuild_explicit.outputs.msbuildPath }}"
         echo "PATH: ${{ steps.setup_msbuild_path.outputs.msbuildPath }}"
         echo "Fallback: ${{ steps.setup_msbuild_fallback.outputs.msbuildPath }}"
 
-    - name: echo MSBuild
+    - name: build picotlsvs
       run: |
         cd picotlsvs
         msbuild picotlsvs.sln
