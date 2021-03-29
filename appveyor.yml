@@ -23,9 +23,8 @@ matrix:
       configuration: Debug
       OPENSSL64DIR: C:\OpenSSL-v11-Win64
 
-before_build:
-  - ps: git submodule init
-  - ps: git submodule update
+install:
+  - ps: git submodule update --init --recursive
 
 build:
   parallel: true
