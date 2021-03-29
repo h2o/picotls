@@ -23,6 +23,10 @@ matrix:
       configuration: Debug
       OPENSSL64DIR: C:\OpenSSL-v11-Win64
 
+before_build:
+  - ps: git submodule init
+  - ps: git submodule update
+
 build:
   parallel: true
   project: picotlsvs\picotlsvs.sln
