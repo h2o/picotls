@@ -4,6 +4,7 @@ foreach ($dir in "$Env:OPENSSLDIR","$Env:OPENSSL64DIR") {
     if ($dir) {
         cp "$dir\lib\libcrypto.lib" "$dir"
         cp C:\OpenSSL-Win32\include\openssl\applink.c "$dir\include\openssl"
+        echo "Copied applink.c to $dir\include\openssl"
     }
 }
 
