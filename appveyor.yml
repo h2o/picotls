@@ -24,7 +24,7 @@ matrix:
       OPENSSL64DIR: C:\OpenSSL-v11-Win64
 
 install:
-  - ps: cmd -c "git submodule update --init --recursive 2>gitupdate.txt"
+  - ps: cmd -c "git submodule update --init --recursive 2>gitupdate.txt; exit"
 
 build:
   parallel: true
