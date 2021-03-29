@@ -7,4 +7,4 @@ foreach ($dir in "$Env:OPENSSLDIR","$Env:OPENSSL64DIR") {
     }
 }
 
-msbuild "/p:Configuration=$Env:Configuration" "/p:Platform=$Env:Platform" /m picotlsvs\picotlsvs.sln
+# msbuild "/p:Configuration=$Env:Configuration" "/p:Platform=$Env:Platform" /m picotlsvs\picotlsvs.sln

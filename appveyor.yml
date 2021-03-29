@@ -24,5 +24,8 @@ matrix:
       OPENSSL64DIR: C:\OpenSSL-v11-Win64
 
 build:
-  # Launch the build using msbuild
+  parallel: true
+  project: picotlsvs\picotlsvs.sln
+
+before_build:
   - ps: misc\build_picotls.ps1
