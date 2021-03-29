@@ -49,7 +49,6 @@
 #define _CRT_SECURE_NO_WARNINGS
 #endif
 #pragma warning(disable : 4996)
-#include <ms/applink.c>
 #endif
 
 #if !defined(LIBRESSL_VERSION_NUMBER) && OPENSSL_VERSION_NUMBER >= 0x10100000L

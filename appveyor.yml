@@ -27,5 +27,3 @@ build:
   parallel: true
   project: picotlsvs\picotlsvs.sln
 
-before_build:
-  - ps: misc\build_picotls.ps1
