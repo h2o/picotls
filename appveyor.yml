@@ -25,6 +25,7 @@ matrix:
 
 install:
   - ps: cmd -c "git submodule update --init --recursive 2>gitupdate.txt; exit"
+    # Hopefully this is enough to install the dependencies.
 
 build:
   parallel: true
