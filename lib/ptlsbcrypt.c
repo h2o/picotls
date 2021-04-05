@@ -427,8 +427,8 @@ static size_t ptls_bcrypt_aead_do_encrypt_final(struct st_ptls_aead_context_t *_
     return cbResult;
 }
 
-void ptls_bcrypt_do_encrypt(ptls_aead_context_t *ctx, void *output, const void *input, size_t inlen, uint64_t seq,
-                                  const void *aad, size_t aadlen, ptls_aead_supplementary_encryption_t *supp)
+void ptls_bcrypt_do_encrypt(ptls_aead_context_t *ctx, void *output, const void *input, size_t inlen, uint64_t seq, const void *aad,
+                            size_t aadlen, ptls_aead_supplementary_encryption_t *supp)
 {
     size_t after_update;
 

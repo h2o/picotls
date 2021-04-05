@@ -1242,8 +1242,7 @@ static int verify_cert_chain(X509_STORE *store, X509 *cert, STACK_OF(X509) * cha
         if (server_name != NULL) {
             if (ptls_server_name_is_ipaddr(server_name)) {
                 X509_VERIFY_PARAM_set1_ip_asc(params, server_name);
-            }
-            else {
+            } else {
                 X509_VERIFY_PARAM_set1_host(params, server_name, 0);
                 X509_VERIFY_PARAM_set_hostflags(params, X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS);
             }
@@ -1382,7 +1381,7 @@ static int verify_raw_cert(ptls_verify_certificate_t *_self, ptls_t *tls,
 {
     ptls_openssl_raw_pubkey_verify_certificate_t *self = (ptls_openssl_raw_pubkey_verify_certificate_t *)_self;
     int ret = PTLS_ALERT_BAD_CERTIFICATE;
-    ptls_iovec_t expected_pubkey = { 0 };
+    ptls_iovec_t expected_pubkey = {0};
 
     assert(num_certs != 0);
 
