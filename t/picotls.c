@@ -53,7 +53,7 @@ static void test_select_cipher(void)
 
     {
         static const uint8_t input[] = {};
-        ok(select_cipher(&selected, candidates, input, input + sizeof(input), 0) == PTLS_ALERT_HANDSHAKE_FAILURE);
+        ok(select_cipher(&selected, candidates, input, input, 0) == PTLS_ALERT_HANDSHAKE_FAILURE);
     }
 
     {
