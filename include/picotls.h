@@ -113,10 +113,15 @@ extern "C" {
 
 /* negotiated_groups */
 #define PTLS_GROUP_SECP256R1 23
+#define PTLS_GROUP_NAME_SECP256R1 "scep256r1"
 #define PTLS_GROUP_SECP384R1 24
+#define PTLS_GROUP_NAME_SECP384R1 "secp384r1"
 #define PTLS_GROUP_SECP521R1 25
+#define PTLS_GROUP_NAME_SECP521R1 "secp521r1"
 #define PTLS_GROUP_X25519 29
+#define PTLS_GROUP_NAME_X25519 "x25519"
 #define PTLS_GROUP_X448 30
+#define PTLS_GROUP_NAME_X448 "x448"
 
 /* signature algorithms */
 #define PTLS_SIGNATURE_RSA_PKCS1_SHA1 0x0201
@@ -293,6 +298,10 @@ typedef const struct st_ptls_key_exchange_algorithm_t {
      * crypto-specific data
      */
     intptr_t data;
+    /**
+     * Description as defined in the IANA TLS registry
+     */
+    const char *name;
 } ptls_key_exchange_algorithm_t;
 
 /**

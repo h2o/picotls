@@ -1555,18 +1555,31 @@ Exit:
     return ret;
 }
 
-ptls_key_exchange_algorithm_t ptls_openssl_secp256r1 = {PTLS_GROUP_SECP256R1, x9_62_create_key_exchange, secp_key_exchange,
-                                                        NID_X9_62_prime256v1};
+ptls_key_exchange_algorithm_t ptls_openssl_secp256r1 = {.id = PTLS_GROUP_SECP256R1,
+                                                        .name = PTLS_GROUP_NAME_SECP256R1,
+                                                        .create = x9_62_create_key_exchange,
+                                                        .exchange = secp_key_exchange,
+                                                        .data = NID_X9_62_prime256v1};
 #if PTLS_OPENSSL_HAVE_SECP384R1
-ptls_key_exchange_algorithm_t ptls_openssl_secp384r1 = {PTLS_GROUP_SECP384R1, x9_62_create_key_exchange, secp_key_exchange,
-                                                        NID_secp384r1};
+ptls_key_exchange_algorithm_t ptls_openssl_secp384r1 = {.id = PTLS_GROUP_SECP384R1,
+                                                        .name = PTLS_GROUP_NAME_SECP384R1,
+                                                        .create = x9_62_create_key_exchange,
+                                                        .exchange = secp_key_exchange,
+                                                        .data = NID_secp384r1};
 #endif
 #if PTLS_OPENSSL_HAVE_SECP521R1
-ptls_key_exchange_algorithm_t ptls_openssl_secp521r1 = {PTLS_GROUP_SECP521R1, x9_62_create_key_exchange, secp_key_exchange,
-                                                        NID_secp521r1};
+ptls_key_exchange_algorithm_t ptls_openssl_secp521r1 = {.id = PTLS_GROUP_SECP521R1,
+                                                        .name = PTLS_GROUP_NAME_SECP521R1,
+                                                        .create = x9_62_create_key_exchange,
+                                                        .exchange = secp_key_exchange,
+                                                        .data = NID_secp521r1};
 #endif
 #if PTLS_OPENSSL_HAVE_X25519
-ptls_key_exchange_algorithm_t ptls_openssl_x25519 = {PTLS_GROUP_X25519, evp_keyex_create, evp_keyex_exchange, NID_X25519};
+ptls_key_exchange_algorithm_t ptls_openssl_x25519 = {.id = PTLS_GROUP_X25519,
+                                                     .name = PTLS_GROUP_NAME_X25519,
+                                                     .create = evp_keyex_create,
+                                                     .exchange = evp_keyex_exchange,
+                                                     .data = NID_X25519};
 #endif
 ptls_key_exchange_algorithm_t *ptls_openssl_key_exchanges[] = {&ptls_openssl_secp256r1, NULL};
 ptls_cipher_algorithm_t ptls_openssl_aes128ecb = {
