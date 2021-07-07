@@ -12,7 +12,7 @@ IF (WITH_DTRACE)
     MESSAGE(STATUS "Enabling USDT support")
 ENDIF ()
 
-SET(CMAKE_C_FLAGS "-std=c99 -Wall -O2 -g ${CC_WARNING_FLAGS} ${CMAKE_C_FLAGS}")
+SET(CMAKE_C_FLAGS "-std=c99 -Wall -Ofast -fno-exceptions -frename-registers -fno-signed-zeros -fno-trapping-math ${CC_WARNING_FLAGS} ${CMAKE_C_FLAGS}")
 INCLUDE_DIRECTORIES(
     deps/cifra/src/ext
     deps/cifra/src
@@ -208,3 +208,22 @@ IF (BUILD_FUZZER)
     TARGET_LINK_LIBRARIES(fuzz-client-hello picotls-core picotls-openssl ${OPENSSL_LIBRARIES} ${LIB_FUZZER})
 
 ENDIF()
+
+install(TARGETS picotls-core picotls-minicrypto picotls-openssl picotls-fusion
+        LIBRARY DESTINATION lib
+        ARCHIVE DESTINATION lib)
+
+install(FILES
+        include/picotls.h
+        DESTINATION include/picotls)
+
+install(FILES
+        include/picotls/asn1.h  
+        include/picotls/certificate_compression.h  
+        include/picotls/ffx.h  
+        include/picotls/fusion.h  
+        include/picotls/minicrypto.h  
+        include/picotls/openssl.h  
+        include/picotls/pembase64.h  
+        include/picotls/ptlsbcrypt.h
+        DESTINATION include/picotls/picotls)
