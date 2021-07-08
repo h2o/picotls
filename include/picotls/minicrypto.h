@@ -27,6 +27,7 @@ extern "C" {
 #endif
 
 #include "picotls.h"
+#include "picotls/cred_buffer.h"
 
 #define SECP256R1_PRIVATE_KEY_SIZE 32
 #define SECP256R1_PUBLIC_KEY_SIZE 65 /* including the header */
@@ -62,6 +63,7 @@ typedef struct st_ptls_asn1_pkcs8_private_key_t {
 } ptls_asn1_pkcs8_private_key_t;
 
 int ptls_minicrypto_load_private_key(ptls_context_t *ctx, char const *pem_fname);
+int ptls_minicrypto_load_private_key_from_memory(ptls_context_t *ctx, ptls_cred_buffer_t *mem);
 
 #ifdef __cplusplus
 }
