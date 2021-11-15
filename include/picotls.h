@@ -947,6 +947,9 @@ int ptls_buffer_push_asn1_ubigint(ptls_buffer_t *buf, const void *bignum, size_t
 static uint8_t *ptls_encode_quicint(uint8_t *p, uint64_t v);
 #define PTLS_ENCODE_QUICINT_CAPACITY 8
 
+#define PTLS_QUICINT_MAX 4611686018427387903 // (1 << 62) - 1
+#define PTLS_QUICINT_LONGEST_STR "4611686018427387903"
+
 #define ptls_buffer_pushv(buf, src, len)                                                                                           \
     do {                                                                                                                           \
         if ((ret = ptls_buffer__do_pushv((buf), (src), (len))) != 0)                                                               \
