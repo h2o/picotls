@@ -138,11 +138,73 @@ static void test_hrr(void)
 DEFINE_FFX_AES128_ALGORITHMS(minicrypto);
 DEFINE_FFX_CHACHA20_ALGORITHMS(minicrypto);
 
+static void test_credentials_from_memory()
+{
+    int ret;
+    ptls_context_t ctx = {0};
+    ptls_cred_buffer_t mem = {0};
+
+    char *blob =
+        /* random CA */
+        "-----BEGIN CERTIFICATE-----\n"
+        "MIIDMjCCAhqgAwIBAgIJAPh4W88oNy7tMA0GCSqGSIb3DQEBBQUAMBoxGDAWBgNV\n"
+        "BAMTD3BpY290bHMgdGVzdCBjYTAeFw0xODAyMjMwMjI0NDJaFw0yODAyMjEwMjI0\n"
+        "NDJaMBoxGDAWBgNVBAMTD3BpY290bHMgdGVzdCBjYTCCASIwDQYJKoZIhvcNAQEB\n"
+        "BQADggEPADCCAQoCggEBAMewDZVDfz1PFT4TfGvG4uF27Tv7w64/bxFB0ZK4Wjpj\n"
+        "eMxdiWBrw7dyZ9KAqxrcIw0KLBqeVRUvokTNSLGLM7j6CVMNFtH0dKqQ7hef9xB8\n"
+        "NSPoNkTMs/Cf2te79ifOCd0+QHlIWi7Qzt2Ito+sKzuACFP+8zXIkksxHWGLLNSz\n"
+        "Q0PfmDHNp+WnoTmTDIcwjhfhb3PUZVNZONFhVjXgrkCqgbutna96InsN/7TWGotT\n"
+        "xSjb2xOuSSvoueCYGSFFb5a9UVMwWbAmquc8KnhTAvqwCa8QbaiOVujUWCL2k0H4\n"
+        "EVlkzn+QfIiDNRk28SvwazcOtz7HPj795XwMYXPXiKcCAwEAAaN7MHkwHQYDVR0O\n"
+        "BBYEFL95ypeyYHgglqpGV5zfp7Ij9SVjMEoGA1UdIwRDMEGAFL95ypeyYHgglqpG\n"
+        "V5zfp7Ij9SVjoR6kHDAaMRgwFgYDVQQDEw9waWNvdGxzIHRlc3QgY2GCCQD4eFvP\n"
+        "KDcu7TAMBgNVHRMEBTADAQH/MA0GCSqGSIb3DQEBBQUAA4IBAQBQ9EyGzIm8uX8U\n"
+        "MIYkvGyQiSAl4v7Y9PZhtJIbuSn/hV8rutKs550AMFpPL5tijNpyUvZyR+Wpuvs9\n"
+        "TGrOPIFhetcBF3tVUsg4lVvhMcxojUKysv0UwfEJQVbu1yoZmRdXOnKGiVnqvpI8\n"
+        "ZjcgNtMacoBViQV44cR805bu6zBNWLaac3Q1wgT9NQSdBuQp0tAzVFQkE3ZRigfT\n"
+        "LdQMb73jddaWZG8wnDfebK0klZo2oif2kGq53OOBooN/QUWKinMPPWdQVcY5Texa\n"
+        "TmOVYk7HnWQEQ+Wr+9/o8EUs+3B/Af7lV7q9redWIiyYdyKPKmx090XHBy6HTPyO\n"
+        "o9citOWg\n"
+        "-----END CERTIFICATE-----\n"
+        /* dummy EE cert */
+        "-----BEGIN CERTIFICATE-----\n"
+        "MIIBbjCCAROgAwIBAgIUDScD73HL2clgD6LjeIEULc8yn9gwCgYIKoZIzj0EAwIw\n"
+        "ADAeFw0xOTEwMTYyMTE2MTBaFw00NTA2MDYyMTE2MTBaMAAwWTATBgcqhkjOPQIB\n"
+        "BggqhkjOPQMBBwNCAATxmX/xuK+SXT0WRXCk+91TmoKsAl05fFXXSSMp5Ce/5M2r\n"
+        "HIdxNF+VtNHDmAgku//c6+5Ty+9ut9sbvR518yOmo2swaTAdBgNVHQ4EFgQUIkin\n"
+        "nTmpGPTfdbs3xEsDwEVdXt0wHwYDVR0jBBgwFoAUIkinnTmpGPTfdbs3xEsDwEVd\n"
+        "Xt0wDwYDVR0TAQH/BAUwAwEB/zAWBgNVHREEDzANggtleGFtcGxlLm9yZzAKBggq\n"
+        "hkjOPQQDAgNJADBGAiEAkKG1XfORc4yBAlt/7OYBtRhATeMFp6mpUDs5hIv+B3gC\n"
+        "IQD7+uewwBal+cvFevwsbpIKEHapodaqeNp96AfJNKUayA==\n"
+        "-----END CERTIFICATE-----\n"
+        /* dummy private key */
+        "-----BEGIN PRIVATE KEY-----\n"
+        "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgv6Cda8Tc6fSyyKW2\n"
+        "H2MDhbmkc3E0j1r4G9lnmbsD7uyhRANCAATxmX/xuK+SXT0WRXCk+91TmoKsAl05\n"
+        "fFXXSSMp5Ce/5M2rHIdxNF+VtNHDmAgku//c6+5Ty+9ut9sbvR518yOm\n"
+        "-----END PRIVATE KEY-----\n"
+        ;
+
+    ret = ptls_cred_buffer_set_from_string(&mem, blob);
+    ok(ret == 0);
+
+    ret = ptls_load_certificates_from_memory(&ctx, &mem);
+    ok(ret == 0);
+
+    ptls_cred_buffer_rewind(&mem);
+
+    ret = ptls_minicrypto_load_private_key_from_memory(&ctx, &mem);
+    ok(ret == 0);
+
+    ptls_cred_buffer_dispose(&mem);
+}
+
 int main(int argc, char **argv)
 {
     subtest("secp256r1", test_secp256r1_key_exchange);
     subtest("x25519", test_x25519_key_exchange);
     subtest("secp256r1-sign", test_secp256r1_sign);
+    subtest("credentials-from-memory", test_credentials_from_memory);
 
     ptls_iovec_t cert = ptls_iovec_init(SECP256R1_CERTIFICATE, sizeof(SECP256R1_CERTIFICATE) - 1);
 

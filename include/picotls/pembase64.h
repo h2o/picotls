@@ -17,6 +17,8 @@
 #ifndef PTLS_PEMBASE64_H
 #define PTLS_PEMBASE64_H
 
+#include "picotls/cred_buffer.h"
+
 /*
  * Base64 functions used in encoding and decoding of PEM files
  */
@@ -40,5 +42,9 @@ void ptls_base64_decode_init(ptls_base64_decode_state_t *state);
 int ptls_base64_decode(const char *base64_text, ptls_base64_decode_state_t *state, ptls_buffer_t *buf);
 
 int ptls_load_pem_objects(char const *pem_fname, const char *label, ptls_iovec_t *list, size_t list_max, size_t *nb_objects);
+
+int ptls_load_pem_objects_from_memory(ptls_cred_buffer_t *mem, const char *label, ptls_iovec_t *list, size_t list_max, size_t *nb_objects);
+
+int ptls_load_certificates_from_memory(ptls_context_t *ctx, ptls_cred_buffer_t *mem);
 
 #endif /* PTLS_PEMBASE64_H */
