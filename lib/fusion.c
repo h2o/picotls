@@ -225,6 +225,7 @@ static inline __m128i loadn(const void *p, size_t l)
 
     __m128i v, mask = _mm_loadu_si128((__m128i *)(loadn_mask + 16 - l));
     uintptr_t mod4k = (uintptr_t)p % 4096;
+
     if (PTLS_LIKELY(mod4k <= 4080) || mod4k + l > 4096) {
         v = _mm_loadu_si128(p);
     } else {
