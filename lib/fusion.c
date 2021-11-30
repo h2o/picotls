@@ -48,6 +48,16 @@
 #include "picotls.h"
 #include "picotls/fusion.h"
 
+#if defined(__clang__)
+#if __has_feature(address_sanitizer)
+#define ASAN_IN_USE 1
+#endif
+#elif __SANITIZE_ADDRESS__ /* gcc */
+#define ASAN_IN_USE 1
+#else
+#define ASAN_IN_USE 0
+#endif
+
 struct ptls_fusion_aesgcm_context {
     ptls_fusion_aesecb_context_t ecb;
     size_t capacity;
@@ -205,9 +215,16 @@ static const uint8_t loadn_shuffle[31] = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x
 
 static inline __m128i loadn(const void *p, size_t l)
 {
+#if ASAN_IN_USE
+    if (l < 16) {
+        __m128i v = {0};
+        memcpy(&v, p, l);
+        return v;
+    }
+#endif
+
     __m128i v, mask = _mm_loadu_si128((__m128i *)(loadn_mask + 16 - l));
     uintptr_t mod4k = (uintptr_t)p % 4096;
-
     if (PTLS_LIKELY(mod4k <= 4080) || mod4k + l > 4096) {
         v = _mm_loadu_si128(p);
     } else {
