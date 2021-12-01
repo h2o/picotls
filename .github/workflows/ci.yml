@@ -45,8 +45,9 @@ jobs:
     - name: Install Dependencies
       run: |
         brew install libfaketime openssl
-        curl -L https://cpanmin.us | sudo perl - App::cpanminus
-        cpanm --notest Scope::Guard Test::TCP
+        which perl
+        curl -L https://cpanmin.us | perl - --notest --sudo App::cpanminus
+        cpanm --notest --sudo Scope::Guard Test::TCP
 
     - name: Configure
       working-directory: ${{runner.workspace}}/build
