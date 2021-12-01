@@ -99,7 +99,7 @@ SET(PTLSBENCH_LIBS
 
 FIND_PACKAGE(OpenSSL)
 IF (OPENSSL_FOUND AND NOT (OPENSSL_VERSION VERSION_LESS "1.0.1"))
-    MESSAGE(STATUS "  Enabling OpenSSL support")
+    MESSAGE(STATUS "  Enabling OpenSSL support (${OPENSSL_FOUND}")
     INCLUDE_DIRECTORIES(${OPENSSL_INCLUDE_DIR})
     ADD_LIBRARY(picotls-openssl lib/openssl.c)
     TARGET_LINK_LIBRARIES(picotls-openssl ${OPENSSL_LIBRARIES} picotls-core ${CMAKE_DL_LIBS})
@@ -151,7 +151,7 @@ IF ((CMAKE_SIZEOF_VOID_P EQUAL 8) AND
         ADD_DEPENDENCIES(test-fusion.t generate-picotls-probes)
     ENDIF ()
     SET(TEST_EXES ${TEST_EXES} test-fusion.t)
-    
+
     LIST(APPEND PTLSBENCH_LIBS picotls-fusion)
 ENDIF ()
 
