@@ -49,9 +49,10 @@ jobs:
         curl -sSfL https://cpanmin.us | perl - -v --notest Scope::Guard Test::TCP
 
     - name: Build
-      working-directory: ${{runner.workspace}}/build
       run: |
         set -xe
-        cmake "${GITHUB_WORKSPACE}"
+        mkdir -p build
+        cd build
+        cmake ..
         make -j4 all VERBOSE=1
         make check
