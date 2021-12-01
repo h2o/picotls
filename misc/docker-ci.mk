@@ -19,5 +19,5 @@ _check:
 
 _do-check:
 	cmake $(CMAKE_ARGS) "-H$(SRC_DIR)" -B.
-	make all VERBOSE=1
+	komake -j4 all VERBOSE=1
 	env $(CHECK_ENVS) make check
