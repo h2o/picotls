@@ -3,7 +3,7 @@ name: CI
 on: [push, pull_request]
 
 jobs:
-  build:
+  linux:
     name: "${{ matrix.name }}"
     runs-on: [ubuntu-20.04]
 
@@ -15,9 +15,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: default
+          - name: "Linux / OpenSSL 1.1.1"
             command: make -f misc/docker-ci.mk
-          - name: asan
+          - name: "Linux / OpenSSL 1.1.1 + ASan & UBSan"
             command: make -f misc/docker-ci.mk CMAKE_ENVS='CC=clang CXX=clang++ CFLAGS="-fsanitize=address,undefined" CXXFLAGS="-fsanitize=address,undefined" LDFLAGS="-fsanitize=address,undefined"' CHECK_ENVS="ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=print_stacktrace=1"
 
     timeout-minutes: 10
@@ -30,3 +30,30 @@ jobs:
       run: |
         chmod -R ugo+w .
         ${{ matrix.command }}
+  macos:
+    name: macOS / OpenSSL
+    runs-on: [macos-latest]
+    # We want to run on external PRs, but not on our own internal PRs as they'll be run
+    # by the push to the branch.
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
+
+    timeout-minutes: 20
+    steps:
+    - uses: actions/checkout@v2
+      with:
+        submodules: recursive
+    - name: Install Dependencies
+      run: |
+        brew install libfaketime openssl
+        curl -L https://cpanmin.us | sudo perl - App::cpanminus
+        cpanm --notest Scope::Guard Test::TCP
+
+    - name: Configure
+      working-directory: ${{runner.workspace}}/build
+      run: cmake -DCMAKE_BUILD_TYPE=Debug -B. $GITHUB_WORKSPACE
+    - name: Build
+      working-directory: ${{runner.workspace}}/build
+      run: 	make -j4 all VERBOSE=1
+    - name: Check
+      working-directory: ${{runner.workspace}}/build
+      run: 	make check
