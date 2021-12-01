@@ -55,6 +55,7 @@ jobs:
     - name: Install Dependencies
       run: |
         brew install perl libfaketime ${{ matrix.openssl }}
+        perl -v
         curl -sSfL https://cpanmin.us | perl - -v --notest Scope::Guard Test::TCP
 
     - name: Build
