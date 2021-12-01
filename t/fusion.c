@@ -49,7 +49,7 @@ static const char *tostr(const void *_p, size_t len)
     return buf;
 }
 
-static void test_loadn_11(void)
+static void test_loadn(void)
 {
     uint8_t buf[8192] = {0};
 
@@ -62,23 +62,6 @@ static void test_loadn_11(void)
             return;
         }
         memset(src, 0, 11);
-    }
-    ok(!!"success");
-}
-
-static void test_loadn_16(void)
-{
-    uint8_t buf[8192] = {0};
-
-    for (size_t off = 0; off < 8192 - 15; ++off) {
-        uint8_t *src = buf + off;
-        memcpy(src, "hello world12345", 16);
-        __m128i v = loadn(src, 16);
-        if (memcmp(&v, "hello world12345", 16) != 0) {
-            ok(!"fail");
-            return;
-        }
-        memset(src, 0, 16);
     }
     ok(!!"success");
 }
@@ -343,8 +326,7 @@ int main(int argc, char **argv)
         return done_testing();
     }
 
-    subtest("loadn-11", test_loadn_11);
-    subtest("loadn-16", test_loadn_16);
+    subtest("loadn", test_loadn);
     subtest("ecb", test_ecb);
     subtest("gcm-basic", gcm_basic);
     subtest("gcm-capacity", gcm_capacity);
