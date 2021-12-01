@@ -53,6 +53,6 @@ jobs:
         set -xe
         mkdir -p build
         cd build
-        cmake ..
+        cmake .. -DOPENSSL_ROOT_DIR="$(brew --prefix openssl)"
         make -j4 all VERBOSE=1
         make check
