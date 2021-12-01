@@ -52,17 +52,22 @@ jobs:
     - uses: actions/checkout@v2
       with:
         submodules: recursive
+
     - name: Install Dependencies
+      env:
+        OPENSSL: ${{ matrix.openssl }}
       run: |
-        brew install perl libfaketime ${{ matrix.openssl }}
+        brew install perl libfaketime ${OPENSSL}
         perl -v
         curl -sSfL https://cpanmin.us | perl - -v --notest Scope::Guard Test::TCP
 
     - name: Build
+      env:
+        OPENSSL: ${{ matrix.openssl }}
       run: |
         set -xe
         mkdir -p build
         cd build
-        cmake .. -DOPENSSL_ROOT_DIR="$(brew --prefix ${{ matrix.openssl }})"
+        cmake .. -DOPENSSL_ROOT_DIR="$(brew --prefix ${OPENSSL})"
         make -j4 all VERBOSE=1
         make check
