@@ -46,6 +46,7 @@ jobs:
           - name: "macOS / OpenSSL 1.1.x"
             openssl: openssl@1.1
           - name: "macOS / LibreSSL"
+            openssl: libressl
 
     timeout-minutes: 20
     steps:
