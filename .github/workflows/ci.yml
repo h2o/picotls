@@ -45,13 +45,12 @@ jobs:
     - name: Install Dependencies
       run: |
         brew install libfaketime openssl
-        which perl
-        curl -L https://cpanmin.us | perl - --notest --sudo App::cpanminus
-        cpanm --notest --sudo Scope::Guard Test::TCP
+        export PATH="$(brew --prefix perl)/bin:$PATH"
+        curl -sSfL https://cpanmin.us | perl - -v --notest Scope::Guard Test::TCP
 
     - name: Configure
       working-directory: ${{runner.workspace}}/build
-      run: cmake -DCMAKE_BUILD_TYPE=Debug -B. $GITHUB_WORKSPACE
+      run: cmake -B. $GITHUB_WORKSPACE
     - name: Build
       working-directory: ${{runner.workspace}}/build
       run: 	make -j4 all VERBOSE=1
