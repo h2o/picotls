@@ -48,12 +48,10 @@ jobs:
         export PATH="$(brew --prefix perl)/bin:$PATH"
         curl -sSfL https://cpanmin.us | perl - -v --notest Scope::Guard Test::TCP
 
-    - name: Configure
-      working-directory: ${{runner.workspace}}/build
-      run: cmake "${{runner.wporkspace}}"
     - name: Build
       working-directory: ${{runner.workspace}}/build
-      run: 	make -j4 all VERBOSE=1
-    - name: Check
-      working-directory: ${{runner.workspace}}/build
-      run: 	make check
+      run: |
+        set -xe
+        cmake "${GITHUB_WORKSPACE}"
+        make -j4 all VERBOSE=1
+        make check
