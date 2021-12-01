@@ -54,7 +54,7 @@ jobs:
         submodules: recursive
     - name: Install Dependencies
       run: |
-        brew perl install libfaketime ${{ matrix.openssl }}
+        brew install perl libfaketime ${{ matrix.openssl }}
         curl -sSfL https://cpanmin.us | perl - -v --notest Scope::Guard Test::TCP
 
     - name: Build
