@@ -72,5 +72,5 @@ jobs:
         mkdir -p build
         cd build
         cmake .. -DOPENSSL_ROOT_DIR="$(brew --prefix ${OPENSSL})"
-        make -j4 all VERBOSE=1
+        make all VERBOSE=1
         make check
