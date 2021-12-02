@@ -213,16 +213,9 @@ static const uint8_t loadn_shuffle[31] = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x
                                           0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80,
                                           0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80}; // latter 15 bytes map to zero
 
+__attribute__((no_sanitize("address")))
 static inline __m128i loadn(const void *p, size_t l)
 {
-#if ASAN_IN_USE
-    if (l < 16) {
-        __m128i v = {0};
-        memcpy(&v, p, l);
-        return v;
-    }
-#endif
-
     __m128i v, mask = _mm_loadu_si128((__m128i *)(loadn_mask + 16 - l));
     uintptr_t mod4k = (uintptr_t)p % 4096;
 
