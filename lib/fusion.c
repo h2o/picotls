@@ -38,7 +38,9 @@
  * IN THE SOFTWARE.
  */
 #include <stdint.h>
-
+#ifdef _WINDOWS
+#include <intrin.h>
+#endif
 #include <stdlib.h>
 #include <string.h>
 #include <immintrin.h>
