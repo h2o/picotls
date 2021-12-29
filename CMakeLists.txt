@@ -1,4 +1,4 @@
-CMAKE_MINIMUM_REQUIRED(VERSION 2.8.11)
+CMAKE_MINIMUM_REQUIRED(VERSION 2.8.12)
 CMAKE_POLICY(SET CMP0003 NEW)
 
 PROJECT(picotls)
@@ -7,9 +7,22 @@ FIND_PACKAGE(PkgConfig REQUIRED)
 INCLUDE(cmake/dtrace-utils.cmake)
 
 CHECK_DTRACE(${PROJECT_SOURCE_DIR}/picotls-probes.d)
+IF ((CMAKE_SIZEOF_VOID_P EQUAL 8) AND
+    (CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64") OR
+     (CMAKE_SYSTEM_PROCESSOR STREQUAL "amd64") OR
+     (CMAKE_SYSTEM_PROCESSOR STREQUAL "AMD64"))
+    SET(WITH_FUSION_DEFAULT "ON")
+ELSE ()
+    SET(WITH_FUSION_DEFAULT "OFF")
+ENDIF ()
+
 OPTION(WITH_DTRACE "use USDT (userspace Dtrace probes)" ${HAVE_DTRACE})
+OPTION(WITH_FUSION "build 'fusion' AES-GCM engine" ${WITH_FUSION_DEFAULT})
 IF (WITH_DTRACE)
     MESSAGE(STATUS "Enabling USDT support")
+ENDIF ()
+IF (WITH_FUSION)
+    MESSAGE(STATUS "Enabling 'fusion' AES-GCM engine")
 ENDIF ()
 
 SET(CMAKE_C_FLAGS "-std=c99 -Wall -O2 -g ${CC_WARNING_FLAGS} ${CMAKE_C_FLAGS}")
@@ -102,11 +115,11 @@ IF (OPENSSL_FOUND AND NOT (OPENSSL_VERSION VERSION_LESS "1.0.1"))
     MESSAGE(STATUS "  Enabling OpenSSL support")
     INCLUDE_DIRECTORIES(${OPENSSL_INCLUDE_DIR})
     ADD_LIBRARY(picotls-openssl lib/openssl.c)
-    TARGET_LINK_LIBRARIES(picotls-openssl ${OPENSSL_LIBRARIES} picotls-core ${CMAKE_DL_LIBS})
+    TARGET_LINK_LIBRARIES(picotls-openssl ${OPENSSL_CRYPTO_LIBRARIES} picotls-core ${CMAKE_DL_LIBS})
     ADD_EXECUTABLE(cli t/cli.c lib/pembase64.c)
     TARGET_LINK_LIBRARIES(cli picotls-openssl picotls-core)
     ADD_EXECUTABLE(picotls-esni src/esni.c)
-    TARGET_LINK_LIBRARIES(picotls-esni picotls-openssl picotls-core ${OPENSSL_LIBRARIES} ${CMAKE_DL_LIBS})
+    TARGET_LINK_LIBRARIES(picotls-esni picotls-openssl picotls-core ${OPENSSL_CRYPTO_LIBRARIES} ${CMAKE_DL_LIBS})
 
     ADD_EXECUTABLE(test-openssl.t
         ${MINICRYPTO_LIBRARY_FILES}
@@ -124,20 +137,16 @@ IF (OPENSSL_FOUND AND NOT (OPENSSL_VERSION VERSION_LESS "1.0.1"))
         ${CORE_TEST_FILES}
         t/openssl.c)
     SET_TARGET_PROPERTIES(test-openssl.t PROPERTIES COMPILE_FLAGS "-DPTLS_MEMORY_DEBUG=1")
-    TARGET_LINK_LIBRARIES(test-openssl.t ${OPENSSL_LIBRARIES} ${CMAKE_DL_LIBS})
+    TARGET_LINK_LIBRARIES(test-openssl.t ${OPENSSL_CRYPTO_LIBRARIES} ${CMAKE_DL_LIBS})
 
-    LIST(APPEND PTLSBENCH_LIBS picotls-openssl ${OPENSSL_LIBRARIES} ${CMAKE_DL_LIBS})
+    LIST(APPEND PTLSBENCH_LIBS picotls-openssl ${OPENSSL_CRYPTO_LIBRARIES} ${CMAKE_DL_LIBS})
 
     SET(TEST_EXES ${TEST_EXES} test-openssl.t)
 ELSE ()
     MESSAGE(WARNING "Disabling OpenSSL support (requires 1.0.1 or newer)")
 ENDIF ()
 
-IF ((CMAKE_SIZEOF_VOID_P EQUAL 8) AND
-    (CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64") OR
-     (CMAKE_SYSTEM_PROCESSOR STREQUAL "amd64") OR
-     (CMAKE_SYSTEM_PROCESSOR STREQUAL "AMD64"))
-    MESSAGE(STATUS " Enabling fusion support")
+IF (WITH_FUSION)
     ADD_LIBRARY(picotls-fusion lib/fusion.c)
     SET_TARGET_PROPERTIES(picotls-fusion PROPERTIES COMPILE_FLAGS "-mavx2 -maes -mpclmul")
     TARGET_LINK_LIBRARIES(picotls-fusion picotls-core)
@@ -151,13 +160,16 @@ IF ((CMAKE_SIZEOF_VOID_P EQUAL 8) AND
         ADD_DEPENDENCIES(test-fusion.t generate-picotls-probes)
     ENDIF ()
     SET(TEST_EXES ${TEST_EXES} test-fusion.t)
-    
+
     LIST(APPEND PTLSBENCH_LIBS picotls-fusion)
 ENDIF ()
 
 ADD_EXECUTABLE(ptlsbench t/ptlsbench.c)
 SET_TARGET_PROPERTIES(ptlsbench PROPERTIES COMPILE_FLAGS "-DPTLS_MEMORY_DEBUG=1")
 TARGET_LINK_LIBRARIES(ptlsbench ${PTLSBENCH_LIBS})
+IF (NOT WITH_FUSION)
+    SET_TARGET_PROPERTIES(ptlsbench PROPERTIES EXCLUDE_FROM_ALL 1)
+ENDIF ()
 
 ADD_CUSTOM_TARGET(check env BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR} prove --exec '' -v ${CMAKE_CURRENT_BINARY_DIR}/*.t t/*.t WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} DEPENDS ${TEST_EXES} cli)
 
@@ -203,8 +215,8 @@ IF (BUILD_FUZZER)
             LINK_FLAGS "-fsanitize=fuzzer")
     ENDIF (OSS_FUZZ)
 
-    TARGET_LINK_LIBRARIES(fuzz-asn1 picotls-minicrypto picotls-core picotls-openssl ${OPENSSL_LIBRARIES} ${LIB_FUZZER})
-    TARGET_LINK_LIBRARIES(fuzz-server-hello picotls-core picotls-openssl ${OPENSSL_LIBRARIES} ${LIB_FUZZER})
-    TARGET_LINK_LIBRARIES(fuzz-client-hello picotls-core picotls-openssl ${OPENSSL_LIBRARIES} ${LIB_FUZZER})
+    TARGET_LINK_LIBRARIES(fuzz-asn1 picotls-minicrypto picotls-core picotls-openssl ${OPENSSL_CRYPTO_LIBRARIES} ${LIB_FUZZER})
+    TARGET_LINK_LIBRARIES(fuzz-server-hello picotls-core picotls-openssl ${OPENSSL_CRYPTO_LIBRARIES} ${LIB_FUZZER})
+    TARGET_LINK_LIBRARIES(fuzz-client-hello picotls-core picotls-openssl ${OPENSSL_CRYPTO_LIBRARIES} ${LIB_FUZZER})
 
 ENDIF()
