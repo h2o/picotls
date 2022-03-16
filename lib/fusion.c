@@ -1043,7 +1043,7 @@ int ptls_fusion_is_supported_by_cpu(void)
     unsigned leaf1_ecx, leaf7_ebx;
 
     { /* GCC-specific code to obtain CPU features */
-        unsigned leaf_cnt;
+        unsigned leaf_cnt = 0;
         __asm__("cpuid" : "=a"(leaf_cnt) : "a"(0) : "ebx", "ecx", "edx");
         if (leaf_cnt < 7)
             return 0;
