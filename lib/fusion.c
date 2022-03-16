@@ -1062,8 +1062,8 @@ int ptls_fusion_is_supported_by_cpu(void)
     if (leaf_cnt < 7) {
         return 0;
     }
-    else if( __get_cpuid(1, &leaf1_eax, &leaf1_ebx, &leaf1_ecx, &leaf1_ecx) == 0 ||
-        __get_cpuid(7, &leaf7_eax, &leaf7_ebx, &leaf7_ecx, &leaf7_ecx) == 0) {
+    else if( __get_cpuid(1, &leaf1_eax, &leaf1_ebx, &leaf1_ecx, &leaf1_edx) == 0 ||
+        __get_cpuid(7, &leaf7_eax, &leaf7_ebx, &leaf7_ecx, &leaf7_edx) == 0) {
         return 0;
     }
     /* AVX2 */
