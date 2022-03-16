@@ -1038,6 +1038,47 @@ int ptls_fusion_is_supported_by_cpu(void)
     return is_supported;
 }
 #else
+#include <cpuid.h>
+
+#if 1
+
+/* int __get_cpuid (unsigned int __level,
+unsigned int *__eax, unsigned int *__ebx,
+unsigned int *__ecx, unsigned int *__edx)
+*/
+
+int ptls_fusion_is_supported_by_cpu(void)
+{
+    unsigned int leaf1_eax = 0;
+    unsigned int leaf1_ebx = 0;
+    unsigned int leaf1_ecx = 0;
+    unsigned int leaf1_edx = 0;
+    unsigned int leaf7_eax = 0;
+    unsigned int leaf7_ebx = 0;
+    unsigned int leaf7_ecx = 0;
+    unsigned int leaf7_edx = 0;
+    unsigned leaf_cnt = __get_cpuid_max(0, NULL);
+
+    if (leaf_cnt < 7) {
+        return 0;
+    }
+    else if( __get_cpuid(1, &leaf1_eax, &leaf1_ebx, &leaf1_ecx, &leaf1_ecx) == 0 ||
+        __get_cpuid(7, &leaf7_eax, &leaf7_ebx, &leaf7_ecx, &leaf7_ecx) == 0) {
+        return 0;
+    }
+    /* AVX2 */
+    if ((leaf7_ebx & (1 << 5)) == 0)
+        return 0;
+    /* AES */
+    if ((leaf1_ecx & (1 << 25)) == 0)
+        return 0;
+    /* PCLMUL */
+    if ((leaf1_ecx & (1 << 1)) == 0)
+        return 0;
+
+    return 1;
+}
+#else
 int ptls_fusion_is_supported_by_cpu(void)
 {
     unsigned leaf1_ecx, leaf7_ebx;
@@ -1063,4 +1104,5 @@ int ptls_fusion_is_supported_by_cpu(void)
 
     return 1;
 }
+#endif
 #endif
