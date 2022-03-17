@@ -1062,19 +1062,26 @@ int ptls_fusion_is_supported_by_cpu(void)
     (void)__get_cpuid(0, &leaf_cnt, &leaf1_ebx, &leaf1_ecx, &leaf1_edx);
 
     if (leaf_cnt < 7) {
+        fprintf(stderr, "Leaf_cnt = %x\n", leaf_cnt);
         return 0;
     }
     (void)__get_cpuid(1, &leaf1_eax, &leaf1_ebx, &leaf1_ecx, &leaf1_edx);
     (void)__get_cpuid(7, &leaf7_eax, &leaf7_ebx, &leaf7_ecx, &leaf7_edx);
     /* AVX2 */
-    if ((leaf7_ebx & (1 << 5)) == 0)
+    if ((leaf7_ebx & (1 << 5)) == 0) {
+        fprintf(stderr, "leaf7_ebx = %x\n", leaf7_ebx);
         return 0;
+    }
     /* AES */
-    if ((leaf1_ecx & (1 << 25)) == 0)
+    if ((leaf1_ecx & (1 << 25)) == 0) {
+        fprintf(stderr, "leaf1_ecx = %x\n", leaf1_ecx);
         return 0;
+    }
     /* PCLMUL */
-    if ((leaf1_ecx & (1 << 1)) == 0)
+    if ((leaf1_ecx & (1 << 1)) == 0) {
+        fprintf(stderr, "leaf1_ecx = %x\n", leaf1_ecx);
         return 0;
+    }
 
     return 1;
 }
