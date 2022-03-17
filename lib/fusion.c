@@ -1040,7 +1040,7 @@ int ptls_fusion_is_supported_by_cpu(void)
 #else
 int ptls_fusion_is_supported_by_cpu(void)
 {
-    unsigned leaf1_ecx, leaf7_ebx;
+    unsigned leaf1_ecx = 0, leaf7_ebx = 0;
 
     { /* GCC-specific code to obtain CPU features */
         unsigned leaf_cnt = 0;
