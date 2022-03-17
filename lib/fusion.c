@@ -1038,54 +1038,6 @@ int ptls_fusion_is_supported_by_cpu(void)
     return is_supported;
 }
 #else
-#include <cpuid.h>
-
-#if 1
-
-/* int __get_cpuid (unsigned int __level,
-unsigned int *__eax, unsigned int *__ebx,
-unsigned int *__ecx, unsigned int *__edx)
-*/
-
-int ptls_fusion_is_supported_by_cpu(void)
-{
-    unsigned int leaf1_eax = 0;
-    unsigned int leaf1_ebx = 0;
-    unsigned int leaf1_ecx = 0;
-    unsigned int leaf1_edx = 0;
-    unsigned int leaf7_eax = 0;
-    unsigned int leaf7_ebx = 0;
-    unsigned int leaf7_ecx = 0;
-    unsigned int leaf7_edx = 0;
-    unsigned leaf_cnt = 0;
-
-    (void)__get_cpuid(0, &leaf_cnt, &leaf1_ebx, &leaf1_ecx, &leaf1_edx);
-
-    if (leaf_cnt < 7) {
-        fprintf(stderr, "Leaf_cnt = %x\n", leaf_cnt);
-        return 0;
-    }
-    (void)__get_cpuid(1, &leaf1_eax, &leaf1_ebx, &leaf1_ecx, &leaf1_edx);
-    (void)__get_cpuid(7, &leaf7_eax, &leaf7_ebx, &leaf7_ecx, &leaf7_edx);
-    /* AVX2 */
-    if ((leaf7_ebx & (1 << 5)) == 0) {
-        fprintf(stderr, "leaf7_ebx = %x\n", leaf7_ebx);
-        return 0;
-    }
-    /* AES */
-    if ((leaf1_ecx & (1 << 25)) == 0) {
-        fprintf(stderr, "leaf1_ecx = %x\n", leaf1_ecx);
-        return 0;
-    }
-    /* PCLMUL */
-    if ((leaf1_ecx & (1 << 1)) == 0) {
-        fprintf(stderr, "leaf1_ecx = %x\n", leaf1_ecx);
-        return 0;
-    }
-
-    return 1;
-}
-#else
 int ptls_fusion_is_supported_by_cpu(void)
 {
     unsigned leaf1_ecx, leaf7_ebx;
@@ -1111,5 +1063,4 @@ int ptls_fusion_is_supported_by_cpu(void)
 
     return 1;
 }
-#endif
 #endif
