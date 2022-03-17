@@ -1057,7 +1057,9 @@ int ptls_fusion_is_supported_by_cpu(void)
     unsigned int leaf7_ebx = 0;
     unsigned int leaf7_ecx = 0;
     unsigned int leaf7_edx = 0;
-    unsigned leaf_cnt = __get_cpuid_max(0, NULL);
+    unsigned leaf_cnt = 0;
+
+    (void)__get_cpuid(0, &leaf_cnt, &leaf1_ebx, &leaf1_ecx, &leaf1_edx);
 
     if (leaf_cnt < 7) {
         return 0;
