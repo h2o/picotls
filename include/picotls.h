@@ -1149,6 +1149,11 @@ ptls_iovec_t ptls_get_client_random(ptls_t *tls);
  */
 ptls_cipher_suite_t *ptls_get_cipher(ptls_t *tls);
 /**
+ * returns current state of traffic keys. The cipher-suite being used, as well as the length of the traffic keys, can be obtained
+ * via `ptls_get_cipher`.
+ */
+int ptls_get_traffic_keys(ptls_t *tls, int is_enc, uint8_t *key, uint8_t *iv, uint64_t *seq);
+/**
  * returns the server-name (NULL if SNI is not used or failed to negotiate)
  */
 const char *ptls_get_server_name(ptls_t *tls);
