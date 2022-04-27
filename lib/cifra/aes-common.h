@@ -111,33 +111,25 @@ static inline void aesgcm_dispose_crypto(ptls_aead_context_t *_ctx)
     ptls_clear_memory((uint8_t *)ctx + sizeof(ctx->super), sizeof(*ctx) - sizeof(ctx->super));
 }
 
-static inline void aesgcm_encrypt_init(ptls_aead_context_t *_ctx, uint64_t seq, const void *aad, size_t aadlen)
+static void aesgcm_encrypt_v(struct st_ptls_aead_context_t *_ctx, void *output, ptls_iovec_t *input, size_t incnt, uint64_t seq,
+                             ptls_iovec_t aad)
 {
     struct aesgcm_context_t *ctx = (struct aesgcm_context_t *)_ctx;
     uint8_t iv[PTLS_AES_BLOCK_SIZE];
 
     ptls_aead__build_iv(ctx->super.algo, iv, ctx->static_iv, seq);
-    cf_gcm_encrypt_init(&cf_aes, &ctx->aes, &ctx->gcm, aad, aadlen, iv, PTLS_AESGCM_IV_SIZE);
-}
+    cf_gcm_encrypt_init(&cf_aes, &ctx->aes, &ctx->gcm, aad.base, aad.len, iv, PTLS_AESGCM_IV_SIZE);
 
-static inline size_t aesgcm_encrypt_update(ptls_aead_context_t *_ctx, void *output, const void *input, size_t inlen)
-{
-    struct aesgcm_context_t *ctx = (struct aesgcm_context_t *)_ctx;
-
-    cf_gcm_encrypt_update(&ctx->gcm, input, inlen, output);
-    return inlen;
-}
-
-static inline size_t aesgcm_encrypt_final(ptls_aead_context_t *_ctx, void *output)
-{
-    struct aesgcm_context_t *ctx = (struct aesgcm_context_t *)_ctx;
+    for (size_t i = 0; i < incnt; ++i) {
+        cf_gcm_encrypt_update(&ctx->gcm, input[i].base, input[i].len, output);
+        output += input[i].len;
+    }
 
     cf_gcm_encrypt_final(&ctx->gcm, output, PTLS_AESGCM_TAG_SIZE);
-    return PTLS_AESGCM_TAG_SIZE;
 }
 
 static inline size_t aesgcm_decrypt(ptls_aead_context_t *_ctx, void *output, const void *input, size_t inlen, uint64_t seq,
-                                    const void *aad, size_t aadlen)
+                                    ptls_iovec_t aad)
 {
     struct aesgcm_context_t *ctx = (struct aesgcm_context_t *)_ctx;
     uint8_t iv[PTLS_AES_BLOCK_SIZE];
@@ -147,8 +139,8 @@ static inline size_t aesgcm_decrypt(ptls_aead_context_t *_ctx, void *output, con
     size_t tag_offset = inlen - PTLS_AESGCM_TAG_SIZE;
 
     ptls_aead__build_iv(ctx->super.algo, iv, ctx->static_iv, seq);
-    if (cf_gcm_decrypt(&cf_aes, &ctx->aes, input, tag_offset, aad, aadlen, iv, PTLS_AESGCM_IV_SIZE, (uint8_t *)input + tag_offset,
-                       PTLS_AESGCM_TAG_SIZE, output) != 0)
+    if (cf_gcm_decrypt(&cf_aes, &ctx->aes, input, tag_offset, aad.base, aad.len, iv, PTLS_AESGCM_IV_SIZE,
+                       (uint8_t *)input + tag_offset, PTLS_AESGCM_TAG_SIZE, output) != 0)
         return SIZE_MAX;
 
     return tag_offset;
@@ -170,15 +162,12 @@ static inline int aead_aesgcm_setup_crypto(ptls_aead_context_t *_ctx, int is_enc
     ctx->super.dispose_crypto = aesgcm_dispose_crypto;
     ctx->super.do_xor_iv = aesgcm_xor_iv;
     if (is_enc) {
-        ctx->super.do_encrypt_init = aesgcm_encrypt_init;
-        ctx->super.do_encrypt_update = aesgcm_encrypt_update;
-        ctx->super.do_encrypt_final = aesgcm_encrypt_final;
         ctx->super.do_encrypt = ptls_aead__do_encrypt;
+        ctx->super.do_encrypt_v = aesgcm_encrypt_v;
         ctx->super.do_decrypt = NULL;
     } else {
-        ctx->super.do_encrypt_init = NULL;
-        ctx->super.do_encrypt_update = NULL;
-        ctx->super.do_encrypt_final = NULL;
+        ctx->super.do_encrypt = NULL;
+        ctx->super.do_encrypt_v = NULL;
         ctx->super.do_decrypt = aesgcm_decrypt;
     }
 

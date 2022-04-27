@@ -889,53 +889,38 @@ static void aead_xor_iv(ptls_aead_context_t *_ctx, const void *_bytes, size_t le
         ctx->static_iv[i] ^= bytes[i];
 }
 
-static void aead_do_encrypt_init(ptls_aead_context_t *_ctx, uint64_t seq, const void *aad, size_t aadlen)
+static void aead_do_encrypt_v(struct st_ptls_aead_context_t *_ctx, void *output, ptls_iovec_t *input, size_t incnt, uint64_t seq,
+                              ptls_iovec_t aad)
 {
     struct aead_crypto_context_t *ctx = (struct aead_crypto_context_t *)_ctx;
     uint8_t iv[PTLS_MAX_IV_SIZE];
-    int ret;
+    int blocklen, ret;
 
     ptls_aead__build_iv(ctx->super.algo, iv, ctx->static_iv, seq);
     ret = EVP_EncryptInit_ex(ctx->evp_ctx, NULL, NULL, NULL, iv);
     assert(ret);
 
-    if (aadlen != 0) {
+    if (aad.len != 0) {
         int blocklen;
-        ret = EVP_EncryptUpdate(ctx->evp_ctx, NULL, &blocklen, aad, (int)aadlen);
+        ret = EVP_EncryptUpdate(ctx->evp_ctx, NULL, &blocklen, aad.base, (int)aad.len);
         assert(ret);
     }
-}
 
-static size_t aead_do_encrypt_update(ptls_aead_context_t *_ctx, void *output, const void *input, size_t inlen)
-{
-    struct aead_crypto_context_t *ctx = (struct aead_crypto_context_t *)_ctx;
-    int blocklen, ret;
+    for (size_t i = 0; i < incnt; ++i) {
+        ret = EVP_EncryptUpdate(ctx->evp_ctx, output, &blocklen, input[i].base, (int)input[i].len);
+        assert(ret);
+        output += blocklen;
+    }
 
-    ret = EVP_EncryptUpdate(ctx->evp_ctx, output, &blocklen, input, (int)inlen);
+    ret = EVP_EncryptFinal_ex(ctx->evp_ctx, output, &blocklen);
     assert(ret);
-
-    return blocklen;
-}
-
-static size_t aead_do_encrypt_final(ptls_aead_context_t *_ctx, void *_output)
-{
-    struct aead_crypto_context_t *ctx = (struct aead_crypto_context_t *)_ctx;
-    uint8_t *output = _output;
-    size_t off = 0, tag_size = ctx->super.algo->tag_size;
-    int blocklen, ret;
-
-    ret = EVP_EncryptFinal_ex(ctx->evp_ctx, output + off, &blocklen);
+    output += blocklen;
+    ret = EVP_CIPHER_CTX_ctrl(ctx->evp_ctx, EVP_CTRL_GCM_GET_TAG, (int)ctx->super.algo->tag_size, output);
     assert(ret);
-    off += blocklen;
-    ret = EVP_CIPHER_CTX_ctrl(ctx->evp_ctx, EVP_CTRL_GCM_GET_TAG, (int)tag_size, output + off);
-    assert(ret);
-    off += tag_size;
-
-    return off;
 }
 
 static size_t aead_do_decrypt(ptls_aead_context_t *_ctx, void *_output, const void *input, size_t inlen, uint64_t seq,
-                              const void *aad, size_t aadlen)
+                              ptls_iovec_t aad)
 {
     struct aead_crypto_context_t *ctx = (struct aead_crypto_context_t *)_ctx;
     uint8_t *output = _output, iv[PTLS_MAX_IV_SIZE];
@@ -948,8 +933,8 @@ static size_t aead_do_decrypt(ptls_aead_context_t *_ctx, void *_output, const vo
     ptls_aead__build_iv(ctx->super.algo, iv, ctx->static_iv, seq);
     ret = EVP_DecryptInit_ex(ctx->evp_ctx, NULL, NULL, NULL, iv);
     assert(ret);
-    if (aadlen != 0) {
-        ret = EVP_DecryptUpdate(ctx->evp_ctx, NULL, &blocklen, aad, (int)aadlen);
+    if (aad.len != 0) {
+        ret = EVP_DecryptUpdate(ctx->evp_ctx, NULL, &blocklen, aad.base, (int)aad.len);
         assert(ret);
     }
     ret = EVP_DecryptUpdate(ctx->evp_ctx, output + off, &blocklen, input, (int)(inlen - tag_size));
@@ -976,15 +961,12 @@ static int aead_setup_crypto(ptls_aead_context_t *_ctx, int is_enc, const void *
     ctx->super.dispose_crypto = aead_dispose_crypto;
     ctx->super.do_xor_iv = aead_xor_iv;
     if (is_enc) {
-        ctx->super.do_encrypt_init = aead_do_encrypt_init;
-        ctx->super.do_encrypt_update = aead_do_encrypt_update;
-        ctx->super.do_encrypt_final = aead_do_encrypt_final;
         ctx->super.do_encrypt = ptls_aead__do_encrypt;
+        ctx->super.do_encrypt_v = aead_do_encrypt_v;
         ctx->super.do_decrypt = NULL;
     } else {
-        ctx->super.do_encrypt_init = NULL;
-        ctx->super.do_encrypt_update = NULL;
-        ctx->super.do_encrypt_final = NULL;
+        ctx->super.do_encrypt = NULL;
+        ctx->super.do_encrypt_v = NULL;
         ctx->super.do_decrypt = aead_do_decrypt;
     }
     ctx->evp_ctx = NULL;

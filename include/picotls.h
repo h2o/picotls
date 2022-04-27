@@ -343,13 +343,12 @@ typedef struct st_ptls_aead_context_t {
     /* field above this line must not be altered by the crypto binding */
     void (*dispose_crypto)(struct st_ptls_aead_context_t *ctx);
     void (*do_xor_iv)(struct st_ptls_aead_context_t *ctx, const void *bytes, size_t len);
-    void (*do_encrypt_init)(struct st_ptls_aead_context_t *ctx, uint64_t seq, const void *aad, size_t aadlen);
-    size_t (*do_encrypt_update)(struct st_ptls_aead_context_t *ctx, void *output, const void *input, size_t inlen);
-    size_t (*do_encrypt_final)(struct st_ptls_aead_context_t *ctx, void *output);
     void (*do_encrypt)(struct st_ptls_aead_context_t *ctx, void *output, const void *input, size_t inlen, uint64_t seq,
-                       const void *aad, size_t aadlen, ptls_aead_supplementary_encryption_t *supp);
+                       ptls_iovec_t aad, ptls_aead_supplementary_encryption_t *supp);
+    void (*do_encrypt_v)(struct st_ptls_aead_context_t *ctx, void *output, ptls_iovec_t *input, size_t incnt, uint64_t seq,
+                         ptls_iovec_t aad);
     size_t (*do_decrypt)(struct st_ptls_aead_context_t *ctx, void *output, const void *input, size_t inlen, uint64_t seq,
-                         const void *aad, size_t aadlen);
+                         ptls_iovec_t aad);
 } ptls_aead_context_t;
 
 /**
@@ -1296,26 +1295,21 @@ void ptls_aead_free(ptls_aead_context_t *ctx);
  */
 static void ptls_aead_xor_iv(ptls_aead_context_t *ctx, const void *bytes, size_t len);
 /**
- *
+ * Encrypts one AEAD block, given input and output vectors.
  */
 static size_t ptls_aead_encrypt(ptls_aead_context_t *ctx, void *output, const void *input, size_t inlen, uint64_t seq,
                                 const void *aad, size_t aadlen);
+/**
+ * Encrypts one AEAD block, as well as one block of ECB (for QUIC / DTLS packet number encryption). Depending on the AEAD engine
+ * being used, the two operations might run simultaneously.
+ */
 static void ptls_aead_encrypt_s(ptls_aead_context_t *ctx, void *output, const void *input, size_t inlen, uint64_t seq,
                                 const void *aad, size_t aadlen, ptls_aead_supplementary_encryption_t *supp);
 /**
- * initializes the internal state of the encryptor
+ * Encrypts one AEAD block, given a vector of vectors.
  */
-static void ptls_aead_encrypt_init(ptls_aead_context_t *ctx, uint64_t seq, const void *aad, size_t aadlen);
-/**
- * encrypts the input and updates the GCM state
- * @return number of bytes emitted to output
- */
-static size_t ptls_aead_encrypt_update(ptls_aead_context_t *ctx, void *output, const void *input, size_t inlen);
-/**
- * emits buffered data (if any) and the GCM tag
- * @return number of bytes emitted to output
- */
-static size_t ptls_aead_encrypt_final(ptls_aead_context_t *ctx, void *output);
+static void ptls_aead_encrypt_v(ptls_aead_context_t *ctx, void *output, ptls_iovec_t *input, size_t incnt, uint64_t seq,
+                                ptls_iovec_t aad);
 /**
  * decrypts an AEAD record
  * @return number of bytes emitted to output if successful, or SIZE_MAX if the input is invalid (e.g. broken MAC)
@@ -1357,7 +1351,7 @@ void ptls_aead__build_iv(ptls_aead_algorithm_t *algo, uint8_t *iv, const uint8_t
  *
  */
 static void ptls_aead__do_encrypt(ptls_aead_context_t *ctx, void *output, const void *input, size_t inlen, uint64_t seq,
-                                  const void *aad, size_t aadlen, ptls_aead_supplementary_encryption_t *supp);
+                                  ptls_iovec_t aad, ptls_aead_supplementary_encryption_t *supp);
 /**
  * internal
  */
@@ -1484,37 +1478,28 @@ inline void ptls_aead_xor_iv(ptls_aead_context_t *ctx, const void *bytes, size_t
 inline size_t ptls_aead_encrypt(ptls_aead_context_t *ctx, void *output, const void *input, size_t inlen, uint64_t seq,
                                 const void *aad, size_t aadlen)
 {
-    ctx->do_encrypt(ctx, output, input, inlen, seq, aad, aadlen, NULL);
+    ctx->do_encrypt(ctx, output, input, inlen, seq, ptls_iovec_init(aad, aadlen), NULL);
     return inlen + ctx->algo->tag_size;
 }
 
 inline void ptls_aead_encrypt_s(ptls_aead_context_t *ctx, void *output, const void *input, size_t inlen, uint64_t seq,
                                 const void *aad, size_t aadlen, ptls_aead_supplementary_encryption_t *supp)
 {
-    ctx->do_encrypt(ctx, output, input, inlen, seq, aad, aadlen, supp);
+    ctx->do_encrypt(ctx, output, input, inlen, seq, ptls_iovec_init(aad, aadlen), supp);
 }
 
-inline void ptls_aead_encrypt_init(ptls_aead_context_t *ctx, uint64_t seq, const void *aad, size_t aadlen)
+inline void ptls_aead_encrypt_v(ptls_aead_context_t *ctx, void *output, ptls_iovec_t *input, size_t incnt, uint64_t seq,
+                                ptls_iovec_t aad)
 {
-    ctx->do_encrypt_init(ctx, seq, aad, aadlen);
-}
-
-inline size_t ptls_aead_encrypt_update(ptls_aead_context_t *ctx, void *output, const void *input, size_t inlen)
-{
-    return ctx->do_encrypt_update(ctx, output, input, inlen);
-}
-
-inline size_t ptls_aead_encrypt_final(ptls_aead_context_t *ctx, void *output)
-{
-    return ctx->do_encrypt_final(ctx, output);
+    ctx->do_encrypt_v(ctx, output, input, incnt, seq, aad);
 }
 
 inline void ptls_aead__do_encrypt(ptls_aead_context_t *ctx, void *output, const void *input, size_t inlen, uint64_t seq,
-                                  const void *aad, size_t aadlen, ptls_aead_supplementary_encryption_t *supp)
+                                  ptls_iovec_t aad, ptls_aead_supplementary_encryption_t *supp)
 {
-    ctx->do_encrypt_init(ctx, seq, aad, aadlen);
-    ctx->do_encrypt_update(ctx, output, input, inlen);
-    ctx->do_encrypt_final(ctx, (uint8_t *)output + inlen);
+    ptls_iovec_t invec = ptls_iovec_init(input, inlen);
+
+    ptls_aead_encrypt_v(ctx, output, &invec, 1, seq, aad);
 
     if (supp != NULL) {
         ptls_cipher_init(supp->ctx, supp->input);
@@ -1526,7 +1511,7 @@ inline void ptls_aead__do_encrypt(ptls_aead_context_t *ctx, void *output, const 
 inline size_t ptls_aead_decrypt(ptls_aead_context_t *ctx, void *output, const void *input, size_t inlen, uint64_t seq,
                                 const void *aad, size_t aadlen)
 {
-    return ctx->do_decrypt(ctx, output, input, inlen, seq, aad, aadlen);
+    return ctx->do_decrypt(ctx, output, input, inlen, seq, ptls_iovec_init(aad, aadlen));
 }
 
 #define ptls_define_hash(name, ctx_type, init_func, update_func, final_func)                                                       \

@@ -103,9 +103,8 @@ static void chacha20poly1305_finalize(struct chacha20poly1305_context_t *ctx, ui
     cf_poly1305_finish(&ctx->poly, tag);
 }
 
-static void chacha20poly1305_init(ptls_aead_context_t *_ctx, uint64_t seq, const void *aad, size_t aadlen)
+static void chacha20poly1305_initialize(struct chacha20poly1305_context_t *ctx, uint64_t seq, ptls_iovec_t aad)
 {
-    struct chacha20poly1305_context_t *ctx = (struct chacha20poly1305_context_t *)_ctx;
     uint8_t tmpbuf[64];
 
     /* init chacha */
@@ -120,38 +119,36 @@ static void chacha20poly1305_init(ptls_aead_context_t *_ctx, uint64_t seq, const
     ptls_clear_memory(tmpbuf, sizeof(tmpbuf));
 
     /* aad */
-    if (aadlen != 0) {
-        cf_poly1305_update(&ctx->poly, aad, aadlen);
-        chacha20poly1305_encrypt_pad(&ctx->poly, aadlen);
+    if (aad.len != 0) {
+        cf_poly1305_update(&ctx->poly, aad.base, aad.len);
+        chacha20poly1305_encrypt_pad(&ctx->poly, aad.len);
     }
 
-    ctx->aadlen = aadlen;
+    ctx->aadlen = aad.len;
     ctx->textlen = 0;
 }
 
-static size_t chacha20poly1305_encrypt_update(ptls_aead_context_t *_ctx, void *output, const void *input, size_t inlen)
+static void chacha20poly1305_encrypt_v(struct st_ptls_aead_context_t *_ctx, void *output, ptls_iovec_t *input, size_t incnt,
+                                       uint64_t seq, ptls_iovec_t aad)
 {
     struct chacha20poly1305_context_t *ctx = (struct chacha20poly1305_context_t *)_ctx;
 
-    cf_chacha20_cipher(&ctx->chacha, input, output, inlen);
-    cf_poly1305_update(&ctx->poly, output, inlen);
-    ctx->textlen += inlen;
+    chacha20poly1305_initialize(ctx, seq, aad);
 
-    return inlen;
-}
-
-static size_t chacha20poly1305_encrypt_final(ptls_aead_context_t *_ctx, void *output)
-{
-    struct chacha20poly1305_context_t *ctx = (struct chacha20poly1305_context_t *)_ctx;
+    for (size_t i = 0; i < incnt; ++i) {
+        cf_chacha20_cipher(&ctx->chacha, input[i].base, output, input[i].len);
+        cf_poly1305_update(&ctx->poly, output, input[i].len);
+        output += input[i].len;
+        ctx->textlen += input[i].len;
+    }
 
     chacha20poly1305_finalize(ctx, output);
 
     ptls_clear_memory(&ctx->chacha, sizeof(ctx->chacha));
-    return PTLS_CHACHA20POLY1305_TAG_SIZE;
 }
 
 static size_t chacha20poly1305_decrypt(ptls_aead_context_t *_ctx, void *output, const void *input, size_t inlen, uint64_t seq,
-                                       const void *aad, size_t aadlen)
+                                       ptls_iovec_t aad)
 {
     struct chacha20poly1305_context_t *ctx = (struct chacha20poly1305_context_t *)_ctx;
     uint8_t tag[PTLS_CHACHA20POLY1305_TAG_SIZE];
@@ -160,7 +157,7 @@ static size_t chacha20poly1305_decrypt(ptls_aead_context_t *_ctx, void *output, 
     if (inlen < sizeof(tag))
         return SIZE_MAX;
 
-    chacha20poly1305_init(&ctx->super, seq, aad, aadlen);
+    chacha20poly1305_initialize(ctx, seq, aad);
 
     cf_poly1305_update(&ctx->poly, input, inlen - sizeof(tag));
     ctx->textlen = inlen - sizeof(tag);
@@ -195,15 +192,12 @@ static int aead_chacha20poly1305_setup_crypto(ptls_aead_context_t *_ctx, int is_
     ctx->super.dispose_crypto = chacha20poly1305_dispose_crypto;
     ctx->super.do_xor_iv = chacha20poly1305_xor_iv;
     if (is_enc) {
-        ctx->super.do_encrypt_init = chacha20poly1305_init;
-        ctx->super.do_encrypt_update = chacha20poly1305_encrypt_update;
-        ctx->super.do_encrypt_final = chacha20poly1305_encrypt_final;
         ctx->super.do_encrypt = ptls_aead__do_encrypt;
+        ctx->super.do_encrypt_v = chacha20poly1305_encrypt_v;
         ctx->super.do_decrypt = NULL;
     } else {
-        ctx->super.do_encrypt_init = NULL;
-        ctx->super.do_encrypt_update = NULL;
-        ctx->super.do_encrypt_final = NULL;
+        ctx->super.do_encrypt = NULL;
+        ctx->super.do_encrypt_v = NULL;
         ctx->super.do_decrypt = chacha20poly1305_decrypt;
     }
 
