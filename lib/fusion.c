@@ -1238,11 +1238,10 @@ static void fastls_encrypt_v(struct st_ptls_aead_context_t *_ctx, void *output, 
                 AESECB6_UPDATE(i);
                 gfmul_nextstep(&gstate, _mm_load_si128((void *)(encbuf + encbuf_size + (i - 6) * 16)), --ghash_precompute);
             }
-            AESECB6_UPDATE(6);
             _mm256_store_si256((void *)output, _mm256_load_si256((void *)encbuf));
             _mm256_store_si256((void *)(output + 32), _mm256_load_si256((void *)(encbuf + 32)));
+            AESECB6_UPDATE(6);
             AESECB6_UPDATE(7);
-            AESECB6_UPDATE(8);
             if (encbuf_size >= 128) {
                 _mm256_store_si256((void *)(output + 64), _mm256_load_si256((void *)(encbuf + 64)));
                 _mm256_store_si256((void *)(output + 96), _mm256_load_si256((void *)(encbuf + 96)));
@@ -1256,7 +1255,7 @@ static void fastls_encrypt_v(struct st_ptls_aead_context_t *_ctx, void *output, 
                 _mm256_store_si256((void *)encbuf, _mm256_load_si256((void *)encbuf + 64));
                 _mm256_store_si256((void *)encbuf + 32, _mm256_load_si256((void *)encbuf + 96));
             }
-            for (size_t i = 9; i < ctx->ecb.rounds; ++i)
+            for (size_t i = 8; i < ctx->ecb.rounds; ++i)
                 AESECB6_UPDATE(i);
             assert(ctx->ghash == ghash_precompute);
             gfmul_reduce(&gstate);
