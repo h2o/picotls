@@ -878,6 +878,23 @@ static void aesgcm_dispose_crypto(ptls_aead_context_t *_ctx)
     ptls_fusion_aesgcm_free(ctx->aesgcm);
 }
 
+static void aead_do_encrypt_init(ptls_aead_context_t *_ctx, uint64_t seq, const void *aad, size_t aadlen)
+{
+    assert(!"FIXME");
+}
+
+static size_t aead_do_encrypt_update(ptls_aead_context_t *_ctx, void *output, const void *input, size_t inlen)
+{
+    assert(!"FIXME");
+    return SIZE_MAX;
+}
+
+static size_t aead_do_encrypt_final(ptls_aead_context_t *_ctx, void *_output)
+{
+    assert(!"FIXME");
+    return SIZE_MAX;
+}
+
 static inline __m128i calc_counter(struct aesgcm_context *ctx, uint64_t seq)
 {
     __m128i ctr = _mm_setzero_si128();
@@ -888,23 +905,23 @@ static inline __m128i calc_counter(struct aesgcm_context *ctx, uint64_t seq)
 }
 
 void aead_do_encrypt(struct st_ptls_aead_context_t *_ctx, void *output, const void *input, size_t inlen, uint64_t seq,
-                     ptls_iovec_t aad, ptls_aead_supplementary_encryption_t *supp)
+                     const void *aad, size_t aadlen, ptls_aead_supplementary_encryption_t *supp)
 {
     struct aesgcm_context *ctx = (void *)_ctx;
 
-    if (inlen + aad.len > ctx->aesgcm->capacity)
-        ctx->aesgcm = ptls_fusion_aesgcm_set_capacity(ctx->aesgcm, inlen + aad.len);
-    ptls_fusion_aesgcm_encrypt(ctx->aesgcm, output, input, inlen, calc_counter(ctx, seq), aad.base, aad.len, supp);
+    if (inlen + aadlen > ctx->aesgcm->capacity)
+        ctx->aesgcm = ptls_fusion_aesgcm_set_capacity(ctx->aesgcm, inlen + aadlen);
+    ptls_fusion_aesgcm_encrypt(ctx->aesgcm, output, input, inlen, calc_counter(ctx, seq), aad, aadlen, supp);
 }
 
 static void aead_do_encrypt_v(struct st_ptls_aead_context_t *ctx, void *output, ptls_iovec_t *input, size_t incnt, uint64_t seq,
-                              ptls_iovec_t aad)
+                              const void *aad, size_t aadlen)
 {
     assert(!"FIXME");
 }
 
 static size_t aead_do_decrypt(ptls_aead_context_t *_ctx, void *output, const void *input, size_t inlen, uint64_t seq,
-                              ptls_iovec_t aad)
+                              const void *aad, size_t aadlen)
 {
     struct aesgcm_context *ctx = (void *)_ctx;
 
@@ -912,9 +929,9 @@ static size_t aead_do_decrypt(ptls_aead_context_t *_ctx, void *output, const voi
         return SIZE_MAX;
 
     size_t enclen = inlen - 16;
-    if (enclen + aad.len > ctx->aesgcm->capacity)
-        ctx->aesgcm = ptls_fusion_aesgcm_set_capacity(ctx->aesgcm, enclen + aad.len);
-    if (!ptls_fusion_aesgcm_decrypt(ctx->aesgcm, output, input, enclen, calc_counter(ctx, seq), aad.base, aad.len,
+    if (enclen + aadlen > ctx->aesgcm->capacity)
+        ctx->aesgcm = ptls_fusion_aesgcm_set_capacity(ctx->aesgcm, enclen + aadlen);
+    if (!ptls_fusion_aesgcm_decrypt(ctx->aesgcm, output, input, enclen, calc_counter(ctx, seq), aad, aadlen,
                                     (const uint8_t *)input + enclen))
         return SIZE_MAX;
     return enclen;
@@ -939,6 +956,9 @@ static int aesgcm_setup(ptls_aead_context_t *_ctx, int is_enc, const void *key, 
 
     ctx->super.dispose_crypto = aesgcm_dispose_crypto;
     ctx->super.do_xor_iv = aesgcm_xor_iv;
+    ctx->super.do_encrypt_init = aead_do_encrypt_init;
+    ctx->super.do_encrypt_update = aead_do_encrypt_update;
+    ctx->super.do_encrypt_final = aead_do_encrypt_final;
     ctx->super.do_encrypt = aead_do_encrypt;
     ctx->super.do_encrypt_v = aead_do_encrypt_v;
     ctx->super.do_decrypt = aead_do_decrypt;
