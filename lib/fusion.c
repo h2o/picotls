@@ -1163,7 +1163,7 @@ static void fastls_encrypt_v(struct st_ptls_aead_context_t *_ctx, void *output, 
             /* apply the bit stream to input, writing to encbuf */
             if (PTLS_LIKELY(srclen >= 6 * 16)) {
 #define APPLY(i)                                                                                                                   \
-    _mm_store_si128((void *)(encbuf + encbuf_size + i * 16), _mm_xor_si128(_mm_loadu_si128((void *)(src + i * 16)), bits##i))
+    _mm_storeu_si128((void *)(encbuf + encbuf_size + i * 16), _mm_xor_si128(_mm_loadu_si128((void *)(src + i * 16)), bits##i))
                 APPLY(0);
                 APPLY(1);
                 APPLY(2);
@@ -1189,7 +1189,7 @@ static void fastls_encrypt_v(struct st_ptls_aead_context_t *_ctx, void *output, 
                 size_t bytes_copied = 0;
                 do {
                     if (srclen >= 16 && bytes_copied < 5 * 80) {
-                        _mm_store_si128((void *)(encbuf + encbuf_size + bytes_copied), _mm_loadu_si128((void *)src));
+                        _mm_storeu_si128((void *)(encbuf + encbuf_size + bytes_copied), _mm_loadu_si128((void *)src));
                         bytes_copied += 16;
                         src += 16;
                         srclen -= 16;
@@ -1209,8 +1209,8 @@ static void fastls_encrypt_v(struct st_ptls_aead_context_t *_ctx, void *output, 
                     }
                 } while (bytes_copied < 6 * 16);
 #define APPLY(i)                                                                                                                   \
-    _mm_store_si128((void *)(encbuf + encbuf_size + i * 16),                                                                       \
-                    _mm_xor_si128(_mm_load_si128((void *)(encbuf + encbuf_size + i * 16)), bits##i))
+    _mm_storeu_si128((void *)(encbuf + encbuf_size + i * 16),                                                                      \
+                     _mm_xor_si128(_mm_loadu_si128((void *)(encbuf + encbuf_size + i * 16)), bits##i))
                 APPLY(0);
                 APPLY(1);
                 APPLY(2);
@@ -1223,7 +1223,7 @@ static void fastls_encrypt_v(struct st_ptls_aead_context_t *_ctx, void *output, 
                     /* Calculate amonut of data left to be ghashed, as well as zero-clearing the remainedr of partial block, as it
                      * will be fed into ghash. */
                     remaining_ghash_from = encbuf_size - bytes_copied;
-                    if ((encbuf_size & 15) != 0)
+                    if ((bytes_copied & 15) != 0)
                         _mm_storeu_si128((void *)(encbuf + encbuf_size), _mm_setzero_si128());
                     break;
                 }
@@ -1233,10 +1233,10 @@ static void fastls_encrypt_v(struct st_ptls_aead_context_t *_ctx, void *output, 
              * blocks. */
             AESECB6_INIT();
             struct ptls_fusion_aesgcm_ghash_precompute *ghash_precompute = ctx->ghash + 6;
-            gfmul_firststep(&gstate, _mm_load_si128((void *)encbuf + encbuf_size - 6 * 16), --ghash_precompute);
+            gfmul_firststep(&gstate, _mm_loadu_si128((void *)encbuf + encbuf_size - 6 * 16), --ghash_precompute);
             for (size_t i = 1; i <= 5; ++i) {
                 AESECB6_UPDATE(i);
-                gfmul_nextstep(&gstate, _mm_load_si128((void *)(encbuf + encbuf_size + (i - 6) * 16)), --ghash_precompute);
+                gfmul_nextstep(&gstate, _mm_loadu_si128((void *)(encbuf + encbuf_size + (i - 6) * 16)), --ghash_precompute);
             }
             _mm256_stream_si256((void *)output, _mm256_load_si256((void *)encbuf));
             _mm256_stream_si256((void *)(output + 32), _mm256_load_si256((void *)(encbuf + 32)));
@@ -1267,14 +1267,15 @@ static void fastls_encrypt_v(struct st_ptls_aead_context_t *_ctx, void *output, 
 
     { /* Run ghash against the remaining bytes, after appending `ac` (i.e., len(A) | len(C)). At this point, we might be ghashing 7
        * blocks at once. */
-        _mm_store_si128((void *)(encbuf + (encbuf_size + 15) / 16 * 16), ac);
+        size_t ac_off = remaining_ghash_from + (encbuf_size - remaining_ghash_from + 15) / 16 * 16;
+        _mm_storeu_si128((void *)(encbuf + ac_off), ac);
         size_t blocks = (encbuf_size - remaining_ghash_from + 15) / 16 + 1; /* round up, +1 for AC */
         assert(blocks <= 7);
         struct ptls_fusion_aesgcm_ghash_precompute *ghash_precompute = ctx->ghash + blocks;
-        gfmul_firststep(&gstate, _mm_load_si128((void *)(encbuf + remaining_ghash_from)), --ghash_precompute);
+        gfmul_firststep(&gstate, _mm_loadu_si128((void *)(encbuf + remaining_ghash_from)), --ghash_precompute);
         remaining_ghash_from += 16;
         while (ghash_precompute != ctx->ghash) {
-            gfmul_nextstep(&gstate, _mm_load_si128((void *)(encbuf + remaining_ghash_from)), --ghash_precompute);
+            gfmul_nextstep(&gstate, _mm_loadu_si128((void *)(encbuf + remaining_ghash_from)), --ghash_precompute);
             remaining_ghash_from += 16;
         }
         gfmul_reduce(&gstate);
