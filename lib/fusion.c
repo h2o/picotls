@@ -1234,19 +1234,26 @@ static void fastls_encrypt_v(struct st_ptls_aead_context_t *_ctx, void *output, 
             AESECB6_INIT();
             struct ptls_fusion_aesgcm_ghash_precompute *ghash_precompute = ctx->ghash + 6;
             gfmul_firststep(&gstate, _mm_loadu_si128((void *)encbuf + encbuf_size - 6 * 16), --ghash_precompute);
-            for (size_t i = 1; i <= 5; ++i) {
-                AESECB6_UPDATE(i);
-                gfmul_nextstep(&gstate, _mm_loadu_si128((void *)(encbuf + encbuf_size + (i - 6) * 16)), --ghash_precompute);
-            }
+            AESECB6_UPDATE(1);
+            gfmul_nextstep(&gstate, _mm_loadu_si128((void *)encbuf + encbuf_size - 5 * 16), --ghash_precompute);
+            AESECB6_UPDATE(2);
+            gfmul_nextstep(&gstate, _mm_loadu_si128((void *)encbuf + encbuf_size - 4 * 16), --ghash_precompute);
+            AESECB6_UPDATE(3);
             _mm256_stream_si256((void *)output, _mm256_load_si256((void *)encbuf));
             _mm256_stream_si256((void *)(output + 32), _mm256_load_si256((void *)(encbuf + 32)));
+            AESECB6_UPDATE(4);
+            gfmul_nextstep(&gstate, _mm_loadu_si128((void *)encbuf + encbuf_size - 3 * 16), --ghash_precompute);
+            AESECB6_UPDATE(5);
+            gfmul_nextstep(&gstate, _mm_loadu_si128((void *)encbuf + encbuf_size - 2 * 16), --ghash_precompute);
             AESECB6_UPDATE(6);
+            gfmul_nextstep(&gstate, _mm_loadu_si128((void *)encbuf + encbuf_size - 1 * 16), --ghash_precompute);
             AESECB6_UPDATE(7);
             if (encbuf_size >= 128) {
                 _mm256_stream_si256((void *)(output + 64), _mm256_load_si256((void *)(encbuf + 64)));
                 _mm256_stream_si256((void *)(output + 96), _mm256_load_si256((void *)(encbuf + 96)));
                 output += 128;
                 encbuf_size -= 128;
+                AESECB6_UPDATE(8);
                 _mm256_store_si256((void *)encbuf, _mm256_load_si256((void *)encbuf + 128));
                 _mm256_store_si256((void *)encbuf + 32, _mm256_load_si256((void *)encbuf + 160));
             } else {
@@ -1254,8 +1261,10 @@ static void fastls_encrypt_v(struct st_ptls_aead_context_t *_ctx, void *output, 
                 encbuf_size -= 64;
                 _mm256_store_si256((void *)encbuf, _mm256_load_si256((void *)encbuf + 64));
                 _mm256_store_si256((void *)encbuf + 32, _mm256_load_si256((void *)encbuf + 96));
+                AESECB6_UPDATE(8);
             }
-            for (size_t i = 8; i < ctx->ecb.rounds; ++i)
+            AESECB6_UPDATE(9);
+            for (size_t i = 10; i < ctx->ecb.rounds; ++i)
                 AESECB6_UPDATE(i);
             assert(ctx->ghash == ghash_precompute);
             gfmul_reduce(&gstate);
