@@ -446,7 +446,7 @@ void ptls_bcrypt_do_encrypt(ptls_aead_context_t *ctx, void *output, const void *
 }
 
 void ptls_bcrypt_do_encrypt_v(ptls_aead_context_t *ctx, void *v_output, ptls_iovec_t *input, size_t incnt, uint64_t seq,
-                              const void *aad, size_t aadlen, ptls_aead_supplementary_encryption_t *supp)
+                              const void *aad, size_t aadlen)
 {
     size_t after_update;
     uint8_t *output = (uint8_t *)v_output;
@@ -457,12 +457,6 @@ void ptls_bcrypt_do_encrypt_v(ptls_aead_context_t *ctx, void *v_output, ptls_iov
         output += after_update;
     }
     ctx->do_encrypt_final(ctx, (uint8_t *)output);
-
-    if (supp != NULL) {
-        ptls_cipher_init(supp->ctx, supp->input);
-        memset(supp->output, 0, sizeof(supp->output));
-        ptls_cipher_encrypt(supp->ctx, supp->output, supp->output, sizeof(supp->output));
-    }
 }
 
 
