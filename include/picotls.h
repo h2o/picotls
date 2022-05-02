@@ -1513,7 +1513,7 @@ inline void ptls_aead_encrypt_s(ptls_aead_context_t *ctx, void *output, const vo
 inline void ptls_aead_encrypt_v(ptls_aead_context_t *ctx, void *output, ptls_iovec_t *input, size_t incnt, uint64_t seq,
                                 const void *aad, size_t aadlen)
 {
-    ctx->do_encrypt_v(ctx, output, input, incnt, seq, aad, aadlen);
+    ctx->do_encrypt_v(ctx, output, input, incnt, seq, aad, aadlen, NULL);
 }
 
 inline void ptls_aead_encrypt_init(ptls_aead_context_t *ctx, uint64_t seq, const void *aad, size_t aadlen)

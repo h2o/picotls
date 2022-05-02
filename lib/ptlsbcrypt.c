@@ -445,6 +445,27 @@ void ptls_bcrypt_do_encrypt(ptls_aead_context_t *ctx, void *output, const void *
     }
 }
 
+void ptls_bcrypt_do_encrypt_v(ptls_aead_context_t *ctx, void *v_output, ptls_iovec_t *input, size_t incnt, uint64_t seq,
+                              const void *aad, size_t aadlen, ptls_aead_supplementary_encryption_t *supp)
+{
+    size_t after_update;
+    uint8_t *output = (uint8_t *)v_output;
+
+    ctx->do_encrypt_init(ctx, seq, aad, aadlen);
+    for (size_t i = 0; i < incnt; i++) {
+        after_update = ctx->do_encrypt_update(ctx, output, input[i].base, input[i].len);
+        output += after_update;
+    }
+    ctx->do_encrypt_final(ctx, (uint8_t *)output);
+
+    if (supp != NULL) {
+        ptls_cipher_init(supp->ctx, supp->input);
+        memset(supp->output, 0, sizeof(supp->output));
+        ptls_cipher_encrypt(supp->ctx, supp->output, supp->output, sizeof(supp->output));
+    }
+}
+
+
 static size_t ptls_bcrypt_aead_do_decrypt(struct st_ptls_aead_context_t *_ctx, void *output, const void *input, size_t inlen,
                                           uint64_t seq, const void *aad, size_t aadlen)
 {
@@ -547,12 +568,15 @@ static int ptls_bcrypt_aead_setup_crypto(ptls_aead_context_t *_ctx, int is_enc, 
             ctx->super.do_encrypt_update = ptls_bcrypt_aead_do_encrypt_update;
             ctx->super.do_encrypt_final = ptls_bcrypt_aead_do_encrypt_final;
             ctx->super.do_encrypt = ptls_bcrypt_do_encrypt;
+            ctx->super.do_encrypt_v = ptls_bcrypt_do_encrypt_v;
         } else {
             ctx->super.dispose_crypto = ptls_bcrypt_aead_dispose_crypto;
             ctx->super.do_decrypt = ptls_bcrypt_aead_do_decrypt;
             ctx->super.do_encrypt_init = NULL;
             ctx->super.do_encrypt_update = NULL;
             ctx->super.do_encrypt_final = NULL;
+            ctx->super.do_encrypt = NULL;
+            ctx->super.do_encrypt_v = NULL;
         }
         return 0;
     } else {
