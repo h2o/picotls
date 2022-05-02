@@ -20,6 +20,8 @@
  * IN THE SOFTWARE.
  */
 
+/*Need to update for new vectorized mode */
+
 #ifndef _WINDOWS
 /* This module is only defined for windows.
  * It is an implementation of the main crypto algorithms
