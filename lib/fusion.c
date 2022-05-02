@@ -914,6 +914,12 @@ void aead_do_encrypt(struct st_ptls_aead_context_t *_ctx, void *output, const vo
     ptls_fusion_aesgcm_encrypt(ctx->aesgcm, output, input, inlen, calc_counter(ctx, seq), aad, aadlen, supp);
 }
 
+static void aead_do_encrypt_v(struct st_ptls_aead_context_t *ctx, void *output, ptls_iovec_t *input, size_t incnt, uint64_t seq,
+                              const void *aad, size_t aadlen)
+{
+    assert(!"FIXME");
+}
+
 static size_t aead_do_decrypt(ptls_aead_context_t *_ctx, void *output, const void *input, size_t inlen, uint64_t seq,
                               const void *aad, size_t aadlen)
 {
@@ -954,6 +960,7 @@ static int aesgcm_setup(ptls_aead_context_t *_ctx, int is_enc, const void *key, 
     ctx->super.do_encrypt_update = aead_do_encrypt_update;
     ctx->super.do_encrypt_final = aead_do_encrypt_final;
     ctx->super.do_encrypt = aead_do_encrypt;
+    ctx->super.do_encrypt_v = aead_do_encrypt_v;
     ctx->super.do_decrypt = aead_do_decrypt;
 
     ctx->aesgcm = ptls_fusion_aesgcm_new(key, key_size, 1500 /* assume ordinary packet size */);
