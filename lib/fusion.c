@@ -1264,8 +1264,10 @@ static void fastls_encrypt_v(struct st_ptls_aead_context_t *_ctx, void *output, 
                 AESECB6_UPDATE(8);
             }
             AESECB6_UPDATE(9);
-            for (size_t i = 10; i < ctx->ecb.rounds; ++i)
-                AESECB6_UPDATE(i);
+            if (PTLS_UNLIKELY(ctx->ecb.rounds != 10)) {
+                for (size_t i = 10; PTLS_LIKELY(i < ctx->ecb.rounds); ++i)
+                    AESECB6_UPDATE(i);
+            }
             assert(ctx->ghash == ghash_precompute);
             gfmul_reduce(&gstate);
             AESECB6_FINAL(ctx->ecb.rounds);
