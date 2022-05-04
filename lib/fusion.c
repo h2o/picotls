@@ -1107,10 +1107,17 @@ static void fastls_encrypt_v(struct st_ptls_aead_context_t *_ctx, void *output, 
 #define STATE_COPY_128B 0x2
     int32_t state = 0;
 
-    /* Bytes are written here first then written using NT store instructions, 64 bytes at a time. Additional 16 bytes at the tail
-     * allows us to write the AEAD tag in addition to the 6 blocks of ciphertext before sending the bytes to main memory using NT
-     * store instructions. */
-    char encbuf[64 + 6 * 16 + 16] __attribute__((aligned(32))), *encp;
+    /* Bytes are written here first then written using NT store instructions, 64 bytes at a time. */
+    char encbuf[32 * 6 /* >= 64 + 6 * 16 + 16 */] __attribute__((aligned(32))), *encp;
+
+    /* `encbuf` should be large enough to store up to 63-bytes of unaligned bytes, 6 16-byte AES blocks, plus AEAD tag that is
+     * append to the ciphertext before writing the bytes to main memory using NT store instructions. */
+    PTLS_BUILD_ASSERT(sizeof(encbuf) >= 64 + 6 * 16 + 16);
+
+    /* clear encbuf to suppress UB warning */
+    for (size_t i = 0; i < sizeof(encbuf) / 32; i += 32)
+        _mm256_store_si256((void *)encbuf + i, _mm256_setzero_si256());
+
     /* determine `num_bytes_write_delayed` as well as initializing `encbuf`, adjusting `output` */
     if ((encp = encbuf + ((uintptr_t)output & 63)) != encbuf) {
         _mm256_store_si256((void *)encbuf, _mm256_load_si256(output - (encp - encbuf)));
