@@ -337,6 +337,8 @@ typedef struct st_ptls_aead_supplementary_encryption_t {
 /**
  * AEAD context. AEAD implementations are allowed to stuff data at the end of the struct. The size of the memory allocated for the
  * struct is governed by ptls_aead_algorithm_t::context_size.
+ * Ciphers for TLS over TCP MUST implement `do_encrypt`, `do_encrypt_v`, `do_decrypt`. `do_encrypt_init`, `~update`, `~final` are
+ * obsolete, and therefore may not be available.
  */
 typedef struct st_ptls_aead_context_t {
     const struct st_ptls_aead_algorithm_t *algo;
@@ -1314,17 +1316,15 @@ static void ptls_aead_encrypt_s(ptls_aead_context_t *ctx, void *output, const vo
 static void ptls_aead_encrypt_v(ptls_aead_context_t *ctx, void *output, ptls_iovec_t *input, size_t incnt, uint64_t seq,
                                 const void *aad, size_t aadlen);
 /**
- * initializes the internal state of the encryptor
+ * Obsolete; new applications should use one of: `ptls_aead_encrypt`, `ptls_aead_encrypt_s`, `ptls_aead_encrypt_v`.
  */
 static void ptls_aead_encrypt_init(ptls_aead_context_t *ctx, uint64_t seq, const void *aad, size_t aadlen);
 /**
- * encrypts the input and updates the GCM state
- * @return number of bytes emitted to output
+ * Obsolete; see `ptls_aead_encrypt_init`.
  */
 static size_t ptls_aead_encrypt_update(ptls_aead_context_t *ctx, void *output, const void *input, size_t inlen);
 /**
- * emits buffered data (if any) and the GCM tag
- * @return number of bytes emitted to output
+ * Obsolete; see `ptls_aead_encrypt_init`.
  */
 static size_t ptls_aead_encrypt_final(ptls_aead_context_t *ctx, void *output);
 /**
