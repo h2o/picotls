@@ -1039,8 +1039,8 @@ ptls_aead_algorithm_t ptls_fusion_aes256gcm = {"AES256-GCM",
                                                aes256gcm_setup};
 
 NO_SANITIZE_ADDRESS
-static void fastls_encrypt_v(struct st_ptls_aead_context_t *_ctx, void *output, ptls_iovec_t *input, size_t incnt, uint64_t seq,
-                             const void *aad, size_t aadlen)
+static void fastls_encrypt_v(struct st_ptls_aead_context_t *_ctx, void *_output, ptls_iovec_t *input, size_t incnt, uint64_t seq,
+                             const void *_aad, size_t aadlen)
 {
 /* init the bits (we can always run in full), but use the last slot for calculating ek0, if possible */
 #define AESECB6_INIT()                                                                                                             \
@@ -1098,6 +1098,8 @@ static void fastls_encrypt_v(struct st_ptls_aead_context_t *_ctx, void *output, 
     } while (0)
 
     struct aesgcm_context *agctx = (void *)_ctx;
+    uint8_t *output = _output;
+    const uint8_t *aad = _aad;
 
     size_t totlen = 0;
     for (size_t i = 0; i < incnt; ++i)
@@ -1108,7 +1110,7 @@ static void fastls_encrypt_v(struct st_ptls_aead_context_t *_ctx, void *output, 
     int32_t state = 0;
 
     /* Bytes are written here first then written using NT store instructions, 64 bytes at a time. */
-    char encbuf[32 * 6] __attribute__((aligned(32))), *encp;
+    uint8_t encbuf[32 * 6] __attribute__((aligned(32))), *encp;
 
     /* `encbuf` should be large enough to store up to 63-bytes of unaligned bytes, 6 16-byte AES blocks, plus AEAD tag that is
      * append to the ciphertext before writing the bytes to main memory using NT store instructions. */
@@ -1116,9 +1118,9 @@ static void fastls_encrypt_v(struct st_ptls_aead_context_t *_ctx, void *output, 
 
     /* determine `num_bytes_write_delayed` as well as initializing `encbuf`, adjusting `output` */
     if ((encp = encbuf + ((uintptr_t)output & 63)) != encbuf) {
-        _mm256_store_si256((void *)encbuf, _mm256_load_si256(output - (encp - encbuf)));
-        _mm256_store_si256((void *)(encbuf + 32), _mm256_load_si256(output - (encp - encbuf) + 32));
-        output = output - (encp - encbuf);
+        _mm256_store_si256((void *)encbuf, _mm256_load_si256((void *)(output - (encp - encbuf))));
+        _mm256_store_si256((void *)(encbuf + 32), _mm256_load_si256((void *)(output - (encp - encbuf) + 32)));
+        output -= encp - encbuf;
     }
     /* First write would be 128 bytes (32+6*16), if encbuf contains no less than 32 bytes already. */
     if (encp - encbuf >= 32)
@@ -1262,20 +1264,20 @@ static void fastls_encrypt_v(struct st_ptls_aead_context_t *_ctx, void *output, 
              * blocks. */
             AESECB6_INIT();
             struct ptls_fusion_aesgcm_ghash_precompute *ghash_precompute = ctx->ghash + 6;
-            gfmul_firststep(&gstate, _mm_loadu_si128((void *)encp - 6 * 16), --ghash_precompute);
+            gfmul_firststep(&gstate, _mm_loadu_si128((void *)(encp - 6 * 16)), --ghash_precompute);
             AESECB6_UPDATE(1);
-            gfmul_nextstep(&gstate, _mm_loadu_si128((void *)encp - 5 * 16), --ghash_precompute);
+            gfmul_nextstep(&gstate, _mm_loadu_si128((void *)(encp - 5 * 16)), --ghash_precompute);
             AESECB6_UPDATE(2);
-            gfmul_nextstep(&gstate, _mm_loadu_si128((void *)encp - 4 * 16), --ghash_precompute);
+            gfmul_nextstep(&gstate, _mm_loadu_si128((void *)(encp - 4 * 16)), --ghash_precompute);
             AESECB6_UPDATE(3);
             _mm256_stream_si256((void *)output, _mm256_load_si256((void *)encbuf));
             _mm256_stream_si256((void *)(output + 32), _mm256_load_si256((void *)(encbuf + 32)));
             AESECB6_UPDATE(4);
-            gfmul_nextstep(&gstate, _mm_loadu_si128((void *)encp - 3 * 16), --ghash_precompute);
+            gfmul_nextstep(&gstate, _mm_loadu_si128((void *)(encp - 3 * 16)), --ghash_precompute);
             AESECB6_UPDATE(5);
-            gfmul_nextstep(&gstate, _mm_loadu_si128((void *)encp - 2 * 16), --ghash_precompute);
+            gfmul_nextstep(&gstate, _mm_loadu_si128((void *)(encp - 2 * 16)), --ghash_precompute);
             AESECB6_UPDATE(6);
-            gfmul_nextstep(&gstate, _mm_loadu_si128((void *)encp - 1 * 16), --ghash_precompute);
+            gfmul_nextstep(&gstate, _mm_loadu_si128((void *)(encp - 1 * 16)), --ghash_precompute);
             AESECB6_UPDATE(7);
             if ((state & STATE_COPY_128B) != 0) {
                 _mm256_stream_si256((void *)(output + 64), _mm256_load_si256((void *)(encbuf + 64)));
@@ -1283,13 +1285,13 @@ static void fastls_encrypt_v(struct st_ptls_aead_context_t *_ctx, void *output, 
                 output += 128;
                 encp -= 128;
                 AESECB6_UPDATE(8);
-                _mm256_store_si256((void *)encbuf, _mm256_load_si256((void *)encbuf + 128));
-                _mm256_store_si256((void *)encbuf + 32, _mm256_load_si256((void *)encbuf + 160));
+                _mm256_store_si256((void *)encbuf, _mm256_load_si256((void *)(encbuf + 128)));
+                _mm256_store_si256((void *)(encbuf + 32), _mm256_load_si256((void *)(encbuf + 160)));
             } else {
                 output += 64;
                 encp -= 64;
-                _mm256_store_si256((void *)encbuf, _mm256_load_si256((void *)encbuf + 64));
-                _mm256_store_si256((void *)encbuf + 32, _mm256_load_si256((void *)encbuf + 96));
+                _mm256_store_si256((void *)encbuf, _mm256_load_si256((void *)(encbuf + 64)));
+                _mm256_store_si256((void *)(encbuf + 32), _mm256_load_si256((void *)(encbuf + 96)));
                 AESECB6_UPDATE(8);
             }
             state ^= STATE_COPY_128B;
@@ -1336,8 +1338,8 @@ static void fastls_encrypt_v(struct st_ptls_aead_context_t *_ctx, void *output, 
 
     { /* Write encbuf, using NT store instructions in 64-byte chunks. Last partial block, if any, is written to cache, as that cache
        * line would likely be read when the next TLS record is being built. */
-        const char *s = encbuf;
-        char *d = output;
+        const uint8_t *s = encbuf;
+        uint8_t *d = output;
         for (; encp - s >= 64; d += 64, s += 64) {
             _mm256_stream_si256((void *)d, _mm256_load_si256((void *)s));
             _mm256_stream_si256((void *)(d + 32), _mm256_load_si256((void *)(s + 32)));
