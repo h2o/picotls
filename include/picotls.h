@@ -1551,10 +1551,8 @@ inline void ptls_aead__do_encrypt_v(ptls_aead_context_t *ctx, void *_output, ptl
     uint8_t *output = _output;
 
     ctx->do_encrypt_init(ctx, seq, aad, aadlen);
-    for (size_t i = 0; i < incnt; ++i) {
-        ctx->do_encrypt_update(ctx, output, input[i].base, input[i].len);
-        output += input[i].len;
-    }
+    for (size_t i = 0; i < incnt; ++i)
+        output += ctx->do_encrypt_update(ctx, output, input[i].base, input[i].len);
     ctx->do_encrypt_final(ctx, output);
 }
 
