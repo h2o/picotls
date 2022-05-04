@@ -348,6 +348,8 @@ typedef struct st_ptls_aead_context_t {
     size_t (*do_encrypt_final)(struct st_ptls_aead_context_t *ctx, void *output);
     void (*do_encrypt)(struct st_ptls_aead_context_t *ctx, void *output, const void *input, size_t inlen, uint64_t seq,
                        const void *aad, size_t aadlen, ptls_aead_supplementary_encryption_t *supp);
+    void (*do_encrypt_v)(struct st_ptls_aead_context_t *ctx, void *output, ptls_iovec_t *input, size_t incnt, uint64_t seq,
+                         const void *aad, size_t aadlen);
     size_t (*do_decrypt)(struct st_ptls_aead_context_t *ctx, void *output, const void *input, size_t inlen, uint64_t seq,
                          const void *aad, size_t aadlen);
 } ptls_aead_context_t;
@@ -1296,12 +1298,21 @@ void ptls_aead_free(ptls_aead_context_t *ctx);
  */
 static void ptls_aead_xor_iv(ptls_aead_context_t *ctx, const void *bytes, size_t len);
 /**
- *
+ * Encrypts one AEAD block, given input and output vectors.
  */
 static size_t ptls_aead_encrypt(ptls_aead_context_t *ctx, void *output, const void *input, size_t inlen, uint64_t seq,
                                 const void *aad, size_t aadlen);
+/**
+ * Encrypts one AEAD block, as well as one block of ECB (for QUIC / DTLS packet number encryption). Depending on the AEAD engine
+ * being used, the two operations might run simultaneously.
+ */
 static void ptls_aead_encrypt_s(ptls_aead_context_t *ctx, void *output, const void *input, size_t inlen, uint64_t seq,
                                 const void *aad, size_t aadlen, ptls_aead_supplementary_encryption_t *supp);
+/**
+ * Encrypts one AEAD block, given a vector of vectors.
+ */
+static void ptls_aead_encrypt_v(ptls_aead_context_t *ctx, void *output, ptls_iovec_t *input, size_t incnt, uint64_t seq,
+                                const void *aad, size_t aadlen);
 /**
  * initializes the internal state of the encryptor
  */
@@ -1358,6 +1369,11 @@ void ptls_aead__build_iv(ptls_aead_algorithm_t *algo, uint8_t *iv, const uint8_t
  */
 static void ptls_aead__do_encrypt(ptls_aead_context_t *ctx, void *output, const void *input, size_t inlen, uint64_t seq,
                                   const void *aad, size_t aadlen, ptls_aead_supplementary_encryption_t *supp);
+/**
+ *
+ */
+static void ptls_aead__do_encrypt_v(ptls_aead_context_t *ctx, void *_output, ptls_iovec_t *input, size_t incnt, uint64_t seq,
+                                    const void *aad, size_t aadlen);
 /**
  * internal
  */
@@ -1494,6 +1510,12 @@ inline void ptls_aead_encrypt_s(ptls_aead_context_t *ctx, void *output, const vo
     ctx->do_encrypt(ctx, output, input, inlen, seq, aad, aadlen, supp);
 }
 
+inline void ptls_aead_encrypt_v(ptls_aead_context_t *ctx, void *output, ptls_iovec_t *input, size_t incnt, uint64_t seq,
+                                const void *aad, size_t aadlen)
+{
+    ctx->do_encrypt_v(ctx, output, input, incnt, seq, aad, aadlen);
+}
+
 inline void ptls_aead_encrypt_init(ptls_aead_context_t *ctx, uint64_t seq, const void *aad, size_t aadlen)
 {
     ctx->do_encrypt_init(ctx, seq, aad, aadlen);
@@ -1521,6 +1543,17 @@ inline void ptls_aead__do_encrypt(ptls_aead_context_t *ctx, void *output, const 
         memset(supp->output, 0, sizeof(supp->output));
         ptls_cipher_encrypt(supp->ctx, supp->output, supp->output, sizeof(supp->output));
     }
+}
+
+inline void ptls_aead__do_encrypt_v(ptls_aead_context_t *ctx, void *_output, ptls_iovec_t *input, size_t incnt, uint64_t seq,
+                                    const void *aad, size_t aadlen)
+{
+    uint8_t *output = _output;
+
+    ctx->do_encrypt_init(ctx, seq, aad, aadlen);
+    for (size_t i = 0; i < incnt; ++i)
+        output += ctx->do_encrypt_update(ctx, output, input[i].base, input[i].len);
+    ctx->do_encrypt_final(ctx, output);
 }
 
 inline size_t ptls_aead_decrypt(ptls_aead_context_t *ctx, void *output, const void *input, size_t inlen, uint64_t seq,
