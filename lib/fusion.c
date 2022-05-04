@@ -900,6 +900,23 @@ static void aesgcm_dispose_crypto(ptls_aead_context_t *_ctx)
     ptls_fusion_aesgcm_free(ctx->aesgcm);
 }
 
+static void aead_do_encrypt_init(ptls_aead_context_t *_ctx, uint64_t seq, const void *aad, size_t aadlen)
+{
+    assert(!"FIXME");
+}
+
+static size_t aead_do_encrypt_update(ptls_aead_context_t *_ctx, void *output, const void *input, size_t inlen)
+{
+    assert(!"FIXME");
+    return SIZE_MAX;
+}
+
+static size_t aead_do_encrypt_final(ptls_aead_context_t *_ctx, void *_output)
+{
+    assert(!"FIXME");
+    return SIZE_MAX;
+}
+
 static inline __m128i calc_counter(struct aesgcm_context *ctx, uint64_t seq)
 {
     __m128i ctr = _mm_setzero_si128();
@@ -910,23 +927,23 @@ static inline __m128i calc_counter(struct aesgcm_context *ctx, uint64_t seq)
 }
 
 void aead_do_encrypt(struct st_ptls_aead_context_t *_ctx, void *output, const void *input, size_t inlen, uint64_t seq,
-                     ptls_iovec_t aad, ptls_aead_supplementary_encryption_t *supp)
+                     const void *aad, size_t aadlen, ptls_aead_supplementary_encryption_t *supp)
 {
     struct aesgcm_context *ctx = (void *)_ctx;
 
-    if (inlen + aad.len > ctx->aesgcm->capacity)
-        ctx->aesgcm = ptls_fusion_aesgcm_set_capacity(ctx->aesgcm, inlen + aad.len);
-    ptls_fusion_aesgcm_encrypt(ctx->aesgcm, output, input, inlen, calc_counter(ctx, seq), aad.base, aad.len, supp);
+    if (inlen + aadlen > ctx->aesgcm->capacity)
+        ctx->aesgcm = ptls_fusion_aesgcm_set_capacity(ctx->aesgcm, inlen + aadlen);
+    ptls_fusion_aesgcm_encrypt(ctx->aesgcm, output, input, inlen, calc_counter(ctx, seq), aad, aadlen, supp);
 }
 
 static void aead_do_encrypt_v(struct st_ptls_aead_context_t *ctx, void *output, ptls_iovec_t *input, size_t incnt, uint64_t seq,
-                              ptls_iovec_t aad)
+                              const void *aad, size_t aadlen)
 {
     assert(!"FIXME");
 }
 
 static size_t aead_do_decrypt(ptls_aead_context_t *_ctx, void *output, const void *input, size_t inlen, uint64_t seq,
-                              ptls_iovec_t aad)
+                              const void *aad, size_t aadlen)
 {
     struct aesgcm_context *ctx = (void *)_ctx;
 
@@ -934,9 +951,9 @@ static size_t aead_do_decrypt(ptls_aead_context_t *_ctx, void *output, const voi
         return SIZE_MAX;
 
     size_t enclen = inlen - 16;
-    if (enclen + aad.len > ctx->aesgcm->capacity)
-        ctx->aesgcm = ptls_fusion_aesgcm_set_capacity(ctx->aesgcm, enclen + aad.len);
-    if (!ptls_fusion_aesgcm_decrypt(ctx->aesgcm, output, input, enclen, calc_counter(ctx, seq), aad.base, aad.len,
+    if (enclen + aadlen > ctx->aesgcm->capacity)
+        ctx->aesgcm = ptls_fusion_aesgcm_set_capacity(ctx->aesgcm, enclen + aadlen);
+    if (!ptls_fusion_aesgcm_decrypt(ctx->aesgcm, output, input, enclen, calc_counter(ctx, seq), aad, aadlen,
                                     (const uint8_t *)input + enclen))
         return SIZE_MAX;
     return enclen;
@@ -961,6 +978,9 @@ static int aesgcm_setup(ptls_aead_context_t *_ctx, int is_enc, const void *key, 
 
     ctx->super.dispose_crypto = aesgcm_dispose_crypto;
     ctx->super.do_xor_iv = aesgcm_xor_iv;
+    ctx->super.do_encrypt_init = aead_do_encrypt_init;
+    ctx->super.do_encrypt_update = aead_do_encrypt_update;
+    ctx->super.do_encrypt_final = aead_do_encrypt_final;
     ctx->super.do_encrypt = aead_do_encrypt;
     ctx->super.do_encrypt_v = aead_do_encrypt_v;
     ctx->super.do_decrypt = aead_do_decrypt;
@@ -1014,7 +1034,7 @@ ptls_aead_algorithm_t ptls_fusion_aes256gcm = {"AES256-GCM",
                                                aes256gcm_setup};
 
 static void fastls_encrypt_v(struct st_ptls_aead_context_t *_ctx, void *output, ptls_iovec_t *input, size_t incnt, uint64_t seq,
-                             ptls_iovec_t aad)
+                             const void *aad, size_t aadlen)
 {
 /* init the bits (we can always run in full), but use the last slot for calculating ek0, if possible */
 #define AESECB6_INIT()                                                                                                             \
@@ -1099,7 +1119,7 @@ static void fastls_encrypt_v(struct st_ptls_aead_context_t *_ctx, void *output, 
     __m128i ctr = calc_counter(agctx, seq);
     ctr = _mm_insert_epi32(ctr, 1, 0);
     __m128i ek0 = _mm_shuffle_epi8(ctr, bswap8);
-    __m128i ac = _mm_shuffle_epi8(_mm_set_epi32(0, (int)aad.len * 8, 0, (int)totlen * 8), bswap8);
+    __m128i ac = _mm_shuffle_epi8(_mm_set_epi32(0, (int)aadlen * 8, 0, (int)totlen * 8), bswap8);
 
     ptls_fusion_aesgcm_context_t *ctx = agctx->aesgcm;
     __m128i bits0, bits1, bits2, bits3, bits4, bits5 = _mm_setzero_si128();
@@ -1109,35 +1129,35 @@ static void fastls_encrypt_v(struct st_ptls_aead_context_t *_ctx, void *output, 
     AESECB6_INIT();
     AESECB6_UPDATE(1);
     AESECB6_UPDATE(2);
-    if (PTLS_LIKELY(aad.len != 0)) {
+    if (PTLS_LIKELY(aadlen != 0)) {
         struct ptls_fusion_aesgcm_ghash_precompute *ghash_precompute;
-        while (PTLS_UNLIKELY(aad.len >= 6 * 16)) {
+        while (PTLS_UNLIKELY(aadlen >= 6 * 16)) {
             ghash_precompute = ctx->ghash + 6;
-            gfmul_firststep(&gstate, _mm_loadu_si128((void *)aad.base), --ghash_precompute);
-            aad.base += 16;
-            aad.len -= 16;
+            gfmul_firststep(&gstate, _mm_loadu_si128((void *)aad), --ghash_precompute);
+            aad += 16;
+            aadlen -= 16;
             for (int i = 1; i < 6; ++i) {
-                gfmul_nextstep(&gstate, _mm_loadu_si128((void *)aad.base), --ghash_precompute);
-                aad.base += 16;
-                aad.len -= 16;
+                gfmul_nextstep(&gstate, _mm_loadu_si128((void *)aad), --ghash_precompute);
+                aad += 16;
+                aadlen -= 16;
             }
             gfmul_reduce(&gstate);
         }
-        if (PTLS_LIKELY(aad.len != 0)) {
-            ghash_precompute = ctx->ghash + (aad.len + 15) / 16;
-            if (PTLS_UNLIKELY(aad.len >= 16)) {
-                gfmul_firststep(&gstate, _mm_loadu_si128((void *)aad.base), --ghash_precompute);
-                aad.base += 16;
-                aad.len -= 16;
-                while (aad.len >= 16) {
-                    gfmul_nextstep(&gstate, _mm_loadu_si128((void *)aad.base), --ghash_precompute);
-                    aad.base += 16;
-                    aad.len -= 16;
+        if (PTLS_LIKELY(aadlen != 0)) {
+            ghash_precompute = ctx->ghash + (aadlen + 15) / 16;
+            if (PTLS_UNLIKELY(aadlen >= 16)) {
+                gfmul_firststep(&gstate, _mm_loadu_si128((void *)aad), --ghash_precompute);
+                aad += 16;
+                aadlen -= 16;
+                while (aadlen >= 16) {
+                    gfmul_nextstep(&gstate, _mm_loadu_si128((void *)aad), --ghash_precompute);
+                    aad += 16;
+                    aadlen -= 16;
                 }
-                if (PTLS_LIKELY(aad.len != 0))
-                    gfmul_nextstep(&gstate, loadn(aad.base, aad.len), --ghash_precompute);
+                if (PTLS_LIKELY(aadlen != 0))
+                    gfmul_nextstep(&gstate, loadn(aad, aadlen), --ghash_precompute);
             } else {
-                gfmul_firststep(&gstate, loadn(aad.base, aad.len), --ghash_precompute);
+                gfmul_firststep(&gstate, loadn(aad, aadlen), --ghash_precompute);
             }
             assert(ctx->ghash == ghash_precompute);
             gfmul_reduce(&gstate);
