@@ -48,6 +48,17 @@
 #include "picotls.h"
 #include "picotls/fusion.h"
 
+#if defined(__clang__)
+#if __has_feature(address_sanitizer)
+#define NO_SANITIZE_ADDRESS __attribute__((no_sanitize("address")))
+#endif
+#elif __SANITIZE_ADDRESS__ /* gcc */
+#define NO_SANITIZE_ADDRESS __attribute__((no_sanitize_address))
+#endif
+#ifndef NO_SANITIZE_ADDRESS
+#define NO_SANITIZE_ADDRESS
+#endif
+
 struct ptls_fusion_aesgcm_context {
     ptls_fusion_aesecb_context_t ecb;
     size_t capacity;
@@ -223,13 +234,7 @@ static const uint8_t loadn_shuffle[31] = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x
                                           0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80,
                                           0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80}; // latter 15 bytes map to zero
 
-#if defined(__clang__)
-#if __has_feature(address_sanitizer)
-__attribute__((no_sanitize("address")))
-#endif
-#elif __SANITIZE_ADDRESS__ /* gcc */
-__attribute__((no_sanitize_address))
-#endif
+NO_SANITIZE_ADDRESS
 static inline __m128i loadn(const void *p, size_t l)
 {
     __m128i v, mask = _mm_loadu_si128((__m128i *)(loadn_mask + 16 - l));
@@ -1033,6 +1038,7 @@ ptls_aead_algorithm_t ptls_fusion_aes256gcm = {"AES256-GCM",
                                                sizeof(struct aesgcm_context),
                                                aes256gcm_setup};
 
+NO_SANITIZE_ADDRESS
 static void fastls_encrypt_v(struct st_ptls_aead_context_t *_ctx, void *output, ptls_iovec_t *input, size_t incnt, uint64_t seq,
                              const void *aad, size_t aadlen)
 {
