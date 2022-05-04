@@ -1534,9 +1534,8 @@ inline size_t ptls_aead_encrypt_final(ptls_aead_context_t *ctx, void *output)
 inline void ptls_aead__do_encrypt(ptls_aead_context_t *ctx, void *output, const void *input, size_t inlen, uint64_t seq,
                                   const void *aad, size_t aadlen, ptls_aead_supplementary_encryption_t *supp)
 {
-    ctx->do_encrypt_init(ctx, seq, aad, aadlen);
-    ctx->do_encrypt_update(ctx, output, input, inlen);
-    ctx->do_encrypt_final(ctx, (uint8_t *)output + inlen);
+    ptls_iovec_t invec = ptls_iovec_init(input, inlen);
+    ctx->do_encrypt_v(ctx, output, &invec, 1, seq, aad, aadlen);
 
     if (supp != NULL) {
         ptls_cipher_init(supp->ctx, supp->input);
