@@ -1221,7 +1221,7 @@ static void fastls_encrypt_v(struct st_ptls_aead_context_t *_ctx, void *_output,
                 /* slow path, load at most 6 * 16 bytes to encbuf then encrypt in-place */
                 size_t bytes_copied = 0;
                 do {
-                    if (srclen >= 16 && bytes_copied < 5 * 80) {
+                    if (srclen >= 16 && bytes_copied < 5 * 16) {
                         _mm_storeu_si128((void *)(encp + bytes_copied), _mm_loadu_si128((void *)src));
                         bytes_copied += 16;
                         src += 16;
