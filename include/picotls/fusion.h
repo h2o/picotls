@@ -49,7 +49,7 @@ void ptls_fusion_aesecb_encrypt(ptls_fusion_aesecb_context_t *ctx, void *dst, co
  * @param key       the AES key (128 bits)
  * @param capacity  maximum size of AEAD record (i.e. AAD + encrypted payload)
  */
-ptls_fusion_aesgcm_context_t *ptls_fusion_aesgcm_new(const void *key, size_t key_size, size_t capacity);
+ptls_fusion_aesgcm_context_t *ptls_fusion_aesgcm_new(const void *key, size_t key_size, size_t capacity, int avx256);
 /**
  * Updates the capacity.
  */
@@ -84,6 +84,7 @@ void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, void *output,
 int ptls_fusion_aesgcm_decrypt(ptls_fusion_aesgcm_context_t *ctx, void *output, const void *input, size_t inlen, __m128i ctr,
                                const void *aad, size_t aadlen, const void *tag);
 
+extern int ptls_fusion_avx256;
 extern ptls_cipher_algorithm_t ptls_fusion_aes128ctr, ptls_fusion_aes256ctr;
 extern ptls_aead_algorithm_t ptls_fusion_aes128gcm, ptls_fusion_aes256gcm;
 extern ptls_aead_algorithm_t ptls_fastls_aes128gcm, ptls_fastls_aes256gcm;
