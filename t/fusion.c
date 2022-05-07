@@ -465,13 +465,19 @@ int main(int argc, char **argv)
         note("CPU does have the necessary features (avx2, aes, pclmul)\n");
         return done_testing();
     }
+    int can256bit = ptls_fusion_avx256;
+    ptls_fusion_avx256 = 0;
 
     subtest("loadn", test_loadn);
     subtest("ecb", test_ecb);
     subtest("gfmul128", test_gfmul);
-    ptls_fusion_avx256 = 1;
-    subtest("gfmul256", test_gfmul);
-    ptls_fusion_avx256 = 0;
+    if (can256bit) {
+        ptls_fusion_avx256 = 1;
+        subtest("gfmul256", test_gfmul);
+        ptls_fusion_avx256 = 0;
+    } else {
+        note("gfmul256: skipping, CPU does not support 256-bit aes / clmul");
+    }
     subtest("gcm-basic", gcm_basic);
     subtest("gcm-capacity", gcm_capacity);
     subtest("gcm-test-vectors", gcm_test_vectors);

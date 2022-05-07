@@ -1524,11 +1524,16 @@ int ptls_fusion_is_supported_by_cpu(void)
         leaf1_ecx = cpu_info[2];
 
         if (/* PCLMUL */ (leaf1_ecx & (1 << 5)) != 0 && /* AES */ (leaf1_ecx & (1 << 25)) != 0) {
-            uint32_t leaf7_ebx;
+            uint32_t leaf7_ebx, leaf7_ecx;
             __cpuid(cpu_info, 7);
             leaf7_ebx = cpu_info[1];
+            leaf7_ecx = cpu_info[2];
 
             is_supported = /* AVX2 */ (leaf7_ebx & (1 << 5)) != 0;
+
+            /* enable 256-bit mode if possible */
+            if (is_supported && (leaf7_ecx & 0x600) != 0 && !ptls_fusion_avx256)
+                ptls_fusion_avx256 = 1;
         }
     }
 
@@ -1537,7 +1542,7 @@ int ptls_fusion_is_supported_by_cpu(void)
 #else
 int ptls_fusion_is_supported_by_cpu(void)
 {
-    unsigned leaf1_ecx, leaf7_ebx;
+    unsigned leaf1_ecx, leaf7_ebx, leaf7_ecx;
 
     { /* GCC-specific code to obtain CPU features */
         unsigned leaf_cnt;
@@ -1545,7 +1550,7 @@ int ptls_fusion_is_supported_by_cpu(void)
         if (leaf_cnt < 7)
             return 0;
         __asm__("cpuid" : "=c"(leaf1_ecx) : "a"(1) : "ebx", "edx");
-        __asm__("cpuid" : "=b"(leaf7_ebx) : "a"(7), "c"(0) : "edx");
+        __asm__("cpuid" : "=b"(leaf7_ebx), "=c"(leaf7_ecx) : "a"(7), "c"(0) : "edx");
     }
 
     /* AVX2 */
@@ -1557,6 +1562,10 @@ int ptls_fusion_is_supported_by_cpu(void)
     /* PCLMUL */
     if ((leaf1_ecx & (1 << 1)) == 0)
         return 0;
+
+    /* enable 256-bit mode if possible */
+    if ((leaf7_ecx & 0x600) != 0 && !ptls_fusion_avx256)
+        ptls_fusion_avx256 = 1;
 
     return 1;
 }
