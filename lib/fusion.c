@@ -1038,6 +1038,14 @@ ptls_aead_algorithm_t ptls_fusion_aes256gcm = {"AES256-GCM",
                                                sizeof(struct aesgcm_context),
                                                aes256gcm_setup};
 
+static inline size_t calc_total_length(ptls_iovec_t *input, size_t incnt)
+{
+    size_t totlen = 0;
+    for (size_t i = 0; i < incnt; ++i)
+        totlen += input[i].len;
+    return totlen;
+}
+
 NO_SANITIZE_ADDRESS
 static void fastls_encrypt_v(struct st_ptls_aead_context_t *_ctx, void *_output, ptls_iovec_t *input, size_t incnt, uint64_t seq,
                              const void *_aad, size_t aadlen)
@@ -1055,7 +1063,7 @@ static void fastls_encrypt_v(struct st_ptls_aead_context_t *_ctx, void *_output,
         bits3 = _mm_shuffle_epi8(ctr, bswap8);                                                                                     \
         ctr = _mm_add_epi64(ctr, one8);                                                                                            \
         bits4 = _mm_shuffle_epi8(ctr, bswap8);                                                                                     \
-        if (PTLS_LIKELY(totlen > 16 * 5)) {                                                                                        \
+        if (PTLS_LIKELY(srclen > 16 * 5) || src_vecleft != 0) {                                                                    \
             ctr = _mm_add_epi64(ctr, one8);                                                                                        \
             bits5 = _mm_shuffle_epi8(ctr, bswap8);                                                                                 \
         } else {                                                                                                                   \
@@ -1101,10 +1109,6 @@ static void fastls_encrypt_v(struct st_ptls_aead_context_t *_ctx, void *_output,
     uint8_t *output = _output;
     const uint8_t *aad = _aad;
 
-    size_t totlen = 0;
-    for (size_t i = 0; i < incnt; ++i)
-        totlen += input[i].len;
-
 #define STATE_EK0_READY 0x1
 #define STATE_COPY_128B 0x2
     int32_t state = 0;
@@ -1130,11 +1134,21 @@ static void fastls_encrypt_v(struct st_ptls_aead_context_t *_ctx, void *_output,
     __m128i ctr = calc_counter(agctx, seq);
     ctr = _mm_insert_epi32(ctr, 1, 0);
     __m128i ek0 = _mm_shuffle_epi8(ctr, bswap8);
-    __m128i ac = _mm_shuffle_epi8(_mm_set_epi32(0, (int)aadlen * 8, 0, (int)totlen * 8), bswap8);
+    __m128i ac = _mm_shuffle_epi8(_mm_set_epi32(0, (int)aadlen * 8, 0, (int)calc_total_length(input, incnt) * 8), bswap8);
 
     ptls_fusion_aesgcm_context_t *ctx = agctx->aesgcm;
     __m128i bits0, bits1, bits2, bits3, bits4, bits5 = _mm_setzero_si128();
     struct ptls_fusion_gfmul_state gstate = {0};
+
+    /* find the first non-empty vec */
+    const uint8_t *src = NULL;
+    size_t srclen = 0, src_vecleft = incnt;
+    while (srclen == 0 && src_vecleft != 0) {
+        src = (void *)input[0].base;
+        srclen = input[0].len;
+        ++input;
+        --src_vecleft;
+    }
 
     /* Prepare first 6 blocks of bit stream, at the same time calculating ghash of AAD. */
     AESECB6_INIT();
@@ -1187,12 +1201,7 @@ static void fastls_encrypt_v(struct st_ptls_aead_context_t *_ctx, void *_output,
      * When exitting the loop, `remaining_ghash_from` represents the offset within `encbuf` from where ghash remains to be
      * calculated. */
     size_t remaining_ghash_from = encp - encbuf;
-    if (totlen != 0) {
-        const uint8_t *src = (void *)input[0].base;
-        size_t srclen = input[0].len;
-        ++input;
-        size_t src_vecleft = incnt - 1;
-
+    if (srclen != 0) {
         while (1) {
             /* apply the bit stream to input, writing to encbuf */
             if (PTLS_LIKELY(srclen >= 6 * 16)) {
