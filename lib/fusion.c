@@ -1067,10 +1067,8 @@ static void fastls_encrypt_v(struct st_ptls_aead_context_t *_ctx, void *_output,
             ctr = _mm_add_epi64(ctr, one8);                                                                                        \
             bits5 = _mm_shuffle_epi8(ctr, bswap8);                                                                                 \
         } else {                                                                                                                   \
-            if ((state & STATE_EK0_READY) == 0) {                                                                                  \
-                bits5 = ek0;                                                                                                       \
-                state |= STATE_EK0_READY;                                                                                          \
-            }                                                                                                                      \
+            bits5 = ek0;                                                                                                           \
+            state |= STATE_EK0_READY;                                                                                              \
         }                                                                                                                          \
         __m128i k = ctx->ecb.keys[0];                                                                                              \
         bits0 = _mm_xor_si128(bits0, k);                                                                                           \
