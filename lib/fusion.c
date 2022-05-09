@@ -347,7 +347,7 @@ static inline __m256i loadn256(const void *p, size_t l)
     if (PTLS_LIKELY(mod4k < 4096 - 32) || mod4k + l > 4096) {
         v = _mm256_loadu_si256(p);
     } else if (l > 16) {
-        __m128i first16 = _mm_loadu_si128(p), second16 = loadn128((uint8_t *)(p + 16), l - 16);
+        __m128i first16 = _mm_loadu_si128(p), second16 = loadn128((uint8_t *)p + 16, l - 16);
         v = _mm256_permute2f128_si256(_mm256_castsi128_si256(first16), _mm256_castsi128_si256(second16), 0x20);
     } else if (l == 16) {
         v = _mm256_castsi128_si256(_mm_loadu_si128(p));
@@ -1925,7 +1925,7 @@ int ptls_fusion_is_supported_by_cpu(void)
             is_supported = /* AVX2 */ (leaf7_ebx & (1 << 5)) != 0;
 
             /* enable 256-bit mode if possible */
-            if (is_supported && (leaf7_ecx & 0x600) != 0 && !ptls_fusion_avx256)
+            if (is_supported && (leaf7_ecx & 0x600) != 0 && !ptls_fusion_can_avx256)
                 ptls_fusion_can_avx256 = 1;
         }
     }
