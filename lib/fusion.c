@@ -1544,7 +1544,7 @@ static void non_temporal_encrypt_v256(struct st_ptls_aead_context_t *_ctx, void 
         ctr = _mm256_add_epi64(ctr, incr128x2);                                                                                    \
         bits5 = _mm256_shuffle_epi8(ctr, byteswap256);                                                                             \
         if (PTLS_UNLIKELY(srclen <= 32 * 6 - 16) && src_vecleft == 0) {                                                            \
-            bits5 = _mm256_insertf128_si256(bits5, ek0, 1);                                                                        \
+            bits5 = _mm256_permute2f128_si256(bits5, ac_ek0, 0x30);                                                                \
             state |= STATE_EK0_READY;                                                                                              \
         }                                                                                                                          \
         __m256i k = ctx->ecb.keys.m256[0];                                                                                         \
@@ -1604,8 +1604,12 @@ static void non_temporal_encrypt_v256(struct st_ptls_aead_context_t *_ctx, void 
     /* setup ctr, retaining Ek(0), len(A) | len(C) to be fed into GCM */
     __m256i ctr = _mm256_broadcastsi128_si256(calc_counter(agctx, seq));
     ctr = _mm256_insert_epi32(ctr, 1, 4);
-    __m128i ek0 = _mm_shuffle_epi8(_mm256_castsi256_si128(_mm256_permute2f128_si256(ctr, ctr, 0x81)), byteswap128);
-    __m128i ac = _mm_shuffle_epi8(_mm_set_epi32(0, (int)aadlen * 8, 0, (int)calc_total_length(input, incnt) * 8), byteswap128);
+    __m256i ac_ek0 = _mm256_permute2f128_si256(
+        /* first half: ac */
+        _mm256_castsi128_si256(
+            _mm_shuffle_epi8(_mm_set_epi32(0, (int)aadlen * 8, 0, (int)calc_total_length(input, incnt) * 8), byteswap128)),
+        /* second half: ek0 */
+        _mm256_shuffle_epi8(ctr, byteswap256), 0x30);
 
     ptls_fusion_aesgcm_context_t *ctx = agctx->aesgcm;
     __m256i bits0, bits1, bits2, bits3, bits4, bits5 = _mm256_setzero_si256();
@@ -1793,7 +1797,7 @@ static void non_temporal_encrypt_v256(struct st_ptls_aead_context_t *_ctx, void 
     { /* Run ghash against the remaining bytes, after appending `ac` (i.e., len(A) | len(C)). At this point, we might be ghashing 7
        * blocks at once. */
         size_t ac_off = remaining_ghash_from + ((encp - encbuf) - remaining_ghash_from + 15) / 16 * 16;
-        _mm_storeu_si128((void *)(encbuf + ac_off), ac);
+        _mm_storeu_si128((void *)(encbuf + ac_off), _mm256_castsi256_si128(ac_ek0));
         size_t blocks = ((encp - encbuf) - remaining_ghash_from + 15) / 16 + 1; /* round up, +1 for AC */
         assert(blocks <= 13);
         union ptls_fusion_aesgcm_ghash_precompute256 *ghash_precompute = ctx->ghash256 + blocks / 2;
@@ -1813,7 +1817,7 @@ static void non_temporal_encrypt_v256(struct st_ptls_aead_context_t *_ctx, void 
 
     /* Calculate EK0, if in the unlikely case on not been done yet. When encoding in full size (16K), EK0 will be ready. */
     if (PTLS_UNLIKELY((state & STATE_EK0_READY) == 0)) {
-        bits5 = _mm256_insertf128_si256(bits5, ek0, 1);
+        bits5 = ac_ek0;
         bits5 = _mm256_xor_si256(bits5, ctx->ecb.keys.m256[0]);
         for (size_t i = 1; i < ctx->ecb.rounds; ++i)
             bits5 = _mm256_aesenc_epi128(bits5, ctx->ecb.keys.m256[i]);
