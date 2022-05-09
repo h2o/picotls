@@ -456,7 +456,7 @@ static void test_aesgcm(void)
 
 static void test_fastls(void)
 {
-    test_generated(&ptls_fastls_aes128gcm, &ptls_minicrypto_aes128gcm, 0);
+    test_generated(&ptls_non_temporal_aes128gcm, &ptls_minicrypto_aes128gcm, 0);
 }
 
 int main(int argc, char **argv)

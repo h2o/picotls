@@ -1212,8 +1212,8 @@ static inline void write_remaining_bytes(uint8_t *dst, const uint8_t *src, const
 }
 
 NO_SANITIZE_ADDRESS
-static void fastls_encrypt_v128(struct st_ptls_aead_context_t *_ctx, void *_output, ptls_iovec_t *input, size_t incnt, uint64_t seq,
-                                const void *_aad, size_t aadlen)
+static void non_temporal_encrypt_v128(struct st_ptls_aead_context_t *_ctx, void *_output, ptls_iovec_t *input, size_t incnt,
+                                      uint64_t seq, const void *_aad, size_t aadlen)
 {
 /* init the bits (we can always run in full), but use the last slot for calculating ek0, if possible */
 #define AESECB6_INIT()                                                                                                             \
@@ -1519,8 +1519,8 @@ static void fastls_encrypt_v128(struct st_ptls_aead_context_t *_ctx, void *_outp
 }
 
 NO_SANITIZE_ADDRESS
-static void fastls_encrypt_v256(struct st_ptls_aead_context_t *_ctx, void *_output, ptls_iovec_t *input, size_t incnt, uint64_t seq,
-                                const void *_aad, size_t aadlen)
+static void non_temporal_encrypt_v256(struct st_ptls_aead_context_t *_ctx, void *_output, ptls_iovec_t *input, size_t incnt,
+                                      uint64_t seq, const void *_aad, size_t aadlen)
 {
 /* init the bits (we can always run in full), but use the last slot for calculating ek0, if possible */
 #define AESECB6_INIT()                                                                                                             \
@@ -1823,7 +1823,7 @@ static void fastls_encrypt_v256(struct st_ptls_aead_context_t *_ctx, void *_outp
     write_remaining_bytes(output, encbuf, encp);
 }
 
-static int fastls_setup(ptls_aead_context_t *_ctx, int is_enc, const void *key, const void *iv, size_t key_size)
+static int nt_setup(ptls_aead_context_t *_ctx, int is_enc, const void *key, const void *iv, size_t key_size)
 {
     struct aesgcm_context *ctx = (struct aesgcm_context *)_ctx;
 
@@ -1835,7 +1835,7 @@ static int fastls_setup(ptls_aead_context_t *_ctx, int is_enc, const void *key, 
     ctx->super.dispose_crypto = aesgcm_dispose_crypto;
     ctx->super.do_xor_iv = aesgcm_xor_iv;
     ctx->super.do_encrypt = ptls_aead__do_encrypt;
-    ctx->super.do_encrypt_v = ptls_fusion_can_avx256 ? fastls_encrypt_v256 : fastls_encrypt_v128;
+    ctx->super.do_encrypt_v = ptls_fusion_can_avx256 ? non_temporal_encrypt_v256 : non_temporal_encrypt_v128;
     ctx->super.do_decrypt = NULL; /* FIXME */
 
     ctx->aesgcm = new_aesgcm(key, key_size,
@@ -1845,36 +1845,36 @@ static int fastls_setup(ptls_aead_context_t *_ctx, int is_enc, const void *key, 
     return 0;
 }
 
-static int fastls_aes128gcm_setup(ptls_aead_context_t *ctx, int is_enc, const void *key, const void *iv)
+static int non_temporal_aes128gcm_setup(ptls_aead_context_t *ctx, int is_enc, const void *key, const void *iv)
 {
-    return fastls_setup(ctx, is_enc, key, iv, PTLS_AES128_KEY_SIZE);
+    return nt_setup(ctx, is_enc, key, iv, PTLS_AES128_KEY_SIZE);
 }
 
-static int fastls_aes256gcm_setup(ptls_aead_context_t *ctx, int is_enc, const void *key, const void *iv)
+static int non_temporal_aes256gcm_setup(ptls_aead_context_t *ctx, int is_enc, const void *key, const void *iv)
 {
-    return fastls_setup(ctx, is_enc, key, iv, PTLS_AES256_KEY_SIZE);
+    return nt_setup(ctx, is_enc, key, iv, PTLS_AES256_KEY_SIZE);
 }
 
-ptls_aead_algorithm_t ptls_fastls_aes128gcm = {"AES128-GCM",
-                                               PTLS_AESGCM_CONFIDENTIALITY_LIMIT,
-                                               PTLS_AESGCM_INTEGRITY_LIMIT,
-                                               &ptls_fusion_aes128ctr,
-                                               NULL, // &ptls_fusion_aes128ecb,
-                                               PTLS_AES128_KEY_SIZE,
-                                               PTLS_AESGCM_IV_SIZE,
-                                               PTLS_AESGCM_TAG_SIZE,
-                                               sizeof(struct aesgcm_context),
-                                               fastls_aes128gcm_setup};
-ptls_aead_algorithm_t ptls_fastls_aes256gcm = {"AES256-GCM",
-                                               PTLS_AESGCM_CONFIDENTIALITY_LIMIT,
-                                               PTLS_AESGCM_INTEGRITY_LIMIT,
-                                               &ptls_fusion_aes256ctr,
-                                               NULL, // &ptls_fusion_aes128ecb,
-                                               PTLS_AES256_KEY_SIZE,
-                                               PTLS_AESGCM_IV_SIZE,
-                                               PTLS_AESGCM_TAG_SIZE,
-                                               sizeof(struct aesgcm_context),
-                                               fastls_aes256gcm_setup};
+ptls_aead_algorithm_t ptls_non_temporal_aes128gcm = {"AES128-GCM",
+                                                     PTLS_AESGCM_CONFIDENTIALITY_LIMIT,
+                                                     PTLS_AESGCM_INTEGRITY_LIMIT,
+                                                     &ptls_fusion_aes128ctr,
+                                                     NULL, // &ptls_fusion_aes128ecb,
+                                                     PTLS_AES128_KEY_SIZE,
+                                                     PTLS_AESGCM_IV_SIZE,
+                                                     PTLS_AESGCM_TAG_SIZE,
+                                                     sizeof(struct aesgcm_context),
+                                                     non_temporal_aes128gcm_setup};
+ptls_aead_algorithm_t ptls_non_temporal_aes256gcm = {"AES256-GCM",
+                                                     PTLS_AESGCM_CONFIDENTIALITY_LIMIT,
+                                                     PTLS_AESGCM_INTEGRITY_LIMIT,
+                                                     &ptls_fusion_aes256ctr,
+                                                     NULL, // &ptls_fusion_aes128ecb,
+                                                     PTLS_AES256_KEY_SIZE,
+                                                     PTLS_AESGCM_IV_SIZE,
+                                                     PTLS_AESGCM_TAG_SIZE,
+                                                     sizeof(struct aesgcm_context),
+                                                     non_temporal_aes256gcm_setup};
 
 #ifdef _WINDOWS
 /**
