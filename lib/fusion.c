@@ -1193,6 +1193,46 @@ static inline size_t calc_total_length(ptls_iovec_t *input, size_t incnt)
     return totlen;
 }
 
+static inline void reduce_aad128(struct ptls_fusion_gfmul_state128 *gstate, struct ptls_fusion_aesgcm_ghash_precompute128 *ghash,
+                                 const void *_aad, size_t aadlen)
+{
+    struct ptls_fusion_aesgcm_ghash_precompute128 *ghash_precompute;
+    const uint8_t *aad = _aad;
+
+    while (PTLS_UNLIKELY(aadlen >= 6 * 16)) {
+        ghash_precompute = ghash + 6;
+        gfmul_firststep128(gstate, _mm_loadu_si128((void *)aad), --ghash_precompute);
+        aad += 16;
+        aadlen -= 16;
+        for (int i = 1; i < 6; ++i) {
+            gfmul_nextstep128(gstate, _mm_loadu_si128((void *)aad), --ghash_precompute);
+            aad += 16;
+            aadlen -= 16;
+        }
+        gfmul_reduce128(gstate);
+    }
+
+    if (PTLS_LIKELY(aadlen != 0)) {
+        ghash_precompute = ghash + (aadlen + 15) / 16;
+        if (PTLS_UNLIKELY(aadlen >= 16)) {
+            gfmul_firststep128(gstate, _mm_loadu_si128((void *)aad), --ghash_precompute);
+            aad += 16;
+            aadlen -= 16;
+            while (aadlen >= 16) {
+                gfmul_nextstep128(gstate, _mm_loadu_si128((void *)aad), --ghash_precompute);
+                aad += 16;
+                aadlen -= 16;
+            }
+            if (PTLS_LIKELY(aadlen != 0))
+                gfmul_nextstep128(gstate, loadn128(aad, aadlen), --ghash_precompute);
+        } else {
+            gfmul_firststep128(gstate, loadn128(aad, aadlen), --ghash_precompute);
+        }
+        assert(ghash == ghash_precompute);
+        gfmul_reduce128(gstate);
+    }
+}
+
 static inline void write_remaining_bytes(uint8_t *dst, const uint8_t *src, const uint8_t *end)
 {
     /* Write in 64-byte chunks, using NT store instructions. Last partial block, if any, is written to cache, as that cache line
@@ -1213,7 +1253,7 @@ static inline void write_remaining_bytes(uint8_t *dst, const uint8_t *src, const
 
 NO_SANITIZE_ADDRESS
 static void non_temporal_encrypt_v128(struct st_ptls_aead_context_t *_ctx, void *_output, ptls_iovec_t *input, size_t incnt,
-                                      uint64_t seq, const void *_aad, size_t aadlen)
+                                      uint64_t seq, const void *aad, size_t aadlen)
 {
 /* init the bits (we can always run in full), but use the last slot for calculating ek0, if possible */
 #define AESECB6_INIT()                                                                                                             \
@@ -1270,7 +1310,6 @@ static void non_temporal_encrypt_v128(struct st_ptls_aead_context_t *_ctx, void 
 
     struct aesgcm_context *agctx = (void *)_ctx;
     uint8_t *output = _output;
-    const uint8_t *aad = _aad;
 
 #define STATE_EK0_READY 0x1
 #define STATE_COPY_128B 0x2
@@ -1317,40 +1356,7 @@ static void non_temporal_encrypt_v128(struct st_ptls_aead_context_t *_ctx, void 
     AESECB6_INIT();
     AESECB6_UPDATE(1);
     AESECB6_UPDATE(2);
-    if (PTLS_LIKELY(aadlen != 0)) {
-        struct ptls_fusion_aesgcm_ghash_precompute128 *ghash_precompute;
-        while (PTLS_UNLIKELY(aadlen >= 6 * 16)) {
-            ghash_precompute = ctx->ghash128 + 6;
-            gfmul_firststep128(&gstate, _mm_loadu_si128((void *)aad), --ghash_precompute);
-            aad += 16;
-            aadlen -= 16;
-            for (int i = 1; i < 6; ++i) {
-                gfmul_nextstep128(&gstate, _mm_loadu_si128((void *)aad), --ghash_precompute);
-                aad += 16;
-                aadlen -= 16;
-            }
-            gfmul_reduce128(&gstate);
-        }
-        if (PTLS_LIKELY(aadlen != 0)) {
-            ghash_precompute = ctx->ghash128 + (aadlen + 15) / 16;
-            if (PTLS_UNLIKELY(aadlen >= 16)) {
-                gfmul_firststep128(&gstate, _mm_loadu_si128((void *)aad), --ghash_precompute);
-                aad += 16;
-                aadlen -= 16;
-                while (aadlen >= 16) {
-                    gfmul_nextstep128(&gstate, _mm_loadu_si128((void *)aad), --ghash_precompute);
-                    aad += 16;
-                    aadlen -= 16;
-                }
-                if (PTLS_LIKELY(aadlen != 0))
-                    gfmul_nextstep128(&gstate, loadn128(aad, aadlen), --ghash_precompute);
-            } else {
-                gfmul_firststep128(&gstate, loadn128(aad, aadlen), --ghash_precompute);
-            }
-            assert(ctx->ghash128 == ghash_precompute);
-            gfmul_reduce128(&gstate);
-        }
-    }
+    reduce_aad128(&gstate, ctx->ghash128, aad, aadlen);
     for (size_t i = 3; i < ctx->ecb.rounds; ++i)
         AESECB6_UPDATE(i);
     AESECB6_FINAL(ctx->ecb.rounds);
