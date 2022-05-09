@@ -63,20 +63,22 @@ struct ptls_fusion_aesgcm_context {
     ptls_fusion_aesecb_context_t ecb;
     size_t capacity;
     size_t ghash_cnt;
-    struct ptls_fusion_aesgcm_ghash_precompute128 {
-        __m128i H;
-        __m128i r;
-    } ghash128[0];
-    union ptls_fusion_aesgcm_ghash_precompute256 {
-        struct {
-            __m128i H[2];
-            __m128i r[2];
-        };
-        struct {
-            __m256i Hx2;
-            __m256i rx2;
-        };
-    } ghash256[0];
+    union {
+        struct ptls_fusion_aesgcm_ghash_precompute128 {
+            __m128i H;
+            __m128i r;
+        } ghash128[0];
+        union ptls_fusion_aesgcm_ghash_precompute256 {
+            struct {
+                __m128i H[2];
+                __m128i r[2];
+            };
+            struct {
+                __m256i Hx2;
+                __m256i rx2;
+            };
+        } ghash256[0];
+    };
 };
 
 struct ctr_context {
