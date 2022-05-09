@@ -110,12 +110,14 @@ static void test_gfmul(void)
         static const char input[32] = "deaddeadbeefbeef"; /* latter 16-byte is NUL */
         __m128i hash;
         if (ctx->ecb.avx256) {
-            struct ptls_fusion_gfmul_state256 state = {};
+            struct ptls_fusion_gfmul_state256 state;
+            state.lo = _mm256_setzero_si256();
             gfmul_firststep256(&state, _mm256_loadu_si256((void *)input), 1, ctx->ghash256);
             gfmul_reduce256(&state);
             hash = _mm256_castsi256_si128(state.lo);
         } else {
-            struct ptls_fusion_gfmul_state128 state = {};
+            struct ptls_fusion_gfmul_state128 state;
+            state.lo = _mm_setzero_si128();
             gfmul_firststep128(&state, _mm_loadu_si128((void *)input), ctx->ghash128);
             gfmul_reduce128(&state);
             hash = state.lo;
@@ -127,12 +129,14 @@ static void test_gfmul(void)
         static const char input[32] = "Lorem ipsum dolor sit amet, con";
         __m128i hash;
         if (ctx->ecb.avx256) {
-            struct ptls_fusion_gfmul_state256 state = {};
+            struct ptls_fusion_gfmul_state256 state;
+            state.lo = _mm256_setzero_si256();
             gfmul_firststep256(&state, _mm256_loadu_si256((void *)input), 0, ctx->ghash256);
             gfmul_reduce256(&state);
             hash = _mm256_castsi256_si128(state.lo);
         } else {
-            struct ptls_fusion_gfmul_state128 state = {};
+            struct ptls_fusion_gfmul_state128 state;
+            state.lo = _mm_setzero_si128();
             gfmul_firststep128(&state, _mm_loadu_si128((void *)input), ctx->ghash128 + 1);
             gfmul_nextstep128(&state, _mm_loadu_si128((void *)(input + 16)), ctx->ghash128);
             gfmul_reduce128(&state);
@@ -145,13 +149,15 @@ static void test_gfmul(void)
         static const char input[64] = "The quick brown fox jumps over the lazy dog.";
         __m128i hash;
         if (ctx->ecb.avx256) {
-            struct ptls_fusion_gfmul_state256 state = {};
+            struct ptls_fusion_gfmul_state256 state;
+            state.lo = _mm256_setzero_si256();
             gfmul_firststep256(&state, _mm256_loadu_si256((void *)input), 1, ctx->ghash256 + 1);
             gfmul_nextstep256(&state, _mm256_loadu_si256((void *)(input + 16)), ctx->ghash256);
             gfmul_reduce256(&state);
             hash = _mm256_castsi256_si128(state.lo);
         } else {
-            struct ptls_fusion_gfmul_state128 state = {};
+            struct ptls_fusion_gfmul_state128 state;
+            state.lo = _mm_setzero_si128();
             gfmul_firststep128(&state, _mm_loadu_si128((void *)input), ctx->ghash128 + 2);
             gfmul_nextstep128(&state, _mm_loadu_si128((void *)(input + 16)), ctx->ghash128 + 1);
             gfmul_nextstep128(&state, _mm_loadu_si128((void *)(input + 32)), ctx->ghash128);
@@ -165,7 +171,8 @@ static void test_gfmul(void)
         static const char input[80] = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor ";
         __m128i hash;
         if (ctx->ecb.avx256) {
-            struct ptls_fusion_gfmul_state256 state = {};
+            struct ptls_fusion_gfmul_state256 state;
+            state.lo = _mm256_setzero_si256();
             gfmul_firststep256(&state, _mm256_loadu_si256((void *)input), 0, ctx->ghash256 + 1);
             gfmul_nextstep256(&state, _mm256_loadu_si256((void *)(input + 32)), ctx->ghash256);
             gfmul_reduce256(&state);
@@ -173,7 +180,8 @@ static void test_gfmul(void)
             gfmul_reduce256(&state);
             hash = _mm256_castsi256_si128(state.lo);
         } else {
-            struct ptls_fusion_gfmul_state128 state = {};
+            struct ptls_fusion_gfmul_state128 state;
+            state.lo = _mm_setzero_si128();
             gfmul_firststep128(&state, _mm_loadu_si128((void *)input), ctx->ghash128 + 3);
             gfmul_nextstep128(&state, _mm_loadu_si128((void *)(input + 16)), ctx->ghash128 + 2);
             gfmul_nextstep128(&state, _mm_loadu_si128((void *)(input + 32)), ctx->ghash128 + 1);
@@ -191,7 +199,8 @@ static void test_gfmul(void)
             "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut la";
         __m128i hash;
         if (ctx->ecb.avx256) {
-            struct ptls_fusion_gfmul_state256 state = {};
+            struct ptls_fusion_gfmul_state256 state;
+            state.lo = _mm256_setzero_si256();
             gfmul_firststep256(&state, _mm256_loadu_si256((void *)input), 0, ctx->ghash256 + 1);
             gfmul_nextstep256(&state, _mm256_loadu_si256((void *)(input + 32)), ctx->ghash256);
             gfmul_reduce256(&state);
@@ -199,7 +208,8 @@ static void test_gfmul(void)
             gfmul_reduce256(&state);
             hash = _mm256_castsi256_si128(state.lo);
         } else {
-            struct ptls_fusion_gfmul_state128 state = {};
+            struct ptls_fusion_gfmul_state128 state;
+            state.lo = _mm_setzero_si128();
             gfmul_firststep128(&state, _mm_loadu_si128((void *)input), ctx->ghash128 + 3);
             gfmul_nextstep128(&state, _mm_loadu_si128((void *)(input + 16)), ctx->ghash128 + 2);
             gfmul_nextstep128(&state, _mm_loadu_si128((void *)(input + 32)), ctx->ghash128 + 1);
