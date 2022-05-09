@@ -59,6 +59,10 @@
 #define NO_SANITIZE_ADDRESS
 #endif
 
+#ifdef _WINDOWS
+#define aligned_alloc(a, s) _aligned_malloc((s), (a))
+#endif
+
 struct ptls_fusion_aesgcm_context {
     ptls_fusion_aesecb_context_t ecb;
     size_t capacity;
