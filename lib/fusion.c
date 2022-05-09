@@ -1315,7 +1315,13 @@ static void non_temporal_encrypt_v128(struct st_ptls_aead_context_t *_ctx, void 
 #define STATE_COPY_128B 0x2
     int32_t state = 0;
 
-    /* Bytes are written here first then written using NT store instructions, 64 bytes at a time. */
+    /* Bytes are written here first then written using NT store instructions, 64 bytes at a time.
+     * Use of thread-local stroage is a hack. GCC spills a lot onto stack, and unless we move `encbuf` outside of stack, temporary
+     * variables end up being stored onto somewhere not as fast as places near the stack pointer. This provides 18% speed
+     * improvement on Core i5 9400, at the cost of 2% slowdown on Zen 3. */
+#if defined(__GNUC__) && !defined(__clang__)
+    static __thread
+#endif
     uint8_t encbuf[32 * 6] __attribute__((aligned(32))), *encp;
 
     /* `encbuf` should be large enough to store up to 63-bytes of unaligned bytes, 6 16-byte AES blocks, plus AEAD tag that is
