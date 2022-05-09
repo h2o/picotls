@@ -17,7 +17,7 @@
  * All other work, including modifications to the `transformH` function is
  * covered by the following MIT license:
  *
- * Copyright (c) 2020 Fastly, Kazuho Oku
+ * Copyright (c) 2020-2022 Fastly, Kazuho Oku
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to

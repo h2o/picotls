@@ -475,7 +475,7 @@ int main(int argc, char **argv)
     subtest("gcm-capacity", gcm_capacity);
     subtest("gcm-test-vectors", gcm_test_vectors);
     subtest("gcm-iv96", gcm_iv96);
-    subtest("aesgcm", test_aesgcm);
+    // subtest("aesgcm", test_aesgcm);
     subtest("fastls128", test_fastls);
 
     if (can256bit) {
