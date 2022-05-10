@@ -87,24 +87,26 @@ static void test_ecb(void)
 static void test_gfmul(void)
 {
     ptls_fusion_aesgcm_context_t *ctx;
-    PTLS_BUILD_ASSERT(sizeof(ctx->ghash128[0]) * 2 == sizeof(ctx->ghash256[0]));
+    size_t ghash_cnt = 4;
 
-#define COUNT 4
-
-    ctx = malloc(offsetof(ptls_fusion_aesgcm_context_t, ghash128) + sizeof(ctx->ghash128[0]) * COUNT);
-    memset(ctx, 0, offsetof(ptls_fusion_aesgcm_context_t, ghash128));
-    ctx->capacity = 4 * 16;
-    ctx->ecb.avx256 = ptls_fusion_can_avx256;
+    ctx = malloc(calc_aesgcm_context_size(&ghash_cnt, ptls_fusion_can_avx256));
+    *ctx = (ptls_fusion_aesgcm_context_t){
+        .ecb = {.avx256 = ptls_fusion_can_avx256},
+        .capacity = ghash_cnt * 16,
+    };
 
     __m128i H0 = _mm_loadu_si128((void *)"hello world bye");
     if (ctx->ecb.avx256) {
-        ctx->ghash256[0].H[1] = H0;
+        ((struct ptls_fusion_aesgcm_context256 *)ctx)->ghash[0].H[1] = H0;
     } else {
-        ctx->ghash128[0].H = H0;
+        ((struct ptls_fusion_aesgcm_context128 *)ctx)->ghash[0].H = H0;
     }
 
-    while (ctx->ghash_cnt < COUNT)
+    while (ctx->ghash_cnt < ghash_cnt)
         setup_one_ghash_entry(ctx);
+
+#define GHASH128 (((struct ptls_fusion_aesgcm_context128 *)ctx)->ghash)
+#define GHASH256 (((struct ptls_fusion_aesgcm_context256 *)ctx)->ghash)
 
     {                                                     /* one block */
         static const char input[32] = "deaddeadbeefbeef"; /* latter 16-byte is NUL */
@@ -112,13 +114,13 @@ static void test_gfmul(void)
         if (ctx->ecb.avx256) {
             struct ptls_fusion_gfmul_state256 state;
             state.lo = _mm256_setzero_si256();
-            gfmul_firststep256(&state, _mm256_loadu_si256((void *)input), 1, ctx->ghash256);
+            gfmul_firststep256(&state, _mm256_loadu_si256((void *)input), 1, GHASH256);
             gfmul_reduce256(&state);
             hash = _mm256_castsi256_si128(state.lo);
         } else {
             struct ptls_fusion_gfmul_state128 state;
             state.lo = _mm_setzero_si128();
-            gfmul_firststep128(&state, _mm_loadu_si128((void *)input), ctx->ghash128);
+            gfmul_firststep128(&state, _mm_loadu_si128((void *)input), GHASH128);
             gfmul_reduce128(&state);
             hash = state.lo;
         }
@@ -131,14 +133,14 @@ static void test_gfmul(void)
         if (ctx->ecb.avx256) {
             struct ptls_fusion_gfmul_state256 state;
             state.lo = _mm256_setzero_si256();
-            gfmul_firststep256(&state, _mm256_loadu_si256((void *)input), 0, ctx->ghash256);
+            gfmul_firststep256(&state, _mm256_loadu_si256((void *)input), 0, GHASH256);
             gfmul_reduce256(&state);
             hash = _mm256_castsi256_si128(state.lo);
         } else {
             struct ptls_fusion_gfmul_state128 state;
             state.lo = _mm_setzero_si128();
-            gfmul_firststep128(&state, _mm_loadu_si128((void *)input), ctx->ghash128 + 1);
-            gfmul_nextstep128(&state, _mm_loadu_si128((void *)(input + 16)), ctx->ghash128);
+            gfmul_firststep128(&state, _mm_loadu_si128((void *)input), GHASH128 + 1);
+            gfmul_nextstep128(&state, _mm_loadu_si128((void *)(input + 16)), GHASH128);
             gfmul_reduce128(&state);
             hash = state.lo;
         }
@@ -151,16 +153,16 @@ static void test_gfmul(void)
         if (ctx->ecb.avx256) {
             struct ptls_fusion_gfmul_state256 state;
             state.lo = _mm256_setzero_si256();
-            gfmul_firststep256(&state, _mm256_loadu_si256((void *)input), 1, ctx->ghash256 + 1);
-            gfmul_nextstep256(&state, _mm256_loadu_si256((void *)(input + 16)), ctx->ghash256);
+            gfmul_firststep256(&state, _mm256_loadu_si256((void *)input), 1, GHASH256 + 1);
+            gfmul_nextstep256(&state, _mm256_loadu_si256((void *)(input + 16)), GHASH256);
             gfmul_reduce256(&state);
             hash = _mm256_castsi256_si128(state.lo);
         } else {
             struct ptls_fusion_gfmul_state128 state;
             state.lo = _mm_setzero_si128();
-            gfmul_firststep128(&state, _mm_loadu_si128((void *)input), ctx->ghash128 + 2);
-            gfmul_nextstep128(&state, _mm_loadu_si128((void *)(input + 16)), ctx->ghash128 + 1);
-            gfmul_nextstep128(&state, _mm_loadu_si128((void *)(input + 32)), ctx->ghash128);
+            gfmul_firststep128(&state, _mm_loadu_si128((void *)input), GHASH128 + 2);
+            gfmul_nextstep128(&state, _mm_loadu_si128((void *)(input + 16)), GHASH128 + 1);
+            gfmul_nextstep128(&state, _mm_loadu_si128((void *)(input + 32)), GHASH128);
             gfmul_reduce128(&state);
             hash = state.lo;
         }
@@ -173,21 +175,21 @@ static void test_gfmul(void)
         if (ctx->ecb.avx256) {
             struct ptls_fusion_gfmul_state256 state;
             state.lo = _mm256_setzero_si256();
-            gfmul_firststep256(&state, _mm256_loadu_si256((void *)input), 0, ctx->ghash256 + 1);
-            gfmul_nextstep256(&state, _mm256_loadu_si256((void *)(input + 32)), ctx->ghash256);
+            gfmul_firststep256(&state, _mm256_loadu_si256((void *)input), 0, GHASH256 + 1);
+            gfmul_nextstep256(&state, _mm256_loadu_si256((void *)(input + 32)), GHASH256);
             gfmul_reduce256(&state);
-            gfmul_firststep256(&state, _mm256_loadu_si256((void *)(input + 64)), 1, ctx->ghash256);
+            gfmul_firststep256(&state, _mm256_loadu_si256((void *)(input + 64)), 1, GHASH256);
             gfmul_reduce256(&state);
             hash = _mm256_castsi256_si128(state.lo);
         } else {
             struct ptls_fusion_gfmul_state128 state;
             state.lo = _mm_setzero_si128();
-            gfmul_firststep128(&state, _mm_loadu_si128((void *)input), ctx->ghash128 + 3);
-            gfmul_nextstep128(&state, _mm_loadu_si128((void *)(input + 16)), ctx->ghash128 + 2);
-            gfmul_nextstep128(&state, _mm_loadu_si128((void *)(input + 32)), ctx->ghash128 + 1);
-            gfmul_nextstep128(&state, _mm_loadu_si128((void *)(input + 48)), ctx->ghash128);
+            gfmul_firststep128(&state, _mm_loadu_si128((void *)input), GHASH128 + 3);
+            gfmul_nextstep128(&state, _mm_loadu_si128((void *)(input + 16)), GHASH128 + 2);
+            gfmul_nextstep128(&state, _mm_loadu_si128((void *)(input + 32)), GHASH128 + 1);
+            gfmul_nextstep128(&state, _mm_loadu_si128((void *)(input + 48)), GHASH128);
             gfmul_reduce128(&state);
-            gfmul_firststep128(&state, _mm_loadu_si128((void *)(input + 64)), ctx->ghash128);
+            gfmul_firststep128(&state, _mm_loadu_si128((void *)(input + 64)), GHASH128);
             gfmul_reduce128(&state);
             hash = state.lo;
         }
@@ -201,22 +203,22 @@ static void test_gfmul(void)
         if (ctx->ecb.avx256) {
             struct ptls_fusion_gfmul_state256 state;
             state.lo = _mm256_setzero_si256();
-            gfmul_firststep256(&state, _mm256_loadu_si256((void *)input), 0, ctx->ghash256 + 1);
-            gfmul_nextstep256(&state, _mm256_loadu_si256((void *)(input + 32)), ctx->ghash256);
+            gfmul_firststep256(&state, _mm256_loadu_si256((void *)input), 0, GHASH256 + 1);
+            gfmul_nextstep256(&state, _mm256_loadu_si256((void *)(input + 32)), GHASH256);
             gfmul_reduce256(&state);
-            gfmul_firststep256(&state, _mm256_loadu_si256((void *)(input + 64)), 0, ctx->ghash256);
+            gfmul_firststep256(&state, _mm256_loadu_si256((void *)(input + 64)), 0, GHASH256);
             gfmul_reduce256(&state);
             hash = _mm256_castsi256_si128(state.lo);
         } else {
             struct ptls_fusion_gfmul_state128 state;
             state.lo = _mm_setzero_si128();
-            gfmul_firststep128(&state, _mm_loadu_si128((void *)input), ctx->ghash128 + 3);
-            gfmul_nextstep128(&state, _mm_loadu_si128((void *)(input + 16)), ctx->ghash128 + 2);
-            gfmul_nextstep128(&state, _mm_loadu_si128((void *)(input + 32)), ctx->ghash128 + 1);
-            gfmul_nextstep128(&state, _mm_loadu_si128((void *)(input + 48)), ctx->ghash128);
+            gfmul_firststep128(&state, _mm_loadu_si128((void *)input), GHASH128 + 3);
+            gfmul_nextstep128(&state, _mm_loadu_si128((void *)(input + 16)), GHASH128 + 2);
+            gfmul_nextstep128(&state, _mm_loadu_si128((void *)(input + 32)), GHASH128 + 1);
+            gfmul_nextstep128(&state, _mm_loadu_si128((void *)(input + 48)), GHASH128);
             gfmul_reduce128(&state);
-            gfmul_firststep128(&state, _mm_loadu_si128((void *)(input + 64)), ctx->ghash128 + 1);
-            gfmul_nextstep128(&state, _mm_loadu_si128((void *)(input + 80)), ctx->ghash128);
+            gfmul_firststep128(&state, _mm_loadu_si128((void *)(input + 64)), GHASH128 + 1);
+            gfmul_nextstep128(&state, _mm_loadu_si128((void *)(input + 80)), GHASH128);
             gfmul_reduce128(&state);
             hash = state.lo;
         }
@@ -225,7 +227,8 @@ static void test_gfmul(void)
 
     free(ctx);
 
-#undef COUNT
+#undef GHASH128
+#undef GHASH256
 }
 
 static void gcm_basic(void)

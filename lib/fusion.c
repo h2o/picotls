@@ -67,22 +67,28 @@ struct ptls_fusion_aesgcm_context {
     ptls_fusion_aesecb_context_t ecb;
     size_t capacity;
     size_t ghash_cnt;
-    union {
-        struct ptls_fusion_aesgcm_ghash_precompute128 {
-            __m128i H;
-            __m128i r;
-        } ghash128[0];
-        union ptls_fusion_aesgcm_ghash_precompute256 {
-            struct {
-                __m128i H[2];
-                __m128i r[2];
-            };
-            struct {
-                __m256i Hx2;
-                __m256i rx2;
-            };
-        } ghash256[0];
-    };
+};
+
+struct ptls_fusion_aesgcm_context128 {
+    struct ptls_fusion_aesgcm_context super;
+    struct ptls_fusion_aesgcm_ghash_precompute128 {
+        __m128i H;
+        __m128i r;
+    } ghash[0];
+};
+
+struct ptls_fusion_aesgcm_context256 {
+    struct ptls_fusion_aesgcm_context super;
+    union ptls_fusion_aesgcm_ghash_precompute256 {
+        struct {
+            __m128i H[2];
+            __m128i r[2];
+        };
+        struct {
+            __m256i Hx2;
+            __m256i rx2;
+        };
+    } ghash[0];
 };
 
 struct ctr_context {
@@ -373,7 +379,7 @@ static inline void storen128(void *_p, size_t l, __m128i v)
         p[i] = buf[i];
 }
 
-void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, void *output, const void *input, size_t inlen, __m128i ctr,
+void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *_ctx, void *output, const void *input, size_t inlen, __m128i ctr,
                                 const void *_aad, size_t aadlen, ptls_aead_supplementary_encryption_t *supp)
 {
 /* init the bits (we can always run in full), but use the last slot for calculating ek0, if possible */
@@ -403,7 +409,7 @@ void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, void *output,
                 state |= STATE_SUPP_IN_PROCESS;                                                                                    \
             }                                                                                                                      \
         }                                                                                                                          \
-        __m128i k = ctx->ecb.keys.m128[0];                                                                                         \
+        __m128i k = ctx->super.ecb.keys.m128[0];                                                                                   \
         bits0 = _mm_xor_si128(bits0, k);                                                                                           \
         bits1 = _mm_xor_si128(bits1, k);                                                                                           \
         bits2 = _mm_xor_si128(bits2, k);                                                                                           \
@@ -415,7 +421,7 @@ void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, void *output,
 /* aes block update */
 #define AESECB6_UPDATE(i)                                                                                                          \
     do {                                                                                                                           \
-        __m128i k = ctx->ecb.keys.m128[i];                                                                                         \
+        __m128i k = ctx->super.ecb.keys.m128[i];                                                                                   \
         bits0 = _mm_aesenc_si128(bits0, k);                                                                                        \
         bits1 = _mm_aesenc_si128(bits1, k);                                                                                        \
         bits2 = _mm_aesenc_si128(bits2, k);                                                                                        \
@@ -427,7 +433,7 @@ void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, void *output,
 /* aesenclast */
 #define AESECB6_FINAL(i)                                                                                                           \
     do {                                                                                                                           \
-        __m128i k = ctx->ecb.keys.m128[i];                                                                                         \
+        __m128i k = ctx->super.ecb.keys.m128[i];                                                                                   \
         bits0 = _mm_aesenclast_si128(bits0, k);                                                                                    \
         bits1 = _mm_aesenclast_si128(bits1, k);                                                                                    \
         bits2 = _mm_aesenclast_si128(bits2, k);                                                                                    \
@@ -436,8 +442,9 @@ void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, void *output,
         bits5 = _mm_aesenclast_si128(bits5, k);                                                                                    \
     } while (0)
 
+    struct ptls_fusion_aesgcm_context128 *ctx = (void *)_ctx;
     __m128i ek0, bits0, bits1, bits2, bits3, bits4, bits5 = _mm_setzero_si128();
-    const __m128i *bits4keys = ctx->ecb.keys.m128; /* is changed to supp->ctx.keys when calcurating suppout */
+    const __m128i *bits4keys = ctx->super.ecb.keys.m128; /* is changed to supp->ctx.keys when calcurating suppout */
     struct ptls_fusion_gfmul_state128 gstate = {0};
     __m128i gdatabuf[6];
     __m128i ac = _mm_shuffle_epi8(_mm_set_epi32(0, (int)aadlen * 8, 0, (int)inlen * 8), byteswap128);
@@ -450,7 +457,7 @@ void ptls_fusion_aesgcm_encrypt(ptls_fusion_aesgcm_context_t *ctx, void *output,
     const __m128i *aad = _aad, *dst_ghash = dst;
     size_t dst_ghashlen = srclen;
 
-    struct ptls_fusion_aesgcm_ghash_precompute128 *ghash_precompute = ctx->ghash128 + (aadlen + 15) / 16 + (srclen + 15) / 16 + 1;
+    struct ptls_fusion_aesgcm_ghash_precompute128 *ghash_precompute = ctx->ghash + (aadlen + 15) / 16 + (srclen + 15) / 16 + 1;
 
 #define STATE_EK0_BEEN_FED 0x3
 #define STATE_EK0_INCOMPLETE 0x2
@@ -493,7 +500,7 @@ MainLoop:
             AESECB6_UPDATE(i);
             gfmul_nextstep128(&gstate, _mm_loadu_si128(gdata++), --ghash_precompute);
         }
-        for (; i < ctx->ecb.rounds; ++i)
+        for (; i < ctx->super.ecb.rounds; ++i)
             AESECB6_UPDATE(i);
         AESECB6_FINAL(i);
 
@@ -619,7 +626,7 @@ Finish:
         }
         do {
             bits4 = _mm_aesenc_si128(bits4, bits4keys[i++]);
-        } while (i != ctx->ecb.rounds);
+        } while (i != ctx->super.ecb.rounds);
         bits4 = _mm_aesenclast_si128(bits4, bits4keys[i]);
         _mm_storeu_si128((__m128i *)supp->output, bits4);
     }
@@ -632,15 +639,16 @@ Finish:
 #undef STATE_SUPP_IN_PROCESS
 }
 
-int ptls_fusion_aesgcm_decrypt(ptls_fusion_aesgcm_context_t *ctx, void *output, const void *input, size_t inlen, __m128i ctr,
+int ptls_fusion_aesgcm_decrypt(ptls_fusion_aesgcm_context_t *_ctx, void *output, const void *input, size_t inlen, __m128i ctr,
                                const void *_aad, size_t aadlen, const void *tag)
 {
+    struct ptls_fusion_aesgcm_context128 *ctx = (void *)_ctx;
     __m128i ek0 = _mm_setzero_si128(), bits0, bits1 = _mm_setzero_si128(), bits2 = _mm_setzero_si128(), bits3 = _mm_setzero_si128(),
             bits4 = _mm_setzero_si128(), bits5 = _mm_setzero_si128();
     struct ptls_fusion_gfmul_state128 gstate = {0};
     __m128i gdatabuf[6];
     __m128i ac = _mm_shuffle_epi8(_mm_set_epi32(0, (int)aadlen * 8, 0, (int)inlen * 8), byteswap128);
-    struct ptls_fusion_aesgcm_ghash_precompute128 *ghash_precompute = ctx->ghash128 + (aadlen + 15) / 16 + (inlen + 15) / 16 + 1;
+    struct ptls_fusion_aesgcm_ghash_precompute128 *ghash_precompute = ctx->ghash + (aadlen + 15) / 16 + (inlen + 15) / 16 + 1;
 
     const __m128i *gdata; // points to the elements fed into GHASH
     size_t gdata_cnt;
@@ -651,7 +659,7 @@ int ptls_fusion_aesgcm_decrypt(ptls_fusion_aesgcm_context_t *ctx, void *output, 
 
     /* schedule ek0 and suppkey */
     ctr = _mm_add_epi64(ctr, one8);
-    bits0 = _mm_xor_si128(_mm_shuffle_epi8(ctr, byteswap128), ctx->ecb.keys.m128[0]);
+    bits0 = _mm_xor_si128(_mm_shuffle_epi8(ctr, byteswap128), ctx->super.ecb.keys.m128[0]);
     ++nondata_aes_cnt;
 
 #define STATE_IS_FIRST_RUN 0x1
@@ -714,19 +722,19 @@ int ptls_fusion_aesgcm_decrypt(ptls_fusion_aesgcm_context_t *ctx, void *output, 
         ctr = _mm_add_epi64(ctr, one8);                                                                                            \
         bits##n = _mm_xor_si128(_mm_shuffle_epi8(ctr, byteswap128), keys.m128[0]);
         InitAllBits:
-            INIT_BITS(0, ctx->ecb.keys);
-            INIT_BITS(1, ctx->ecb.keys);
-            INIT_BITS(2, ctx->ecb.keys);
-            INIT_BITS(3, ctx->ecb.keys);
-            INIT_BITS(4, ctx->ecb.keys);
-            INIT_BITS(5, ctx->ecb.keys);
+            INIT_BITS(0, ctx->super.ecb.keys);
+            INIT_BITS(1, ctx->super.ecb.keys);
+            INIT_BITS(2, ctx->super.ecb.keys);
+            INIT_BITS(3, ctx->super.ecb.keys);
+            INIT_BITS(4, ctx->super.ecb.keys);
+            INIT_BITS(5, ctx->super.ecb.keys);
 #undef INIT_BITS
         }
 
         { /* run aes and ghash */
 #define AESECB6_UPDATE(i)                                                                                                          \
     do {                                                                                                                           \
-        __m128i k = ctx->ecb.keys.m128[i];                                                                                         \
+        __m128i k = ctx->super.ecb.keys.m128[i];                                                                                   \
         bits0 = _mm_aesenc_si128(bits0, k);                                                                                        \
         bits1 = _mm_aesenc_si128(bits1, k);                                                                                        \
         bits2 = _mm_aesenc_si128(bits2, k);                                                                                        \
@@ -740,9 +748,9 @@ int ptls_fusion_aesgcm_decrypt(ptls_fusion_aesgcm_context_t *ctx, void *output, 
                 AESECB6_UPDATE(aesi);
                 gfmul_nextstep128(&gstate, _mm_loadu_si128(gdata++), --ghash_precompute);
             }
-            for (; aesi < ctx->ecb.rounds; ++aesi)
+            for (; aesi < ctx->super.ecb.rounds; ++aesi)
                 AESECB6_UPDATE(aesi);
-            __m128i k = ctx->ecb.keys.m128[aesi];
+            __m128i k = ctx->super.ecb.keys.m128[aesi];
             bits0 = _mm_aesenclast_si128(bits0, k);
             bits1 = _mm_aesenclast_si128(bits1, k);
             bits2 = _mm_aesenclast_si128(bits2, k);
@@ -804,7 +812,7 @@ Finish:
 
     /* the only case where AES operation is complete and GHASH is not is when the application of AC is remaining */
     if ((state & STATE_GHASH_HAS_MORE) != 0) {
-        assert(ghash_precompute - 1 == ctx->ghash128);
+        assert(ghash_precompute - 1 == ctx->ghash);
         gfmul_nextstep128(&gstate, ac, --ghash_precompute);
     }
 
@@ -915,17 +923,19 @@ static void setup_one_ghash_entry(ptls_fusion_aesgcm_context_t *ctx)
     __m128i *H, *r, *Hprev, H0;
 
     if (ctx->ecb.avx256) {
-#define GET_SLOT(i, mem) (&ctx->ghash256[(i) / 2].mem[(i) % 2 == 0])
+        struct ptls_fusion_aesgcm_context256 *ctx256 = (void *)ctx;
+#define GET_SLOT(i, mem) (&ctx256->ghash[(i) / 2].mem[(i) % 2 == 0])
         H = GET_SLOT(ctx->ghash_cnt, H);
         r = GET_SLOT(ctx->ghash_cnt, r);
         Hprev = ctx->ghash_cnt == 0 ? NULL : GET_SLOT(ctx->ghash_cnt - 1, H);
 #undef GET_SLOT
-        H0 = ctx->ghash256[0].H[1];
+        H0 = ctx256->ghash[0].H[1];
     } else {
-        H = &ctx->ghash128[ctx->ghash_cnt].H;
-        r = &ctx->ghash128[ctx->ghash_cnt].r;
-        Hprev = ctx->ghash_cnt == 0 ? NULL : &ctx->ghash128[ctx->ghash_cnt - 1].H;
-        H0 = ctx->ghash128[0].H;
+        struct ptls_fusion_aesgcm_context128 *ctx128 = (void *)ctx;
+        H = &ctx128->ghash[ctx->ghash_cnt].H;
+        r = &ctx128->ghash[ctx->ghash_cnt].r;
+        Hprev = ctx->ghash_cnt == 0 ? NULL : &ctx128->ghash[ctx->ghash_cnt - 1].H;
+        H0 = ctx128->ghash[0].H;
     }
 
     if (Hprev != NULL)
@@ -937,15 +947,28 @@ static void setup_one_ghash_entry(ptls_fusion_aesgcm_context_t *ctx)
     ++ctx->ghash_cnt;
 }
 
+static size_t calc_aesgcm_context_size(size_t *ghash_cnt, int avx256)
+{
+    size_t sz;
+
+    if (avx256) {
+        if (*ghash_cnt % 2 != 0)
+            ++*ghash_cnt;
+        sz = offsetof(struct ptls_fusion_aesgcm_context256, ghash) +
+             sizeof(union ptls_fusion_aesgcm_ghash_precompute256) * *ghash_cnt / 2;
+    } else {
+        sz = offsetof(struct ptls_fusion_aesgcm_context128, ghash) +
+             sizeof(struct ptls_fusion_aesgcm_ghash_precompute128) * *ghash_cnt;
+    }
+    return sz;
+}
+
 static ptls_fusion_aesgcm_context_t *new_aesgcm(const void *key, size_t key_size, size_t capacity, int avx256)
 {
     ptls_fusion_aesgcm_context_t *ctx;
-    size_t ghash_cnt = aesgcm_calc_ghash_cnt(capacity);
-    if (avx256 && ghash_cnt % 2 != 0)
-        ++ghash_cnt;
+    size_t ghash_cnt = aesgcm_calc_ghash_cnt(capacity), ctx_size = calc_aesgcm_context_size(&ghash_cnt, avx256);
 
-    PTLS_BUILD_ASSERT(sizeof(ctx->ghash128[0]) * 2 == sizeof(ctx->ghash256[0]));
-    if ((ctx = aligned_alloc(32, sizeof(*ctx) + sizeof(ctx->ghash128[0]) * ghash_cnt)) == NULL)
+    if ((ctx = aligned_alloc(32, ctx_size)) == NULL)
         return NULL;
 
     ptls_fusion_aesecb_init(&ctx->ecb, 1, key, key_size, avx256);
@@ -956,9 +979,9 @@ static ptls_fusion_aesgcm_context_t *new_aesgcm(const void *key, size_t key_size
     H0 = _mm_shuffle_epi8(H0, byteswap128);
     H0 = transformH(H0);
     if (ctx->ecb.avx256) {
-        ctx->ghash256[0].H[1] = H0;
+        ((struct ptls_fusion_aesgcm_context256 *)ctx)->ghash[0].H[1] = H0;
     } else {
-        ctx->ghash128[0].H = H0;
+        ((struct ptls_fusion_aesgcm_context128 *)ctx)->ghash[0].H = H0;
     }
 
     ctx->ghash_cnt = 0;
@@ -980,7 +1003,8 @@ ptls_fusion_aesgcm_context_t *ptls_fusion_aesgcm_set_capacity(ptls_fusion_aesgcm
     if (ghash_cnt <= ctx->ghash_cnt)
         return ctx;
 
-    if ((ctx = realloc(ctx, sizeof(*ctx) + sizeof(ctx->ghash128[0]) * ghash_cnt)) == NULL)
+    size_t ctx_size = calc_aesgcm_context_size(&ghash_cnt, ctx->ecb.avx256);
+    if ((ctx = realloc(ctx, ctx_size)) == NULL)
         return NULL;
 
     ctx->capacity = capacity;
@@ -992,9 +1016,9 @@ ptls_fusion_aesgcm_context_t *ptls_fusion_aesgcm_set_capacity(ptls_fusion_aesgcm
 
 void ptls_fusion_aesgcm_free(ptls_fusion_aesgcm_context_t *ctx)
 {
-    ptls_clear_memory(ctx->ghash128, sizeof(ctx->ghash128[0]) * ctx->ghash_cnt);
-    ctx->ghash_cnt = 0;
-    ptls_fusion_aesecb_dispose(&ctx->ecb);
+    ptls_clear_memory(ctx, calc_aesgcm_context_size(&ctx->ghash_cnt, ctx->ecb.avx256));
+    /* skip ptls_fusion_aesecb_dispose, based on the knowledge that it does not allocate memory elsewhere */
+
     free(ctx);
 }
 
@@ -1281,7 +1305,7 @@ static void non_temporal_encrypt_v128(struct st_ptls_aead_context_t *_ctx, void 
             bits5 = ek0;                                                                                                           \
             state |= STATE_EK0_READY;                                                                                              \
         }                                                                                                                          \
-        __m128i k = ctx->ecb.keys.m128[0];                                                                                         \
+        __m128i k = ctx->super.ecb.keys.m128[0];                                                                                   \
         bits0 = _mm_xor_si128(bits0, k);                                                                                           \
         bits1 = _mm_xor_si128(bits1, k);                                                                                           \
         bits2 = _mm_xor_si128(bits2, k);                                                                                           \
@@ -1293,7 +1317,7 @@ static void non_temporal_encrypt_v128(struct st_ptls_aead_context_t *_ctx, void 
 /* aes block update */
 #define AESECB6_UPDATE(i)                                                                                                          \
     do {                                                                                                                           \
-        __m128i k = ctx->ecb.keys.m128[i];                                                                                         \
+        __m128i k = ctx->super.ecb.keys.m128[i];                                                                                   \
         bits0 = _mm_aesenc_si128(bits0, k);                                                                                        \
         bits1 = _mm_aesenc_si128(bits1, k);                                                                                        \
         bits2 = _mm_aesenc_si128(bits2, k);                                                                                        \
@@ -1305,7 +1329,7 @@ static void non_temporal_encrypt_v128(struct st_ptls_aead_context_t *_ctx, void 
 /* aesenclast */
 #define AESECB6_FINAL(i)                                                                                                           \
     do {                                                                                                                           \
-        __m128i k = ctx->ecb.keys.m128[i];                                                                                         \
+        __m128i k = ctx->super.ecb.keys.m128[i];                                                                                   \
         bits0 = _mm_aesenclast_si128(bits0, k);                                                                                    \
         bits1 = _mm_aesenclast_si128(bits1, k);                                                                                    \
         bits2 = _mm_aesenclast_si128(bits2, k);                                                                                    \
@@ -1328,7 +1352,8 @@ static void non_temporal_encrypt_v128(struct st_ptls_aead_context_t *_ctx, void 
 #if defined(__GNUC__) && !defined(__clang__)
     static __thread
 #endif
-    uint8_t encbuf[32 * 6] __attribute__((aligned(32))), *encp;
+        uint8_t encbuf[32 * 6] __attribute__((aligned(32))),
+        *encp;
 
     /* `encbuf` should be large enough to store up to 63-bytes of unaligned bytes, 6 16-byte AES blocks, plus AEAD tag that is
      * append to the ciphertext before writing the bytes to main memory using NT store instructions. */
@@ -1350,7 +1375,7 @@ static void non_temporal_encrypt_v128(struct st_ptls_aead_context_t *_ctx, void 
     __m128i ek0 = _mm_shuffle_epi8(ctr, byteswap128);
     __m128i ac = _mm_shuffle_epi8(_mm_set_epi32(0, (int)aadlen * 8, 0, (int)calc_total_length(input, incnt) * 8), byteswap128);
 
-    ptls_fusion_aesgcm_context_t *ctx = agctx->aesgcm;
+    struct ptls_fusion_aesgcm_context128 *ctx = (void *)agctx->aesgcm;
     __m128i bits0, bits1, bits2, bits3, bits4, bits5 = _mm_setzero_si128();
     struct ptls_fusion_gfmul_state128 gstate = {0};
 
@@ -1368,10 +1393,10 @@ static void non_temporal_encrypt_v128(struct st_ptls_aead_context_t *_ctx, void 
     AESECB6_INIT();
     AESECB6_UPDATE(1);
     AESECB6_UPDATE(2);
-    reduce_aad128(&gstate, ctx->ghash128, aad, aadlen);
-    for (size_t i = 3; i < ctx->ecb.rounds; ++i)
+    reduce_aad128(&gstate, ctx->ghash, aad, aadlen);
+    for (size_t i = 3; i < ctx->super.ecb.rounds; ++i)
         AESECB6_UPDATE(i);
-    AESECB6_FINAL(ctx->ecb.rounds);
+    AESECB6_FINAL(ctx->super.ecb.rounds);
 
     /* Main loop. This loop:
      *  1. using current keystream (bits0..bits5), xors a up to 6 * 16 bytes and writes to encbuf,
@@ -1453,7 +1478,7 @@ static void non_temporal_encrypt_v128(struct st_ptls_aead_context_t *_ctx, void 
             /* Next 96-byte block starts here. Run AES and ghash in while writing output using non-temporal stores in 64-byte
              * blocks. */
             AESECB6_INIT();
-            struct ptls_fusion_aesgcm_ghash_precompute128 *ghash_precompute = ctx->ghash128 + 6;
+            struct ptls_fusion_aesgcm_ghash_precompute128 *ghash_precompute = ctx->ghash + 6;
             gfmul_firststep128(&gstate, _mm_loadu_si128((void *)(encp - 6 * 16)), --ghash_precompute);
             AESECB6_UPDATE(1);
             gfmul_nextstep128(&gstate, _mm_loadu_si128((void *)(encp - 5 * 16)), --ghash_precompute);
@@ -1486,13 +1511,13 @@ static void non_temporal_encrypt_v128(struct st_ptls_aead_context_t *_ctx, void 
             }
             state ^= STATE_COPY_128B;
             AESECB6_UPDATE(9);
-            if (PTLS_UNLIKELY(ctx->ecb.rounds != 10)) {
-                for (size_t i = 10; PTLS_LIKELY(i < ctx->ecb.rounds); ++i)
+            if (PTLS_UNLIKELY(ctx->super.ecb.rounds != 10)) {
+                for (size_t i = 10; PTLS_LIKELY(i < ctx->super.ecb.rounds); ++i)
                     AESECB6_UPDATE(i);
             }
-            assert(ctx->ghash128 == ghash_precompute);
+            assert(ctx->ghash == ghash_precompute);
             gfmul_reduce128(&gstate);
-            AESECB6_FINAL(ctx->ecb.rounds);
+            AESECB6_FINAL(ctx->super.ecb.rounds);
         }
     }
 
@@ -1504,10 +1529,10 @@ static void non_temporal_encrypt_v128(struct st_ptls_aead_context_t *_ctx, void 
         _mm_storeu_si128((void *)(encbuf + ac_off), ac);
         size_t blocks = ((encp - encbuf) - remaining_ghash_from + 15) / 16 + 1; /* round up, +1 for AC */
         assert(blocks <= 7);
-        struct ptls_fusion_aesgcm_ghash_precompute128 *ghash_precompute = ctx->ghash128 + blocks;
+        struct ptls_fusion_aesgcm_ghash_precompute128 *ghash_precompute = ctx->ghash + blocks;
         gfmul_firststep128(&gstate, _mm_loadu_si128((void *)(encbuf + remaining_ghash_from)), --ghash_precompute);
         remaining_ghash_from += 16;
-        while (ghash_precompute != ctx->ghash128) {
+        while (ghash_precompute != ctx->ghash) {
             gfmul_nextstep128(&gstate, _mm_loadu_si128((void *)(encbuf + remaining_ghash_from)), --ghash_precompute);
             remaining_ghash_from += 16;
         }
@@ -1516,10 +1541,10 @@ static void non_temporal_encrypt_v128(struct st_ptls_aead_context_t *_ctx, void 
 
     /* Calculate EK0, if in the unlikely case on not been done yet. When encoding in full size (16K), EK0 will be ready. */
     if (PTLS_UNLIKELY((state & STATE_EK0_READY) == 0)) {
-        bits5 = _mm_xor_si128(ek0, ctx->ecb.keys.m128[0]);
-        for (size_t i = 1; i < ctx->ecb.rounds; ++i)
-            bits5 = _mm_aesenc_si128(bits5, ctx->ecb.keys.m128[i]);
-        bits5 = _mm_aesenclast_si128(bits5, ctx->ecb.keys.m128[ctx->ecb.rounds]);
+        bits5 = _mm_xor_si128(ek0, ctx->super.ecb.keys.m128[0]);
+        for (size_t i = 1; i < ctx->super.ecb.rounds; ++i)
+            bits5 = _mm_aesenc_si128(bits5, ctx->super.ecb.keys.m128[i]);
+        bits5 = _mm_aesenclast_si128(bits5, ctx->super.ecb.keys.m128[ctx->super.ecb.rounds]);
     }
 
     /* append tag to encbuf */
@@ -1559,7 +1584,7 @@ static void non_temporal_encrypt_v256(struct st_ptls_aead_context_t *_ctx, void 
             bits5 = _mm256_permute2f128_si256(bits5, ac_ek0, 0x30);                                                                \
             state |= STATE_EK0_READY;                                                                                              \
         }                                                                                                                          \
-        __m256i k = ctx->ecb.keys.m256[0];                                                                                         \
+        __m256i k = ctx->super.ecb.keys.m256[0];                                                                                   \
         bits0 = _mm256_xor_si256(bits0, k);                                                                                        \
         bits1 = _mm256_xor_si256(bits1, k);                                                                                        \
         bits2 = _mm256_xor_si256(bits2, k);                                                                                        \
@@ -1571,7 +1596,7 @@ static void non_temporal_encrypt_v256(struct st_ptls_aead_context_t *_ctx, void 
 /* aes block update */
 #define AESECB6_UPDATE(i)                                                                                                          \
     do {                                                                                                                           \
-        __m256i k = ctx->ecb.keys.m256[i];                                                                                         \
+        __m256i k = ctx->super.ecb.keys.m256[i];                                                                                   \
         bits0 = _mm256_aesenc_epi128(bits0, k);                                                                                    \
         bits1 = _mm256_aesenc_epi128(bits1, k);                                                                                    \
         bits2 = _mm256_aesenc_epi128(bits2, k);                                                                                    \
@@ -1583,7 +1608,7 @@ static void non_temporal_encrypt_v256(struct st_ptls_aead_context_t *_ctx, void 
 /* aesenclast */
 #define AESECB6_FINAL(i)                                                                                                           \
     do {                                                                                                                           \
-        __m256i k = ctx->ecb.keys.m256[i];                                                                                         \
+        __m256i k = ctx->super.ecb.keys.m256[i];                                                                                   \
         bits0 = _mm256_aesenclast_epi128(bits0, k);                                                                                \
         bits1 = _mm256_aesenclast_epi128(bits1, k);                                                                                \
         bits2 = _mm256_aesenclast_epi128(bits2, k);                                                                                \
@@ -1623,7 +1648,7 @@ static void non_temporal_encrypt_v256(struct st_ptls_aead_context_t *_ctx, void 
         /* second half: ek0 */
         _mm256_shuffle_epi8(ctr, byteswap256), 0x30);
 
-    ptls_fusion_aesgcm_context_t *ctx = agctx->aesgcm;
+    struct ptls_fusion_aesgcm_context256 *ctx = (void *)agctx->aesgcm;
     __m256i bits0, bits1, bits2, bits3, bits4, bits5 = _mm256_setzero_si256();
     struct ptls_fusion_gfmul_state256 gstate = {0};
 
@@ -1644,7 +1669,7 @@ static void non_temporal_encrypt_v256(struct st_ptls_aead_context_t *_ctx, void 
     if (PTLS_LIKELY(aadlen != 0)) {
         union ptls_fusion_aesgcm_ghash_precompute256 *ghash_precompute;
         while (PTLS_UNLIKELY(aadlen >= 6 * 32)) {
-            ghash_precompute = ctx->ghash256 + 6;
+            ghash_precompute = ctx->ghash + 6;
             gfmul_firststep256(&gstate, _mm256_loadu_si256((void *)aad), 0, --ghash_precompute);
             aad += 32;
             aadlen -= 32;
@@ -1656,7 +1681,7 @@ static void non_temporal_encrypt_v256(struct st_ptls_aead_context_t *_ctx, void 
             gfmul_reduce256(&gstate);
         }
         if (PTLS_LIKELY(aadlen != 0)) {
-            ghash_precompute = ctx->ghash256 + (aadlen + 31) / 32;
+            ghash_precompute = ctx->ghash + (aadlen + 31) / 32;
             if (PTLS_UNLIKELY(aadlen >= 32)) {
                 if (aadlen % 32 == 0 || aadlen % 32 > 16) {
                     gfmul_firststep256(&gstate, _mm256_loadu_si256((void *)aad), 0, --ghash_precompute);
@@ -1679,13 +1704,13 @@ static void non_temporal_encrypt_v256(struct st_ptls_aead_context_t *_ctx, void 
             } else {
                 gfmul_firststep256(&gstate, loadn256(aad, aadlen), aadlen <= 16, --ghash_precompute);
             }
-            assert(ctx->ghash256 == ghash_precompute);
+            assert(ctx->ghash == ghash_precompute);
             gfmul_reduce256(&gstate);
         }
     }
-    for (size_t i = 3; i < ctx->ecb.rounds; ++i)
+    for (size_t i = 3; i < ctx->super.ecb.rounds; ++i)
         AESECB6_UPDATE(i);
-    AESECB6_FINAL(ctx->ecb.rounds);
+    AESECB6_FINAL(ctx->super.ecb.rounds);
 
     /* Main loop. This loop:
      *  1. using current keystream (bits0..bits5), xors a up to 6 * 16 bytes and writes to encbuf,
@@ -1768,7 +1793,7 @@ static void non_temporal_encrypt_v256(struct st_ptls_aead_context_t *_ctx, void 
             /* Next 96-byte block starts here. Run AES and ghash in parallel while writing output using non-temporal store
              * instructions. */
             AESECB6_INIT();
-            union ptls_fusion_aesgcm_ghash_precompute256 *ghash_precompute = ctx->ghash256 + 6;
+            union ptls_fusion_aesgcm_ghash_precompute256 *ghash_precompute = ctx->ghash + 6;
             gfmul_firststep256(&gstate, _mm256_loadu_si256((void *)(encp - 6 * 32)), 0, --ghash_precompute);
             AESECB6_UPDATE(1);
             gfmul_nextstep256(&gstate, _mm256_loadu_si256((void *)(encp - 5 * 32)), --ghash_precompute);
@@ -1794,13 +1819,13 @@ static void non_temporal_encrypt_v256(struct st_ptls_aead_context_t *_ctx, void 
             AESECB6_UPDATE(8);
             _mm256_store_si256((void *)(encbuf + 32), _mm256_load_si256((void *)(encbuf + 224)));
             AESECB6_UPDATE(9);
-            if (PTLS_UNLIKELY(ctx->ecb.rounds != 10)) {
-                for (size_t i = 10; PTLS_LIKELY(i < ctx->ecb.rounds); ++i)
+            if (PTLS_UNLIKELY(ctx->super.ecb.rounds != 10)) {
+                for (size_t i = 10; PTLS_LIKELY(i < ctx->super.ecb.rounds); ++i)
                     AESECB6_UPDATE(i);
             }
-            assert(ctx->ghash256 == ghash_precompute);
+            assert(ctx->ghash == ghash_precompute);
             gfmul_reduce256(&gstate);
-            AESECB6_FINAL(ctx->ecb.rounds);
+            AESECB6_FINAL(ctx->super.ecb.rounds);
         }
     }
 
@@ -1812,7 +1837,7 @@ static void non_temporal_encrypt_v256(struct st_ptls_aead_context_t *_ctx, void 
         _mm_storeu_si128((void *)(encbuf + ac_off), _mm256_castsi256_si128(ac_ek0));
         size_t blocks = ((encp - encbuf) - remaining_ghash_from + 15) / 16 + 1; /* round up, +1 for AC */
         assert(blocks <= 13);
-        union ptls_fusion_aesgcm_ghash_precompute256 *ghash_precompute = ctx->ghash256 + blocks / 2;
+        union ptls_fusion_aesgcm_ghash_precompute256 *ghash_precompute = ctx->ghash + blocks / 2;
         if (blocks % 2 != 0) {
             gfmul_firststep256(&gstate, _mm256_loadu_si256((void *)(encbuf + remaining_ghash_from)), 1, ghash_precompute);
             remaining_ghash_from += 16;
@@ -1820,7 +1845,7 @@ static void non_temporal_encrypt_v256(struct st_ptls_aead_context_t *_ctx, void 
             gfmul_firststep256(&gstate, _mm256_loadu_si256((void *)(encbuf + remaining_ghash_from)), 0, --ghash_precompute);
             remaining_ghash_from += 32;
         }
-        while (ghash_precompute != ctx->ghash256) {
+        while (ghash_precompute != ctx->ghash) {
             gfmul_nextstep256(&gstate, _mm256_loadu_si256((void *)(encbuf + remaining_ghash_from)), --ghash_precompute);
             remaining_ghash_from += 32;
         }
@@ -1830,10 +1855,10 @@ static void non_temporal_encrypt_v256(struct st_ptls_aead_context_t *_ctx, void 
     /* Calculate EK0, if in the unlikely case on not been done yet. When encoding in full size (16K), EK0 will be ready. */
     if (PTLS_UNLIKELY((state & STATE_EK0_READY) == 0)) {
         bits5 = ac_ek0;
-        bits5 = _mm256_xor_si256(bits5, ctx->ecb.keys.m256[0]);
-        for (size_t i = 1; i < ctx->ecb.rounds; ++i)
-            bits5 = _mm256_aesenc_epi128(bits5, ctx->ecb.keys.m256[i]);
-        bits5 = _mm256_aesenclast_epi128(bits5, ctx->ecb.keys.m256[ctx->ecb.rounds]);
+        bits5 = _mm256_xor_si256(bits5, ctx->super.ecb.keys.m256[0]);
+        for (size_t i = 1; i < ctx->super.ecb.rounds; ++i)
+            bits5 = _mm256_aesenc_epi128(bits5, ctx->super.ecb.keys.m256[i]);
+        bits5 = _mm256_aesenclast_epi128(bits5, ctx->super.ecb.keys.m256[ctx->super.ecb.rounds]);
     }
 
     /* append tag to encbuf */
