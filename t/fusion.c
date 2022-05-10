@@ -377,7 +377,10 @@ static void gcm_iv96(void)
     ptls_aead_free(aead);
 }
 
-static void test_generated(ptls_aead_algorithm_t *encryptor, ptls_aead_algorithm_t *decryptor, int iv96)
+static ptls_aead_algorithm_t *test_generated_encryptor, *test_generated_decryptor;
+static int test_generated_iv96;
+
+static void test_generated(void)
 {
     ptls_cipher_context_t *rand = ptls_cipher_new(&ptls_minicrypto_aes128ctr, 1, zero);
     ptls_cipher_init(rand, zero);
@@ -409,8 +412,8 @@ static void test_generated(ptls_aead_algorithm_t *encryptor, ptls_aead_algorithm
         memset(decrypted, 0xcc, sizeof(decrypted));
 
         { /* check using fusion */
-            ptls_aead_context_t *ctx = ptls_aead_new_direct(encryptor, 1, key, iv);
-            if (iv96)
+            ptls_aead_context_t *ctx = ptls_aead_new_direct(test_generated_encryptor, 1, key, iv);
+            if (test_generated_iv96)
                 ptls_aead_xor_iv(ctx, seq32, sizeof(seq32));
             ptls_aead_encrypt(ctx, encrypted, text, textlen, seq, aad, aadlen);
             ptls_aead_free(ctx);
@@ -419,8 +422,8 @@ static void test_generated(ptls_aead_algorithm_t *encryptor, ptls_aead_algorithm
         memset(decrypted, 0xcc, sizeof(decrypted));
 
         { /* check that the encrypted text can be decrypted by the decryptor */
-            ptls_aead_context_t *ctx = ptls_aead_new_direct(decryptor, 0, key, iv);
-            if (iv96)
+            ptls_aead_context_t *ctx = ptls_aead_new_direct(test_generated_decryptor, 0, key, iv);
+            if (test_generated_iv96)
                 ptls_aead_xor_iv(ctx, seq32, sizeof(seq32));
             if (ptls_aead_decrypt(ctx, decrypted, encrypted, textlen + 16, seq, aad, aadlen) != textlen)
                 goto Fail;
@@ -439,38 +442,53 @@ Fail:
     ok(0);
 }
 
-static void test_generated_aes128(void)
+static void test_generated_all(ptls_aead_algorithm_t *e1, ptls_aead_algorithm_t *e2)
 {
-    test_generated(&ptls_fusion_aes128gcm, &ptls_minicrypto_aes128gcm, 0);
+    test_generated_encryptor = e1;
+    test_generated_decryptor = e2;
+    test_generated_iv96 = 0;
+    subtest("encrypt", test_generated);
+    test_generated_iv96 = 1;
+    subtest("encrypt-iv96", test_generated);
+
+    test_generated_encryptor = e2;
+    test_generated_decryptor = e1;
+    test_generated_iv96 = 0;
+    subtest("decrypt", test_generated);
+    test_generated_iv96 = 1;
+    subtest("decrypt-iv96", test_generated);
 }
 
-static void test_generated_aes256(void)
+static void test_fusion_aes128gcm(void)
 {
-    test_generated(&ptls_fusion_aes256gcm, &ptls_minicrypto_aes256gcm, 0);
+    test_generated_all(&ptls_fusion_aes128gcm, &ptls_minicrypto_aes128gcm);
 }
 
-static void test_generated_aes128_iv96(void)
+static void test_fusion_aes256gcm(void)
 {
-    test_generated(&ptls_fusion_aes128gcm, &ptls_minicrypto_aes128gcm, 1);
+    test_generated_all(&ptls_fusion_aes256gcm, &ptls_minicrypto_aes256gcm);
 }
 
-static void test_generated_aes256_iv96(void)
+static void test_fusion_aesgcm(void)
 {
-    test_generated(&ptls_fusion_aes256gcm, &ptls_minicrypto_aes256gcm, 1);
+    subtest("128", test_fusion_aes128gcm);
+    subtest("256", test_fusion_aes256gcm);
 }
 
-static void test_aesgcm(void)
+static void test_non_temporal_aes128gcm(void)
 {
-    subtest("aes128gcm", test_generated_aes128);
-    subtest("aes256gcm", test_generated_aes256);
-    subtest("aes128gcm-iv96", test_generated_aes128_iv96);
-    subtest("aes256gcm-iv96", test_generated_aes256_iv96);
+    test_generated_all(&ptls_non_temporal_aes128gcm, &ptls_minicrypto_aes128gcm);
+}
+
+static void test_non_temporal_aes256gcm(void)
+{
+    test_generated_all(&ptls_non_temporal_aes256gcm, &ptls_minicrypto_aes256gcm);
 }
 
 static void test_non_temporal(void)
 {
-    test_generated(&ptls_non_temporal_aes128gcm, &ptls_minicrypto_aes128gcm, 0);
-    test_generated(&ptls_minicrypto_aes128gcm, &ptls_non_temporal_aes128gcm, 0);
+    subtest("128", test_non_temporal_aes128gcm);
+    subtest("256", test_non_temporal_aes256gcm);
 }
 
 int main(int argc, char **argv)
@@ -489,13 +507,13 @@ int main(int argc, char **argv)
     subtest("gcm-capacity", gcm_capacity);
     subtest("gcm-test-vectors", gcm_test_vectors);
     subtest("gcm-iv96", gcm_iv96);
-    subtest("aesgcm", test_aesgcm);
-    subtest("non-temporal128", test_non_temporal);
+    subtest("fusion-aesgcm", test_fusion_aesgcm);
+    subtest("non-temporal-avx128", test_non_temporal);
 
     if (can256bit) {
         ptls_fusion_can_avx256 = 1;
         subtest("gfmul256", test_gfmul);
-        subtest("non-temporal256", test_non_temporal);
+        subtest("non-temporal-avx256", test_non_temporal);
         ptls_fusion_can_avx256 = 0;
     } else {
         note("gfmul256: skipping, CPU does not support 256-bit aes / clmul");
