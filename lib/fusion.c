@@ -1298,6 +1298,7 @@ static inline void write_remaining_bytes(uint8_t *dst, const uint8_t *src, const
     }
 }
 
+NO_SANITIZE_ADDRESS
 static void non_temporal_encrypt_v128(struct st_ptls_aead_context_t *_ctx, void *_output, ptls_iovec_t *input, size_t incnt,
                                       uint64_t seq, const void *aad, size_t aadlen)
 {
