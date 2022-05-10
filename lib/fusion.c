@@ -204,18 +204,31 @@ struct ptls_fusion_gfmul_state128 {
     __m128i hi, lo, mid;
 };
 
+#if defined(__GNUC__) && !defined(__clang__)
+static inline __m128i xor128(__m128i x, __m128i y)
+{
+    __m128i ret;
+    __asm__("vpxor %2, %1, %0" : "=x"(ret) : "x"(x), "xm"(y));
+    return ret;
+}
+#else
+#define xor128 _mm_xor_si128
+#endif
+
 static inline void gfmul_do_step128(struct ptls_fusion_gfmul_state128 *gstate, __m128i X,
                                     struct ptls_fusion_aesgcm_ghash_precompute128 *precompute)
 {
-    __m128i t = _mm_clmulepi64_si128(precompute->H, X, 0x00);
-    gstate->lo = _mm_xor_si128(gstate->lo, t);
-    t = _mm_clmulepi64_si128(precompute->H, X, 0x11);
-    gstate->hi = _mm_xor_si128(gstate->hi, t);
-    t = _mm_shuffle_epi32(X, 78);
-    t = _mm_xor_si128(t, X);
-    t = _mm_clmulepi64_si128(precompute->r, t, 0x00);
-    gstate->mid = _mm_xor_si128(gstate->mid, t);
+    __m128i t1 = _mm_clmulepi64_si128(precompute->H, X, 0x00);
+    __m128i t2 = _mm_clmulepi64_si128(precompute->H, X, 0x11);
+    __m128i t3 = _mm_shuffle_epi32(X, 78);
+    t3 = _mm_xor_si128(t3, X);
+    t3 = _mm_clmulepi64_si128(precompute->r, t3, 0x00);
+    gstate->lo = xor128(gstate->lo, t1);
+    gstate->hi = xor128(gstate->hi, t2);
+    gstate->mid = xor128(gstate->mid, t3);
 }
+
+#undef xor128
 
 static inline void gfmul_firststep128(struct ptls_fusion_gfmul_state128 *gstate, __m128i X,
                                       struct ptls_fusion_aesgcm_ghash_precompute128 *precompute)
@@ -1362,15 +1375,8 @@ static void non_temporal_encrypt_v128(struct st_ptls_aead_context_t *_ctx, void 
 #define STATE_COPY_128B 0x2
     int32_t state = 0;
 
-    /* Bytes are written here first then written using NT store instructions, 64 bytes at a time.
-     * Use of thread-local stroage is a hack. GCC spills a lot onto stack, and unless we move `encbuf` outside of stack, temporary
-     * variables end up being stored onto somewhere not as fast as places near the stack pointer. This provides 18% speed
-     * improvement on Core i5 9400, at the cost of 2% slowdown on Zen 3. */
-#if defined(__GNUC__) && !defined(__clang__)
-    static __thread
-#endif
-        uint8_t encbuf[32 * 6] __attribute__((aligned(32))),
-        *encp;
+    /* Bytes are written here first then written using NT store instructions, 64 bytes at a time. */
+    uint8_t encbuf[32 * 6] __attribute__((aligned(32))), *encp;
 
     /* `encbuf` should be large enough to store up to 63-bytes of unaligned bytes, 6 16-byte AES blocks, plus AEAD tag that is
      * append to the ciphertext before writing the bytes to main memory using NT store instructions. */
