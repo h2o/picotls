@@ -334,6 +334,7 @@ static inline __m128i loadn_end_of_page(const void *p, size_t l)
     return _mm_shuffle_epi8(_mm_load_si128((const __m128i *)((uintptr_t)p - shift)), pattern);
 }
 
+NO_SANITIZE_ADDRESS
 static inline __m128i loadn128(const void *p, size_t l)
 {
     __m128i v, mask = _mm_loadu_si128((__m128i *)(loadn_mask + 32 - l));
@@ -349,6 +350,7 @@ static inline __m128i loadn128(const void *p, size_t l)
     return v;
 }
 
+NO_SANITIZE_ADDRESS
 static inline __m256i loadn256(const void *p, size_t l)
 {
     __m256i v, mask = _mm256_loadu_si256((__m256i *)(loadn_mask + 32 - l));
