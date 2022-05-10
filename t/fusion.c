@@ -467,9 +467,10 @@ static void test_aesgcm(void)
     subtest("aes256gcm-iv96", test_generated_aes256_iv96);
 }
 
-static void test_fastls(void)
+static void test_non_temporal(void)
 {
     test_generated(&ptls_non_temporal_aes128gcm, &ptls_minicrypto_aes128gcm, 0);
+    test_generated(&ptls_minicrypto_aes128gcm, &ptls_non_temporal_aes128gcm, 0);
 }
 
 int main(int argc, char **argv)
@@ -489,12 +490,12 @@ int main(int argc, char **argv)
     subtest("gcm-test-vectors", gcm_test_vectors);
     subtest("gcm-iv96", gcm_iv96);
     subtest("aesgcm", test_aesgcm);
-    subtest("fastls128", test_fastls);
+    subtest("non-temporal128", test_non_temporal);
 
     if (can256bit) {
         ptls_fusion_can_avx256 = 1;
         subtest("gfmul256", test_gfmul);
-        subtest("fastls256", test_fastls);
+        subtest("non-temporal256", test_non_temporal);
         ptls_fusion_can_avx256 = 0;
     } else {
         note("gfmul256: skipping, CPU does not support 256-bit aes / clmul");

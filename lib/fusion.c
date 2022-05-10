@@ -1575,6 +1575,205 @@ static void non_temporal_encrypt_v128(struct st_ptls_aead_context_t *_ctx, void 
 #undef STATE_COPY_128B
 }
 
+static size_t non_temporal_decrypt128(ptls_aead_context_t *_ctx, void *_output, const void *_input, size_t inlen, uint64_t seq,
+                                      const void *aad, size_t aadlen)
+{
+    /* Bail out if the input is too short, or remove tag from range. */
+    if (inlen < 16)
+        return SIZE_MAX;
+    inlen -= 16;
+    size_t textlen = inlen;
+
+/* init the bits (we can always run in full), but use the last slot for calculating ek0, if possible */
+#define AESECB6_INIT()                                                                                                             \
+    do {                                                                                                                           \
+        ctr = _mm_add_epi64(ctr, one8);                                                                                            \
+        bits0 = _mm_shuffle_epi8(ctr, byteswap128);                                                                                \
+        ctr = _mm_add_epi64(ctr, one8);                                                                                            \
+        bits1 = _mm_shuffle_epi8(ctr, byteswap128);                                                                                \
+        ctr = _mm_add_epi64(ctr, one8);                                                                                            \
+        bits2 = _mm_shuffle_epi8(ctr, byteswap128);                                                                                \
+        ctr = _mm_add_epi64(ctr, one8);                                                                                            \
+        bits3 = _mm_shuffle_epi8(ctr, byteswap128);                                                                                \
+        ctr = _mm_add_epi64(ctr, one8);                                                                                            \
+        bits4 = _mm_shuffle_epi8(ctr, byteswap128);                                                                                \
+        if (PTLS_LIKELY(inlen > 16 * 5)) {                                                                                         \
+            ctr = _mm_add_epi64(ctr, one8);                                                                                        \
+            bits5 = _mm_shuffle_epi8(ctr, byteswap128);                                                                            \
+        } else {                                                                                                                   \
+            bits5 = ek0;                                                                                                           \
+            state |= STATE_EK0_READY;                                                                                              \
+        }                                                                                                                          \
+        __m128i k = ctx->super.ecb.keys.m128[0];                                                                                   \
+        bits0 = _mm_xor_si128(bits0, k);                                                                                           \
+        bits1 = _mm_xor_si128(bits1, k);                                                                                           \
+        bits2 = _mm_xor_si128(bits2, k);                                                                                           \
+        bits3 = _mm_xor_si128(bits3, k);                                                                                           \
+        bits4 = _mm_xor_si128(bits4, k);                                                                                           \
+        bits5 = _mm_xor_si128(bits5, k);                                                                                           \
+    } while (0)
+
+/* aes block update */
+#define AESECB6_UPDATE(i)                                                                                                          \
+    do {                                                                                                                           \
+        __m128i k = ctx->super.ecb.keys.m128[i];                                                                                   \
+        bits0 = _mm_aesenc_si128(bits0, k);                                                                                        \
+        bits1 = _mm_aesenc_si128(bits1, k);                                                                                        \
+        bits2 = _mm_aesenc_si128(bits2, k);                                                                                        \
+        bits3 = _mm_aesenc_si128(bits3, k);                                                                                        \
+        bits4 = _mm_aesenc_si128(bits4, k);                                                                                        \
+        bits5 = _mm_aesenc_si128(bits5, k);                                                                                        \
+    } while (0)
+
+/* aesenclast */
+#define AESECB6_FINAL(i)                                                                                                           \
+    do {                                                                                                                           \
+        __m128i k = ctx->super.ecb.keys.m128[i];                                                                                   \
+        bits0 = _mm_aesenclast_si128(bits0, k);                                                                                    \
+        bits1 = _mm_aesenclast_si128(bits1, k);                                                                                    \
+        bits2 = _mm_aesenclast_si128(bits2, k);                                                                                    \
+        bits3 = _mm_aesenclast_si128(bits3, k);                                                                                    \
+        bits4 = _mm_aesenclast_si128(bits4, k);                                                                                    \
+        bits5 = _mm_aesenclast_si128(bits5, k);                                                                                    \
+    } while (0)
+
+    struct aesgcm_context *agctx = (void *)_ctx;
+    uint8_t *output = _output;
+    const uint8_t *input = _input;
+
+#define STATE_EK0_READY 0x1
+    int32_t state = 0;
+
+    /* setup ctr, retain Ek(0), len(A) | len(C) to be fed into GCM */
+    __m128i ctr = calc_counter(agctx, seq);
+    ctr = _mm_insert_epi32(ctr, 1, 0);
+    __m128i ek0 = _mm_shuffle_epi8(ctr, byteswap128);
+    __m128i ac = _mm_shuffle_epi8(_mm_set_epi32(0, (int)aadlen * 8, 0, (int)inlen * 8), byteswap128);
+
+    struct ptls_fusion_aesgcm_context128 *ctx = (void *)agctx->aesgcm;
+    __m128i bits0, bits1, bits2, bits3, bits4, bits5 = _mm_setzero_si128();
+    struct ptls_fusion_gfmul_state128 gstate = {0};
+
+    /* Prepare first 6 blocks of bit stream, at the same time calculating ghash of AAD. */
+    AESECB6_INIT();
+    AESECB6_UPDATE(1);
+    AESECB6_UPDATE(2);
+    reduce_aad128(&gstate, ctx->ghash, aad, aadlen);
+    for (size_t i = 3; i < ctx->super.ecb.rounds; ++i)
+        AESECB6_UPDATE(i);
+    AESECB6_FINAL(ctx->super.ecb.rounds);
+
+    /* Main loop. Operate in full blocks (6 * 16 bytes). */
+    while (PTLS_LIKELY(inlen >= 6 * 16)) {
+        uint8_t keystream[6 * 16] __attribute__((aligned(16)));
+        _mm_store_si128((void *)keystream, bits0);
+        _mm_store_si128((void *)(keystream + 16), bits1);
+        _mm_store_si128((void *)(keystream + 32), bits2);
+        _mm_store_si128((void *)(keystream + 48), bits3);
+        _mm_store_si128((void *)(keystream + 64), bits4);
+        _mm_store_si128((void *)(keystream + 80), bits5);
+#define APPLY(i)                                                                                                                   \
+    do {                                                                                                                           \
+        __m128i b = _mm_loadu_si128((void *)input + i * 16);                                                                       \
+        _mm_storeu_si128((void *)(output + i * 16), _mm_xor_si128(_mm_load_si128((void *)(keystream + i * 16)), b));               \
+        if (i == 0) {                                                                                                              \
+            gfmul_firststep128(&gstate, b, ctx->ghash + 5 - i);                                                                    \
+        } else {                                                                                                                   \
+            gfmul_nextstep128(&gstate, b, ctx->ghash + 5 - i);                                                                     \
+        }                                                                                                                          \
+    } while (0)
+        AESECB6_INIT();
+        AESECB6_UPDATE(1);
+        APPLY(0);
+        AESECB6_UPDATE(2);
+        APPLY(1);
+        AESECB6_UPDATE(3);
+        APPLY(2);
+        AESECB6_UPDATE(4);
+        APPLY(3);
+        AESECB6_UPDATE(5);
+        APPLY(4);
+        AESECB6_UPDATE(6);
+        APPLY(5);
+        AESECB6_UPDATE(7);
+        gfmul_reduce128(&gstate);
+        AESECB6_UPDATE(8);
+        AESECB6_UPDATE(9);
+        if (PTLS_UNLIKELY(ctx->super.ecb.rounds != 10)) {
+            size_t i = 10;
+            do {
+                AESECB6_UPDATE(i);
+            } while (++i < ctx->super.ecb.rounds);
+        }
+        AESECB6_FINAL(ctx->super.ecb.rounds);
+        output += 6 * 16;
+        input += 6 * 16;
+        inlen -= 6 * 16;
+#undef APPLY
+    }
+
+    /* Decrypt the remainder as well as finishing GHASH calculation. */
+    if (inlen != 0) {
+        struct ptls_fusion_aesgcm_ghash_precompute128 *ghash_precompute = ctx->ghash + (inlen + 15) / 16 + 1;
+#define ONEBLOCK(i)                                                                                                                \
+    do {                                                                                                                           \
+        if (inlen != 0) {                                                                                                          \
+            __m128i b = inlen >= 16 ? _mm_loadu_si128((void *)input) : loadn128(input, inlen);                                     \
+            if (i == 0) {                                                                                                          \
+                gfmul_firststep128(&gstate, b, --ghash_precompute);                                                                \
+            } else {                                                                                                               \
+                gfmul_nextstep128(&gstate, b, --ghash_precompute);                                                                 \
+            }                                                                                                                      \
+            b = _mm_xor_si128(b, bits##i);                                                                                         \
+            if (inlen >= 16) {                                                                                                     \
+                _mm_storeu_si128((void *)output, b);                                                                               \
+                output += 16;                                                                                                      \
+                input += 16;                                                                                                       \
+                inlen -= 16;                                                                                                       \
+            } else {                                                                                                               \
+                storen128(output, inlen, b);                                                                                       \
+                output += inlen;                                                                                                   \
+                input += inlen;                                                                                                    \
+                inlen = 0;                                                                                                         \
+            }                                                                                                                      \
+        }                                                                                                                          \
+    } while (0)
+        ONEBLOCK(0);
+        ONEBLOCK(1);
+        ONEBLOCK(2);
+        ONEBLOCK(3);
+        ONEBLOCK(4);
+        ONEBLOCK(5);
+#undef ONEBLOCK
+        gfmul_nextstep128(&gstate, ac, --ghash_precompute);
+        assert(ghash_precompute == ctx->ghash);
+    } else {
+        gfmul_firststep128(&gstate, ac, ctx->ghash);
+    }
+    gfmul_reduce128(&gstate);
+
+    /* Calculate EK0 if not yet available in bits5. */
+    if ((state & STATE_EK0_READY) == 0) {
+        bits5 = _mm_xor_si128(ek0, ctx->super.ecb.keys.m128[0]);
+        for (size_t i = 1; i < ctx->super.ecb.rounds; ++i)
+            bits5 = _mm_aesenc_si128(bits5, ctx->super.ecb.keys.m128[i]);
+        bits5 = _mm_aesenclast_si128(bits5, ctx->super.ecb.keys.m128[ctx->super.ecb.rounds]);
+    }
+
+    /* Calculate GCM tag and compare. */
+    __m128i calctag = gfmul_get_tag128(&gstate, bits5);
+    __m128i recvtag = _mm_loadu_si128((void *)input);
+    if (_mm_movemask_epi8(_mm_cmpeq_epi8(calctag, recvtag)) != 0xffff)
+        return SIZE_MAX;
+
+    return textlen;
+
+#undef AESECB6_INIT
+#undef AESECB6_UPDATE
+#undef AESECB6_FINAL
+#undef STATE_EK0_READY
+}
+
 NO_SANITIZE_ADDRESS
 static void non_temporal_encrypt_v256(struct st_ptls_aead_context_t *_ctx, void *_output, ptls_iovec_t *input, size_t incnt,
                                       uint64_t seq, const void *_aad, size_t aadlen)
@@ -1880,9 +2079,10 @@ static void non_temporal_encrypt_v256(struct st_ptls_aead_context_t *_ctx, void 
     write_remaining_bytes(output, encbuf, encp);
 }
 
-static int nt_setup(ptls_aead_context_t *_ctx, int is_enc, const void *key, const void *iv, size_t key_size)
+static int non_temporal_setup(ptls_aead_context_t *_ctx, int is_enc, const void *key, const void *iv, size_t key_size)
 {
     struct aesgcm_context *ctx = (struct aesgcm_context *)_ctx;
+    int avx256 = is_enc && ptls_fusion_can_avx256;
 
     ctx->static_iv = loadn128(iv, PTLS_AESGCM_IV_SIZE);
     ctx->static_iv = _mm_shuffle_epi8(ctx->static_iv, byteswap128);
@@ -1891,25 +2091,35 @@ static int nt_setup(ptls_aead_context_t *_ctx, int is_enc, const void *key, cons
 
     ctx->super.dispose_crypto = aesgcm_dispose_crypto;
     ctx->super.do_xor_iv = aesgcm_xor_iv;
-    ctx->super.do_encrypt = ptls_aead__do_encrypt;
-    ctx->super.do_encrypt_v = ptls_fusion_can_avx256 ? non_temporal_encrypt_v256 : non_temporal_encrypt_v128;
-    ctx->super.do_decrypt = NULL; /* FIXME */
+    ctx->super.do_encrypt_init = NULL;
+    ctx->super.do_encrypt_update = NULL;
+    ctx->super.do_encrypt_final = NULL;
+    if (is_enc) {
+        ctx->super.do_encrypt = ptls_aead__do_encrypt;
+        ctx->super.do_encrypt_v = avx256 ? non_temporal_encrypt_v256 : non_temporal_encrypt_v128;
+        ctx->super.do_decrypt = NULL;
+    } else {
+        assert(!avx256);
+        ctx->super.do_encrypt = NULL;
+        ctx->super.do_encrypt_v = NULL;
+        ctx->super.do_decrypt = non_temporal_decrypt128;
+    }
 
     ctx->aesgcm = new_aesgcm(key, key_size,
                              7 * (ptls_fusion_can_avx256 ? 32 : 16), // 6 blocks at once, plus len(A) | len(C) that we might append
-                             ptls_fusion_can_avx256);
+                             avx256);
 
     return 0;
 }
 
 static int non_temporal_aes128gcm_setup(ptls_aead_context_t *ctx, int is_enc, const void *key, const void *iv)
 {
-    return nt_setup(ctx, is_enc, key, iv, PTLS_AES128_KEY_SIZE);
+    return non_temporal_setup(ctx, is_enc, key, iv, PTLS_AES128_KEY_SIZE);
 }
 
 static int non_temporal_aes256gcm_setup(ptls_aead_context_t *ctx, int is_enc, const void *key, const void *iv)
 {
-    return nt_setup(ctx, is_enc, key, iv, PTLS_AES256_KEY_SIZE);
+    return non_temporal_setup(ctx, is_enc, key, iv, PTLS_AES256_KEY_SIZE);
 }
 
 ptls_aead_algorithm_t ptls_non_temporal_aes128gcm = {"AES128-GCM",
