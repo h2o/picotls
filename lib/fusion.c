@@ -1671,35 +1671,32 @@ static size_t non_temporal_decrypt128(ptls_aead_context_t *_ctx, void *_output, 
 
     /* Main loop. Operate in full blocks (6 * 16 bytes). */
     while (PTLS_LIKELY(inlen >= 6 * 16)) {
-#define MERGE_BITS(x, y) _mm256_permute2f128_si256(_mm256_castsi128_si256(x), _mm256_castsi128_si256(y), 0x20)
-        __m256i ks0 = MERGE_BITS(bits0, bits1), ks2 = MERGE_BITS(bits2, bits3), ks4 = MERGE_BITS(bits4, bits5);
-#undef MERGE_BITS
-#define APPLY(i)                                                                                                                   \
-    do {                                                                                                                           \
-        __m256i bb = _mm256_loadu_si256((void *)(input + i * 16));                                                                 \
-        _mm256_storeu_si256((void *)(output + i * 16), _mm256_xor_si256(ks##i, bb));                                               \
-        __m128i b0 = _mm256_castsi256_si128(bb), b1 = _mm256_castsi256_si128(_mm256_permute2f128_si256(bb, bb, 0x81));             \
-        if (i == 0) {                                                                                                              \
-            gfmul_firststep128(&gstate, b0, ctx->ghash + 5 - i);                                                                   \
-        } else {                                                                                                                   \
-            gfmul_nextstep128(&gstate, b0, ctx->ghash + 5 - i);                                                                    \
-        }                                                                                                                          \
-        gfmul_nextstep128(&gstate, b1, ctx->ghash + 4 - i);                                                                        \
-    } while (0)
+#define DECRYPT(i) _mm_storeu_si128((void *)(output + i * 16), _mm_xor_si128(bits##i, _mm_loadu_si128((void *)(input + i * 16))))
+        DECRYPT(0);
+        DECRYPT(1);
+        DECRYPT(2);
+        DECRYPT(3);
+        DECRYPT(4);
+        DECRYPT(5);
+#undef DECRYPT
+#define GFMUL_NEXT(i) gfmul_nextstep128(&gstate, _mm_loadu_si128((void *)(input + i * 16)), ctx->ghash + 5 - i)
         AESECB6_INIT();
         AESECB6_UPDATE(1);
-        APPLY(0);
         AESECB6_UPDATE(2);
         AESECB6_UPDATE(3);
-        APPLY(2);
+        gfmul_firststep128(&gstate, _mm_loadu_si128((void *)input), ctx->ghash + 5);
         AESECB6_UPDATE(4);
+        GFMUL_NEXT(1);
         AESECB6_UPDATE(5);
-        APPLY(4);
+        GFMUL_NEXT(2);
         AESECB6_UPDATE(6);
+        GFMUL_NEXT(3);
         AESECB6_UPDATE(7);
-        gfmul_reduce128(&gstate);
+        GFMUL_NEXT(4);
         AESECB6_UPDATE(8);
+        GFMUL_NEXT(5);
         AESECB6_UPDATE(9);
+        gfmul_reduce128(&gstate);
         if (PTLS_UNLIKELY(ctx->super.ecb.rounds != 10)) {
             size_t i = 10;
             do {
@@ -1710,7 +1707,7 @@ static size_t non_temporal_decrypt128(ptls_aead_context_t *_ctx, void *_output, 
         output += 6 * 16;
         input += 6 * 16;
         inlen -= 6 * 16;
-#undef APPLY
+#undef GFMUL_NEXT
     }
 
     /* Decrypt the remainder as well as finishing GHASH calculation. */
