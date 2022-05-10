@@ -1265,6 +1265,21 @@ static inline void reduce_aad128(struct ptls_fusion_gfmul_state128 *gstate, stru
     }
 }
 
+NO_SANITIZE_ADDRESS
+static inline uint8_t *load_preceding_unaligned(uint8_t *encbuf, uint8_t **output)
+{
+    uint8_t *encp;
+
+    if ((encp = encbuf + ((uintptr_t)*output & 63)) != encbuf) {
+        _mm256_store_si256((void *)encbuf, _mm256_load_si256((void *)(*output - (encp - encbuf))));
+        _mm256_store_si256((void *)(encbuf + 32), _mm256_load_si256((void *)(*output - (encp - encbuf) + 32)));
+        *output -= encp - encbuf;
+    }
+
+    return encp;
+}
+
+NO_SANITIZE_ADDRESS
 static inline void write_remaining_bytes(uint8_t *dst, const uint8_t *src, const uint8_t *end)
 {
     /* Write in 64-byte chunks, using NT store instructions. Last partial block, if any, is written to cache, as that cache line
@@ -1283,7 +1298,6 @@ static inline void write_remaining_bytes(uint8_t *dst, const uint8_t *src, const
     }
 }
 
-NO_SANITIZE_ADDRESS
 static void non_temporal_encrypt_v128(struct st_ptls_aead_context_t *_ctx, void *_output, ptls_iovec_t *input, size_t incnt,
                                       uint64_t seq, const void *aad, size_t aadlen)
 {
@@ -1361,12 +1375,9 @@ static void non_temporal_encrypt_v128(struct st_ptls_aead_context_t *_ctx, void 
      * append to the ciphertext before writing the bytes to main memory using NT store instructions. */
     PTLS_BUILD_ASSERT(sizeof(encbuf) >= 64 + 6 * 16 + 16);
 
-    /* determine `num_bytes_write_delayed` as well as initializing `encbuf`, adjusting `output` */
-    if ((encp = encbuf + ((uintptr_t)output & 63)) != encbuf) {
-        _mm256_store_si256((void *)encbuf, _mm256_load_si256((void *)(output - (encp - encbuf))));
-        _mm256_store_si256((void *)(encbuf + 32), _mm256_load_si256((void *)(output - (encp - encbuf) + 32)));
-        output -= encp - encbuf;
-    }
+    /* load unaligned data within same cache line preceding `output`, adjusting pointers accordingly */
+    encp = load_preceding_unaligned(encbuf, &output);
+
     /* First write would be 128 bytes (32+6*16), if encbuf contains no less than 32 bytes already. */
     if (encp - encbuf >= 32)
         state |= STATE_COPY_128B;
@@ -1633,12 +1644,8 @@ static void non_temporal_encrypt_v256(struct st_ptls_aead_context_t *_ctx, void 
      * append to the ciphertext before writing the bytes to main memory using NT store instructions. */
     PTLS_BUILD_ASSERT(sizeof(encbuf) >= 64 + 6 * 32 + 16);
 
-    /* determine `num_bytes_write_delayed` as well as initializing `encbuf`, adjusting `output` */
-    if ((encp = encbuf + ((uintptr_t)output & 63)) != encbuf) {
-        _mm256_store_si256((void *)encbuf, _mm256_load_si256((void *)(output - (encp - encbuf))));
-        _mm256_store_si256((void *)(encbuf + 32), _mm256_load_si256((void *)(output - (encp - encbuf) + 32)));
-        output -= encp - encbuf;
-    }
+    /* load unaligned data within same cache line preceding `output`, adjusting pointers accordingly */
+    encp = load_preceding_unaligned(encbuf, &output);
 
     /* setup ctr, retaining Ek(0), len(A) | len(C) to be fed into GCM */
     __m256i ctr = _mm256_broadcastsi128_si256(calc_counter(agctx, seq));
