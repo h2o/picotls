@@ -1019,8 +1019,12 @@ ptls_fusion_aesgcm_context_t *ptls_fusion_aesgcm_set_capacity(ptls_fusion_aesgcm
         return ctx;
 
     size_t ctx_size = calc_aesgcm_context_size(&ghash_cnt, ctx->ecb.avx256);
-    if ((ctx = realloc(ctx, ctx_size)) == NULL)
+    ptls_fusion_aesgcm_context_t *newp;
+    if ((newp = aligned_alloc(32, ctx_size)) == NULL)
         return NULL;
+    memcpy(newp, ctx, ctx_size);
+    free(ctx);
+    ctx = newp;
 
     ctx->capacity = capacity;
     while (ghash_cnt < ctx->ghash_cnt)
