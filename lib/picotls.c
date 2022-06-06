@@ -509,8 +509,13 @@ static uint64_t ntoh64(const uint8_t *src)
 void ptls_buffer__release_memory(ptls_buffer_t *buf)
 {
     ptls_clear_memory(buf->base, buf->off);
-    if (buf->is_allocated)
+    if (buf->is_allocated) {
+#ifdef _WINDOWS
+        _aligned_free(buf->base);
+#else
         free(buf->base);
+#endif
+    }
 }
 
 int ptls_buffer_reserve(ptls_buffer_t *buf, size_t delta)
@@ -526,8 +531,13 @@ int ptls_buffer_reserve(ptls_buffer_t *buf, size_t delta)
         while (new_capacity < buf->off + delta) {
             new_capacity *= 2;
         }
+#ifdef _WINDOWS
+        if ((newp = _aligned_malloc(new_capacity, PTLS_SIZEOF_CACHE_LINE)) == NULL)
+            return PTLS_ERROR_NO_MEMORY;
+#else
         if (posix_memalign(&newp, PTLS_SIZEOF_CACHE_LINE, new_capacity) != 0)
             return PTLS_ERROR_NO_MEMORY;
+#endif
         memcpy(newp, buf->base, buf->off);
         ptls_buffer__release_memory(buf);
         buf->base = newp;
