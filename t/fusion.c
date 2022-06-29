@@ -378,7 +378,7 @@ static void gcm_iv96(void)
 }
 
 static ptls_aead_algorithm_t *test_generated_encryptor, *test_generated_decryptor;
-static int test_generated_iv96;
+static int test_generated_iv96, test_generated_multivec;
 
 static void test_generated(void)
 {
@@ -415,7 +415,19 @@ static void test_generated(void)
             ptls_aead_context_t *ctx = ptls_aead_new_direct(test_generated_encryptor, 1, key, iv);
             if (test_generated_iv96)
                 ptls_aead_xor_iv(ctx, seq32, sizeof(seq32));
-            ptls_aead_encrypt(ctx, encrypted, text, textlen, seq, aad, aadlen);
+            if (test_generated_multivec) {
+                uint8_t pos1, pos2;
+                do {
+                    ptls_cipher_encrypt(rand, &pos2, zero, sizeof(pos2));
+                } while (pos2 > textlen);
+                do {
+                    ptls_cipher_encrypt(rand, &pos1, zero, sizeof(pos1));
+                } while (pos1 > pos2);
+                ptls_iovec_t textvec[3] = {{text, pos1}, {text + pos1, pos2 - pos1}, {text + pos2, textlen - pos2}};
+                ptls_aead_encrypt_v(ctx, encrypted, textvec, 3, seq, aad, aadlen);
+            } else {
+                ptls_aead_encrypt(ctx, encrypted, text, textlen, seq, aad, aadlen);
+            }
             ptls_aead_free(ctx);
         }
 
@@ -442,17 +454,28 @@ Fail:
     ok(0);
 }
 
-static void test_generated_all(ptls_aead_algorithm_t *e1, ptls_aead_algorithm_t *e2)
+static void test_generated_all(ptls_aead_algorithm_t *e1, ptls_aead_algorithm_t *e2, int can_multivec)
 {
     test_generated_encryptor = e1;
     test_generated_decryptor = e2;
+
     test_generated_iv96 = 0;
     subtest("encrypt", test_generated);
     test_generated_iv96 = 1;
     subtest("encrypt-iv96", test_generated);
 
+    if (can_multivec) {
+        test_generated_multivec = 1;
+        test_generated_iv96 = 0;
+        subtest("encrypt", test_generated);
+        test_generated_iv96 = 1;
+        subtest("encrypt-iv96", test_generated);
+        test_generated_multivec = 0;
+    }
+
     test_generated_encryptor = e2;
     test_generated_decryptor = e1;
+
     test_generated_iv96 = 0;
     subtest("decrypt", test_generated);
     test_generated_iv96 = 1;
@@ -461,12 +484,12 @@ static void test_generated_all(ptls_aead_algorithm_t *e1, ptls_aead_algorithm_t 
 
 static void test_fusion_aes128gcm(void)
 {
-    test_generated_all(&ptls_fusion_aes128gcm, &ptls_minicrypto_aes128gcm);
+    test_generated_all(&ptls_fusion_aes128gcm, &ptls_minicrypto_aes128gcm, 0);
 }
 
 static void test_fusion_aes256gcm(void)
 {
-    test_generated_all(&ptls_fusion_aes256gcm, &ptls_minicrypto_aes256gcm);
+    test_generated_all(&ptls_fusion_aes256gcm, &ptls_minicrypto_aes256gcm, 0);
 }
 
 static void test_fusion_aesgcm(void)
@@ -477,12 +500,12 @@ static void test_fusion_aesgcm(void)
 
 static void test_non_temporal_aes128gcm(void)
 {
-    test_generated_all(&ptls_non_temporal_aes128gcm, &ptls_minicrypto_aes128gcm);
+    test_generated_all(&ptls_non_temporal_aes128gcm, &ptls_minicrypto_aes128gcm, 1);
 }
 
 static void test_non_temporal_aes256gcm(void)
 {
-    test_generated_all(&ptls_non_temporal_aes256gcm, &ptls_minicrypto_aes256gcm);
+    test_generated_all(&ptls_non_temporal_aes256gcm, &ptls_minicrypto_aes256gcm, 1);
 }
 
 static void test_non_temporal(void)
