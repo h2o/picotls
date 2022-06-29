@@ -1472,14 +1472,16 @@ static void non_temporal_encrypt_v128(struct st_ptls_aead_context_t *_ctx, void 
                         --srclen;
                     }
                     if (PTLS_UNLIKELY(srclen == 0)) {
-                        if (src_vecleft == 0) {
-                            break;
-                        } else {
+                        do {
+                            if (src_vecleft == 0)
+                                break;
                             src = (void *)input[0].base;
                             srclen = input[0].len;
                             ++input;
                             --src_vecleft;
-                        }
+                        } while (srclen == 0);
+                        if (srclen == 0)
+                            break;
                     }
                 } while (bytes_copied < 6 * 16);
 #define APPLY(i) _mm_storeu_si128((void *)(encp + i * 16), _mm_xor_si128(_mm_loadu_si128((void *)(encp + i * 16)), bits##i))
