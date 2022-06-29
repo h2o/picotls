@@ -1975,14 +1975,16 @@ static void non_temporal_encrypt_v256(struct st_ptls_aead_context_t *_ctx, void 
                         --srclen;
                     }
                     if (PTLS_UNLIKELY(srclen == 0)) {
-                        if (src_vecleft == 0) {
-                            break;
-                        } else {
+                        do {
+                            if (src_vecleft == 0)
+                                break;
                             src = (void *)input[0].base;
                             srclen = input[0].len;
                             ++input;
                             --src_vecleft;
-                        }
+                        } while (srclen == 0);
+                        if (srclen == 0)
+                            break;
                     }
                 } while (bytes_copied < 6 * 32);
 #define APPLY(i)                                                                                                                   \
