@@ -254,7 +254,7 @@ struct st_ptls_t {
     };
     /**
      * certificate verify
-     * will be used by the client and the server (if require_client_authentication is set).
+     * will be used by the client and the server (if client_authentication is set).
      */
     struct {
         int (*cb)(void *verify_ctx, uint16_t algo, ptls_iovec_t data, ptls_iovec_t signature);
@@ -2866,10 +2866,18 @@ static int server_handle_certificate(ptls_t *tls, ptls_iovec_t message)
 
     if ((ret = handle_certificate(tls, message.base + PTLS_HANDSHAKE_HEADER_SIZE, message.base + message.len, &got_certs)) != 0)
         return ret;
-    if (!got_certs)
-        return PTLS_ALERT_CERTIFICATE_REQUIRED;
 
     ptls__key_schedule_update_hash(tls->key_schedule, message.base, message.len);
+
+    if (!got_certs) {
+        if (tls->ctx->client_authentication == PTLS_CLIENT_AUTHENTICATION_OPTIONAL) {
+            //fail open mTLS mode
+            tls->state = PTLS_STATE_SERVER_EXPECT_FINISHED;
+            return PTLS_ERROR_IN_PROGRESS;
+        } else {
+            return PTLS_ALERT_CERTIFICATE_REQUIRED;
+        }
+    }
 
     tls->state = PTLS_STATE_SERVER_EXPECT_CERTIFICATE_VERIFY;
     return PTLS_ERROR_IN_PROGRESS;
@@ -3963,7 +3971,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
     /* try psk handshake */
     if (!is_second_flight && ch->psk.hash_end != 0 &&
         (ch->psk.ke_modes & ((1u << PTLS_PSK_KE_MODE_PSK) | (1u << PTLS_PSK_KE_MODE_PSK_DHE))) != 0 &&
-        tls->ctx->encrypt_ticket != NULL && !tls->ctx->require_client_authentication) {
+        tls->ctx->encrypt_ticket != NULL && tls->ctx->client_authentication == PTLS_CLIENT_AUTHENTICATION_NONE) {
         if ((ret = try_psk_handshake(tls, &psk_index, &accept_early_data, ch,
                                      ptls_iovec_init(message.base, ch->psk.hash_end - message.base))) != 0) {
             goto Exit;
@@ -3972,11 +3980,11 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
 
     /* If client authentication is enabled, we always force a full handshake.
      * TODO: Check for `post_handshake_auth` extension and if that is present, do not force full handshake!
-     *       Remove also the check `!require_client_authentication` above.
+     *       Remove also the check `!client_authentication` above.
      *
      * adjust key_schedule, determine handshake mode
      */
-    if (psk_index == SIZE_MAX || tls->ctx->require_client_authentication) {
+    if (psk_index == SIZE_MAX || tls->ctx->client_authentication != PTLS_CLIENT_AUTHENTICATION_NONE) {
         ptls__key_schedule_update_hash(tls->key_schedule, message.base, message.len);
         if (!is_second_flight) {
             assert(tls->key_schedule->generation == 0);
@@ -4100,7 +4108,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
 
     if (mode == HANDSHAKE_MODE_FULL) {
         /* send certificate request if client authentication is activated */
-        if (tls->ctx->require_client_authentication) {
+        if (tls->ctx->client_authentication != PTLS_CLIENT_AUTHENTICATION_NONE) {
             ptls_push_message(emitter, tls->key_schedule, PTLS_HANDSHAKE_TYPE_CERTIFICATE_REQUEST, {
                 /* certificate_request_context, this field SHALL be zero length, unless the certificate
                  * request is used for post-handshake authentication.
@@ -4151,7 +4159,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
         } else {
             tls->state = PTLS_STATE_SERVER_EXPECT_END_OF_EARLY_DATA;
         }
-    } else if (tls->ctx->require_client_authentication) {
+    } else if (tls->ctx->client_authentication != PTLS_CLIENT_AUTHENTICATION_NONE) {
         tls->state = PTLS_STATE_SERVER_EXPECT_CERTIFICATE;
     } else {
         tls->state = PTLS_STATE_SERVER_EXPECT_FINISHED;
@@ -4163,7 +4171,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
             goto Exit;
     }
 
-    if (tls->ctx->require_client_authentication) {
+    if (tls->ctx->client_authentication != PTLS_CLIENT_AUTHENTICATION_NONE) {
         ret = PTLS_ERROR_IN_PROGRESS;
     } else {
         ret = 0;

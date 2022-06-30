@@ -1219,10 +1219,11 @@ Exit:
     return ret;
 }
 
-static int verify_cert_chain(X509_STORE *store, X509 *cert, STACK_OF(X509) * chain, int is_server, const char *server_name)
+static int verify_cert_chain(X509_STORE *store, X509 *cert, STACK_OF(X509) * chain, int is_server, const char *server_name, int *err_code)
 {
     X509_STORE_CTX *verify_ctx;
     int ret;
+    *err_code = 0;
 
     /* verify certificate chain */
     if ((verify_ctx = X509_STORE_CTX_new()) == NULL) {
@@ -1252,6 +1253,7 @@ static int verify_cert_chain(X509_STORE *store, X509 *cert, STACK_OF(X509) * cha
 
     if (X509_verify_cert(verify_ctx) != 1) {
         int x509_err = X509_STORE_CTX_get_error(verify_ctx);
+        *err_code = x509_err;
         switch (x509_err) {
         case X509_V_ERR_OUT_OF_MEM:
             ret = PTLS_ERROR_NO_MEMORY;
@@ -1296,7 +1298,7 @@ static int verify_cert(ptls_verify_certificate_t *_self, ptls_t *tls,
     X509 *cert = NULL;
     STACK_OF(X509) *chain = sk_X509_new_null();
     size_t i;
-    int ret = 0;
+    int ossl_x509_err = 0, ret = 0;
 
     assert(num_certs != 0);
 
@@ -1315,8 +1317,16 @@ static int verify_cert(ptls_verify_certificate_t *_self, ptls_t *tls,
     }
 
     /* verify the chain */
-    if ((ret = verify_cert_chain(self->cert_store, cert, chain, ptls_is_server(tls), ptls_get_server_name(tls))) != 0)
+    ret = verify_cert_chain(self->cert_store, cert, chain, ptls_is_server(tls), ptls_get_server_name(tls), &ossl_x509_err);
+
+    if (self->verify_callback != NULL && self->verify_callback->cb != NULL) {
+        ptls_client_authentication_mode_t mode = ptls_get_context(tls)->client_authentication;
+        ret = self->verify_callback->cb(self->verify_callback, tls, mode, ret, ossl_x509_err, cert, chain);
+    }
+
+    if (ret != 0) {
         goto Exit;
+    }
 
     /* extract public key for verifying the TLS handshake signature */
     if ((*verify_data = X509_get_pubkey(cert)) == NULL) {
@@ -1333,7 +1343,7 @@ Exit:
     return ret;
 }
 
-int ptls_openssl_init_verify_certificate(ptls_openssl_verify_certificate_t *self, X509_STORE *store)
+int ptls_openssl_init_verify_certificate(ptls_openssl_verify_certificate_t *self, X509_STORE *store, ptls_openssl_override_verify_certificate_t *callback)
 {
     *self = (ptls_openssl_verify_certificate_t){{verify_cert, default_signature_schemes}};
 
@@ -1346,6 +1356,9 @@ int ptls_openssl_init_verify_certificate(ptls_openssl_verify_certificate_t *self
             return -1;
     }
 
+    if (callback != NULL) {
+        self->verify_callback = callback;
+    }
     return 0;
 }
 
