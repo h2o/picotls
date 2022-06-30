@@ -1219,11 +1219,11 @@ Exit:
     return ret;
 }
 
-static int verify_cert_chain(X509_STORE *store, X509 *cert, STACK_OF(X509) * chain, int is_server, const char *server_name, int *err_code)
+static int verify_cert_chain(X509_STORE *store, X509 *cert, STACK_OF(X509) * chain, int is_server, const char *server_name, int *ossl_x509_err)
 {
     X509_STORE_CTX *verify_ctx;
     int ret;
-    *err_code = 0;
+    *ossl_x509_err = 0;
 
     /* verify certificate chain */
     if ((verify_ctx = X509_STORE_CTX_new()) == NULL) {
@@ -1252,9 +1252,8 @@ static int verify_cert_chain(X509_STORE *store, X509 *cert, STACK_OF(X509) * cha
     }
 
     if (X509_verify_cert(verify_ctx) != 1) {
-        int x509_err = X509_STORE_CTX_get_error(verify_ctx);
-        *err_code = x509_err;
-        switch (x509_err) {
+        *ossl_x509_err = X509_STORE_CTX_get_error(verify_ctx);
+        switch (*ossl_x509_err) {
         case X509_V_ERR_OUT_OF_MEM:
             ret = PTLS_ERROR_NO_MEMORY;
             break;
