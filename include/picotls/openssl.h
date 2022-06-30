@@ -121,10 +121,10 @@ PTLS_CALLBACK_TYPE(int, openssl_override_verify_certificate, ptls_t *tls, ptls_c
 typedef struct st_ptls_openssl_verify_certificate_t {
     ptls_verify_certificate_t super;
     X509_STORE *cert_store;
-    ptls_openssl_override_verify_certificate_t *verify_callback;
+    ptls_openssl_override_verify_certificate_t *override_callback;
 } ptls_openssl_verify_certificate_t;
 
-int ptls_openssl_init_verify_certificate(ptls_openssl_verify_certificate_t *self, X509_STORE *store, ptls_openssl_override_verify_certificate_t *callback);
+int ptls_openssl_init_verify_certificate(ptls_openssl_verify_certificate_t *self, X509_STORE *store, ptls_openssl_override_verify_certificate_t *override_callback);
 void ptls_openssl_dispose_verify_certificate(ptls_openssl_verify_certificate_t *self);
 X509_STORE *ptls_openssl_create_default_certificate_store(void);
 

@@ -1318,9 +1318,9 @@ static int verify_cert(ptls_verify_certificate_t *_self, ptls_t *tls,
     /* verify the chain */
     ret = verify_cert_chain(self->cert_store, cert, chain, ptls_is_server(tls), ptls_get_server_name(tls), &ossl_x509_err);
 
-    if (self->verify_callback != NULL && self->verify_callback->cb != NULL) {
+    if (self->override_callback != NULL && self->override_callback->cb != NULL) {
         ptls_client_authentication_mode_t mode = ptls_get_context(tls)->client_authentication;
-        ret = self->verify_callback->cb(self->verify_callback, tls, mode, ret, ossl_x509_err, cert, chain);
+        ret = self->override_callback->cb(self->override_callback, tls, mode, ret, ossl_x509_err, cert, chain);
     }
 
     if (ret != 0) {
@@ -1342,7 +1342,7 @@ Exit:
     return ret;
 }
 
-int ptls_openssl_init_verify_certificate(ptls_openssl_verify_certificate_t *self, X509_STORE *store, ptls_openssl_override_verify_certificate_t *callback)
+int ptls_openssl_init_verify_certificate(ptls_openssl_verify_certificate_t *self, X509_STORE *store, ptls_openssl_override_verify_certificate_t *override_callback)
 {
     *self = (ptls_openssl_verify_certificate_t){{verify_cert, default_signature_schemes}};
 
@@ -1355,8 +1355,8 @@ int ptls_openssl_init_verify_certificate(ptls_openssl_verify_certificate_t *self
             return -1;
     }
 
-    if (callback != NULL) {
-        self->verify_callback = callback;
+    if (override_callback != NULL) {
+        self->override_callback = override_callback;
     }
     return 0;
 }
