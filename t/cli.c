@@ -433,7 +433,7 @@ int main(int argc, char **argv)
             family = AF_INET6;
             break;
         case 'a':
-            ctx.client_authentication = PTLS_CLIENT_AUTHENTICATION_MANDATORY;
+            ctx.require_client_authentication = 1;
             break;
         case 'b':
 #if PICOTLS_USE_BROTLI

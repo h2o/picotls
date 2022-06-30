@@ -667,24 +667,6 @@ PTLS_CALLBACK_TYPE(int, update_esni_key, ptls_t *tls, ptls_iovec_t secret, ptls_
                    const void *hashed_esni_contents);
 
 /**
- *
- */
-typedef enum en_ptls_client_authentication_mode_t {
-    /**
-     * client authentication is disabled
-     */
-    PTLS_CLIENT_AUTHENTICATION_NONE = 0,
-    /**
-     * client authentication is mandatory
-     */
-    PTLS_CLIENT_AUTHENTICATION_MANDATORY = 1,
-    /**
-     * client authentication is optional; only when client provides a certificate
-     */
-    PTLS_CLIENT_AUTHENTICATION_OPTIONAL = 2
-} ptls_client_authentication_mode_t;
-
-/**
  * the configuration
  */
 struct st_ptls_context_t {
@@ -749,11 +731,6 @@ struct st_ptls_context_t {
      */
     const char *hkdf_label_prefix__obsolete;
     /**
-     * the mode that the server requests client certificates
-     * to authenticate the client.
-     */
-    ptls_client_authentication_mode_t client_authentication;
-    /**
      * if set, psk handshakes use (ec)dhe
      */
     unsigned require_dhe_on_psk : 1;
@@ -766,6 +743,11 @@ struct st_ptls_context_t {
      * regardless of the value of this flag. See RFC 8446 Appendix D.3.
      */
     unsigned send_change_cipher_spec : 1;
+    /**
+     * if set, the server requests client certificates
+     * to authenticate the client.
+     */
+    unsigned require_client_authentication : 1;
     /**
      * if set, EOED will not be emitted or accepted
      */

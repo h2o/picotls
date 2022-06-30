@@ -2776,7 +2776,7 @@ static int handle_certificate(ptls_t *tls, const uint8_t *src, const uint8_t *en
         }
     });
 
-    if (num_certs != 0 && tls->ctx->verify_certificate != NULL) {
+    if (tls->ctx->verify_certificate != NULL) {
         if ((ret = tls->ctx->verify_certificate->cb(tls->ctx->verify_certificate, tls, &tls->certificate_verify.cb,
                                                     &tls->certificate_verify.verify_ctx, certs, num_certs)) != 0)
             goto Exit;
@@ -2869,17 +2869,13 @@ static int server_handle_certificate(ptls_t *tls, ptls_iovec_t message)
 
     ptls__key_schedule_update_hash(tls->key_schedule, message.base, message.len);
 
-    if (!got_certs) {
-        if (tls->ctx->client_authentication == PTLS_CLIENT_AUTHENTICATION_OPTIONAL) {
-            //fail open mTLS mode
-            tls->state = PTLS_STATE_SERVER_EXPECT_FINISHED;
-            return PTLS_ERROR_IN_PROGRESS;
-        } else {
-            return PTLS_ALERT_CERTIFICATE_REQUIRED;
-        }
+    if (got_certs) {
+        tls->state = PTLS_STATE_SERVER_EXPECT_CERTIFICATE_VERIFY;
+    } else {
+        /* Client did not provide certificate, and the verifier says we can fail open. Therefore, the next message is Finished. */
+        tls->state = PTLS_STATE_SERVER_EXPECT_FINISHED;
     }
 
-    tls->state = PTLS_STATE_SERVER_EXPECT_CERTIFICATE_VERIFY;
     return PTLS_ERROR_IN_PROGRESS;
 }
 
@@ -3971,7 +3967,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
     /* try psk handshake */
     if (!is_second_flight && ch->psk.hash_end != 0 &&
         (ch->psk.ke_modes & ((1u << PTLS_PSK_KE_MODE_PSK) | (1u << PTLS_PSK_KE_MODE_PSK_DHE))) != 0 &&
-        tls->ctx->encrypt_ticket != NULL && tls->ctx->client_authentication == PTLS_CLIENT_AUTHENTICATION_NONE) {
+        tls->ctx->encrypt_ticket != NULL && !tls->ctx->require_client_authentication) {
         if ((ret = try_psk_handshake(tls, &psk_index, &accept_early_data, ch,
                                      ptls_iovec_init(message.base, ch->psk.hash_end - message.base))) != 0) {
             goto Exit;
@@ -3984,7 +3980,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
      *
      * adjust key_schedule, determine handshake mode
      */
-    if (psk_index == SIZE_MAX || tls->ctx->client_authentication != PTLS_CLIENT_AUTHENTICATION_NONE) {
+    if (psk_index == SIZE_MAX || tls->ctx->require_client_authentication) {
         ptls__key_schedule_update_hash(tls->key_schedule, message.base, message.len);
         if (!is_second_flight) {
             assert(tls->key_schedule->generation == 0);
@@ -4108,7 +4104,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
 
     if (mode == HANDSHAKE_MODE_FULL) {
         /* send certificate request if client authentication is activated */
-        if (tls->ctx->client_authentication != PTLS_CLIENT_AUTHENTICATION_NONE) {
+        if (tls->ctx->require_client_authentication) {
             ptls_push_message(emitter, tls->key_schedule, PTLS_HANDSHAKE_TYPE_CERTIFICATE_REQUEST, {
                 /* certificate_request_context, this field SHALL be zero length, unless the certificate
                  * request is used for post-handshake authentication.
@@ -4159,7 +4155,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
         } else {
             tls->state = PTLS_STATE_SERVER_EXPECT_END_OF_EARLY_DATA;
         }
-    } else if (tls->ctx->client_authentication != PTLS_CLIENT_AUTHENTICATION_NONE) {
+    } else if (tls->ctx->require_client_authentication) {
         tls->state = PTLS_STATE_SERVER_EXPECT_CERTIFICATE;
     } else {
         tls->state = PTLS_STATE_SERVER_EXPECT_FINISHED;
@@ -4171,7 +4167,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
             goto Exit;
     }
 
-    if (tls->ctx->client_authentication != PTLS_CLIENT_AUTHENTICATION_NONE) {
+    if (tls->ctx->require_client_authentication) {
         ret = PTLS_ERROR_IN_PROGRESS;
     } else {
         ret = 0;

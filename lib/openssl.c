@@ -1297,35 +1297,35 @@ static int verify_cert(ptls_verify_certificate_t *_self, ptls_t *tls,
     X509 *cert = NULL;
     STACK_OF(X509) *chain = sk_X509_new_null();
     size_t i;
-    int ossl_x509_err = 0, ret = 0;
+    int ossl_x509_err, ret;
 
-    assert(num_certs != 0);
-
-    /* convert certificates to OpenSSL representation */
-    if ((cert = to_x509(certs[0])) == NULL) {
-        ret = PTLS_ALERT_BAD_CERTIFICATE;
-        goto Exit;
-    }
-    for (i = 1; i != num_certs; ++i) {
-        X509 *interm = to_x509(certs[i]);
-        if (interm == NULL) {
+    /* If any certs are given, convert them to OpenSSL representation, then verify the cert chain. If no certs are given, just give
+     * the override_callback to see if we want to stay fail open. */
+    if (num_certs != 0) {
+        if ((cert = to_x509(certs[0])) == NULL) {
             ret = PTLS_ALERT_BAD_CERTIFICATE;
             goto Exit;
         }
-        sk_X509_push(chain, interm);
+        for (i = 1; i != num_certs; ++i) {
+            X509 *interm = to_x509(certs[i]);
+            if (interm == NULL) {
+                ret = PTLS_ALERT_BAD_CERTIFICATE;
+                goto Exit;
+            }
+            sk_X509_push(chain, interm);
+        }
+        ret = verify_cert_chain(self->cert_store, cert, chain, ptls_is_server(tls), ptls_get_server_name(tls), &ossl_x509_err);
+    } else {
+        ret = PTLS_ALERT_CERTIFICATE_REQUIRED;
+        ossl_x509_err = 0;
     }
 
-    /* verify the chain */
-    ret = verify_cert_chain(self->cert_store, cert, chain, ptls_is_server(tls), ptls_get_server_name(tls), &ossl_x509_err);
+    /* When override callback is available, let it override the error. */
+    if (self->override_callback != NULL)
+        ret = self->override_callback->cb(self->override_callback, tls, ret, ossl_x509_err, cert, chain);
 
-    if (self->override_callback != NULL) {
-        ptls_client_authentication_mode_t mode = ptls_get_context(tls)->client_authentication;
-        ret = self->override_callback->cb(self->override_callback, tls, mode, ret, ossl_x509_err, cert, chain);
-    }
-
-    if (ret != 0) {
+    if (ret != 0)
         goto Exit;
-    }
 
     /* extract public key for verifying the TLS handshake signature */
     if ((*verify_data = X509_get_pubkey(cert)) == NULL) {
