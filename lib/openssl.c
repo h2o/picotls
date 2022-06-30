@@ -1318,7 +1318,7 @@ static int verify_cert(ptls_verify_certificate_t *_self, ptls_t *tls,
     /* verify the chain */
     ret = verify_cert_chain(self->cert_store, cert, chain, ptls_is_server(tls), ptls_get_server_name(tls), &ossl_x509_err);
 
-    if (self->override_callback != NULL && self->override_callback->cb != NULL) {
+    if (self->override_callback != NULL) {
         ptls_client_authentication_mode_t mode = ptls_get_context(tls)->client_authentication;
         ret = self->override_callback->cb(self->override_callback, tls, mode, ret, ossl_x509_err, cert, chain);
     }
