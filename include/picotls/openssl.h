@@ -113,8 +113,11 @@ typedef struct st_ptls_openssl_raw_pubkey_verify_certificate_t {
 } ptls_openssl_raw_pubkey_verify_certificate_t;
 
 /**
- * when verify client certificate chain, this optional callback can override default result while providing neccessary info
- * for the caller to evaluate.
+ * When verifying the certificate chain, this optional callback can be used to store necessary information (e.g., client certificate
+ * chain being provided) or to override the result.
+ * To give an example, when `ptls_context_t::require_client_authentication` is set but the client does not provide a certificate,
+ * the default behavior of the verifier is to reject the handshake. That can be overridden by supplying an overriding callback that
+ * returns `0` (i.e., success) under such condition (as indicated by `ret == PTLS_ALERT_CERTIFICATE_REQUIRED`).
  */
 PTLS_CALLBACK_TYPE(int, openssl_override_verify_certificate, ptls_t *tls, int ret, int ossl_ret, X509 *cert,
                    STACK_OF(X509) * chain);
