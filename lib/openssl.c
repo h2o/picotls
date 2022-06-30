@@ -1219,7 +1219,8 @@ Exit:
     return ret;
 }
 
-static int verify_cert_chain(X509_STORE *store, X509 *cert, STACK_OF(X509) * chain, int is_server, const char *server_name, int *ossl_x509_err)
+static int verify_cert_chain(X509_STORE *store, X509 *cert, STACK_OF(X509) * chain, int is_server, const char *server_name,
+                             int *ossl_x509_err)
 {
     X509_STORE_CTX *verify_ctx;
     int ret;
@@ -1342,7 +1343,8 @@ Exit:
     return ret;
 }
 
-int ptls_openssl_init_verify_certificate(ptls_openssl_verify_certificate_t *self, X509_STORE *store, ptls_openssl_override_verify_certificate_t *override_callback)
+int ptls_openssl_init_verify_certificate(ptls_openssl_verify_certificate_t *self, X509_STORE *store,
+                                         ptls_openssl_override_verify_certificate_t *override_callback)
 {
     *self = (ptls_openssl_verify_certificate_t){{verify_cert, default_signature_schemes}, NULL, override_callback};
 
