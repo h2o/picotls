@@ -253,8 +253,7 @@ struct st_ptls_t {
         } server;
     };
     /**
-     * certificate verify
-     * will be used by the client and the server (if client_authentication is set).
+     * certificate verify; will be used by the client and the server (if require_client_authentication is set)
      */
     struct {
         int (*cb)(void *verify_ctx, uint16_t algo, ptls_iovec_t data, ptls_iovec_t signature);
@@ -3976,7 +3975,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
 
     /* If client authentication is enabled, we always force a full handshake.
      * TODO: Check for `post_handshake_auth` extension and if that is present, do not force full handshake!
-     *       Remove also the check `!client_authentication` above.
+     *       Remove also the check `!require_client_authentication` above.
      *
      * adjust key_schedule, determine handshake mode
      */
