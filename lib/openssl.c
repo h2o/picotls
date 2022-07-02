@@ -1325,7 +1325,7 @@ static int verify_cert(ptls_verify_certificate_t *_self, ptls_t *tls,
     if (self->override_callback != NULL)
         ret = self->override_callback->cb(self->override_callback, tls, ret, ossl_x509_err, cert, chain);
 
-    if (ret != 0)
+    if (ret != 0 || num_certs == 0)
         goto Exit;
 
     /* extract public key for verifying the TLS handshake signature */
