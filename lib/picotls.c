@@ -70,6 +70,7 @@
 #define PTLS_PROTOCOL_VERSION_TLS13_DRAFT26 0x7f1a
 #define PTLS_PROTOCOL_VERSION_TLS13_DRAFT27 0x7f1b
 #define PTLS_PROTOCOL_VERSION_TLS13_DRAFT28 0x7f1c
+#define PTLS_PROTOCOL_VERSION_TLS12 0x0303
 
 #define PTLS_SERVER_NAME_TYPE_HOSTNAME 0
 
@@ -4414,15 +4415,94 @@ ptls_t *ptls_server_new(ptls_context_t *ctx)
     return tls;
 }
 
-static int build_tls12_traffic_protection(ptls_t *tls, int is_enc, const void *key, const void *iv)
+static int export_tls12_params(ptls_buffer_t *output, int is_server, ptls_cipher_suite_t *cipher, const void *enc_key,
+                               const void *enc_iv, uint64_t enc_seq, const void *dec_key, const void *dec_iv, uint64_t dec_seq)
+{
+    int ret;
+
+    ptls_buffer_push_block(output, 2, {
+        ptls_buffer_push(output, is_server);
+        ptls_buffer_push16(output, PTLS_PROTOCOL_VERSION_TLS12);
+        ptls_buffer_push16(output, cipher->id);
+        ptls_buffer_push_block(output, 2, {
+            ptls_buffer_pushv(output, enc_key, cipher->aead->key_size);
+            ptls_buffer_pushv(output, enc_iv, PTLS_TLS12_FIXED_IV_SIZE);
+            ptls_buffer_push64(output, enc_seq);
+            ptls_buffer_pushv(output, dec_key, cipher->aead->key_size);
+            ptls_buffer_pushv(output, dec_iv, PTLS_TLS12_FIXED_IV_SIZE);
+            ptls_buffer_push64(output, dec_seq);
+        });
+        ptls_buffer_push_block(output, 2, {}); /* for future extensions */
+    });
+
+Exit:
+    return ret;
+}
+
+int ptls_build_tls12_export_params(ptls_context_t *ctx, ptls_buffer_t *output, int is_server, ptls_cipher_suite_t *cipher,
+                                   const void *master_secret, const void *hello_randoms)
+{
+    uint8_t key_block[(PTLS_MAX_SECRET_SIZE + PTLS_TLS12_FIXED_IV_SIZE) * 2];
+    size_t key_block_len = (cipher->aead->key_size + PTLS_TLS12_FIXED_IV_SIZE) * 2;
+    int ret;
+
+    assert(key_block_len <= sizeof(key_block));
+    assert(cipher->id == PTLS_CIPHER_SUITE_AES_128_GCM_SHA256 ||
+           cipher->id == PTLS_CIPHER_SUITE_AES_256_GCM_SHA384); // TODO chachapoly
+
+    /* generate key block */
+    if ((ret =
+             ptls_tls12_phash(cipher->hash, key_block, key_block_len, ptls_iovec_init(master_secret, PTLS_TLS12_MASTER_SECRET_SIZE),
+                              "key expansion", ptls_iovec_init(hello_randoms, PTLS_HELLO_RANDOM_SIZE * 2))) != 0)
+        goto Exit;
+
+    /* determine key locations */
+    struct {
+        const void *key;
+        const void *iv;
+    } client_secret, server_secret, *enc_secret = is_server ? &server_secret : &client_secret,
+                                    *dec_secret = is_server ? &client_secret : &server_secret;
+    client_secret.key = key_block;
+    server_secret.key = key_block + cipher->aead->key_size;
+    client_secret.iv = key_block + cipher->aead->key_size * 2;
+    server_secret.iv = key_block + cipher->aead->key_size * 2 + PTLS_TLS12_FIXED_IV_SIZE;
+
+    /* Serialize prams. Sequence number of the first application record is 1, because Finished is the only message sent after
+     * ChangeCipherSpec. */
+    ret = export_tls12_params(output, is_server, cipher, enc_secret->key, enc_secret->iv, 1, dec_secret->key, dec_secret->iv, 1);
+
+Exit:
+    ptls_clear_memory(key_block, sizeof(key_block));
+    return ret;
+}
+
+int ptls_export(ptls_t *tls, ptls_buffer_t *output)
+{
+    /* TODO add tls13 support */
+    if (!tls->traffic_protection.enc.tls12)
+        return PTLS_ERROR_LIBRARY;
+
+    return export_tls12_params(output, tls->is_server, tls->cipher_suite, tls->traffic_protection.enc.secret,
+                               tls->traffic_protection.enc.secret + PTLS_MAX_SECRET_SIZE, tls->traffic_protection.enc.seq,
+                               tls->traffic_protection.dec.secret, tls->traffic_protection.dec.secret + PTLS_MAX_SECRET_SIZE,
+                               tls->traffic_protection.dec.seq);
+}
+
+static int build_tls12_traffic_protection(ptls_t *tls, int is_enc, const uint8_t **src, const uint8_t *const end)
 {
     struct st_ptls_traffic_protection_t *tp = is_enc ? &tls->traffic_protection.enc : &tls->traffic_protection.dec;
 
+    if (end - *src < tls->cipher_suite->aead->key_size + PTLS_TLS12_FIXED_IV_SIZE + sizeof(uint64_t))
+        return PTLS_ALERT_DECODE_ERROR;
+
     /* set properties */
-    memcpy(tp->secret, key, tls->cipher_suite->aead->key_size);
-    memcpy(tp->secret + PTLS_MAX_SECRET_SIZE, iv, PTLS_TLS12_FIXED_IV_SIZE);
+    memcpy(tp->secret, *src, tls->cipher_suite->aead->key_size);
+    *src += tls->cipher_suite->aead->key_size;
+    memcpy(tp->secret + PTLS_MAX_SECRET_SIZE, *src, PTLS_TLS12_FIXED_IV_SIZE);
+    *src += PTLS_TLS12_FIXED_IV_SIZE;
+    if (ptls_decode64(&tp->seq, src, end) != 0)
+        return PTLS_ALERT_DECODE_ERROR;
     tp->tls12 = 1;
-    tp->seq = 1; /* first application record uses sequence number of 1, because Finished is the only message sent after CCS */
 
     /* instantiate aead */
     if ((tp->aead = ptls_aead_new_direct(tls->cipher_suite->aead, is_enc, tp->secret, tp->secret + PTLS_MAX_SECRET_SIZE)) == NULL)
@@ -4431,48 +4511,70 @@ static int build_tls12_traffic_protection(ptls_t *tls, int is_enc, const void *k
     return 0;
 }
 
-ptls_t *ptls_new_tls12_post_handshake(ptls_context_t *ctx, int is_server, ptls_cipher_suite_t *cipher, const void *master_secret,
-                                      const void *hello_randoms)
+int ptls_import(ptls_context_t *ctx, ptls_t **tls, ptls_iovec_t params)
 {
-    ptls_t *tls = NULL;
-    uint8_t key_block[(PTLS_MAX_SECRET_SIZE + PTLS_TLS12_FIXED_IV_SIZE) * 2];
-    size_t key_block_len = (cipher->aead->key_size + PTLS_TLS12_FIXED_IV_SIZE) * 2;
+    const uint8_t *src = params.base, *const end = src + params.len;
+    uint16_t protocol_version, csid;
+    int ret;
 
-    assert(key_block_len <= sizeof(key_block));
+    *tls = NULL;
 
-    /* generate key block */
-    if (ptls_tls12_phash(cipher->hash, key_block, key_block_len, ptls_iovec_init(master_secret, PTLS_TLS12_MASTER_SECRET_SIZE),
-                         "key expansion", ptls_iovec_init(hello_randoms, PTLS_HELLO_RANDOM_SIZE * 2)) != 0)
-        goto Fail;
+    ptls_decode_block(src, end, 2, {
+        /* instantiate, based on the is_server flag */
+        if (src == end) {
+            ret = PTLS_ALERT_DECODE_ERROR;
+            goto Exit;
+        }
+        if ((*tls = new_instance(ctx, *src++)) == NULL) {
+            ret = PTLS_ERROR_NO_MEMORY;
+            goto Exit;
+        }
+        /* determine protocol version and cipher suite */
+        if ((ret = ptls_decode16(&protocol_version, &src, end)) != 0)
+            goto Exit;
+        if ((ret = ptls_decode16(&csid, &src, end)) != 0)
+            goto Exit;
+        for (ptls_cipher_suite_t **cipher = ctx->cipher_suites; *cipher != NULL; ++cipher) {
+            if ((*cipher)->id == csid) {
+                (*tls)->cipher_suite = *cipher;
+                break;
+            }
+        }
+        if ((*tls)->cipher_suite == NULL) {
+            ret = PTLS_ALERT_HANDSHAKE_FAILURE;
+            goto Exit;
+        }
+        /* version-dependent stuff */
+        ptls_decode_open_block(src, end, 2, {
+            switch (protocol_version) {
+            case PTLS_PROTOCOL_VERSION_TLS12:
+                /* setup AEAD keys */
+                if ((ret = build_tls12_traffic_protection(*tls, 1, &src, end)) != 0)
+                    goto Exit;
+                if ((ret = build_tls12_traffic_protection(*tls, 0, &src, end)) != 0)
+                    goto Exit;
+                break;
+            default:
+                ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+                break;
+            }
+        });
+        /* extensions */
+        ptls_decode_open_block(src, end, 2, {
+            src = end; /* unused */
+        });
+    });
 
-    /* create instance */
-    if ((tls = new_instance(ctx, is_server)) == NULL)
-        goto Fail;
-    tls->cipher_suite = cipher;
-    tls->state = is_server ? PTLS_STATE_SERVER_POST_HANDSHAKE : PTLS_STATE_CLIENT_POST_HANDSHAKE;
-
-    /* build AEAD contexts. For AEAD ciphers, key block contains keys and IVs in the following order (see RFC 5246 Section 6.3):
-     *  1. client write key
-     *  2. server write key
-     *  3. client write iv
-     *  4. server write iv
-     */
-    if (build_tls12_traffic_protection(tls, !is_server, key_block, key_block + cipher->aead->key_size * 2) != 0)
-        goto Fail;
-    if (build_tls12_traffic_protection(tls, is_server, key_block + cipher->aead->key_size,
-                                       key_block + cipher->aead->key_size * 2 + PTLS_TLS12_FIXED_IV_SIZE) != 0)
-        goto Exit;
+    (*tls)->state = ptls_is_server(*tls) ? PTLS_STATE_SERVER_POST_HANDSHAKE : PTLS_STATE_CLIENT_POST_HANDSHAKE;
 
 Exit:
-    ptls_clear_memory(key_block, sizeof(key_block));
-    return tls;
-
-Fail:
-    if (tls != NULL) {
-        ptls_free(tls);
-        tls = NULL;
+    if (ret != 0) {
+        if (*tls != NULL) {
+            ptls_free(*tls);
+            *tls = NULL;
+        }
     }
-    goto Exit;
+    return ret;
 }
 
 void ptls_free(ptls_t *tls)

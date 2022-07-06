@@ -1143,14 +1143,18 @@ ptls_t *ptls_client_new(ptls_context_t *ctx);
  */
 ptls_t *ptls_server_new(ptls_context_t *ctx);
 /**
- * creates a object handle new TLS connection
+ * creates an object handle new TLS connection
  */
 static ptls_t *ptls_new(ptls_context_t *ctx, int is_server);
 /**
  * creates TLS 1.2 record layer for post-handshake communication
  */
-ptls_t *ptls_new_tls12_post_handshake(ptls_context_t *ctx, int is_server, ptls_cipher_suite_t *cipher, const void *master_secret,
-                                      const void *hello_randoms);
+int ptls_build_tls12_export_params(ptls_context_t *ctx, ptls_buffer_t *output, int is_server, ptls_cipher_suite_t *cipher,
+                                   const void *master_secret, const void *hello_randoms);
+/**
+ * create a post-handshake TLS connection object using given parameters
+ */
+int ptls_import(ptls_context_t *ctx, ptls_t **tls, ptls_iovec_t params);
 /**
  * releases all resources associated to the object
  */
