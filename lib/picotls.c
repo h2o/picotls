@@ -728,8 +728,9 @@ static int buffer_encrypt_record(ptls_buffer_t *buf, size_t rec_start, struct st
     uint8_t *tmpbuf, type = buf->base[rec_start];
     int ret;
 
-    /* fast path: do in-place encryption if only one record needs to be emitted */
-    if (bodylen <= PTLS_MAX_PLAINTEXT_RECORD_SIZE) {
+    /* Fast path: do in-place encryption if only one record needs to be emitted. (For simplicity, do not take this path if TLS 1.2
+     * is used, as this function will be called no more than once per connection, for encrypting an alert.) */
+    if (!enc->tls12 && bodylen <= PTLS_MAX_PLAINTEXT_RECORD_SIZE) {
         size_t overhead = 1 + enc->aead->algo->tag_size;
         if ((ret = ptls_buffer_reserve(buf, overhead)) != 0)
             return ret;
