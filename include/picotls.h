@@ -185,9 +185,11 @@ extern "C" {
 
 /* TLS 1.2 */
 #define PTLS_TLS12_MASTER_SECRET_SIZE 48
-#define PTLS_TLS12_FIXED_IV_SIZE 4 /* for AES-GCM */
-#define PTLS_TLS12_MAX_KEY_BLOCK_SIZE ((PTLS_MAX_SECRET_SIZE + PTLS_TLS12_FIXED_IV_LENGTH) * 2)
 #define PTLS_TLS12_AAD_SIZE 13
+#define PTLS_TLS12_AESGCM_FIXED_IV_SIZE 4
+#define PTLS_TLS12_AESGCM_RECORD_IV_SIZE 8
+#define PTLS_TLS12_CHACHAPOLY_FIXED_IV_SIZE 12
+#define PTLS_TLS12_CHACHAPOLY_RECORD_IV_SIZE 0
 
 /* internal errors */
 #define PTLS_ERROR_NO_MEMORY (PTLS_ERROR_CLASS_INTERNAL + 1)
@@ -402,6 +404,13 @@ typedef const struct st_ptls_aead_algorithm_t {
      * size of the tag
      */
     size_t tag_size;
+    /**
+     * TLS/1.2 Security Parameters (AEAD without support for TLS 1.2 must set both values to 0)
+     */
+    struct {
+        size_t fixed_iv_size;
+        size_t record_iv_size;
+    } tls12;
     /**
      * if encrypted bytes are going to be written using non-temporal store instructions (i.e., skip cache)
      */
