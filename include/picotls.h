@@ -183,6 +183,12 @@ extern "C" {
 #define PTLS_ALERT_CERTIFICATE_REQUIRED 116
 #define PTLS_ALERT_NO_APPLICATION_PROTOCOL 120
 
+/* TLS 1.2 */
+#define PTLS_TLS12_MASTER_SECRET_SIZE 48
+#define PTLS_TLS12_FIXED_IV_SIZE 4 /* for AES-GCM */
+#define PTLS_TLS12_MAX_KEY_BLOCK_SIZE ((PTLS_MAX_SECRET_SIZE + PTLS_TLS12_FIXED_IV_LENGTH) * 2)
+#define PTLS_TLS12_AAD_SIZE 13
+
 /* internal errors */
 #define PTLS_ERROR_NO_MEMORY (PTLS_ERROR_CLASS_INTERNAL + 1)
 #define PTLS_ERROR_IN_PROGRESS (PTLS_ERROR_CLASS_INTERNAL + 2)
@@ -1141,6 +1147,11 @@ ptls_t *ptls_server_new(ptls_context_t *ctx);
  */
 static ptls_t *ptls_new(ptls_context_t *ctx, int is_server);
 /**
+ * creates TLS 1.2 record layer for post-handshake communication
+ */
+ptls_t *ptls_new_tls12_post_handshake(ptls_context_t *ctx, int is_server, ptls_cipher_suite_t *cipher, const void *master_secret,
+                                      const void *hello_randoms);
+/**
  * releases all resources associated to the object
  */
 void ptls_free(ptls_t *tls);
@@ -1269,6 +1280,11 @@ int ptls_hkdf_expand(ptls_hash_algorithm_t *hash, void *output, size_t outlen, p
  */
 int ptls_hkdf_expand_label(ptls_hash_algorithm_t *algo, void *output, size_t outlen, ptls_iovec_t secret, const char *label,
                            ptls_iovec_t hash_value, const char *label_prefix);
+/**
+ * The expansion function of TLS 1.2 defined in RFC 5426 section 5. When `label` is NULL, acts as P_<hash>, or if non-NULL, as PRF.
+ */
+int ptls_tls12_phash(ptls_hash_algorithm_t *algo, void *output, size_t outlen, ptls_iovec_t secret, const char *label,
+                     ptls_iovec_t seed);
 /**
  * instantiates a symmetric cipher
  */
