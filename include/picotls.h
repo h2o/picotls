@@ -1150,7 +1150,8 @@ static ptls_t *ptls_new(ptls_context_t *ctx, int is_server);
  * creates TLS 1.2 record layer for post-handshake communication
  */
 int ptls_build_tls12_export_params(ptls_context_t *ctx, ptls_buffer_t *output, int is_server, ptls_cipher_suite_t *cipher,
-                                   const void *master_secret, const void *hello_randoms);
+                                   const void *master_secret, const void *hello_randoms, const char *server_name,
+                                   ptls_iovec_t negotiated_protocol);
 /**
  * create a post-handshake TLS connection object using given parameters
  */
