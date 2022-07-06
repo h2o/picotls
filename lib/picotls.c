@@ -130,6 +130,7 @@ struct st_ptls_traffic_protection_t {
     ptls_aead_context_t *aead;
     uint64_t seq;
     unsigned tls12 : 1;
+    uint64_t tls12_enc_record_iv;
 };
 
 struct st_ptls_record_message_emitter_t {
@@ -507,6 +508,12 @@ static uint64_t ntoh64(const uint8_t *src)
 }
 #endif
 
+static void encode64(uint8_t *dst, uint64_t v)
+{
+    for (size_t i = 0; i < 8; ++i)
+        dst[i] = (uint8_t)(v >> (56 - 8 * i));
+}
+
 void ptls_buffer__release_memory(ptls_buffer_t *buf)
 {
     ptls_clear_memory(buf->base, buf->off);
@@ -699,17 +706,26 @@ static int buffer_push_encrypted_records(ptls_buffer_t *buf, uint8_t type, const
             chunk_size = PTLS_MAX_PLAINTEXT_RECORD_SIZE;
         if (enc->tls12) {
             buffer_push_record(buf, type, {
+                /* reserve memory */
+                if ((ret = ptls_buffer_reserve(buf, enc->aead->algo->tls12.record_iv_size + chunk_size +
+                                                        enc->aead->algo->tag_size)) != 0)
+                    goto Exit;
+                /* determine nonce, as well as prepending that walue as the record IV (AES-GCM) */
+                uint64_t nonce;
+                if (enc->aead->algo->tls12.record_iv_size != 0) {
+                    assert(enc->aead->algo->tls12.record_iv_size == 8);
+                    nonce = enc->tls12_enc_record_iv++;
+                    encode64(buf->base + buf->off, nonce);
+                    buf->off += 8;
+                } else {
+                    nonce = enc->seq;
+                }
+                /* build AAD */
                 uint8_t aad[PTLS_TLS12_AAD_SIZE];
                 build_tls12_aad(aad, type, enc->seq, chunk_size);
-                size_t record_iv_size = enc->aead->algo->tls12.record_iv_size;
-                if ((ret = ptls_buffer_reserve(buf, record_iv_size + chunk_size + enc->aead->algo->tag_size)) != 0)
-                    goto Exit;
-                if (record_iv_size != 0) {
-                    assert(record_iv_size == 8);
-                    memcpy(buf->base + buf->off, aad, 8); /* use flattened seq as explicit nonce */
-                    buf->off += 8;
-                }
-                buf->off += ptls_aead_encrypt(enc->aead, buf->base + buf->off, src, chunk_size, enc->seq++, aad, sizeof(aad));
+                /* encrypt */
+                buf->off += ptls_aead_encrypt(enc->aead, buf->base + buf->off, src, chunk_size, nonce, aad, sizeof(aad));
+                ++enc->seq;
             });
         } else {
             buffer_push_record(buf, PTLS_CONTENT_TYPE_APPDATA, {
@@ -4421,8 +4437,8 @@ ptls_t *ptls_server_new(ptls_context_t *ctx)
 }
 
 static int export_tls12_params(ptls_buffer_t *output, int is_server, ptls_cipher_suite_t *cipher, const void *client_random,
-                               const char *server_name, ptls_iovec_t negotiated_protocol, const void *enc_key,
-                               const void *enc_iv, uint64_t enc_seq, const void *dec_key, const void *dec_iv, uint64_t dec_seq)
+                               const char *server_name, ptls_iovec_t negotiated_protocol, const void *enc_key, const void *enc_iv,
+                               uint64_t enc_seq, uint64_t enc_record_iv, const void *dec_key, const void *dec_iv, uint64_t dec_seq)
 {
     int ret;
 
@@ -4435,13 +4451,13 @@ static int export_tls12_params(ptls_buffer_t *output, int is_server, ptls_cipher
             size_t len = server_name != NULL ? strlen(server_name) : 0;
             ptls_buffer_pushv(output, server_name, len);
         });
-        ptls_buffer_push_block(output, 2, {
-            ptls_buffer_pushv(output, negotiated_protocol.base, negotiated_protocol.len);
-        });
+        ptls_buffer_push_block(output, 2, { ptls_buffer_pushv(output, negotiated_protocol.base, negotiated_protocol.len); });
         ptls_buffer_push_block(output, 2, {
             ptls_buffer_pushv(output, enc_key, cipher->aead->key_size);
             ptls_buffer_pushv(output, enc_iv, cipher->aead->tls12.fixed_iv_size);
             ptls_buffer_push64(output, enc_seq);
+            if (cipher->aead->tls12.record_iv_size != 0)
+                ptls_buffer_push64(output, enc_record_iv);
             ptls_buffer_pushv(output, dec_key, cipher->aead->key_size);
             ptls_buffer_pushv(output, dec_iv, cipher->aead->tls12.fixed_iv_size);
             ptls_buffer_push64(output, dec_seq);
@@ -4454,8 +4470,8 @@ Exit:
 }
 
 int ptls_build_tls12_export_params(ptls_context_t *ctx, ptls_buffer_t *output, int is_server, ptls_cipher_suite_t *cipher,
-                                   const void *master_secret, const void *hello_randoms, const char *server_name,
-                                   ptls_iovec_t negotiated_protocol)
+                                   const void *master_secret, const void *hello_randoms, uint64_t next_send_record_iv,
+                                   const char *server_name, ptls_iovec_t negotiated_protocol)
 {
     assert(cipher->aead->tls12.fixed_iv_size + cipher->aead->tls12.record_iv_size != 0 || !"given cipher-suite supports TLS/1.2");
 
@@ -4485,7 +4501,7 @@ int ptls_build_tls12_export_params(ptls_context_t *ctx, ptls_buffer_t *output, i
     /* Serialize prams. Sequence number of the first application record is 1, because Finished is the only message sent after
      * ChangeCipherSpec. */
     ret = export_tls12_params(output, is_server, cipher, hello_randoms + PTLS_HELLO_RANDOM_SIZE, server_name, negotiated_protocol,
-                              enc_secret->key, enc_secret->iv, 1, dec_secret->key, dec_secret->iv, 1);
+                              enc_secret->key, enc_secret->iv, 1, next_send_record_iv, dec_secret->key, dec_secret->iv, 1);
 
 Exit:
     ptls_clear_memory(key_block, sizeof(key_block));
@@ -4502,8 +4518,9 @@ int ptls_export(ptls_t *tls, ptls_buffer_t *output)
                                ptls_iovec_init(tls->negotiated_protocol,
                                                tls->negotiated_protocol != NULL ? strlen(tls->negotiated_protocol) : 0),
                                tls->traffic_protection.enc.secret, tls->traffic_protection.enc.secret + PTLS_MAX_SECRET_SIZE,
-                               tls->traffic_protection.enc.seq, tls->traffic_protection.dec.secret,
-                               tls->traffic_protection.dec.secret + PTLS_MAX_SECRET_SIZE, tls->traffic_protection.dec.seq);
+                               tls->traffic_protection.enc.seq, tls->traffic_protection.enc.tls12_enc_record_iv,
+                               tls->traffic_protection.dec.secret, tls->traffic_protection.dec.secret + PTLS_MAX_SECRET_SIZE,
+                               tls->traffic_protection.dec.seq);
 }
 
 static int build_tls12_traffic_protection(ptls_t *tls, int is_enc, const uint8_t **src, const uint8_t *const end)
@@ -4520,6 +4537,10 @@ static int build_tls12_traffic_protection(ptls_t *tls, int is_enc, const uint8_t
     *src += tls->cipher_suite->aead->tls12.fixed_iv_size;
     if (ptls_decode64(&tp->seq, src, end) != 0)
         return PTLS_ALERT_DECODE_ERROR;
+    if (is_enc && tls->cipher_suite->aead->tls12.record_iv_size != 0) {
+        if (ptls_decode64(&tp->tls12_enc_record_iv, src, end) != 0)
+            return PTLS_ALERT_DECODE_ERROR;
+    }
     tp->tls12 = 1;
 
     /* instantiate aead */
