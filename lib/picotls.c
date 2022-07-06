@@ -671,11 +671,11 @@ static int aead_decrypt(struct st_ptls_traffic_protection_t *ctx, void *output, 
 
 #endif /* #if PTLS_FUZZ_HANDSHAKE */
 
-static void build_tls12_aad(uint8_t *aad, uint64_t seq, uint16_t length)
+static void build_tls12_aad(uint8_t *aad, uint8_t type, uint64_t seq, uint16_t length)
 {
     for (size_t i = 0; i < 8; ++i)
         aad[i] = seq >> (56 - i * 8);
-    aad[8] = PTLS_CONTENT_TYPE_APPDATA;
+    aad[8] = type;
     aad[9] = PTLS_RECORD_VERSION_MAJOR;
     aad[10] = PTLS_RECORD_VERSION_MINOR;
     aad[11] = length >> 8;
@@ -698,9 +698,9 @@ static int buffer_push_encrypted_records(ptls_buffer_t *buf, uint8_t type, const
         if (chunk_size > PTLS_MAX_PLAINTEXT_RECORD_SIZE)
             chunk_size = PTLS_MAX_PLAINTEXT_RECORD_SIZE;
         if (enc->tls12) {
-            buffer_push_record(buf, PTLS_CONTENT_TYPE_APPDATA, {
+            buffer_push_record(buf, type, {
                 uint8_t aad[PTLS_TLS12_AAD_SIZE];
-                build_tls12_aad(aad, enc->seq, chunk_size);
+                build_tls12_aad(aad, type, enc->seq, chunk_size);
                 size_t record_iv_size = enc->aead->algo->tls12.record_iv_size;
                 if ((ret = ptls_buffer_reserve(buf, record_iv_size + chunk_size + enc->aead->algo->tag_size)) != 0)
                     goto Exit;
@@ -5113,7 +5113,7 @@ static int handle_input_tls12(ptls_t *tls, ptls_buffer_t *decryptbuf, const void
     textlen -= tls->traffic_protection.dec.aead->algo->tag_size;
 
     /* build aad */
-    build_tls12_aad(aad, tls->traffic_protection.dec.seq, (uint16_t)textlen);
+    build_tls12_aad(aad, rec.type, tls->traffic_protection.dec.seq, (uint16_t)textlen);
 
     /* decrypt input to decryptbuf */
     if ((ret = ptls_buffer_reserve(decryptbuf, textlen)) != 0)
