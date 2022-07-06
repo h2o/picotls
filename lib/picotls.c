@@ -253,8 +253,7 @@ struct st_ptls_t {
         } server;
     };
     /**
-     * certificate verify
-     * will be used by the client and the server (if require_client_authentication is set).
+     * certificate verify; will be used by the client and the server (if require_client_authentication is set)
      */
     struct {
         int (*cb)(void *verify_ctx, uint16_t algo, ptls_iovec_t data, ptls_iovec_t signature);
@@ -2786,7 +2785,7 @@ static int handle_certificate(ptls_t *tls, const uint8_t *src, const uint8_t *en
         }
     });
 
-    if (num_certs != 0 && tls->ctx->verify_certificate != NULL) {
+    if (tls->ctx->verify_certificate != NULL) {
         if ((ret = tls->ctx->verify_certificate->cb(tls->ctx->verify_certificate, tls, &tls->certificate_verify.cb,
                                                     &tls->certificate_verify.verify_ctx, certs, num_certs)) != 0)
             goto Exit;
@@ -2876,12 +2875,16 @@ static int server_handle_certificate(ptls_t *tls, ptls_iovec_t message)
 
     if ((ret = handle_certificate(tls, message.base + PTLS_HANDSHAKE_HEADER_SIZE, message.base + message.len, &got_certs)) != 0)
         return ret;
-    if (!got_certs)
-        return PTLS_ALERT_CERTIFICATE_REQUIRED;
 
     ptls__key_schedule_update_hash(tls->key_schedule, message.base, message.len);
 
-    tls->state = PTLS_STATE_SERVER_EXPECT_CERTIFICATE_VERIFY;
+    if (got_certs) {
+        tls->state = PTLS_STATE_SERVER_EXPECT_CERTIFICATE_VERIFY;
+    } else {
+        /* Client did not provide certificate, and the verifier says we can fail open. Therefore, the next message is Finished. */
+        tls->state = PTLS_STATE_SERVER_EXPECT_FINISHED;
+    }
+
     return PTLS_ERROR_IN_PROGRESS;
 }
 
