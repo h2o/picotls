@@ -4436,14 +4436,16 @@ ptls_t *ptls_server_new(ptls_context_t *ctx)
     return tls;
 }
 
-static int export_tls12_params(ptls_buffer_t *output, int is_server, ptls_cipher_suite_t *cipher, const void *client_random,
-                               const char *server_name, ptls_iovec_t negotiated_protocol, const void *enc_key, const void *enc_iv,
-                               uint64_t enc_seq, uint64_t enc_record_iv, const void *dec_key, const void *dec_iv, uint64_t dec_seq)
+static int export_tls12_params(ptls_buffer_t *output, int is_server, int session_reused, ptls_cipher_suite_t *cipher,
+                               const void *client_random, const char *server_name, ptls_iovec_t negotiated_protocol,
+                               const void *enc_key, const void *enc_iv, uint64_t enc_seq, uint64_t enc_record_iv,
+                               const void *dec_key, const void *dec_iv, uint64_t dec_seq)
 {
     int ret;
 
     ptls_buffer_push_block(output, 2, {
         ptls_buffer_push(output, is_server);
+        ptls_buffer_push(output, session_reused);
         ptls_buffer_push16(output, PTLS_PROTOCOL_VERSION_TLS12);
         ptls_buffer_push16(output, cipher->id);
         ptls_buffer_pushv(output, client_random, PTLS_HELLO_RANDOM_SIZE);
@@ -4469,9 +4471,9 @@ Exit:
     return ret;
 }
 
-int ptls_build_tls12_export_params(ptls_context_t *ctx, ptls_buffer_t *output, int is_server, ptls_cipher_suite_t *cipher,
-                                   const void *master_secret, const void *hello_randoms, uint64_t next_send_record_iv,
-                                   const char *server_name, ptls_iovec_t negotiated_protocol)
+int ptls_build_tls12_export_params(ptls_context_t *ctx, ptls_buffer_t *output, int is_server, int session_reused,
+                                   ptls_cipher_suite_t *cipher, const void *master_secret, const void *hello_randoms,
+                                   uint64_t next_send_record_iv, const char *server_name, ptls_iovec_t negotiated_protocol)
 {
     assert(cipher->aead->tls12.fixed_iv_size + cipher->aead->tls12.record_iv_size != 0 || !"given cipher-suite supports TLS/1.2");
 
@@ -4500,8 +4502,9 @@ int ptls_build_tls12_export_params(ptls_context_t *ctx, ptls_buffer_t *output, i
 
     /* Serialize prams. Sequence number of the first application record is 1, because Finished is the only message sent after
      * ChangeCipherSpec. */
-    ret = export_tls12_params(output, is_server, cipher, hello_randoms + PTLS_HELLO_RANDOM_SIZE, server_name, negotiated_protocol,
-                              enc_secret->key, enc_secret->iv, 1, next_send_record_iv, dec_secret->key, dec_secret->iv, 1);
+    ret = export_tls12_params(output, is_server, session_reused, cipher, hello_randoms + PTLS_HELLO_RANDOM_SIZE, server_name,
+                              negotiated_protocol, enc_secret->key, enc_secret->iv, 1, next_send_record_iv, dec_secret->key,
+                              dec_secret->iv, 1);
 
 Exit:
     ptls_clear_memory(key_block, sizeof(key_block));
@@ -4514,13 +4517,13 @@ int ptls_export(ptls_t *tls, ptls_buffer_t *output)
     if (!tls->traffic_protection.enc.tls12)
         return PTLS_ERROR_LIBRARY;
 
-    return export_tls12_params(output, tls->is_server, tls->cipher_suite, tls->client_random, tls->server_name,
-                               ptls_iovec_init(tls->negotiated_protocol,
-                                               tls->negotiated_protocol != NULL ? strlen(tls->negotiated_protocol) : 0),
-                               tls->traffic_protection.enc.secret, tls->traffic_protection.enc.secret + PTLS_MAX_SECRET_SIZE,
-                               tls->traffic_protection.enc.seq, tls->traffic_protection.enc.tls12_enc_record_iv,
-                               tls->traffic_protection.dec.secret, tls->traffic_protection.dec.secret + PTLS_MAX_SECRET_SIZE,
-                               tls->traffic_protection.dec.seq);
+    ptls_iovec_t negotiated_protocol =
+        ptls_iovec_init(tls->negotiated_protocol, tls->negotiated_protocol != NULL ? strlen(tls->negotiated_protocol) : 0);
+    return export_tls12_params(output, tls->is_server, tls->is_psk_handshake, tls->cipher_suite, tls->client_random,
+                               tls->server_name, negotiated_protocol, tls->traffic_protection.enc.secret,
+                               tls->traffic_protection.enc.secret + PTLS_MAX_SECRET_SIZE, tls->traffic_protection.enc.seq,
+                               tls->traffic_protection.enc.tls12_enc_record_iv, tls->traffic_protection.dec.secret,
+                               tls->traffic_protection.dec.secret + PTLS_MAX_SECRET_SIZE, tls->traffic_protection.dec.seq);
 }
 
 static int build_tls12_traffic_protection(ptls_t *tls, int is_enc, const uint8_t **src, const uint8_t *const end)
@@ -4560,7 +4563,7 @@ int ptls_import(ptls_context_t *ctx, ptls_t **tls, ptls_iovec_t params)
 
     ptls_decode_block(src, end, 2, {
         /* instantiate, based on the is_server flag */
-        if (src == end) {
+        if (end - src < 2) {
             ret = PTLS_ALERT_DECODE_ERROR;
             goto Exit;
         }
@@ -4568,6 +4571,7 @@ int ptls_import(ptls_context_t *ctx, ptls_t **tls, ptls_iovec_t params)
             ret = PTLS_ERROR_NO_MEMORY;
             goto Exit;
         }
+        (*tls)->is_psk_handshake = *src++;
         /* determine protocol version and cipher suite */
         if ((ret = ptls_decode16(&protocol_version, &src, end)) != 0)
             goto Exit;
