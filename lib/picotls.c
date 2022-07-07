@@ -4502,9 +4502,9 @@ int ptls_build_tls12_export_params(ptls_context_t *ctx, ptls_buffer_t *output, i
 
     /* Serialize prams. Sequence number of the first application record is 1, because Finished is the only message sent after
      * ChangeCipherSpec. */
-    ret = export_tls12_params(output, is_server, session_reused, cipher, hello_randoms + PTLS_HELLO_RANDOM_SIZE, server_name,
-                              negotiated_protocol, enc_secret->key, enc_secret->iv, 1, next_send_record_iv, dec_secret->key,
-                              dec_secret->iv, 1);
+    ret = export_tls12_params(output, is_server, session_reused, cipher, (uint8_t *)hello_randoms + PTLS_HELLO_RANDOM_SIZE,
+                              server_name, negotiated_protocol, enc_secret->key, enc_secret->iv, 1, next_send_record_iv,
+                              dec_secret->key, dec_secret->iv, 1);
 
 Exit:
     ptls_clear_memory(key_block, sizeof(key_block));
