@@ -70,6 +70,10 @@ extern "C" {
 #define PTLS_FUZZ_HANDSHAKE 0
 #endif
 
+#ifndef PTLS_SIZEOF_CACHE_LINE
+#define PTLS_SIZEOF_CACHE_LINE 64
+#endif
+
 #define PTLS_HELLO_RANDOM_SIZE 32
 
 #define PTLS_AES128_KEY_SIZE 16
@@ -392,6 +396,10 @@ typedef const struct st_ptls_aead_algorithm_t {
      * size of the tag
      */
     size_t tag_size;
+    /**
+     * if encrypted bytes are going to be written using non-temporal store instructions (i.e., skip cache)
+     */
+    unsigned non_temporal : 1;
     /**
      * size of memory allocated for ptls_aead_context_t. AEAD implementations can set this value to something greater than
      * sizeof(ptls_aead_context_t) and stuff additional data at the bottom of the struct.

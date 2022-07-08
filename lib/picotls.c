@@ -253,8 +253,7 @@ struct st_ptls_t {
         } server;
     };
     /**
-     * certificate verify
-     * will be used by the client and the server (if require_client_authentication is set).
+     * certificate verify; will be used by the client and the server (if require_client_authentication is set)
      */
     struct {
         int (*cb)(void *verify_ctx, uint16_t algo, ptls_iovec_t data, ptls_iovec_t signature);
@@ -509,8 +508,13 @@ static uint64_t ntoh64(const uint8_t *src)
 void ptls_buffer__release_memory(ptls_buffer_t *buf)
 {
     ptls_clear_memory(buf->base, buf->off);
-    if (buf->is_allocated)
+    if (buf->is_allocated) {
+#ifdef _WINDOWS
+        _aligned_free(buf->base);
+#else
         free(buf->base);
+#endif
+    }
 }
 
 int ptls_buffer_reserve(ptls_buffer_t *buf, size_t delta)
@@ -519,15 +523,20 @@ int ptls_buffer_reserve(ptls_buffer_t *buf, size_t delta)
         return PTLS_ERROR_NO_MEMORY;
 
     if (PTLS_MEMORY_DEBUG || buf->capacity < buf->off + delta) {
-        uint8_t *newp;
+        void *newp;
         size_t new_capacity = buf->capacity;
         if (new_capacity < 1024)
             new_capacity = 1024;
         while (new_capacity < buf->off + delta) {
             new_capacity *= 2;
         }
-        if ((newp = malloc(new_capacity)) == NULL)
+#ifdef _WINDOWS
+        if ((newp = _aligned_malloc(new_capacity, PTLS_SIZEOF_CACHE_LINE)) == NULL)
             return PTLS_ERROR_NO_MEMORY;
+#else
+        if (posix_memalign(&newp, PTLS_SIZEOF_CACHE_LINE, new_capacity) != 0)
+            return PTLS_ERROR_NO_MEMORY;
+#endif
         memcpy(newp, buf->base, buf->off);
         ptls_buffer__release_memory(buf);
         buf->base = newp;
@@ -2776,7 +2785,7 @@ static int handle_certificate(ptls_t *tls, const uint8_t *src, const uint8_t *en
         }
     });
 
-    if (num_certs != 0 && tls->ctx->verify_certificate != NULL) {
+    if (tls->ctx->verify_certificate != NULL) {
         if ((ret = tls->ctx->verify_certificate->cb(tls->ctx->verify_certificate, tls, &tls->certificate_verify.cb,
                                                     &tls->certificate_verify.verify_ctx, certs, num_certs)) != 0)
             goto Exit;
@@ -2866,12 +2875,16 @@ static int server_handle_certificate(ptls_t *tls, ptls_iovec_t message)
 
     if ((ret = handle_certificate(tls, message.base + PTLS_HANDSHAKE_HEADER_SIZE, message.base + message.len, &got_certs)) != 0)
         return ret;
-    if (!got_certs)
-        return PTLS_ALERT_CERTIFICATE_REQUIRED;
 
     ptls__key_schedule_update_hash(tls->key_schedule, message.base, message.len);
 
-    tls->state = PTLS_STATE_SERVER_EXPECT_CERTIFICATE_VERIFY;
+    if (got_certs) {
+        tls->state = PTLS_STATE_SERVER_EXPECT_CERTIFICATE_VERIFY;
+    } else {
+        /* Client did not provide certificate, and the verifier says we can fail open. Therefore, the next message is Finished. */
+        tls->state = PTLS_STATE_SERVER_EXPECT_FINISHED;
+    }
+
     return PTLS_ERROR_IN_PROGRESS;
 }
 
