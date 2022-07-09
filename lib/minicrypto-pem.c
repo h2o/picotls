@@ -344,7 +344,11 @@ int ptls_minicrypto_load_private_key(ptls_context_t *ctx, char const *pem_fname)
 err:
     if (pkey.vec.base) {
         ptls_clear_memory(pkey.vec.base, pkey.vec.len);
+#ifdef _WINDOWS
+        _aligned_free(pkey.vec.base);
+#else
         free(pkey.vec.base);
+#endif
     }
     return ret;
 }

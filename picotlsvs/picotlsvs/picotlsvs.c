@@ -79,7 +79,11 @@ int openPemTest(char const * filename)
 
 	if (buf.base != NULL)
 	{
-		free(buf.base);
+#ifdef _WINDOWS
+		_aligned_free(buf.base);
+#else
+        free(buf.base);
+#endif
 	}
 
 	return ret;
