@@ -119,6 +119,8 @@ typedef struct st_ptls_openssl_raw_pubkey_verify_certificate_t {
  * the default behavior of the verifier is to reject the handshake. That can be overridden by supplying an overriding callback that
  * returns `0` (i.e., success) under such condition (as indicated by `ret == PTLS_ALERT_CERTIFICATE_REQUIRED`).
  */
+#define PTLS_OPENSSL_VERIFY_CERTIFICATE_ENABLE_OVERRIDE
+
 PTLS_CALLBACK_TYPE(int, openssl_override_verify_certificate, ptls_t *tls, int ret, int ossl_ret, X509 *cert,
                    STACK_OF(X509) * chain);
 
