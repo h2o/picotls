@@ -510,7 +510,9 @@ void ptls_buffer__release_memory(ptls_buffer_t *buf)
     ptls_clear_memory(buf->base, buf->off);
     if (buf->is_allocated) {
 #ifdef _WINDOWS
-        _aligned_free(buf->base);
+        if (buf->alignment != 0) {
+            _aligned_free(buf->base);
+        } else
 #else
         free(buf->base);
 #endif
@@ -519,10 +521,26 @@ void ptls_buffer__release_memory(ptls_buffer_t *buf)
 
 int ptls_buffer_reserve(ptls_buffer_t *buf, size_t delta)
 {
+    return ptls_buffer_reserve_aligned(buf, delta, 0);
+}
+
+int ptls_buffer_reserve_aligned(ptls_buffer_t *buf, size_t delta, uint8_t align_bits)
+{
     if (buf->base == NULL)
         return PTLS_ERROR_NO_MEMORY;
 
-    if (PTLS_MEMORY_DEBUG || buf->capacity < buf->off + delta) {
+    int needs_alloc = !!PTLS_MEMORY_DEBUG;
+    if (!needs_alloc && buf->capacity < buf->off + delta)
+        needs_alloc = 1;
+    if (!needs_alloc && buf->align_bits < align_bits) {
+        if (((uintptr_t)buf->base & ((1 << align_bits) - 1)) == 0) {
+            buf->align_bits = align_bits; /* if buf->base is already aligned, silently adjust `buf->align_bits` */
+        } else {
+            needs_alloc = 1;
+        }
+    }
+
+    if (needs_alloc) {
         void *newp;
         size_t new_capacity = buf->capacity;
         if (new_capacity < 1024)
@@ -530,18 +548,24 @@ int ptls_buffer_reserve(ptls_buffer_t *buf, size_t delta)
         while (new_capacity < buf->off + delta) {
             new_capacity *= 2;
         }
+        if (buf->align_bits != 0) {
 #ifdef _WINDOWS
-        if ((newp = _aligned_malloc(new_capacity, PTLS_SIZEOF_CACHE_LINE)) == NULL)
-            return PTLS_ERROR_NO_MEMORY;
+            if ((newp = _aligned_malloc(new_capacity, 1 << align_bits)) == NULL)
+                return PTLS_ERROR_NO_MEMORY;
 #else
-        if (posix_memalign(&newp, PTLS_SIZEOF_CACHE_LINE, new_capacity) != 0)
-            return PTLS_ERROR_NO_MEMORY;
+            if (posix_memalign(&newp, 1 << align_bits, new_capacity) != 0)
+                return PTLS_ERROR_NO_MEMORY;
 #endif
+        } else {
+            if ((newp = malloc(new_capacity)) == NULL)
+                return PTLS_ERROR_NO_MEMORY;
+        }
         memcpy(newp, buf->base, buf->off);
         ptls_buffer__release_memory(buf);
         buf->base = newp;
         buf->capacity = new_capacity;
         buf->is_allocated = 1;
+        buf->align_bits = align_bits;
     }
 
     return 0;
@@ -685,7 +709,8 @@ static int buffer_push_encrypted_records(ptls_buffer_t *buf, uint8_t type, const
         if (chunk_size > PTLS_MAX_PLAINTEXT_RECORD_SIZE)
             chunk_size = PTLS_MAX_PLAINTEXT_RECORD_SIZE;
         buffer_push_record(buf, PTLS_CONTENT_TYPE_APPDATA, {
-            if ((ret = ptls_buffer_reserve(buf, chunk_size + enc->aead->algo->tag_size + 1)) != 0)
+            if ((ret = ptls_buffer_reserve_aligned(buf, chunk_size + enc->aead->algo->tag_size + 1, enc->aead->algo->align_bits)) !=
+                0)
                 goto Exit;
             buf->off += aead_encrypt(enc, buf->base + buf->off, src, chunk_size, type);
         });
@@ -706,7 +731,7 @@ static int buffer_encrypt_record(ptls_buffer_t *buf, size_t rec_start, struct st
     /* fast path: do in-place encryption if only one record needs to be emitted */
     if (bodylen <= PTLS_MAX_PLAINTEXT_RECORD_SIZE) {
         size_t overhead = 1 + enc->aead->algo->tag_size;
-        if ((ret = ptls_buffer_reserve(buf, overhead)) != 0)
+        if ((ret = ptls_buffer_reserve_aligned(buf, overhead, enc->aead->algo->align_bits)) != 0)
             return ret;
         size_t encrypted_len = aead_encrypt(enc, buf->base + rec_start + 5, buf->base + rec_start + 5, bodylen, type);
         assert(encrypted_len == bodylen + overhead);
@@ -1928,7 +1953,7 @@ static int emit_esni_extension(ptls_esni_secret_t *esni, ptls_buffer_t *buf, ptl
             buf->off += bytes_to_pad;
         }
         /* encrypt */
-        if ((ret = ptls_buffer_reserve(buf, aead->algo->tag_size)) != 0)
+        if ((ret = ptls_buffer_reserve_aligned(buf, aead->algo->tag_size, aead->algo->align_bits)) != 0)
             goto Exit;
         ptls_aead_encrypt(aead, buf->base + start_off, buf->base + start_off, buf->off - start_off, 0, buf->base + key_share_ch_off,
                           key_share_ch_len);
