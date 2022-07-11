@@ -392,6 +392,10 @@ static void test_generated(void)
     const int nb_runs = 10000;
 #endif
     for (i = 0; i < nb_runs; ++i) {
+        if (i % 100 == 0) {
+            fputc('.', stderr);
+            fflush(stderr);
+        }
         /* generate input using RNG */
         uint8_t key[32], iv[12], seq32[4], aadlen, textlen;
         uint64_t seq;
@@ -446,11 +450,16 @@ static void test_generated(void)
         }
     }
 
+    fputc('\n', stderr);
+    fflush(stderr);
+
     ok(1);
     ptls_cipher_free(rand);
     return;
 
 Fail:
+    fputc('\n', stderr);
+    fflush(stderr);
     note("mismatch at index=%d", i);
     ok(0);
 }
