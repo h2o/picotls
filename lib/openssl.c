@@ -1343,10 +1343,9 @@ Exit:
     return ret;
 }
 
-int ptls_openssl_init_verify_certificate(ptls_openssl_verify_certificate_t *self, X509_STORE *store,
-                                         ptls_openssl_override_verify_certificate_t *override_callback)
+int ptls_openssl_init_verify_certificate(ptls_openssl_verify_certificate_t *self, X509_STORE *store)
 {
-    *self = (ptls_openssl_verify_certificate_t){{verify_cert, default_signature_schemes}, NULL, override_callback};
+    *self = (ptls_openssl_verify_certificate_t){{verify_cert, default_signature_schemes}, NULL};
 
     if (store != NULL) {
         X509_STORE_up_ref(store);
