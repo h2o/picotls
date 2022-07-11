@@ -41,7 +41,11 @@ typedef struct ptls_fusion_aesecb_context {
     } keys;
     unsigned rounds;
     uint8_t aesni256;
-} __attribute__((aligned(32))) ptls_fusion_aesecb_context_t;
+}
+#ifndef _WINDOWS
+__attribute__((aligned(32))) /* MSVC does not support 32-byte alignment, users should take care of that themselves. */
+#endif
+ptls_fusion_aesecb_context_t;
 
 typedef struct ptls_fusion_aesgcm_context ptls_fusion_aesgcm_context_t;
 
