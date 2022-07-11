@@ -531,18 +531,8 @@ int ptls_buffer_reserve_aligned(ptls_buffer_t *buf, size_t delta, uint8_t align_
     if (buf->base == NULL)
         return PTLS_ERROR_NO_MEMORY;
 
-    int needs_alloc = !!PTLS_MEMORY_DEBUG;
-    if (!needs_alloc && buf->capacity < buf->off + delta)
-        needs_alloc = 1;
-    if (!needs_alloc && buf->align_bits < align_bits) {
-        if (((uintptr_t)buf->base & ((1 << align_bits) - 1)) == 0) {
-            buf->align_bits = align_bits; /* if buf->base is already aligned, silently adjust `buf->align_bits` */
-        } else {
-            needs_alloc = 1;
-        }
-    }
-
-    if (needs_alloc) {
+    if (PTLS_MEMORY_DEBUG || buf->capacity < buf->off + delta ||
+        (buf->align_bits < align_bits && ((uintptr_t)buf->base & (((uintptr_t)1 << align_bits) - 1)) != 0)) {
         void *newp;
         size_t new_capacity = buf->capacity;
         if (new_capacity < 1024)
