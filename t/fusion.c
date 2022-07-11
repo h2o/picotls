@@ -109,7 +109,7 @@ static void test_gfmul(void)
 #define GHASH256 (((struct ptls_fusion_aesgcm_context256 *)ctx)->ghash)
 
     {                                                     /* one block */
-        static const char input[32] = "deaddeadbeefbeef"; /* latter 16-byte is NUL */
+        static const char input[32] = "deaddeadbeefbeef"; /* latter 16-bytes are NUL */
         __m128i hash;
         if (ctx->ecb.aesni256) {
             struct ptls_fusion_gfmul_state256 state;
@@ -170,7 +170,8 @@ static void test_gfmul(void)
     }
 
     { /* five blocks */
-        static const char input[80] = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor ";
+        static const char input[96] =
+            "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor "; /* last 16 bytes are NUL */
         __m128i hash;
         if (ctx->ecb.aesni256) {
             struct ptls_fusion_gfmul_state256 state;
