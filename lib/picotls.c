@@ -512,7 +512,9 @@ void ptls_buffer__release_memory(ptls_buffer_t *buf)
 #ifdef _WINDOWS
         if (buf->align_bits != 0) {
             _aligned_free(buf->base);
-        } else
+        } else {
+            free(buf->base);
+        }
 #else
         free(buf->base);
 #endif
