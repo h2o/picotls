@@ -411,7 +411,7 @@ typedef const struct st_ptls_aead_algorithm_t {
     /**
      * if encrypted bytes are going to be written using non-temporal store instructions (i.e., skip cache)
      */
-    uint8_t non_temporal : 1;
+    unsigned non_temporal : 1;
     /**
      * log2(alignment) being required
      */

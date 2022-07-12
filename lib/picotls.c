@@ -551,7 +551,7 @@ int ptls_buffer_reserve_aligned(ptls_buffer_t *buf, size_t delta, uint8_t align_
         }
         if (align_bits != 0) {
 #ifdef _WINDOWS
-            if ((newp = _aligned_malloc(new_capacity, 1 << align_bits)) == NULL)
+            if ((newp = _aligned_malloc(new_capacity, (size_t)1 << align_bits)) == NULL)
                 return PTLS_ERROR_NO_MEMORY;
 #else
             if (posix_memalign(&newp, 1 << align_bits, new_capacity) != 0)
