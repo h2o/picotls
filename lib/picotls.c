@@ -1461,6 +1461,8 @@ static int send_session_ticket(ptls_t *tls, ptls_message_emitter_t *emitter)
     assert(tls->ctx->ticket_lifetime != 0);
     assert(tls->ctx->encrypt_ticket != NULL);
 
+    ptls_buffer_init(&session_id, session_id_smallbuf, sizeof(session_id_smallbuf));
+
     { /* calculate verify-data that will be sent by the client */
         size_t orig_off = emitter->buf->off;
         if (tls->pending_handshake_secret != NULL && !tls->ctx->omit_end_of_early_data) {
@@ -1483,7 +1485,6 @@ static int send_session_ticket(ptls_t *tls, ptls_message_emitter_t *emitter)
     tls->ctx->random_bytes(&ticket_age_add, sizeof(ticket_age_add));
 
     /* build the raw nsk */
-    ptls_buffer_init(&session_id, session_id_smallbuf, sizeof(session_id_smallbuf));
     ret = encode_session_identifier(tls->ctx, &session_id, ticket_age_add, ptls_iovec_init(NULL, 0), tls->key_schedule,
                                     tls->server_name, tls->key_share->id, tls->cipher_suite->id, tls->negotiated_protocol);
     if (ret != 0)
@@ -4129,7 +4130,6 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
     });
 
     if (mode == HANDSHAKE_MODE_FULL) {
-        /* send certificate request if client authentication is activated */
         if (tls->ctx->require_client_authentication) {
             ptls_push_message(emitter, tls->key_schedule, PTLS_HANDSHAKE_TYPE_CERTIFICATE_REQUEST, {
                 /* certificate_request_context, this field SHALL be zero length, unless the certificate
@@ -4145,19 +4145,11 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
                     });
                 });
             });
-
-            if (ret != 0) {
-                goto Exit;
-            }
         }
-
-        ret = send_certificate_and_certificate_verify(tls, emitter, &ch->signature_algorithms, ptls_iovec_init(NULL, 0),
-                                                      PTLS_SERVER_CERTIFICATE_VERIFY_CONTEXT_STRING, ch->status_request,
-                                                      ch->cert_compression_algos.list, ch->cert_compression_algos.count);
-
-        if (ret != 0) {
+        if ((ret = send_certificate_and_certificate_verify(tls, emitter, &ch->signature_algorithms, ptls_iovec_init(NULL, 0),
+                                                           PTLS_SERVER_CERTIFICATE_VERIFY_CONTEXT_STRING, ch->status_request,
+                                                           ch->cert_compression_algos.list, ch->cert_compression_algos.count)) != 0)
             goto Exit;
-        }
     }
 
     if ((ret = send_finished(tls, emitter)) != 0)
