@@ -4130,7 +4130,6 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
     });
 
     if (mode == HANDSHAKE_MODE_FULL) {
-        /* send certificate request if client authentication is activated */
         if (tls->ctx->require_client_authentication) {
             ptls_push_message(emitter, tls->key_schedule, PTLS_HANDSHAKE_TYPE_CERTIFICATE_REQUEST, {
                 /* certificate_request_context, this field SHALL be zero length, unless the certificate
@@ -4146,19 +4145,11 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
                     });
                 });
             });
-
-            if (ret != 0) {
-                goto Exit;
-            }
         }
-
-        ret = send_certificate_and_certificate_verify(tls, emitter, &ch->signature_algorithms, ptls_iovec_init(NULL, 0),
-                                                      PTLS_SERVER_CERTIFICATE_VERIFY_CONTEXT_STRING, ch->status_request,
-                                                      ch->cert_compression_algos.list, ch->cert_compression_algos.count);
-
-        if (ret != 0) {
+        if ((ret = send_certificate_and_certificate_verify(tls, emitter, &ch->signature_algorithms, ptls_iovec_init(NULL, 0),
+                                                           PTLS_SERVER_CERTIFICATE_VERIFY_CONTEXT_STRING, ch->status_request,
+                                                           ch->cert_compression_algos.list, ch->cert_compression_algos.count)) != 0)
             goto Exit;
-        }
     }
 
     if ((ret = send_finished(tls, emitter)) != 0)
