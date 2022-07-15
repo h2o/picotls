@@ -3,6 +3,12 @@ CMAKE_POLICY(SET CMP0003 NEW)
 
 PROJECT(picotls)
 
+IF (CMAKE_VERSION VERSION_LESS 3.13.0)
+  MACRO (TARGET_LINK_DIRECTORIES target scope)
+    link_directories(${ARGN})
+  ENDMACRO ()
+ENDIF ()
+
 FIND_PACKAGE(PkgConfig REQUIRED)
 INCLUDE(cmake/dtrace-utils.cmake)
 
