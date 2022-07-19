@@ -184,8 +184,6 @@ struct st_ptls_t {
         ptls_buffer_t rec;
         ptls_buffer_t mess;
     } recvbuf;
-
-    ptls_buffer_t wbuf;
     /**
      * key schedule
      */
@@ -4428,7 +4426,6 @@ static ptls_t *new_instance(ptls_context_t *ctx, int is_server)
     tls->is_server = is_server;
     tls->send_change_cipher_spec = ctx->send_change_cipher_spec;
     tls->skip_tracing = ptls_default_skip_tracing;
-    ptls_buffer_init(&tls->wbuf, "", 0);
     return tls;
 }
 
@@ -4937,7 +4934,7 @@ int ptls_handshake(ptls_t *tls, ptls_buffer_t *_sendbuf, const void *input, size
 
     assert(tls->state < PTLS_STATE_POST_HANDSHAKE_MIN);
 
-    init_record_message_emitter(tls, &emitter, &tls->wbuf);
+    init_record_message_emitter(tls, &emitter, _sendbuf);
     size_t sendbuf_orig_off = emitter.super.buf->off;
 
     /* special handlings */
@@ -4945,12 +4942,10 @@ int ptls_handshake(ptls_t *tls, ptls_buffer_t *_sendbuf, const void *input, size
     case PTLS_STATE_CLIENT_HANDSHAKE_START: {
         assert(input == NULL || *inlen == 0);
         assert(tls->ctx->key_exchanges[0] != NULL);
-        ret = send_client_hello(tls, &emitter.super, properties, NULL);
-        goto Exit;
+        return send_client_hello(tls, &emitter.super, properties, NULL);
     }
     case PTLS_STATE_SERVER_GENERATING_CERTIFICATE_VERIFY:
-        ret = server_complete_handshake(tls, &emitter.super, 1, NULL);
-        goto Exit;
+        return server_complete_handshake(tls, &emitter.super, 1, NULL);
     default:
         break;
     }
@@ -4990,15 +4985,6 @@ int ptls_handshake(ptls_t *tls, ptls_buffer_t *_sendbuf, const void *input, size
     }
 
     *inlen -= src_end - src;
-
-Exit:
-    if (ret != PTLS_ERROR_ASYNC_OPERATION) {
-        if (tls->wbuf.off != 0) {
-            // flush internal buffer
-            ptls_buffer__do_pushv(_sendbuf, tls->wbuf.base, tls->wbuf.off);
-            ptls_buffer_dispose(&tls->wbuf);
-        }
-    }
     return ret;
 }
 
