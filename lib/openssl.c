@@ -717,7 +717,7 @@ int ptls_openssl_get_async_fd()
 
 static int async_sign(void *vargs)
 {
-    struct sign_ctx *args = vargs;
+    struct sign_ctx *args = *(struct sign_ctx **)vargs;
     return EVP_DigestSignFinal(args->ctx, args->buf.base, &args->siglen);
 }
 
@@ -797,7 +797,7 @@ static int do_sign(EVP_PKEY *key, const struct st_ptls_openssl_signature_scheme_
             }
 
             // start async sign
-            switch (ASYNC_start_job(&job, waitctx, &ret, async_sign, args, sizeof(struct sign_ctx)))
+            switch (ASYNC_start_job(&job, waitctx, &ret, async_sign, &args, sizeof(struct sign_ctx**)))
             {
                 case ASYNC_ERR:
                     ret = PTLS_ERROR_LIBRARY;
