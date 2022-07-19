@@ -701,7 +701,7 @@ static ASYNC_JOB *job = NULL;
 struct sign_ctx {
     const struct st_ptls_openssl_signature_scheme_t *scheme;
     EVP_MD_CTX *ctx;
-    unsigned char *sigret;
+    ptls_buffer_t buf;
     size_t siglen;
 };
 
@@ -718,7 +718,7 @@ int ptls_openssl_get_async_fd()
 static int async_sign(void *vargs)
 {
     struct sign_ctx *args = vargs;
-    return EVP_DigestSignFinal(args->ctx, args->sigret, &args->siglen);
+    return EVP_DigestSignFinal(args->ctx, args->buf.base, &args->siglen);
 }
 
 static int do_sign(EVP_PKEY *key, const struct st_ptls_openssl_signature_scheme_t *scheme, ptls_buffer_t *outbuf,
@@ -779,6 +779,9 @@ static int do_sign(EVP_PKEY *key, const struct st_ptls_openssl_signature_scheme_
                 ret = PTLS_ERROR_LIBRARY;
                 goto Exit;
             }
+
+            if ((ret = ptls_buffer_reserve(&args->buf, args->siglen)) != 0)
+                goto Exit;
         }
     }
 
@@ -788,11 +791,6 @@ static int do_sign(EVP_PKEY *key, const struct st_ptls_openssl_signature_scheme_
     } else
 #endif
     {
-        if ((ret = ptls_buffer_reserve(outbuf, args->siglen)) != 0)
-            goto Exit;
-
-        args->sigret = outbuf->base + outbuf->off;
-
         if (ASYNC_get_current_job() == NULL) {
             if (waitctx == NULL) {
                 waitctx = ASYNC_WAIT_CTX_new();
@@ -811,17 +809,18 @@ static int do_sign(EVP_PKEY *key, const struct st_ptls_openssl_signature_scheme_
                 case ASYNC_NO_JOBS:
                     ret = PTLS_ERROR_LIBRARY;
                     goto Exit;
-                case ASYNC_FINISH:
+                case ASYNC_FINISH: {
+                    args->buf.off += args->siglen;
+                    ptls_buffer__do_pushv(outbuf, args->buf.base, args->buf.off);
                     job = NULL;
                     break;
+                }
                 default:
                     ret = PTLS_ERROR_LIBRARY;
                     goto Exit;
             }
         }
     }
-
-    outbuf->off += args->siglen;
 
     ret = 0;
 Exit:
@@ -1117,6 +1116,7 @@ static int sign_certificate(ptls_sign_certificate_t *_self, ptls_t *tls, void **
     if (*sign_ctx == NULL) {
         args = malloc(sizeof(*args));
         memset(args, 0, sizeof(*args));
+        ptls_buffer_init(&args->buf, "", 0);
 
         // first invocation, get scheme
         for (scheme = self->schemes; scheme->scheme_id != UINT16_MAX; ++scheme) {
@@ -1145,6 +1145,7 @@ Exit:
     int ret = do_sign(self->key, scheme, outbuf, input, sign_ctx);
     if (ret != PTLS_ERROR_ASYNC_OPERATION) {
         *sign_ctx = NULL;
+        ptls_buffer_dispose(&args->buf);
         free(args);
     }
     return ret;
