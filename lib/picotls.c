@@ -66,11 +66,8 @@
 #define PTLS_EXTENSION_TYPE_KEY_SHARE 51
 #define PTLS_EXTENSION_TYPE_ENCRYPTED_SERVER_NAME 0xffce
 
-#define PTLS_PROTOCOL_VERSION_TLS13_FINAL 0x0304
-#define PTLS_PROTOCOL_VERSION_TLS13_DRAFT26 0x7f1a
-#define PTLS_PROTOCOL_VERSION_TLS13_DRAFT27 0x7f1b
-#define PTLS_PROTOCOL_VERSION_TLS13_DRAFT28 0x7f1c
 #define PTLS_PROTOCOL_VERSION_TLS12 0x0303
+#define PTLS_PROTOCOL_VERSION_TLS13 0x0304
 
 #define PTLS_SERVER_NAME_TYPE_HOSTNAME 0
 
@@ -116,8 +113,7 @@
 /**
  * list of supported versions in the preferred order
  */
-static const uint16_t supported_versions[] = {PTLS_PROTOCOL_VERSION_TLS13_FINAL, PTLS_PROTOCOL_VERSION_TLS13_DRAFT28,
-                                              PTLS_PROTOCOL_VERSION_TLS13_DRAFT27, PTLS_PROTOCOL_VERSION_TLS13_DRAFT26};
+static const uint16_t supported_versions[] = {PTLS_PROTOCOL_VERSION_TLS13};
 
 static const uint8_t hello_retry_random[PTLS_HELLO_RANDOM_SIZE] = {0xCF, 0x21, 0xAD, 0x74, 0xE5, 0x9A, 0x61, 0x11, 0xBE, 0x1D, 0x8C,
                                                                    0x02, 0x1E, 0x65, 0xB8, 0x91, 0xC2, 0xA2, 0x11, 0x16, 0x7A, 0xBB,
@@ -4715,7 +4711,7 @@ uint16_t ptls_get_protocol_version(ptls_t *tls)
     if (tls->traffic_protection.enc.tls12)
         return PTLS_PROTOCOL_VERSION_TLS12;
 
-    return PTLS_PROTOCOL_VERSION_TLS13_FINAL;
+    return PTLS_PROTOCOL_VERSION_TLS13;
 }
 
 int ptls_get_traffic_keys(ptls_t *tls, int is_enc, uint8_t *key, uint8_t *iv, uint64_t *seq)
