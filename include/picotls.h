@@ -1191,6 +1191,11 @@ ptls_iovec_t ptls_get_client_random(ptls_t *tls);
  */
 ptls_cipher_suite_t *ptls_get_cipher(ptls_t *tls);
 /**
+ * Returns protocol version (e.g., 0x0303 for TLS 1.2, 0x0304 for TLS 1.3). The result may be unstable prior to handshake
+ * completion.
+ */
+uint16_t ptls_get_protocol_version(ptls_t *tls);
+/**
  * Returns current state of traffic keys. The cipher-suite being used, as well as the length of the traffic keys, can be obtained
  * via `ptls_get_cipher`.
  * TODO: Even in case of offloading just the TX side, there should be API for handling key updates, sending Close aleart.
