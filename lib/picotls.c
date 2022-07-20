@@ -876,6 +876,10 @@ static void log_secret(ptls_t *tls, const char *type, ptls_iovec_t secret)
     char hexbuf[PTLS_MAX_DIGEST_SIZE * 2 + 1];
 
     PTLS_PROBE(NEW_SECRET, tls, type, ptls_hexdump(hexbuf, secret.base, secret.len));
+    PTLSLOG_CONN(new_secret, tls, {
+        PTLSLOG_ELEMENT_SAFESTR(label, type);
+        PTLSLOG_ELEMENT_SAFESTR(secret_hex, ptls_hexdump(hexbuf, secret.base, secret.len));
+    });
 
     if (tls->ctx->log_event != NULL)
         tls->ctx->log_event->cb(tls->ctx->log_event, tls, type, "%s", ptls_hexdump(hexbuf, secret.base, secret.len));
@@ -1285,8 +1289,13 @@ static int commission_handshake_secret(ptls_t *tls)
 
 static void log_client_random(ptls_t *tls)
 {
+    /* FIXME probe says the argument is `void *` but we emit hexstring? */
     PTLS_PROBE(CLIENT_RANDOM, tls,
                ptls_hexdump(alloca(sizeof(tls->client_random) * 2 + 1), tls->client_random, sizeof(tls->client_random)));
+    PTLSLOG_CONN(client_random, tls, {
+        PTLSLOG_ELEMENT_SAFESTR(
+            hex, ptls_hexdump(alloca(sizeof(tls->client_random) * 2 + 1), tls->client_random, sizeof(tls->client_random)));
+    });
 }
 
 #define SESSION_IDENTIFIER_MAGIC "ptls0001" /* the number should be changed upon incompatible format change */
@@ -4394,6 +4403,7 @@ ptls_t *ptls_client_new(ptls_context_t *ctx)
     }
 
     PTLS_PROBE(NEW, tls, 0);
+    PTLSLOG_CONN(new, tls, { PTLSLOG_ELEMENT_SIGNED(is_server, 0); });
     return tls;
 }
 
@@ -4404,12 +4414,15 @@ ptls_t *ptls_server_new(ptls_context_t *ctx)
     tls->server.early_data_skipped_bytes = UINT32_MAX;
 
     PTLS_PROBE(NEW, tls, 1);
+    PTLSLOG_CONN(new, tls, { PTLSLOG_ELEMENT_SIGNED(is_server, 1); });
     return tls;
 }
 
 void ptls_free(ptls_t *tls)
 {
     PTLS_PROBE0(FREE, tls);
+    PTLSLOG_CONN(free, tls, {});
+
     ptls_buffer_dispose(&tls->recvbuf.rec);
     ptls_buffer_dispose(&tls->recvbuf.mess);
     free_exporter_master_secret(tls, 1);
@@ -4627,6 +4640,11 @@ static int handle_client_handshake_message(ptls_t *tls, ptls_message_emitter_t *
 
     PTLS_PROBE(RECEIVE_MESSAGE, tls, message.base[0], message.base + PTLS_HANDSHAKE_HEADER_SIZE,
                message.len - PTLS_HANDSHAKE_HEADER_SIZE, ret);
+    PTLSLOG_CONN(receive_message, tls, {
+        PTLSLOG_ELEMENT_SIGNED(message, message.base[0]);
+        PTLSLOG_ELEMENT_SIGNED(len, message.len - PTLS_HANDSHAKE_HEADER_SIZE);
+        PTLSLOG_ELEMENT_SIGNED(result, ret);
+    });
 
     return ret;
 }
@@ -4693,6 +4711,11 @@ static int handle_server_handshake_message(ptls_t *tls, ptls_message_emitter_t *
 
     PTLS_PROBE(RECEIVE_MESSAGE, tls, message.base[0], message.base + PTLS_HANDSHAKE_HEADER_SIZE,
                message.len - PTLS_HANDSHAKE_HEADER_SIZE, ret);
+    PTLSLOG_CONN(receive_message, tls, {
+        PTLSLOG_ELEMENT_SIGNED(message, message.base[0]);
+        PTLSLOG_ELEMENT_SIGNED(len, message.len - PTLS_HANDSHAKE_HEADER_SIZE);
+        PTLSLOG_ELEMENT_SIGNED(result, ret);
+    });
 
     return ret;
 }
@@ -5633,4 +5656,34 @@ char *ptls_hexdump(char *buf, const void *_src, size_t len)
     }
     *dst++ = '\0';
     return buf;
+}
+
+int ptlslog_fd = -1;
+
+int ptlslog__do_pushv(ptls_buffer_t *buf, const void *p, size_t l)
+{
+    if (ptls_buffer_reserve(buf, l) != 0)
+        return 0;
+
+    memcpy(buf->base + buf->off, p, l);
+    buf->off += l;
+    return 1;
+}
+
+int ptlslog__do_push_hex(ptls_buffer_t *buf, uint64_t v)
+{
+    /* TODO optimize */
+    char s[sizeof(v) * 2 + 3];
+    sprintf(s, "0x%" PRIx64, v);
+
+    return ptlslog__do_pushv(buf, s, strlen(s));
+}
+
+int ptlslog__do_push_signed(ptls_buffer_t *buf, int64_t v)
+{
+    /* TODO optimize */
+    char s[32];
+    sprintf(s, "%" PRId64, v);
+
+    return ptlslog__do_pushv(buf, s, strlen(s));
 }
