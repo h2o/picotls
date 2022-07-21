@@ -1477,7 +1477,11 @@ extern int ptlslog_fd;
 
 #define PTLSLOG_CONN(label, tls, block)                                                                                            \
     PTLSLOG(label, {                                                                                                               \
-        PTLSLOG_ELEMENT_PTR(tls, tls);                                                                                             \
+        ptls_t *_tls = (tls);                                                                                                      \
+        ptlslog_skip = ptls_skip_tracing(_tls);                                                                                    \
+        if (ptlslog_skip)                                                                                                          \
+            break;                                                                                                                 \
+        PTLSLOG_ELEMENT_PTR(tls, _tls);                                                                                            \
         do {                                                                                                                       \
             block                                                                                                                  \
         } while (0);                                                                                                               \
