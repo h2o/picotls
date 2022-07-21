@@ -24,11 +24,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
 #ifdef _WINDOWS
 #include "wincompat.h"
 #else
 #include <arpa/inet.h>
 #include <sys/time.h>
+#include <sys/uio.h>
 #endif
 #include "picotls.h"
 #if PICOTLS_USE_DTRACE
@@ -5660,6 +5662,24 @@ char *ptls_hexdump(char *buf, const void *_src, size_t len)
 
 int ptlslog_fd = -1;
 
+int ptlslog_set_fd(int fd)
+{
+    int old_fd = ptlslog_fd;
+    ptlslog_fd = fd;
+    return old_fd;
+}
+
+#define STRLIT(s) (s), (strlen(s))
+
+void ptlslog__do_write(int fd, const char *type, size_t type_len, const ptls_buffer_t *buf)
+{
+    const struct iovec iov[] = {
+        {STRLIT("{\"type\":\"")}, {(void *)type, type_len}, {STRLIT("\"")}, {buf->base, buf->off}, {STRLIT("}\n")},
+    };
+    while (writev(fd, iov, sizeof(iov) / sizeof(iov[0])) == -1 && errno == EINTR)
+        ;
+}
+
 int ptlslog__do_pushv(ptls_buffer_t *buf, const void *p, size_t l)
 {
     if (ptls_buffer_reserve(buf, l) != 0)
@@ -5670,20 +5690,20 @@ int ptlslog__do_pushv(ptls_buffer_t *buf, const void *p, size_t l)
     return 1;
 }
 
-int ptlslog__do_push_hex(ptls_buffer_t *buf, uint64_t v)
-{
-    /* TODO optimize */
-    char s[sizeof(v) * 2 + 3];
-    sprintf(s, "0x%" PRIx64, v);
-
-    return ptlslog__do_pushv(buf, s, strlen(s));
-}
-
 int ptlslog__do_push_signed(ptls_buffer_t *buf, int64_t v)
 {
     /* TODO optimize */
     char s[32];
-    sprintf(s, "%" PRId64, v);
+    int len = sprintf(s, "%" PRId64, v);
 
-    return ptlslog__do_pushv(buf, s, strlen(s));
+    return ptlslog__do_pushv(buf, s, (size_t)len);
+}
+
+int ptlslog__do_push_unsigned(ptls_buffer_t *buf, uint64_t v)
+{
+    /* TODO optimize */
+    char s[32];
+    int len = sprintf(s, "%" PRIu64, v);
+
+    return ptlslog__do_pushv(buf, s, (size_t)len);
 }
