@@ -1449,8 +1449,6 @@ extern PTLS_THREADLOCAL unsigned ptls_default_skip_tracing;
 
 extern int ptlslog_fd;
 
-int ptlslog_set_fd(int fd);
-
 #define PTLSLOG(type, block)                                                                                                       \
     do {                                                                                                                           \
         if (ptlslog_fd == -1)                                                                                                      \
@@ -1459,12 +1457,13 @@ int ptlslog_set_fd(int fd);
         ptls_buffer_t ptlslogbuf;                                                                                                  \
         ptls_buffer_init(&ptlslogbuf, smallbuf, sizeof(smallbuf));                                                                 \
         int ptlslog_skip = 0;                                                                                                      \
+        PTLSLOG__DO_PUSH_SAFESTR("{\"type\":\"" PTLS_TO_STR(type) "\"");                                                           \
         do {                                                                                                                       \
             block                                                                                                                  \
         } while (0);                                                                                                               \
+        PTLSLOG__DO_PUSH_SAFESTR("}\n");                                                                                           \
         if (!ptlslog_skip) {                                                                                                       \
-            const char *t = PTLS_TO_STR(type);                                                                                     \
-            ptlslog__do_write(ptlslog_fd, t, strlen(t), &ptlslogbuf);                                                              \
+            ptlslog__do_write(&ptlslogbuf);                                                                                        \
         }                                                                                                                          \
         ptls_buffer_dispose(&ptlslogbuf);                                                                                          \
     } while (0)
@@ -1517,7 +1516,7 @@ static int ptlslog__do_push_safestr(ptls_buffer_t *buf, const char *s);
 int ptlslog__do_pushv(ptls_buffer_t *buf, const void *p, size_t l);
 int ptlslog__do_push_signed(ptls_buffer_t *buf, int64_t v);
 int ptlslog__do_push_unsigned(ptls_buffer_t *buf, uint64_t v);
-void ptlslog__do_write(int fd, const char *type, size_t type_len, const ptls_buffer_t *buf);
+void ptlslog__do_write(const ptls_buffer_t *buf);
 
 /* inline functions */
 

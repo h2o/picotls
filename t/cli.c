@@ -74,7 +74,7 @@ static void setup_ptlslog(const char *fn)
         fprintf(stderr, "failed to open file:%s:%s\n", fn, strerror(errno));
         exit(1);
     }
-    ptlslog_set_fd(fd);
+    ptlslog_fd = fd;
 }
 
 static void setup_ptlslog_from_env(void)

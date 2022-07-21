@@ -30,7 +30,7 @@
 #else
 #include <arpa/inet.h>
 #include <sys/time.h>
-#include <sys/uio.h>
+#include <unistd.h>
 #endif
 #include "picotls.h"
 #if PICOTLS_USE_DTRACE
@@ -5662,21 +5662,9 @@ char *ptls_hexdump(char *buf, const void *_src, size_t len)
 
 int ptlslog_fd = -1;
 
-int ptlslog_set_fd(int fd)
+void ptlslog__do_write(const ptls_buffer_t *buf)
 {
-    int old_fd = ptlslog_fd;
-    ptlslog_fd = fd;
-    return old_fd;
-}
-
-#define STRLIT(s) (s), (strlen(s))
-
-void ptlslog__do_write(int fd, const char *type, size_t type_len, const ptls_buffer_t *buf)
-{
-    const struct iovec iov[] = {
-        {STRLIT("{\"type\":\"")}, {(void *)type, type_len}, {STRLIT("\"")}, {buf->base, buf->off}, {STRLIT("}\n")},
-    };
-    while (writev(fd, iov, sizeof(iov) / sizeof(iov[0])) == -1 && errno == EINTR)
+    while (write(ptlslog_fd, buf->base, buf->off) == -1 && errno == EINTR)
         ;
 }
 
