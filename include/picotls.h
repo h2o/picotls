@@ -1449,7 +1449,7 @@ extern PTLS_THREADLOCAL unsigned ptls_default_skip_tracing;
 
 extern int ptlslog_fd;
 
-#define PTLSLOG(type, block)                                                                                                       \
+#define PTLSLOG(module, type, block)                                                                                               \
     do {                                                                                                                           \
         if (ptlslog_fd == -1)                                                                                                      \
             break;                                                                                                                 \
@@ -1457,7 +1457,7 @@ extern int ptlslog_fd;
         ptls_buffer_t ptlslogbuf;                                                                                                  \
         ptls_buffer_init(&ptlslogbuf, smallbuf, sizeof(smallbuf));                                                                 \
         int ptlslog_skip = 0;                                                                                                      \
-        PTLSLOG__DO_PUSH_SAFESTR("{\"type\":\"" PTLS_TO_STR(type) "\"");                                                           \
+        PTLSLOG__DO_PUSH_SAFESTR("{\"module\":\"" PTLS_TO_STR(module) "\",\"type\":\"" PTLS_TO_STR(type) "\"");                    \
         do {                                                                                                                       \
             block                                                                                                                  \
         } while (0);                                                                                                               \
@@ -1475,8 +1475,8 @@ extern int ptlslog_fd;
         PTLSLOG__DO_PUSH_SAFESTR("\"");                                                                                            \
     } while (0)
 
-#define PTLSLOG_CONN(label, tls, block)                                                                                            \
-    PTLSLOG(label, {                                                                                                               \
+#define PTLSLOG_CONN(type, tls, block)                                                                                             \
+    PTLSLOG(picotls, type, {                                                                                                       \
         ptls_t *_tls = (tls);                                                                                                      \
         ptlslog_skip = ptls_skip_tracing(_tls);                                                                                    \
         if (ptlslog_skip)                                                                                                          \
