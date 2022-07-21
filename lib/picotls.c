@@ -4504,6 +4504,12 @@ void ptls_set_context(ptls_t *tls, ptls_context_t *ctx)
     tls->ctx = ctx;
 }
 
+void *ptls_get_sign_ctx(ptls_t *tls)
+{
+    assert(tls->is_server);
+    return tls->server.sign_certificate_ctx;
+}
+
 ptls_iovec_t ptls_get_client_random(ptls_t *tls)
 {
     return ptls_iovec_init(tls->client_random, PTLS_HELLO_RANDOM_SIZE);
