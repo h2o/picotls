@@ -729,7 +729,7 @@ int ptls_openssl_get_async_fd(ptls_t *ptls)
 {
     int fds[1];
     size_t numfds;
-    struct sign_ctx *args = ptls_get_sign_ctx(ptls);
+    struct sign_ctx *args = ptls_get_sign_context(ptls);
     ASYNC_WAIT_CTX_get_all_fds(args->waitctx, NULL, &numfds);
     assert(numfds == 1);
     ASYNC_WAIT_CTX_get_all_fds(args->waitctx, fds, &numfds);
