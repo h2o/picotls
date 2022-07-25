@@ -711,6 +711,8 @@ static struct sign_ctx *sign_ctx_alloc(size_t siglen)
     struct sign_ctx *sign_ctx = malloc(sizeof(*sign_ctx) + siglen);
     memset(sign_ctx, 0, sizeof(*sign_ctx) + siglen);
     sign_ctx->siglen = siglen;
+    sign_ctx->waitctx = ASYNC_WAIT_CTX_new();
+
     return sign_ctx;
 }
 
@@ -821,10 +823,6 @@ static int do_sign(EVP_PKEY *key, const struct st_ptls_openssl_signature_scheme_
 #endif
     {
         if (ASYNC_get_current_job() == NULL) {
-            if (args->waitctx == NULL) {
-                args->waitctx = ASYNC_WAIT_CTX_new();
-            }
-
             // start async sign
             switch (ASYNC_start_job(&args->job, args->waitctx, &ret, async_sign, &args, sizeof(struct sign_ctx**)))
             {
