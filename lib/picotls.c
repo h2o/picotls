@@ -880,7 +880,6 @@ static void log_secret(ptls_t *tls, const char *type, ptls_iovec_t secret)
     PTLS_PROBE(NEW_SECRET, tls, type, ptls_hexdump(hexbuf, secret.base, secret.len));
     PTLSLOG_CONN(new_secret, tls, {
         PTLSLOG_ELEMENT_SAFESTR(label, type);
-        PTLSLOG_ELEMENT_SAFESTR(secret_hex, ptls_hexdump(hexbuf, secret.base, secret.len));
     });
 
     if (tls->ctx->log_event != NULL)
