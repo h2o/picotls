@@ -5647,11 +5647,64 @@ char *ptls_hexdump(char *buf, const void *_src, size_t len)
     size_t i;
 
     for (i = 0; i != len; ++i) {
-        *dst++ = "0123456789abcdef"[src[i] >> 4];
-        *dst++ = "0123456789abcdef"[src[i] & 0xf];
+        ptls_byte_to_hex(dst, src[i]);
+        dst += 2;
     }
     *dst++ = '\0';
     return buf;
+}
+
+size_t ptls_escape_json_unsafe_string(char *buf, const void *bytes, size_t len)
+{
+    char *dst = buf;
+    const uint8_t *src = bytes, *end = src + len;
+
+    for (; src != end; ++src) {
+        switch (*src) {
+        case '"':
+            *dst++ = '\\';
+            *dst++ = '"';
+            break;
+        case '\'':
+            *dst++ = '\\';
+            *dst++ = '\'';
+            break;
+        case '\\':
+            *dst++ = '\\';
+            *dst++ = '\\';
+            break;
+        case '/':
+            *dst++ = '\\';
+            *dst++ = '/';
+            break;
+        case '\r':
+            *dst++ = '\\';
+            *dst++ = 'r';
+            break;
+        case '\n':
+            *dst++ = '\\';
+            *dst++ = 'n';
+            break;
+        case '\t':
+            *dst++ = '\\';
+            *dst++ = 't';
+            break;
+        default:
+            if (0x20 <= *src && *src <= 0x7e) {
+                *dst++ = *src;
+            } else {
+                // FIZME: recognize UTF-8 characters
+                *dst++ = '\\';
+                *dst++ = 'u';
+                ptls_byte_to_hex(dst, *src);
+                dst += 2;
+            }
+            break;
+        }
+    }
+    *dst = '\0';
+
+    return (size_t)(dst - buf);
 }
 
 int ptlslog_fd = -1;
@@ -5669,6 +5722,16 @@ int ptlslog__do_pushv(ptls_buffer_t *buf, const void *p, size_t l)
 
     memcpy(buf->base + buf->off, p, l);
     buf->off += l;
+    return 1;
+}
+
+int ptlslog__do_push_unsafestr(ptls_buffer_t *buf, const char *s)
+{
+    size_t l = strlen(s);
+    if (ptls_buffer_reserve(buf, l * 4 + 1) != 0)
+        return 0;
+
+    buf->off += ptls_escape_json_unsafe_string((char *)(buf->base + buf->off), s, l);
     return 1;
 }
 
