@@ -1434,6 +1434,10 @@ ptls_esni_secret_t *ptls_get_esni_secret(ptls_t *ctx);
  *
  */
 char *ptls_hexdump(char *dst, const void *src, size_t len);
+#define PTLS_HEXDUMP(src, len) ({ \
+        size_t _len = (len); \
+        ptls_hexdump(alloca(_len * 2 + 1), (src), _len); \
+    })
 /**
  * the default get_time callback
  */

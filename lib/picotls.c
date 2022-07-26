@@ -878,9 +878,7 @@ static void log_secret(ptls_t *tls, const char *type, ptls_iovec_t secret)
     char hexbuf[PTLS_MAX_DIGEST_SIZE * 2 + 1];
 
     PTLS_PROBE(NEW_SECRET, tls, type, ptls_hexdump(hexbuf, secret.base, secret.len));
-    PTLSLOG_CONN(new_secret, tls, {
-        PTLSLOG_ELEMENT_SAFESTR(label, type);
-    });
+    PTLSLOG_CONN(new_secret, tls, { PTLSLOG_ELEMENT_SAFESTR(label, type); });
 
     if (tls->ctx->log_event != NULL)
         tls->ctx->log_event->cb(tls->ctx->log_event, tls, type, "%s", ptls_hexdump(hexbuf, secret.base, secret.len));
@@ -1291,12 +1289,9 @@ static int commission_handshake_secret(ptls_t *tls)
 static void log_client_random(ptls_t *tls)
 {
     /* FIXME probe says the argument is `void *` but we emit hexstring? */
-    PTLS_PROBE(CLIENT_RANDOM, tls,
-               ptls_hexdump(alloca(sizeof(tls->client_random) * 2 + 1), tls->client_random, sizeof(tls->client_random)));
-    PTLSLOG_CONN(client_random, tls, {
-        PTLSLOG_ELEMENT_SAFESTR(
-            hex, ptls_hexdump(alloca(sizeof(tls->client_random) * 2 + 1), tls->client_random, sizeof(tls->client_random)));
-    });
+    PTLS_PROBE(CLIENT_RANDOM, tls, PTLS_HEXDUMP(tls->client_random, sizeof(tls->client_random)));
+    PTLSLOG_CONN(client_random, tls,
+                 { PTLSLOG_ELEMENT_SAFESTR(bytes, PTLS_HEXDUMP(tls->client_random, sizeof(tls->client_random))); });
 }
 
 #define SESSION_IDENTIFIER_MAGIC "ptls0001" /* the number should be changed upon incompatible format change */
