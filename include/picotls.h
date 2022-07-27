@@ -1487,28 +1487,16 @@ extern int ptlslog_fd;
 
 #define PTLSLOG_ELEMENT_SAFESTR(name, value)                                                                                       \
     do {                                                                                                                           \
-        const char *_value = (value);                                                                                              \
-        PTLSLOG__DO_PUSH_SAFESTR(",\"" PTLS_TO_STR(name) "\":");                                                                   \
-        if (_value) {                                                                                                              \
-            PTLSLOG__DO_PUSH_SAFESTR("\"");                                                                                        \
-            PTLSLOG__DO_PUSH_SAFESTR(_value);                                                                                      \
-            PTLSLOG__DO_PUSH_SAFESTR("\"");                                                                                        \
-        } else {                                                                                                                   \
-            PTLSLOG__DO_PUSH_SAFESTR("null");                                                                                      \
-        }                                                                                                                          \
+        PTLSLOG__DO_PUSH_SAFESTR(",\"" PTLS_TO_STR(name) "\":\"");                                                                 \
+        PTLSLOG__DO_PUSH_SAFESTR(value);                                                                                           \
+        PTLSLOG__DO_PUSH_SAFESTR("\"");                                                                                            \
     } while (0)
 
 #define PTLSLOG_ELEMENT_UNSAFESTR(name, value)                                                                                     \
     do {                                                                                                                           \
-        const char *_value = (value);                                                                                              \
-        PTLSLOG__DO_PUSH_SAFESTR(",\"" PTLS_TO_STR(name) "\":");                                                                   \
-        if (_value) {                                                                                                              \
-            PTLSLOG__DO_PUSH_SAFESTR("\"");                                                                                        \
-            PTLSLOG__DO_PUSH_UNSAFESTR(_value);                                                                                    \
-            PTLSLOG__DO_PUSH_SAFESTR("\"");                                                                                        \
-        } else {                                                                                                                   \
-            PTLSLOG__DO_PUSH_SAFESTR("null");                                                                                      \
-        }                                                                                                                          \
+        PTLSLOG__DO_PUSH_SAFESTR(",\"" PTLS_TO_STR(name) "\":\"");                                                                 \
+        PTLSLOG__DO_PUSH_UNSAFESTR(value);                                                                                         \
+        PTLSLOG__DO_PUSH_SAFESTR("\"");                                                                                            \
     } while (0)
 
 #define PTLSLOG_ELEMENT_PTR(name, value) PTLSLOG_ELEMENT_UNSIGNED(name, (uint64_t)(value))
