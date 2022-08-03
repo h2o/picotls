@@ -19,6 +19,9 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
+#ifdef _WINDOWS
+#define _CRT_SECURE_NO_WARNINGS
+#endif
 #include <assert.h>
 #include <stddef.h>
 #include <stdio.h>
