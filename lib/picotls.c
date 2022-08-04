@@ -5716,8 +5716,11 @@ int ptlslog_fd = -1;
 
 void ptlslog__do_write(const ptls_buffer_t *buf)
 {
-    while (write(ptlslog_fd, buf->base, buf->off) == -1 && errno == EINTR)
+    ssize_t ret;
+    while ((ret = write(ptlslog_fd, buf->base, buf->off)) == -1 && errno == EINTR)
         ;
+    if (ret == -1 && errno != EAGAIN)
+        ptlslog_fd = -1;
 }
 
 int ptlslog__do_pushv(ptls_buffer_t *buf, const void *p, size_t l)
