@@ -1295,8 +1295,7 @@ static void log_client_random(ptls_t *tls)
     char buf[sizeof(tls->client_random) * 2 + 1];
     /* FIXME probe says the argument is `void *` but we emit hexstring? */
     PTLS_PROBE(CLIENT_RANDOM, tls, ptls_hexdump(buf, tls->client_random, sizeof(tls->client_random)));
-    PTLSLOG_CONN(client_random, tls,
-                 { PTLSLOG_ELEMENT_SAFESTR(bytes, ptls_hexdump(buf, tls->client_random, sizeof(tls->client_random))); });
+    PTLSLOG_CONN(client_random, tls, { PTLSLOG_ELEMENT_HEXDUMP(bytes, tls->client_random, sizeof(tls->client_random)); });
 }
 
 #define SESSION_IDENTIFIER_MAGIC "ptls0001" /* the number should be changed upon incompatible format change */
@@ -5659,7 +5658,7 @@ char *ptls_hexdump(char *buf, const void *_src, size_t len)
     return buf;
 }
 
-size_t ptls_escape_json_unsafe_string(char *buf, const void *bytes, size_t len)
+static size_t escape_json_unsafe_string(char *buf, const void *bytes, size_t len)
 {
     char *dst = buf;
     const uint8_t *src = bytes, *end = src + len;
@@ -5740,7 +5739,17 @@ int ptlslog__do_push_unsafestr(ptls_buffer_t *buf, const char *s, size_t l)
     if (ptls_buffer_reserve(buf, l * 4 + 1) != 0)
         return 0;
 
-    buf->off += ptls_escape_json_unsafe_string((char *)(buf->base + buf->off), s, l);
+    buf->off += escape_json_unsafe_string((char *)(buf->base + buf->off), s, l);
+    return 1;
+}
+
+int ptlslog__do_push_hexdump(ptls_buffer_t *buf, const void *s, size_t l)
+{
+    if (ptls_buffer_reserve(buf, l * 2 + 1) != 0)
+        return 0;
+
+    ptls_hexdump((char *)(buf->base + buf->off), s, l);
+    buf->off += l * 2;
     return 1;
 }
 

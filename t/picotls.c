@@ -1694,7 +1694,7 @@ static void test_escape_json_unsafe_string(void)
     const char *src = "\"\\/\'\n\r\t foo bar";
     size_t src_len = strlen(src);
     char *buf = alloca(src_len * 4 + 1);
-    size_t escaped_len = ptls_escape_json_unsafe_string(buf, src, src_len);
+    size_t escaped_len = escape_json_unsafe_string(buf, src, src_len);
     ok(escaped_len == strlen(buf));
     ok(strcmp(buf, "\\\"\\\\\\/\\'\\n\\r\\t foo bar") == 0);
 }
