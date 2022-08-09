@@ -29,6 +29,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <pthread.h>
 #ifdef _WINDOWS
 #include "wincompat.h"
 #else
@@ -5713,15 +5714,71 @@ static size_t escape_json_unsafe_string(char *buf, const void *bytes, size_t len
     return (size_t)(dst - buf);
 }
 
-int ptlslog_fd = -1;
+// Only PTSLOG_MAXCONN of clients can be attached to the process at a time
+#define PTLSLOG_MAXCONN (8)
+struct st_ptlslog_context_t {
+    int fds[PTLSLOG_MAXCONN];
+    size_t num_active_fds;
+    int initialized;
+    pthread_mutex_t mutex;
+} ptlslog = {
+    .fds = {0},
+    .num_active_fds = 0,
+    .initialized = 0,
+    .mutex = PTHREAD_MUTEX_INITIALIZER,
+};
+
+int ptlslog_is_active(void)
+{
+    return ptlslog.num_active_fds > 0;
+}
+
+int ptlslog_add_fd(int fd)
+{
+    int ret = 0;
+    pthread_mutex_lock(&ptlslog.mutex);
+    if (PTLS_UNLIKELY(ptlslog.num_active_fds == PTLSLOG_MAXCONN))
+        goto Exit;
+
+    if (!ptlslog.initialized) {
+        for (int i = 0; i < PTLSLOG_MAXCONN; ++i) {
+            ptlslog.fds[i] = -1;
+        }
+        ptlslog.initialized = 1;
+    }
+
+    for (int i = 0; i < PTLSLOG_MAXCONN; ++i) {
+        if (ptlslog.fds[i] == -1) {
+            ptlslog.fds[i] = fd;
+            ++ptlslog.num_active_fds;
+            goto Exit;
+        }
+    }
+    ret = 1;
+
+Exit:
+    pthread_mutex_unlock(&ptlslog.mutex);
+
+    return ret;
+}
 
 void ptlslog__do_write(const ptls_buffer_t *buf)
 {
-    ssize_t ret;
-    while ((ret = write(ptlslog_fd, buf->base, buf->off)) == -1 && errno == EINTR)
-        ;
-    if (ret == -1 && errno != EAGAIN)
-        ptlslog_fd = -1;
+    pthread_mutex_lock(&ptlslog.mutex);
+    for (int i = 0, num_handled = 0; i < PTLSLOG_MAXCONN && num_handled < ptlslog.num_active_fds; ++i) {
+        if (ptlslog.fds[i] != -1) {
+            ++num_handled;
+
+            ssize_t ret;
+            while ((ret = write(ptlslog.fds[i], buf->base, buf->off)) == -1 && errno == EINTR)
+                ;
+            if (ret == -1 && errno != EAGAIN) {
+                ptlslog.fds[i] = -1;
+                --ptlslog.num_active_fds;
+            }
+        }
+    }
+    pthread_mutex_unlock(&ptlslog.mutex);
 }
 
 int ptlslog__do_pushv(ptls_buffer_t *buf, const void *p, size_t l)

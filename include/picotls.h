@@ -1447,11 +1447,15 @@ extern PTLS_THREADLOCAL unsigned ptls_default_skip_tracing;
 #define ptls_default_skip_tracing 0
 #endif
 
-extern int ptlslog_fd;
+int ptlslog_is_active(void);
+/**
+ * Registers an fd for ptslog. A registered fd is automatically removed if it is closed.
+ */
+int ptlslog_add_fd(int fd);
 
 #define PTLSLOG(module, type, block)                                                                                               \
     do {                                                                                                                           \
-        if (ptlslog_fd == -1)                                                                                                      \
+        if (!ptlslog_is_active())                                                                                                  \
             break;                                                                                                                 \
         char smallbuf[128];                                                                                                        \
         ptls_buffer_t ptlslogbuf;                                                                                                  \
