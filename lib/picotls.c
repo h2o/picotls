@@ -5751,10 +5751,10 @@ int ptlslog_add_fd(int fd)
         if (ptlslog.fds[i] == -1) {
             ptlslog.fds[i] = fd;
             ++ptlslog.num_active_fds;
+            ret = 1;
             goto Exit;
         }
     }
-    ret = 1;
 
 Exit:
     pthread_mutex_unlock(&ptlslog.mutex);
