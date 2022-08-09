@@ -77,13 +77,6 @@ static void setup_ptlslog(const char *fn)
     ptlslog_add_fd(fd);
 }
 
-static void setup_ptlslog_from_env(void)
-{
-    const char *fn = getenv("PTLSLOG");
-    if (fn)
-        setup_ptlslog(fn);
-}
-
 static int handle_connection(int sockfd, ptls_context_t *ctx, const char *server_name, const char *input_file,
                              ptls_handshake_properties_t *hsprop, int request_key_update, int keep_sender_open)
 {
@@ -370,7 +363,7 @@ static void usage(const char *cmd)
            "  -I                   keep send side open after sending all data (client-only)\n"
            "  -k key-file          specifies the credentials for signing the certificate\n"
            "  -l log-file          file to log events (incl. traffic secrets)\n"
-           "  -j log-file          file to log probe events in JSON-Lines (PTLSOG=log-file is equivalent)\n"
+           "  -j log-file          file to log probe events in JSON-Lines\n"
            "  -n                   negotiates the key exchange method (i.e. wait for HRR)\n"
            "  -N named-group       named group to be used (default: secp256r1)\n"
            "  -s session-file      file to read/write the session ticket\n"
@@ -426,7 +419,6 @@ int main(int argc, char **argv)
 #endif
 
     res_init();
-    setup_ptlslog_from_env();
 
     ptls_key_exchange_algorithm_t *key_exchanges[128] = {NULL};
     ptls_cipher_suite_t *cipher_suites[128] = {NULL};
