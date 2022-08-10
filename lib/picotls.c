@@ -5719,18 +5719,21 @@ static size_t escape_json_unsafe_string(char *buf, const void *bytes, size_t len
 struct st_ptlslog_context_t {
     int fds[PTLSLOG_MAXCONN];
     size_t num_active_fds;
+    size_t lost;
     int initialized;
     pthread_mutex_t mutex;
 } ptlslog = {
-    .fds = {0},
-    .num_active_fds = 0,
-    .initialized = 0,
     .mutex = PTHREAD_MUTEX_INITIALIZER,
 };
 
 int ptlslog_is_active(void)
 {
     return ptlslog.num_active_fds > 0;
+}
+
+size_t ptlslog_num_lost(void)
+{
+    return ptlslog.lost;
 }
 
 int ptlslog_add_fd(int fd)
@@ -5772,10 +5775,14 @@ void ptlslog__do_write(const ptls_buffer_t *buf)
             ssize_t ret;
             while ((ret = write(ptlslog.fds[i], buf->base, buf->off)) == -1 && errno == EINTR)
                 ;
-            if (ret == -1 && errno != EAGAIN) {
-                close(ptlslog.fds[i]);
-                ptlslog.fds[i] = -1;
-                --ptlslog.num_active_fds;
+            if (ret == -1) {
+                if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                    ptlslog.lost++;
+                } else {
+                    close(ptlslog.fds[i]);
+                    ptlslog.fds[i] = -1;
+                    --ptlslog.num_active_fds;
+                }
             }
         }
     }
