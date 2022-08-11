@@ -157,8 +157,11 @@ static int handle_connection(int sockfd, ptls_context_t *ctx, const char *server
                     } else if (ret == PTLS_ERROR_IN_PROGRESS) {
                         /* ok */
                     } else {
-                        if (encbuf.off != 0)
-                            (void)write(sockfd, encbuf.base, encbuf.off);
+                        if (encbuf.off != 0) {
+                            if (write(sockfd, encbuf.base, encbuf.off) < 0) {
+                                fprintf(stderr, "write encbuf on socket %d fails\n", (int)sockfd);
+                            }
+                        }
                         fprintf(stderr, "ptls_handshake:%d\n", ret);
                         goto Exit;
                     }
@@ -166,8 +169,11 @@ static int handle_connection(int sockfd, ptls_context_t *ctx, const char *server
                     if ((ret = ptls_receive(tls, &rbuf, bytebuf + off, &leftlen)) == 0) {
                         if (rbuf.off != 0) {
                             data_received += rbuf.off;
-                            if (input_file != input_file_is_benchmark)
-                                write(1, rbuf.base, rbuf.off);
+                            if (input_file != input_file_is_benchmark) {
+                                if (write(1, rbuf.base, rbuf.off) < 0) {
+                                    fprintf(stderr, "write on file 1 fails.");
+                                }
+                            }
                             rbuf.off = 0;
                         }
                     } else if (ret == PTLS_ERROR_IN_PROGRESS) {
@@ -253,8 +259,11 @@ static int handle_connection(int sockfd, ptls_context_t *ctx, const char *server
                 if ((ret = ptls_send_alert(tls, &wbuf, PTLS_ALERT_LEVEL_WARNING, PTLS_ALERT_CLOSE_NOTIFY)) != 0) {
                     fprintf(stderr, "ptls_send_alert:%d\n", ret);
                 }
-                if (wbuf.off != 0)
-                    (void)write(sockfd, wbuf.base, wbuf.off);
+                if (wbuf.off != 0) {
+                    if (write(sockfd, wbuf.base, wbuf.off) < 0) {
+                        fprintf(stderr, "write on close on socket %d fails\n", (int)sockfd);
+                    }
+                }
                 ptls_buffer_dispose(&wbuf);
                 shutdown(sockfd, SHUT_WR);
             }
