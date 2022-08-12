@@ -11,7 +11,6 @@ ALL:
 	docker run $(DOCKER_RUN_OPTS) $(CONTAINER_NAME) make -f $(CI_MK) _check CMAKE_ARGS='$(CMAKE_ARGS)' CHECK_ENVS='$(CHECK_ENVS)'
 
 _check:
-    apt-get install g++
 	uname -a
 	mkdir -p build
 	sudo mount -t tmpfs tmpfs build -o size=3G
