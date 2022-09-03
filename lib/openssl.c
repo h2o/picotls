@@ -29,7 +29,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifndef OPENSSL_API_COMPAT
 #define OPENSSL_API_COMPAT 0x00908000L
+#endif
 #include <openssl/bn.h>
 #include <openssl/crypto.h>
 #include <openssl/ec.h>
