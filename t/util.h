@@ -365,4 +365,25 @@ Error:
     return ptls_iovec_init(NULL, 0);
 }
 
+/* Some function calls like `write` may need to be repeated if interrupted. 
+ * The 
+ */
+
+#ifdef _WINDOWS
+#define ptls_repeat_while_eintr(block, exit_block)                                                                                 \
+    while (block < 0) {                                                                                                            \
+        exit_block;                                                                                                                \
+    }
+#else
+#define ptls_repeat_while_eintr(block, exit_block)                                                                                 \
+    while (block < 0) {                                                                                                            \
+        if (errno == EINTR)                                                                                                        \
+            continue;                                                                                                              \
+        exit_block;                                                                                                                \
+    }
+#endif
+
+
+
+
 #endif
