@@ -369,13 +369,13 @@ Error:
  * for other reason, the macro executes the exit block, such as either { break; } or { goto Fail; }.
  */
 #ifdef _WINDOWS
-#define repeat_while_eintr(block, exit_block)                                                                                      \
-    while (block < 0) {                                                                                                            \
+#define repeat_while_eintr(expr, exit_block)                                                                                       \
+    while ((expr) < 0) {                                                                                                           \
         exit_block;                                                                                                                \
     }
 #else
-#define repeat_while_eintr(block, exit_block)                                                                                      \
-    while (block < 0) {                                                                                                            \
+#define repeat_while_eintr(expr, exit_block)                                                                                       \
+    while ((expr) < 0) {                                                                                                           \
         if (errno == EINTR)                                                                                                        \
             continue;                                                                                                              \
         exit_block;                                                                                                                \
