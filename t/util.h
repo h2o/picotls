@@ -365,19 +365,16 @@ Error:
     return ptls_iovec_init(NULL, 0);
 }
 
-/* The ptls_repeat_while_eintr macro will repeat a function call (block) if
-* it is interrupted (EINTR) before completion. If failing for other reason,
-* the macro executes the exit block, such as either { break; } or
-* { goto Fail; }
-*/
-
+/* The ptls_repeat_while_eintr macro will repeat a function call (block) if it is interrupted (EINTR) before completion. If failing
+ * for other reason, the macro executes the exit block, such as either { break; } or { goto Fail; }.
+ */
 #ifdef _WINDOWS
-#define ptls_repeat_while_eintr(block, exit_block)                                                                                 \
+#define repeat_while_eintr(block, exit_block)                                                                                      \
     while (block < 0) {                                                                                                            \
         exit_block;                                                                                                                \
     }
 #else
-#define ptls_repeat_while_eintr(block, exit_block)                                                                                 \
+#define repeat_while_eintr(block, exit_block)                                                                                      \
     while (block < 0) {                                                                                                            \
         if (errno == EINTR)                                                                                                        \
             continue;                                                                                                              \
