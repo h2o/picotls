@@ -474,7 +474,7 @@ static void test_generated_set_capacity(void)
     uint8_t encrypted[4000], decrypted[4000];
 
     ptls_aead_context_t *enc = ptls_aead_new(test_generated_encryptor, &ptls_minicrypto_sha256, 1, secret, ""),
-        *dec = ptls_aead_new(test_generated_encryptor, &ptls_minicrypto_sha256, 0, secret, "");
+                        *dec = ptls_aead_new(test_generated_encryptor, &ptls_minicrypto_sha256, 0, secret, "");
 
     size_t enclen = ptls_aead_encrypt(enc, encrypted, input, sizeof(input), 123, "", 0);
     size_t declen = ptls_aead_decrypt(dec, decrypted, encrypted, enclen, 123, "", 0);
