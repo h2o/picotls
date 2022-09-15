@@ -470,7 +470,7 @@ Fail:
  */
 static void test_generated_set_capacity(void)
 {
-    static const uint8_t secret[PTLS_MAX_DIGEST_SIZE] = "deadbeef", input[3000] = {};
+    static const uint8_t secret[PTLS_MAX_DIGEST_SIZE] = "deadbeef", input[3000] = {0};
     uint8_t encrypted[4000], decrypted[4000];
 
     ptls_aead_context_t *enc = ptls_aead_new(test_generated_encryptor, &ptls_minicrypto_sha256, 1, secret, ""),
