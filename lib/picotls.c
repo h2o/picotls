@@ -5713,14 +5713,11 @@ static size_t escape_json_unsafe_string(char *buf, const void *bytes, size_t len
 
     return (size_t)(dst - buf);
 }
-
-// Only PTSLOG_MAXCONN of clients can be attached to the process at a time
-#define PTLSLOG_MAXCONN (8)
 struct st_ptlslog_context_t {
-    int fds[PTLSLOG_MAXCONN];
-    size_t num_active_fds;
+    int *fds;
+    size_t num_fds;
+
     size_t lost;
-    int initialized;
     pthread_mutex_t mutex;
 } ptlslog = {
     .mutex = PTHREAD_MUTEX_INITIALIZER,
@@ -5728,7 +5725,7 @@ struct st_ptlslog_context_t {
 
 int ptlslog_is_active(void)
 {
-    return ptlslog.num_active_fds > 0;
+    return ptlslog.fds != NULL;
 }
 
 size_t ptlslog_num_lost(void)
@@ -5738,50 +5735,34 @@ size_t ptlslog_num_lost(void)
 
 int ptlslog_add_fd(int fd)
 {
-    int ret = 0;
     pthread_mutex_lock(&ptlslog.mutex);
-    if (PTLS_UNLIKELY(ptlslog.num_active_fds == PTLSLOG_MAXCONN))
-        goto Exit;
 
-    if (!ptlslog.initialized) {
-        for (int i = 0; i < PTLSLOG_MAXCONN; ++i) {
-            ptlslog.fds[i] = -1;
-        }
-        ptlslog.initialized = 1;
-    }
+    ptlslog.fds = realloc(ptlslog.fds, sizeof(ptlslog.fds[0]) * (ptlslog.num_fds + 1));
+    ptlslog.fds[ptlslog.num_fds] = fd;
+    ptlslog.num_fds++;
 
-    for (int i = 0; i < PTLSLOG_MAXCONN; ++i) {
-        if (ptlslog.fds[i] == -1) {
-            ptlslog.fds[i] = fd;
-            ++ptlslog.num_active_fds;
-            ret = 1;
-            goto Exit;
-        }
-    }
-
-Exit:
     pthread_mutex_unlock(&ptlslog.mutex);
-
-    return ret;
+    return 1;
 }
 
 void ptlslog__do_write(const ptls_buffer_t *buf)
 {
     pthread_mutex_lock(&ptlslog.mutex);
-    for (int i = 0, num_handled = 0; i < PTLSLOG_MAXCONN && num_handled < ptlslog.num_active_fds; ++i) {
-        if (ptlslog.fds[i] != -1) {
-            ++num_handled;
-
-            ssize_t ret;
-            while ((ret = write(ptlslog.fds[i], buf->base, buf->off)) == -1 && errno == EINTR)
-                ;
-            if (ret == -1) {
-                if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                    ptlslog.lost++;
-                } else {
-                    close(ptlslog.fds[i]);
-                    ptlslog.fds[i] = -1;
-                    --ptlslog.num_active_fds;
+    for (size_t i = 0; i < ptlslog.num_fds; ++i) {
+        ssize_t ret;
+        while ((ret = write(ptlslog.fds[i], buf->base, buf->off)) == -1 && errno == EINTR)
+            ;
+        if (ret == -1) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                ptlslog.lost++;
+            } else {
+                // close fd and remove the entry of the fds array
+                close(ptlslog.fds[i]);
+                memmove(ptlslog.fds + i, ptlslog.fds + i + 1, sizeof(ptlslog.fds[0]) * (ptlslog.num_fds - i - 1));
+                ptlslog.fds = realloc(ptlslog.fds, sizeof(ptlslog.fds[0]) * (ptlslog.num_fds - 1));
+                if (--ptlslog.num_fds == 0) {
+                    free(ptlslog.fds);
+                    ptlslog.fds = NULL;
                 }
             }
         }
