@@ -1202,7 +1202,7 @@ static int sign_certificate(ptls_sign_certificate_t *_self, ptls_t *tls, void (*
 {
     ptls_openssl_sign_certificate_t *self = (ptls_openssl_sign_certificate_t *)_self;
     const struct st_ptls_openssl_signature_scheme_t *scheme;
-    int is_async = ptls_get_context(tls)->async_handshake == 1;
+    int is_async = self->async == 1;
 
     if (ptls_is_server(tls)) {
         assert(sign_ctx != NULL);
