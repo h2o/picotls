@@ -1018,11 +1018,14 @@ ptls_fusion_aesgcm_context_t *ptls_fusion_aesgcm_set_capacity(ptls_fusion_aesgcm
     if (new_ghash_cnt <= ctx->ghash_cnt)
         return ctx;
 
-    size_t new_ctx_size = calc_aesgcm_context_size(&new_ghash_cnt, ctx->ecb.aesni256);
+    size_t new_ctx_size = calc_aesgcm_context_size(&new_ghash_cnt, ctx->ecb.aesni256),
+           old_ctx_size = calc_aesgcm_context_size(&ctx->ghash_cnt, ctx->ecb.aesni256);
+
     ptls_fusion_aesgcm_context_t *newp;
     if ((newp = aligned_alloc(32, new_ctx_size)) == NULL)
         return NULL;
-    memcpy(newp, ctx, calc_aesgcm_context_size(&ctx->ghash_cnt, ctx->ecb.aesni256));
+    memcpy(newp, ctx, old_ctx_size);
+    ptls_clear_memory(ctx, old_ctx_size);
     free(ctx);
     ctx = newp;
 
