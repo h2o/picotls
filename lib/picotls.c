@@ -5782,7 +5782,7 @@ int ptlslog__do_pushv(ptls_buffer_t *buf, const void *p, size_t l)
 
 int ptlslog__do_push_unsafestr(ptls_buffer_t *buf, const char *s, size_t l)
 {
-    if (ptls_buffer_reserve(buf, l * 4 + 1) != 0)
+    if (ptls_buffer_reserve(buf, l * strlen("\\u0000") + 1) != 0)
         return 0;
 
     buf->off += escape_json_unsafe_string((char *)(buf->base + buf->off), s, l);
@@ -5791,18 +5791,18 @@ int ptlslog__do_push_unsafestr(ptls_buffer_t *buf, const char *s, size_t l)
 
 int ptlslog__do_push_hexdump(ptls_buffer_t *buf, const void *s, size_t l)
 {
-    if (ptls_buffer_reserve(buf, l * 2 + 1) != 0)
+    if (ptls_buffer_reserve(buf, l * strlen("ff") + 1) != 0)
         return 0;
 
     ptls_hexdump((char *)(buf->base + buf->off), s, l);
-    buf->off += l * 2;
+    buf->off += l * strlen("ff");
     return 1;
 }
 
 int ptlslog__do_push_signed(ptls_buffer_t *buf, int64_t v)
 {
     /* TODO optimize */
-    char s[32];
+    char s[sizeof("-9223372036854775808")];
     int len = sprintf(s, "%" PRId64, v);
 
     return ptlslog__do_pushv(buf, s, (size_t)len);
@@ -5811,7 +5811,7 @@ int ptlslog__do_push_signed(ptls_buffer_t *buf, int64_t v)
 int ptlslog__do_push_unsigned(ptls_buffer_t *buf, uint64_t v)
 {
     /* TODO optimize */
-    char s[32];
+    char s[sizeof("18446744073709551615")];
     int len = sprintf(s, "%" PRIu64, v);
 
     return ptlslog__do_pushv(buf, s, (size_t)len);
