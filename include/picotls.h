@@ -614,7 +614,7 @@ PTLS_CALLBACK_TYPE(int, emit_certificate, ptls_t *tls, ptls_message_emitter_t *e
  * When `ptls_t` is disposed of while the async operation is in flight, `*cancel_cb` will be invoked. The backend should abort the
  * calculation and free any temporary data allocated for that calculation.
  */
-PTLS_CALLBACK_TYPE(int, sign_certificate, ptls_t *tls, void (**cb)(void *sign_ctx), void **sign_certificate_ctx,
+PTLS_CALLBACK_TYPE(int, sign_certificate, ptls_t *tls, void (**cancel_cb)(void *sign_ctx), void **sign_certificate_ctx,
                    uint16_t *selected_algorithm, ptls_buffer_t *output, ptls_iovec_t input, const uint16_t *algorithms, size_t num_algorithms);
 /**
  * after receiving Certificate, the core calls the callback to verify the certificate chain and to obtain a pointer to a
