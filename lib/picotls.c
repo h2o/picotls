@@ -4187,11 +4187,11 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
                                     ch->cert_compression_algos.list, ch->cert_compression_algos.count)) != 0)
             goto Exit;
         /* send certificateverify, finished, and complete the handshake */
-        if ((ret = server_complete_handshake(tls, emitter, 1, &ch->signature_algorithms)) != 0)
+        if ((ret = server_finish_handshake(tls, emitter, 1, &ch->signature_algorithms)) != 0)
             goto Exit;
     } else {
         /* send finished, and complete the handshake */
-        if ((ret = server_complete_handshake(tls, emitter, 0, NULL)) != 0)
+        if ((ret = server_finish_handshake(tls, emitter, 0, NULL)) != 0)
             goto Exit;
     }
 
@@ -4208,7 +4208,7 @@ Exit:
 #undef EMIT_HELLO_RETRY_REQUEST
 }
 
-static int server_complete_handshake(ptls_t *tls, ptls_message_emitter_t *emitter, int send_cert_verify,
+static int server_finish_handshake(ptls_t *tls, ptls_message_emitter_t *emitter, int send_cert_verify,
                               struct st_ptls_signature_algorithms_t *signature_algorithms)
 {
     int ret;
@@ -4959,7 +4959,7 @@ int ptls_handshake(ptls_t *tls, ptls_buffer_t *_sendbuf, const void *input, size
         return send_client_hello(tls, &emitter.super, properties, NULL);
     }
     case PTLS_STATE_SERVER_GENERATING_CERTIFICATE_VERIFY:
-        return server_complete_handshake(tls, &emitter.super, 1, NULL);
+        return server_finish_handshake(tls, &emitter.super, 1, NULL);
     default:
         break;
     }
@@ -5535,7 +5535,7 @@ int ptls_server_handle_message(ptls_t *tls, ptls_buffer_t *sendbuf, size_t epoch
 
     if (tls->state == PTLS_STATE_SERVER_GENERATING_CERTIFICATE_VERIFY) {
         int ret;
-        if ((ret = server_complete_handshake(tls, &emitter.super, 1, NULL)) != 0)
+        if ((ret = server_finish_handshake(tls, &emitter.super, 1, NULL)) != 0)
             return ret;
     }
 
