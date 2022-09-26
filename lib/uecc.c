@@ -131,7 +131,7 @@ Exit:
     return ret;
 }
 
-static int secp256r1sha256_sign(ptls_sign_certificate_t *_self, ptls_t *tls, void (**cancel_cb)(void *sign_ctx), void **sign_ctx,
+static int secp256r1sha256_sign(ptls_sign_certificate_t *_self, ptls_t *tls, void (**cancel_cb)(void *async_ctx), void **async_ctx,
                                 uint16_t *selected_algorithm, ptls_buffer_t *outbuf, ptls_iovec_t input, const uint16_t *algorithms,
                                 size_t num_algorithms)
 {

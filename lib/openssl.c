@@ -751,10 +751,10 @@ int ptls_openssl_get_async_fd(ptls_t *ptls)
 {
     int fds[1];
     size_t numfds;
-    struct async_sign_ctx *args = ptls_get_sign_context(ptls);
-    ASYNC_WAIT_CTX_get_all_fds(args->waitctx, NULL, &numfds);
+    struct async_sign_ctx *async = ptls_get_sign_context(ptls);
+    ASYNC_WAIT_CTX_get_all_fds(async->waitctx, NULL, &numfds);
     assert(numfds == 1);
-    ASYNC_WAIT_CTX_get_all_fds(args->waitctx, fds, &numfds);
+    ASYNC_WAIT_CTX_get_all_fds(async->waitctx, fds, &numfds);
     return fds[0];
 }
 
@@ -1178,18 +1178,18 @@ ptls_define_hash(sha256, SHA256_CTX, SHA256_Init, SHA256_Update, _sha256_final);
 #define _sha384_final(ctx, md) SHA384_Final((md), (ctx))
 ptls_define_hash(sha384, SHA512_CTX, SHA384_Init, SHA384_Update, _sha384_final);
 
-static int sign_certificate(ptls_sign_certificate_t *_self, ptls_t *tls, void (**cancel_cb)(void *sign_ctx), void **_sign_ctx,
+static int sign_certificate(ptls_sign_certificate_t *_self, ptls_t *tls, void (**cancel_cb)(void *sign_ctx), void **_async,
                             uint16_t *selected_algorithm, ptls_buffer_t *outbuf, ptls_iovec_t input, const uint16_t *algorithms,
                             size_t num_algorithms)
 {
     ptls_openssl_sign_certificate_t *self = (ptls_openssl_sign_certificate_t *)_self;
-    struct async_sign_ctx **sign_ctx = (struct async_sign_ctx **)_sign_ctx;
+    struct async_sign_ctx **async = (struct async_sign_ctx **)_async;
     const struct st_ptls_openssl_signature_scheme_t *scheme;
 
     /* When resuming from an asynchronous signing operation, the scheme is already known. */
 #ifdef PTLS_OPENSSL_HAVE_ASYNC
-    if (sign_ctx != NULL && *sign_ctx != NULL) {
-        scheme = (*sign_ctx)->scheme;
+    if (async != NULL && *async != NULL) {
+        scheme = (*async)->scheme;
         goto Found;
     }
 #endif
@@ -1207,14 +1207,14 @@ static int sign_certificate(ptls_sign_certificate_t *_self, ptls_t *tls, void (*
 Found:
     *selected_algorithm = scheme->scheme_id;
 #ifdef PTLS_OPENSSL_HAVE_ASYNC
-    if (!self->async && sign_ctx != NULL) {
+    if (!self->async && async != NULL) {
         /* indicate to `do_sign` that async mode is disabled for this operation */
-        assert(*sign_ctx == NULL);
+        assert(*async == NULL);
         cancel_cb = NULL;
-        sign_ctx = NULL;
+        async = NULL;
     }
 #endif
-    return do_sign(self->key, scheme, outbuf, input, cancel_cb, sign_ctx);
+    return do_sign(self->key, scheme, outbuf, input, cancel_cb, async);
 }
 
 static X509 *to_x509(ptls_iovec_t vec)
