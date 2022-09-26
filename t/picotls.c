@@ -935,12 +935,15 @@ static int async_sign_certificate(ptls_sign_certificate_t *self, ptls_t *tls, vo
         *sign_ctx = &selected;
         --server_sc_callcnt;
         ++async_sc_callcnt;
+        *cancel_cb = (void (*)(void *))0xdeadbeef;
         return PTLS_ERROR_ASYNC_OPERATION;
     } else {
         /* second invocation, restore algorithm, and delegate the call */
         assert(algorithms == NULL);
         algorithms = *sign_ctx;
         num_algorithms = 1;
+        *cancel_cb = NULL;
+        *sign_ctx = NULL;
     }
 
     return sign_certificate(self, tls, cancel_cb, &inner_sign_ctx, selected_algorithm, output, input, algorithms,
