@@ -797,10 +797,6 @@ Exit:
 
 #endif
 
-/**
- * @param cancel_cb if non-NULL, OpenSSL may generate the signature asynchronously; othervise, it must generate the signature
- *                  synchronously
- */
 static int do_sign(EVP_PKEY *key, const struct st_ptls_openssl_signature_scheme_t *scheme, ptls_buffer_t *outbuf,
                    ptls_iovec_t input, ptls_async_sign_certificate_t **async)
 {
