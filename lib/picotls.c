@@ -4061,7 +4061,6 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
     }
     tls->server.can_send_session_ticket = ch->psk.ke_modes != 0;
 
-
     if (accept_early_data && tls->ctx->max_early_data_size != 0 && psk_index == 0) {
         if ((tls->pending_handshake_secret = malloc(PTLS_MAX_DIGEST_SIZE)) == NULL) {
             ret = PTLS_ERROR_NO_MEMORY;
