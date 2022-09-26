@@ -726,7 +726,8 @@ static struct sign_ctx *sign_ctx_alloc(size_t siglen)
 
 static void sign_ctx_free(struct sign_ctx *sign_ctx)
 {
-    if (sign_ctx == NULL) return;
+    if (sign_ctx == NULL)
+        return;
 
     if (sign_ctx->ctx != NULL)
         EVP_MD_CTX_destroy(sign_ctx->ctx);
@@ -849,10 +850,9 @@ static int do_sign(EVP_PKEY *key, const struct st_ptls_openssl_signature_scheme_
     {
         if (is_async) {
 #ifdef PTLS_OPENSSL_HAVE_ASYNC
-        if (ASYNC_get_current_job() == NULL) {
-            // start async sign
-            switch (ASYNC_start_job(&args->job, args->waitctx, &ret, do_sign_final, &args, sizeof(struct sign_ctx*)))
-            {
+            if (ASYNC_get_current_job() == NULL) {
+                // start async sign
+                switch (ASYNC_start_job(&args->job, args->waitctx, &ret, do_sign_final, &args, sizeof(struct sign_ctx *))) {
                 case ASYNC_ERR:
                     ret = PTLS_ERROR_LIBRARY;
                     goto Exit;
@@ -876,14 +876,14 @@ static int do_sign(EVP_PKEY *key, const struct st_ptls_openssl_signature_scheme_
                 default:
                     ret = PTLS_ERROR_LIBRARY;
                     goto Exit;
+                }
             }
-        }
 #else
-    do_sign_final(&args);
-    if (ptls_buffer__do_pushv(outbuf, args->sig, args->siglen) != 0) {
-        ret = PTLS_ERROR_LIBRARY;
-        goto Exit;
-    }
+            do_sign_final(&args);
+            if (ptls_buffer__do_pushv(outbuf, args->sig, args->siglen) != 0) {
+                ret = PTLS_ERROR_LIBRARY;
+                goto Exit;
+            }
 #endif
         } else {
             do_sign_final(&args);
@@ -1183,8 +1183,7 @@ ptls_define_hash(sha256, SHA256_CTX, SHA256_Init, SHA256_Update, _sha256_final);
 ptls_define_hash(sha384, SHA512_CTX, SHA384_Init, SHA384_Update, _sha384_final);
 
 static const struct st_ptls_openssl_signature_scheme_t *match_scheme(const struct st_ptls_openssl_signature_scheme_t *schemes,
-                                                                     const uint16_t *algorithms,
-                                                                     size_t num_algorithms)
+                                                                     const uint16_t *algorithms, size_t num_algorithms)
 {
     const struct st_ptls_openssl_signature_scheme_t *scheme;
     for (scheme = schemes; scheme->scheme_id != UINT16_MAX; ++scheme) {

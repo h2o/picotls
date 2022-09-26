@@ -390,7 +390,7 @@ static int hkdf_expand_label(ptls_hash_algorithm_t *algo, void *output, size_t o
 static ptls_aead_context_t *new_aead(ptls_aead_algorithm_t *aead, ptls_hash_algorithm_t *hash, int is_enc, const void *secret,
                                      ptls_iovec_t hash_value, const char *label_prefix);
 static int server_finish_handshake(ptls_t *tls, ptls_message_emitter_t *emitter, int send_cert_verify,
-                                     struct st_ptls_signature_algorithms_t *signature_algorithms);
+                                   struct st_ptls_signature_algorithms_t *signature_algorithms);
 
 static int is_supported_version(uint16_t v)
 {
@@ -2709,9 +2709,8 @@ Exit:
 }
 
 static int send_certificate(ptls_t *tls, ptls_message_emitter_t *emitter,
-                            struct st_ptls_signature_algorithms_t *signature_algorithms,
-                            ptls_iovec_t context, int push_status_request,
-                            const uint16_t *compress_algos, size_t num_compress_algos)
+                            struct st_ptls_signature_algorithms_t *signature_algorithms, ptls_iovec_t context,
+                            int push_status_request, const uint16_t *compress_algos, size_t num_compress_algos)
 {
     int ret;
 
@@ -2741,8 +2740,7 @@ Exit:
 }
 
 static int send_certificate_verify(ptls_t *tls, ptls_message_emitter_t *emitter,
-                                   struct st_ptls_signature_algorithms_t *signature_algorithms,
-                                   const char *context_string)
+                                   struct st_ptls_signature_algorithms_t *signature_algorithms, const char *context_string)
 {
     size_t start_off = emitter->buf->off;
     int ret;
@@ -2758,12 +2756,11 @@ static int send_certificate_verify(ptls_t *tls, ptls_message_emitter_t *emitter,
             uint16_t algo;
             uint8_t data[PTLS_MAX_CERTIFICATE_VERIFY_SIGNDATA_SIZE];
             size_t datalen = build_certificate_verify_signdata(data, tls->key_schedule, context_string);
-            if ((ret = tls->ctx->sign_certificate->cb(tls->ctx->sign_certificate, tls,
-                                                      tls->is_server ? &tls->server.sign_certificate.cancel_cb : NULL,
-                                                      tls->is_server ? &tls->server.sign_certificate.sign_certificate_ctx : NULL,
-                                                      &algo, sendbuf, ptls_iovec_init(data, datalen),
-                                                      signature_algorithms != NULL ? signature_algorithms->list : NULL,
-                                                      signature_algorithms != NULL ? signature_algorithms->count : 0)) != 0) {
+            if ((ret = tls->ctx->sign_certificate->cb(
+                     tls->ctx->sign_certificate, tls, tls->is_server ? &tls->server.sign_certificate.cancel_cb : NULL,
+                     tls->is_server ? &tls->server.sign_certificate.sign_certificate_ctx : NULL, &algo, sendbuf,
+                     ptls_iovec_init(data, datalen), signature_algorithms != NULL ? signature_algorithms->list : NULL,
+                     signature_algorithms != NULL ? signature_algorithms->count : 0)) != 0) {
                 if (ret == PTLS_ERROR_ASYNC_OPERATION) {
                     assert(tls->is_server || !"async operation only supported on the server-side");
                     /* Reset the output to the end of the previous handshake message. CertificateVerify will be rebuilt when the
@@ -3034,7 +3031,7 @@ static int client_handle_finished(ptls_t *tls, ptls_message_emitter_t *emitter, 
         if ((ret = send_certificate(tls, emitter, &tls->client.certificate_request.signature_algorithms,
                                     tls->client.certificate_request.context, 0, NULL, 0)) == 0)
             ret = send_certificate_verify(tls, emitter, &tls->client.certificate_request.signature_algorithms,
-                                   PTLS_CLIENT_CERTIFICATE_VERIFY_CONTEXT_STRING);
+                                          PTLS_CLIENT_CERTIFICATE_VERIFY_CONTEXT_STRING);
         free(tls->client.certificate_request.context.base);
         tls->client.certificate_request.context = ptls_iovec_init(NULL, 0);
         if (ret != 0)
@@ -4208,12 +4205,13 @@ Exit:
 }
 
 static int server_finish_handshake(ptls_t *tls, ptls_message_emitter_t *emitter, int send_cert_verify,
-                              struct st_ptls_signature_algorithms_t *signature_algorithms)
+                                   struct st_ptls_signature_algorithms_t *signature_algorithms)
 {
     int ret;
 
     if (send_cert_verify) {
-        if ((ret = send_certificate_verify(tls, emitter, signature_algorithms, PTLS_SERVER_CERTIFICATE_VERIFY_CONTEXT_STRING)) != 0) {
+        if ((ret = send_certificate_verify(tls, emitter, signature_algorithms, PTLS_SERVER_CERTIFICATE_VERIFY_CONTEXT_STRING)) !=
+            0) {
             if (ret == PTLS_ERROR_ASYNC_OPERATION) {
                 tls->state = PTLS_STATE_SERVER_GENERATING_CERTIFICATE_VERIFY;
             }
