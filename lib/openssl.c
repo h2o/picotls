@@ -808,7 +808,7 @@ Exit:
  *                  synchronously
  */
 static int do_sign(EVP_PKEY *key, const struct st_ptls_openssl_signature_scheme_t *scheme, ptls_buffer_t *outbuf,
-                   ptls_iovec_t input, void (**cancel_cb)(void *async), void **_async)
+                   ptls_iovec_t input, void (**cancel_cb)(void *async), struct async_sign_ctx **_async)
 {
     struct async_sign_ctx **async = (struct async_sign_ctx **)_async;
 
@@ -1176,55 +1176,34 @@ ptls_define_hash(sha256, SHA256_CTX, SHA256_Init, SHA256_Update, _sha256_final);
 #define _sha384_final(ctx, md) SHA384_Final((md), (ctx))
 ptls_define_hash(sha384, SHA512_CTX, SHA384_Init, SHA384_Update, _sha384_final);
 
-static const struct st_ptls_openssl_signature_scheme_t *match_scheme(const struct st_ptls_openssl_signature_scheme_t *schemes,
-                                                                     const uint16_t *algorithms, size_t num_algorithms)
-{
-    const struct st_ptls_openssl_signature_scheme_t *scheme;
-    for (scheme = schemes; scheme->scheme_id != UINT16_MAX; ++scheme) {
-        size_t i;
-        for (i = 0; i != num_algorithms; ++i) {
-            if (algorithms[i] == scheme->scheme_id) {
-                return scheme;
-            }
-        }
-    }
-    /* not found */
-    return NULL;
-}
-
-static int sign_certificate(ptls_sign_certificate_t *_self, ptls_t *tls, void (**cancel_cb)(void *sign_ctx), void **sign_ctx,
+static int sign_certificate(ptls_sign_certificate_t *_self, ptls_t *tls, void (**cancel_cb)(void *sign_ctx), void **_sign_ctx,
                             uint16_t *selected_algorithm, ptls_buffer_t *outbuf, ptls_iovec_t input, const uint16_t *algorithms,
                             size_t num_algorithms)
 {
     ptls_openssl_sign_certificate_t *self = (ptls_openssl_sign_certificate_t *)_self;
+    struct async_sign_ctx **sign_ctx = (struct async_sign_ctx **)_sign_ctx;
     const struct st_ptls_openssl_signature_scheme_t *scheme;
 
-    if (ptls_is_server(tls)) {
-        assert(sign_ctx != NULL);
-        // server signing is asynchronous
-        struct async_sign_ctx *args = *sign_ctx;
-        if (args == NULL) {
-            // first invocation, get scheme
-            if ((scheme = match_scheme(self->schemes, algorithms, num_algorithms)) != NULL)
+    /* When resuming from an asynchronous signing operation, the scheme is already known. */
+    if (sign_ctx != NULL && *sign_ctx != NULL) {
+        scheme = (*sign_ctx)->scheme;
+        goto Found;
+    }
+
+    /* Determine the scheme. */
+    for (scheme = self->schemes; scheme->scheme_id != UINT16_MAX; ++scheme) {
+        size_t i;
+        for (i = 0; i != num_algorithms; ++i)
+            if (algorithms[i] == scheme->scheme_id)
                 goto Found;
-        } else {
-            // second invocation
-            // algorithms should be NULL, re-use cached scheme
-            assert(algorithms == NULL);
-            scheme = args->scheme;
-            goto Found;
-        }
-    } else {
-        assert(sign_ctx == NULL);
-        if ((scheme = match_scheme(self->schemes, algorithms, num_algorithms)) != NULL)
-            goto Found;
     }
 
     return PTLS_ALERT_HANDSHAKE_FAILURE;
 
 Found:
     *selected_algorithm = scheme->scheme_id;
-    if (!self->async) {
+    if (!self->async && sign_ctx != NULL) {
+        /* indicate to `do_sign` that async mode is disabled for this operation */
         assert(*sign_ctx == NULL);
         cancel_cb = NULL;
         sign_ctx = NULL;
