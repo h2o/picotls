@@ -700,7 +700,7 @@ int ptls_openssl_create_key_exchange(ptls_key_exchange_context_t **ctx, EVP_PKEY
 
 #ifdef PTLS_OPENSSL_HAVE_ASYNC
 
-struct sign_ctx {
+struct async_sign_ctx {
     const struct st_ptls_openssl_signature_scheme_t *scheme;
     EVP_MD_CTX *ctx;
     ASYNC_WAIT_CTX *waitctx;
@@ -710,68 +710,69 @@ struct sign_ctx {
     uint8_t sig[0];
 };
 
-static struct sign_ctx *sign_ctx_alloc(const struct st_ptls_openssl_signature_scheme_t *scheme, EVP_MD_CTX *ctx, size_t siglen)
+static struct async_sign_ctx *async_sign_ctx_new(const struct st_ptls_openssl_signature_scheme_t *scheme, EVP_MD_CTX *ctx,
+                                                 size_t siglen)
 {
-    struct sign_ctx *sign_ctx;
+    struct async_sign_ctx *async;
 
-    if ((sign_ctx = malloc(offsetof(struct sign_ctx, sig) + siglen)) == NULL)
+    if ((async = malloc(offsetof(struct async_sign_ctx, sig) + siglen)) == NULL)
         return NULL;
 
-    sign_ctx->scheme = scheme;
-    sign_ctx->ctx = ctx;
-    sign_ctx->waitctx = ASYNC_WAIT_CTX_new();
-    sign_ctx->job = NULL;
-    sign_ctx->siglen = siglen;
-    memset(sign_ctx->sig, 0, siglen);
+    async->scheme = scheme;
+    async->ctx = ctx;
+    async->waitctx = ASYNC_WAIT_CTX_new();
+    async->job = NULL;
+    async->siglen = siglen;
+    memset(async->sig, 0, siglen);
 
-    return sign_ctx;
+    return async;
 }
 
-static void sign_ctx_free(struct sign_ctx *sign_ctx)
+static void async_sign_ctx_free(struct async_sign_ctx *async)
 {
-    if (sign_ctx == NULL)
+    if (async == NULL)
         return;
 
-    if (sign_ctx->ctx != NULL)
-        EVP_MD_CTX_destroy(sign_ctx->ctx);
-    if (sign_ctx->job != NULL) {
+    if (async->ctx != NULL)
+        EVP_MD_CTX_destroy(async->ctx);
+    if (async->job != NULL) {
         int _ret;
         // resume the job to free resources
-        ASYNC_start_job(&sign_ctx->job, sign_ctx->waitctx, &_ret, NULL, NULL, 0);
+        ASYNC_start_job(&async->job, async->waitctx, &_ret, NULL, NULL, 0);
     }
-    if (sign_ctx->waitctx != NULL)
-        ASYNC_WAIT_CTX_free(sign_ctx->waitctx);
-    free(sign_ctx);
+    if (async->waitctx != NULL)
+        ASYNC_WAIT_CTX_free(async->waitctx);
+    free(async);
 }
 
 int ptls_openssl_get_async_fd(ptls_t *ptls)
 {
     int fds[1];
     size_t numfds;
-    struct sign_ctx *args = ptls_get_sign_context(ptls);
+    struct async_sign_ctx *args = ptls_get_sign_context(ptls);
     ASYNC_WAIT_CTX_get_all_fds(args->waitctx, NULL, &numfds);
     assert(numfds == 1);
     ASYNC_WAIT_CTX_get_all_fds(args->waitctx, fds, &numfds);
     return fds[0];
 }
 
-static void async_sign_cancel(void *vargs)
+static void async_sign_cancel(void *_async)
 {
-    struct sign_ctx *args = (struct sign_ctx *)vargs;
-    sign_ctx_free(args);
+    struct async_sign_ctx *async = (struct async_sign_ctx *)_async;
+    async_sign_ctx_free(async);
 }
 
-static int do_sign_async_job(void *vargs)
+static int do_sign_async_job(void *_async)
 {
-    struct sign_ctx *sign_ctx = *(struct sign_ctx **)vargs;
-    return EVP_DigestSignFinal(sign_ctx->ctx, sign_ctx->sig, &sign_ctx->siglen);
+    struct async_sign_ctx *async = *(struct async_sign_ctx **)_async;
+    return EVP_DigestSignFinal(async->ctx, async->sig, &async->siglen);
 }
 
-static int do_sign_async(ptls_buffer_t *outbuf, struct sign_ctx **sign_ctx, void (**cancel_cb)(void *))
+static int do_sign_async(ptls_buffer_t *outbuf, struct async_sign_ctx **async, void (**cancel_cb)(void *))
 {
     int ret;
 
-    switch (ASYNC_start_job(&(*sign_ctx)->job, (*sign_ctx)->waitctx, &ret, do_sign_async_job, sign_ctx, sizeof(*sign_ctx))) {
+    switch (ASYNC_start_job(&(*async)->job, (*async)->waitctx, &ret, do_sign_async_job, async, sizeof(*async))) {
     case ASYNC_ERR:
         ret = PTLS_ERROR_LIBRARY;
         break;
@@ -784,8 +785,8 @@ static int do_sign_async(ptls_buffer_t *outbuf, struct sign_ctx **sign_ctx, void
         ret = PTLS_ERROR_LIBRARY;
         break;
     case ASYNC_FINISH:
-        (*sign_ctx)->job = NULL;
-        ptls_buffer_pushv(outbuf, (*sign_ctx)->sig, (*sign_ctx)->siglen);
+        (*async)->job = NULL;
+        ptls_buffer_pushv(outbuf, (*async)->sig, (*async)->siglen);
         ret = 0;
         break;
     default:
@@ -794,8 +795,8 @@ static int do_sign_async(ptls_buffer_t *outbuf, struct sign_ctx **sign_ctx, void
     }
 
 Exit:
-    sign_ctx_free(*sign_ctx);
-    *sign_ctx = NULL;
+    async_sign_ctx_free(*async);
+    *async = NULL;
     *cancel_cb = NULL;
     return ret;
 }
@@ -807,13 +808,13 @@ Exit:
  *                  synchronously
  */
 static int do_sign(EVP_PKEY *key, const struct st_ptls_openssl_signature_scheme_t *scheme, ptls_buffer_t *outbuf,
-                   ptls_iovec_t input, void (**cancel_cb)(void *sign_ctx), void **_sign_ctx)
+                   ptls_iovec_t input, void (**cancel_cb)(void *async), void **_async)
 {
-    struct sign_ctx **sign_ctx = (struct sign_ctx **)_sign_ctx;
+    struct async_sign_ctx **async = (struct async_sign_ctx **)_async;
 
 #ifdef PTLS_OPENSSL_HAVE_ASYNC
     if (cancel_cb != NULL && *cancel_cb != NULL)
-        return do_sign_async(outbuf, sign_ctx, cancel_cb);
+        return do_sign_async(outbuf, async, cancel_cb);
 #endif
 
     EVP_MD_CTX *ctx = NULL;
@@ -874,11 +875,11 @@ static int do_sign(EVP_PKEY *key, const struct st_ptls_openssl_signature_scheme_
          * return immediately. */
 #ifdef PTLS_OPENSSL_HAVE_ASYNC
         if (cancel_cb != NULL) {
-            if ((*sign_ctx = sign_ctx_alloc(scheme, ctx, siglen)) == NULL) {
+            if ((*async = async_sign_ctx_new(scheme, ctx, siglen)) == NULL) {
                 ret = PTLS_ERROR_NO_MEMORY;
                 goto Exit;
             }
-            return do_sign_async(outbuf, sign_ctx, cancel_cb);
+            return do_sign_async(outbuf, async, cancel_cb);
         }
 #endif
         /* Otherwise, generate signature synchronously. */
@@ -1199,7 +1200,7 @@ static int sign_certificate(ptls_sign_certificate_t *_self, ptls_t *tls, void (*
     if (ptls_is_server(tls)) {
         assert(sign_ctx != NULL);
         // server signing is asynchronous
-        struct sign_ctx *args = *sign_ctx;
+        struct async_sign_ctx *args = *sign_ctx;
         if (args == NULL) {
             // first invocation, get scheme
             scheme = match_scheme(self->schemes, algorithms, num_algorithms);
