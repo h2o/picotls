@@ -4249,7 +4249,7 @@ static int server_finish_handshake(ptls_t *tls, ptls_message_emitter_t *emitter,
     }
 
     /* send session ticket if necessary */
-    if (tls->server.can_send_session_ticket != 0 && tls->ctx->ticket_lifetime != 0) {
+    if (tls->server.can_send_session_ticket && tls->ctx->ticket_lifetime != 0) {
         if ((ret = send_session_ticket(tls, emitter)) != 0)
             goto Exit;
     }
