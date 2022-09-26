@@ -2763,12 +2763,16 @@ static int send_certificate_verify(ptls_t *tls, ptls_message_emitter_t *emitter,
                      signature_algorithms != NULL ? signature_algorithms->count : 0)) != 0) {
                 if (ret == PTLS_ERROR_ASYNC_OPERATION) {
                     assert(tls->is_server || !"async operation only supported on the server-side");
+                    assert(tls->server.sign_certificate.cancel_cb != NULL);
                     /* Reset the output to the end of the previous handshake message. CertificateVerify will be rebuilt when the
                      * async operation completes. */
                     emitter->buf->off = start_off;
+                } else {
+                    assert(tls->server.sign_certificate.cancel_cb == NULL);
                 }
                 goto Exit;
             }
+            assert(tls->server.sign_certificate.cancel_cb == NULL);
             sendbuf->base[algo_off] = (uint8_t)(algo >> 8);
             sendbuf->base[algo_off + 1] = (uint8_t)algo;
         });
