@@ -1188,8 +1188,10 @@ static const struct st_ptls_openssl_signature_scheme_t *match_scheme(const struc
             }
         }
     }
-    return scheme;
+    /* not found */
+    return NULL;
 }
+
 static int sign_certificate(ptls_sign_certificate_t *_self, ptls_t *tls, void (**cancel_cb)(void *sign_ctx), void **sign_ctx,
                             uint16_t *selected_algorithm, ptls_buffer_t *outbuf, ptls_iovec_t input, const uint16_t *algorithms,
                             size_t num_algorithms)
@@ -1203,24 +1205,24 @@ static int sign_certificate(ptls_sign_certificate_t *_self, ptls_t *tls, void (*
         struct async_sign_ctx *args = *sign_ctx;
         if (args == NULL) {
             // first invocation, get scheme
-            scheme = match_scheme(self->schemes, algorithms, num_algorithms);
-            goto Exit;
+            if ((scheme = match_scheme(self->schemes, algorithms, num_algorithms)) != NULL)
+                goto Found;
         } else {
             // second invocation
             // algorithms should be NULL, re-use cached scheme
             assert(algorithms == NULL);
             scheme = args->scheme;
-            goto Exit;
+            goto Found;
         }
     } else {
         assert(sign_ctx == NULL);
-        scheme = match_scheme(self->schemes, algorithms, num_algorithms);
-        goto Exit;
+        if ((scheme = match_scheme(self->schemes, algorithms, num_algorithms)) != NULL)
+            goto Found;
     }
 
     return PTLS_ALERT_HANDSHAKE_FAILURE;
 
-Exit:
+Found:
     *selected_algorithm = scheme->scheme_id;
     if (!self->async) {
         assert(*sign_ctx == NULL);
