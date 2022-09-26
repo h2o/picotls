@@ -708,8 +708,7 @@ struct async_sign_ctx {
     ASYNC_WAIT_CTX *waitctx;
     ASYNC_JOB *job;
     size_t siglen;
-    // must be last, see `sign_ctx_alloc`
-    uint8_t sig[0];
+    uint8_t sig[0]; // must be last, see `async_sign_ctx_new`
 };
 
 static struct async_sign_ctx *async_sign_ctx_new(const struct st_ptls_openssl_signature_scheme_t *scheme, EVP_MD_CTX *ctx,
