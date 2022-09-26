@@ -713,8 +713,9 @@ struct sign_ctx {
 static struct sign_ctx *sign_ctx_alloc(size_t siglen)
 {
     // the last member of `struct sign_ctx` is a buffer to store `siglen` bytes
-    struct sign_ctx *sign_ctx = malloc(sizeof(*sign_ctx) + siglen);
-    memset(sign_ctx, 0, sizeof(*sign_ctx) + siglen);
+    size_t sign_ctx_size = offsetof(struct sign_ctx, siglen);
+    struct sign_ctx *sign_ctx = malloc(sign_ctx_size);
+    memset(sign_ctx, 0, sign_ctx_size);
     sign_ctx->siglen = siglen;
 #ifdef PTLS_OPENSSL_HAVE_ASYNC
     sign_ctx->waitctx = ASYNC_WAIT_CTX_new();
