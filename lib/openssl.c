@@ -93,6 +93,8 @@ static int EVP_CIPHER_CTX_reset(EVP_CIPHER_CTX *ctx)
 
 #endif
 
+struct async_sign_ctx;
+
 static const struct st_ptls_openssl_signature_scheme_t rsa_signature_schemes[] = {{PTLS_SIGNATURE_RSA_PSS_RSAE_SHA256, EVP_sha256},
                                                                                   {PTLS_SIGNATURE_RSA_PSS_RSAE_SHA384, EVP_sha384},
                                                                                   {PTLS_SIGNATURE_RSA_PSS_RSAE_SHA512, EVP_sha512},
@@ -810,9 +812,9 @@ Exit:
 static int do_sign(EVP_PKEY *key, const struct st_ptls_openssl_signature_scheme_t *scheme, ptls_buffer_t *outbuf,
                    ptls_iovec_t input, void (**cancel_cb)(void *async), struct async_sign_ctx **_async)
 {
+#ifdef PTLS_OPENSSL_HAVE_ASYNC
     struct async_sign_ctx **async = (struct async_sign_ctx **)_async;
 
-#ifdef PTLS_OPENSSL_HAVE_ASYNC
     if (cancel_cb != NULL && *cancel_cb != NULL)
         return do_sign_async(outbuf, async, cancel_cb);
 #endif
@@ -1185,10 +1187,12 @@ static int sign_certificate(ptls_sign_certificate_t *_self, ptls_t *tls, void (*
     const struct st_ptls_openssl_signature_scheme_t *scheme;
 
     /* When resuming from an asynchronous signing operation, the scheme is already known. */
+#ifdef PTLS_OPENSSL_HAVE_ASYNC
     if (sign_ctx != NULL && *sign_ctx != NULL) {
         scheme = (*sign_ctx)->scheme;
         goto Found;
     }
+#endif
 
     /* Determine the scheme. */
     for (scheme = self->schemes; scheme->scheme_id != UINT16_MAX; ++scheme) {
@@ -1202,12 +1206,14 @@ static int sign_certificate(ptls_sign_certificate_t *_self, ptls_t *tls, void (*
 
 Found:
     *selected_algorithm = scheme->scheme_id;
+#ifdef PTLS_OPENSSL_HAVE_ASYNC
     if (!self->async && sign_ctx != NULL) {
         /* indicate to `do_sign` that async mode is disabled for this operation */
         assert(*sign_ctx == NULL);
         cancel_cb = NULL;
         sign_ctx = NULL;
     }
+#endif
     return do_sign(self->key, scheme, outbuf, input, cancel_cb, sign_ctx);
 }
 
