@@ -768,8 +768,12 @@ static int do_sign_final(void *vargs)
     return EVP_DigestSignFinal(args->ctx, args->sig, &args->siglen);
 }
 
+/**
+ * @param cancel_cb if non-NULL, OpenSSL may generate the signature asynchronously; othervise, it must generate the signature
+ *                  synchronously
+ */
 static int do_sign(EVP_PKEY *key, const struct st_ptls_openssl_signature_scheme_t *scheme, ptls_buffer_t *outbuf,
-                   ptls_iovec_t input, void (**cancel_cb)(void *sign_ctx), void **sign_ctx, int is_async)
+                   ptls_iovec_t input, void (**cancel_cb)(void *sign_ctx), void **sign_ctx)
 {
     const EVP_MD *md = scheme->scheme_md != NULL ? scheme->scheme_md() : NULL;
     int pkey_id = EVP_PKEY_id(key);
@@ -848,7 +852,7 @@ static int do_sign(EVP_PKEY *key, const struct st_ptls_openssl_signature_scheme_
     } else
 #endif
     {
-        if (is_async) {
+        if (cancel_cb != NULL) {
 #ifdef PTLS_OPENSSL_HAVE_ASYNC
             if (ASYNC_get_current_job() == NULL) {
                 // start async sign
@@ -1202,7 +1206,6 @@ static int sign_certificate(ptls_sign_certificate_t *_self, ptls_t *tls, void (*
 {
     ptls_openssl_sign_certificate_t *self = (ptls_openssl_sign_certificate_t *)_self;
     const struct st_ptls_openssl_signature_scheme_t *scheme;
-    int is_async = self->async == 1;
 
     if (ptls_is_server(tls)) {
         assert(sign_ctx != NULL);
@@ -1229,7 +1232,12 @@ static int sign_certificate(ptls_sign_certificate_t *_self, ptls_t *tls, void (*
 
 Exit:
     *selected_algorithm = scheme->scheme_id;
-    return do_sign(self->key, scheme, outbuf, input, cancel_cb, sign_ctx, is_async);
+    if (!self->async) {
+        assert(*sign_ctx == NULL);
+        cancel_cb = NULL;
+        sign_ctx = NULL;
+    }
+    return do_sign(self->key, scheme, outbuf, input, cancel_cb, sign_ctx);
 }
 
 static X509 *to_x509(ptls_iovec_t vec)
