@@ -732,9 +732,6 @@ static struct async_sign_ctx *async_sign_ctx_new(const struct st_ptls_openssl_si
 
 static void async_sign_ctx_free(struct async_sign_ctx *async)
 {
-    if (async == NULL)
-        return;
-
     if (async->ctx != NULL)
         EVP_MD_CTX_destroy(async->ctx);
     if (async->job != NULL) {
