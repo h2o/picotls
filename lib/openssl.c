@@ -859,8 +859,8 @@ static int do_sign(EVP_PKEY *key, const struct st_ptls_openssl_signature_scheme_
             ret = PTLS_ERROR_LIBRARY;
             goto Exit;
         }
-        /* If permitted by the caller (as indicated by the opportunity to set `cancel_cb`, use the asynchronous signing method, and
-         * return immediately. */
+        /* If permitted by the caller (by providing a non-NULL `async` slot), use the asynchronous signing method and return
+         * immediately. */
 #ifdef PTLS_OPENSSL_HAVE_ASYNC
         if (async != NULL) {
             if ((*async = async_sign_ctx_new(scheme, ctx, siglen)) == NULL) {
