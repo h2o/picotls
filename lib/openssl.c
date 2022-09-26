@@ -698,13 +698,13 @@ int ptls_openssl_create_key_exchange(ptls_key_exchange_context_t **ctx, EVP_PKEY
     }
 }
 
+#ifdef PTLS_OPENSSL_HAVE_ASYNC
+
 struct sign_ctx {
     const struct st_ptls_openssl_signature_scheme_t *scheme;
     EVP_MD_CTX *ctx;
-#ifdef PTLS_OPENSSL_HAVE_ASYNC
     ASYNC_WAIT_CTX *waitctx;
     ASYNC_JOB *job;
-#endif
     size_t siglen;
     // must be last, see `sign_ctx_alloc`
     uint8_t sig[0];
@@ -719,10 +719,8 @@ static struct sign_ctx *sign_ctx_alloc(const struct st_ptls_openssl_signature_sc
 
     sign_ctx->scheme = scheme;
     sign_ctx->ctx = ctx;
-#ifdef PTLS_OPENSSL_HAVE_ASYNC
     sign_ctx->waitctx = ASYNC_WAIT_CTX_new();
     sign_ctx->job = NULL;
-#endif
     sign_ctx->siglen = siglen;
     memset(sign_ctx->sig, 0, siglen);
 
@@ -736,7 +734,6 @@ static void sign_ctx_free(struct sign_ctx *sign_ctx)
 
     if (sign_ctx->ctx != NULL)
         EVP_MD_CTX_destroy(sign_ctx->ctx);
-#ifdef PTLS_OPENSSL_HAVE_ASYNC
     if (sign_ctx->job != NULL) {
         int _ret;
         // resume the job to free resources
@@ -744,11 +741,9 @@ static void sign_ctx_free(struct sign_ctx *sign_ctx)
     }
     if (sign_ctx->waitctx != NULL)
         ASYNC_WAIT_CTX_free(sign_ctx->waitctx);
-#endif
     free(sign_ctx);
 }
 
-#ifdef PTLS_OPENSSL_HAVE_ASYNC
 int ptls_openssl_get_async_fd(ptls_t *ptls)
 {
     int fds[1];
@@ -759,7 +754,6 @@ int ptls_openssl_get_async_fd(ptls_t *ptls)
     ASYNC_WAIT_CTX_get_all_fds(args->waitctx, fds, &numfds);
     return fds[0];
 }
-#endif
 
 static void async_sign_cancel(void *vargs)
 {
@@ -777,7 +771,6 @@ static int do_sign_async(ptls_buffer_t *outbuf, struct sign_ctx **sign_ctx, void
 {
     int ret;
 
-#ifdef PTLS_OPENSSL_HAVE_ASYNC
     switch (ASYNC_start_job(&(*sign_ctx)->job, (*sign_ctx)->waitctx, &ret, do_sign_async_job, sign_ctx, sizeof(*sign_ctx))) {
     case ASYNC_ERR:
         ret = PTLS_ERROR_LIBRARY;
@@ -799,7 +792,6 @@ static int do_sign_async(ptls_buffer_t *outbuf, struct sign_ctx **sign_ctx, void
         ret = PTLS_ERROR_LIBRARY;
         break;
     }
-#endif
 
 Exit:
     sign_ctx_free(*sign_ctx);
@@ -807,6 +799,8 @@ Exit:
     *cancel_cb = NULL;
     return ret;
 }
+
+#endif
 
 /**
  * @param cancel_cb if non-NULL, OpenSSL may generate the signature asynchronously; othervise, it must generate the signature
@@ -817,8 +811,10 @@ static int do_sign(EVP_PKEY *key, const struct st_ptls_openssl_signature_scheme_
 {
     struct sign_ctx **sign_ctx = (struct sign_ctx **)_sign_ctx;
 
+#ifdef PTLS_OPENSSL_HAVE_ASYNC
     if (cancel_cb != NULL && *cancel_cb != NULL)
         return do_sign_async(outbuf, sign_ctx, cancel_cb);
+#endif
 
     EVP_MD_CTX *ctx = NULL;
     const EVP_MD *md = scheme->scheme_md != NULL ? scheme->scheme_md() : NULL;
@@ -876,6 +872,7 @@ static int do_sign(EVP_PKEY *key, const struct st_ptls_openssl_signature_scheme_
         }
         /* If permitted by the caller (as indicated by the opportunity to set `cancel_cb`, use the asynchronous signing method, and
          * return immediately. */
+#ifdef PTLS_OPENSSL_HAVE_ASYNC
         if (cancel_cb != NULL) {
             if ((*sign_ctx = sign_ctx_alloc(scheme, ctx, siglen)) == NULL) {
                 ret = PTLS_ERROR_NO_MEMORY;
@@ -883,6 +880,7 @@ static int do_sign(EVP_PKEY *key, const struct st_ptls_openssl_signature_scheme_
             }
             return do_sign_async(outbuf, sign_ctx, cancel_cb);
         }
+#endif
         /* Otherwise, generate signature synchronously. */
         if ((ret = ptls_buffer_reserve(outbuf, siglen)) != 0)
             goto Exit;
