@@ -248,10 +248,7 @@ struct st_ptls_t {
             uint8_t pending_traffic_secret[PTLS_MAX_DIGEST_SIZE];
             uint32_t early_data_skipped_bytes; /* if not UINT32_MAX, the server is skipping early data */
             unsigned can_send_session_ticket : 1;
-            struct {
-                void (*cancel_cb)(void *sign_certificate_ctx);
-                void *sign_certificate_ctx;
-            } sign_certificate;
+            ptls_async_sign_certificate_t *async_sign_certificate;
         } server;
     };
     /**
@@ -2753,22 +2750,21 @@ static int send_certificate_verify(ptls_t *tls, ptls_message_emitter_t *emitter,
             uint8_t data[PTLS_MAX_CERTIFICATE_VERIFY_SIGNDATA_SIZE];
             size_t datalen = build_certificate_verify_signdata(data, tls->key_schedule, context_string);
             if ((ret = tls->ctx->sign_certificate->cb(
-                     tls->ctx->sign_certificate, tls, tls->is_server ? &tls->server.sign_certificate.cancel_cb : NULL,
-                     tls->is_server ? &tls->server.sign_certificate.sign_certificate_ctx : NULL, &algo, sendbuf,
+                     tls->ctx->sign_certificate, tls, tls->is_server ? &tls->server.async_sign_certificate : NULL, &algo, sendbuf,
                      ptls_iovec_init(data, datalen), signature_algorithms != NULL ? signature_algorithms->list : NULL,
                      signature_algorithms != NULL ? signature_algorithms->count : 0)) != 0) {
                 if (ret == PTLS_ERROR_ASYNC_OPERATION) {
                     assert(tls->is_server || !"async operation only supported on the server-side");
-                    assert(tls->server.sign_certificate.cancel_cb != NULL);
+                    assert(tls->server.async_sign_certificate != NULL);
                     /* Reset the output to the end of the previous handshake message. CertificateVerify will be rebuilt when the
                      * async operation completes. */
                     emitter->buf->off = start_off;
                 } else {
-                    assert(tls->server.sign_certificate.cancel_cb == NULL);
+                    assert(tls->server.async_sign_certificate == NULL);
                 }
                 goto Exit;
             }
-            assert(tls->server.sign_certificate.cancel_cb == NULL);
+            assert(tls->server.async_sign_certificate == NULL);
             sendbuf->base[algo_off] = (uint8_t)(algo >> 8);
             sendbuf->base[algo_off + 1] = (uint8_t)algo;
         });
@@ -4482,12 +4478,10 @@ void ptls_free(ptls_t *tls)
         if (tls->client.certificate_request.context.base != NULL)
             free(tls->client.certificate_request.context.base);
     }
-    if (tls->certificate_verify.cb != NULL) {
+    if (tls->certificate_verify.cb != NULL)
         tls->certificate_verify.cb(tls->certificate_verify.verify_ctx, 0, ptls_iovec_init(NULL, 0), ptls_iovec_init(NULL, 0));
-    }
-    if (tls->server.sign_certificate.cancel_cb != NULL) {
-        tls->server.sign_certificate.cancel_cb(tls->server.sign_certificate.sign_certificate_ctx);
-    }
+    if (tls->server.async_sign_certificate != NULL)
+        tls->server.async_sign_certificate->cancel_(tls->server.async_sign_certificate);
     if (tls->pending_handshake_secret != NULL) {
         ptls_clear_memory(tls->pending_handshake_secret, PTLS_MAX_DIGEST_SIZE);
         free(tls->pending_handshake_secret);
@@ -4509,10 +4503,9 @@ void ptls_set_context(ptls_t *tls, ptls_context_t *ctx)
     tls->ctx = ctx;
 }
 
-void *ptls_get_sign_context(ptls_t *tls)
+ptls_async_sign_certificate_t *ptls_get_async_sign_context(ptls_t *tls)
 {
-    assert(tls->is_server);
-    return tls->server.sign_certificate.sign_certificate_ctx;
+    return tls->server.async_sign_certificate;
 }
 
 ptls_iovec_t ptls_get_client_random(ptls_t *tls)
