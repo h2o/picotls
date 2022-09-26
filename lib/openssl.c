@@ -724,7 +724,7 @@ static struct sign_ctx *sign_ctx_alloc(size_t siglen)
     return sign_ctx;
 }
 
-static void sign_ctx_destroy(struct sign_ctx *sign_ctx)
+static void sign_ctx_free(struct sign_ctx *sign_ctx)
 {
     if (sign_ctx == NULL) return;
 
@@ -758,7 +758,7 @@ int ptls_openssl_get_async_fd(ptls_t *ptls)
 static void async_sign_cancel(void *vargs)
 {
     struct sign_ctx *args = (struct sign_ctx *)vargs;
-    sign_ctx_destroy(args);
+    sign_ctx_free(args);
 }
 
 static int do_sign_final(void *vargs)
@@ -900,7 +900,7 @@ Exit:
         *sign_ctx = NULL;
     if (cancel_cb != NULL)
         *cancel_cb = NULL;
-    sign_ctx_destroy(args);
+    sign_ctx_free(args);
     if (ctx != NULL)
         EVP_MD_CTX_destroy(ctx);
     return ret;
