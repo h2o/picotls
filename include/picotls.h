@@ -615,7 +615,8 @@ PTLS_CALLBACK_TYPE(int, emit_certificate, ptls_t *tls, ptls_message_emitter_t *e
  * calculation and free any temporary data allocated for that calculation.
  */
 PTLS_CALLBACK_TYPE(int, sign_certificate, ptls_t *tls, void (**cancel_cb)(void *sign_ctx), void **sign_certificate_ctx,
-                   uint16_t *selected_algorithm, ptls_buffer_t *output, ptls_iovec_t input, const uint16_t *algorithms, size_t num_algorithms);
+                   uint16_t *selected_algorithm, ptls_buffer_t *output, ptls_iovec_t input, const uint16_t *algorithms,
+                   size_t num_algorithms);
 /**
  * after receiving Certificate, the core calls the callback to verify the certificate chain and to obtain a pointer to a
  * callback that should be used for verifying CertificateVerify. If an error occurs between a successful return from this

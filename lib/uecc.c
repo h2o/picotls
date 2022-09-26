@@ -131,9 +131,9 @@ Exit:
     return ret;
 }
 
-static int secp256r1sha256_sign(ptls_sign_certificate_t *_self, ptls_t *tls,  void (**cancel_cb)(void *sign_ctx), void **sign_ctx,
-                                uint16_t *selected_algorithm, ptls_buffer_t *outbuf, ptls_iovec_t input,
-                                const uint16_t *algorithms, size_t num_algorithms)
+static int secp256r1sha256_sign(ptls_sign_certificate_t *_self, ptls_t *tls, void (**cancel_cb)(void *sign_ctx), void **sign_ctx,
+                                uint16_t *selected_algorithm, ptls_buffer_t *outbuf, ptls_iovec_t input, const uint16_t *algorithms,
+                                size_t num_algorithms)
 {
     ptls_minicrypto_secp256r1sha256_sign_certificate_t *self = (ptls_minicrypto_secp256r1sha256_sign_certificate_t *)_self;
     uint8_t hash[32], sig[64];
