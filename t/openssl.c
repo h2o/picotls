@@ -25,6 +25,8 @@
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/select.h>
+#include <sys/time.h>
 #define OPENSSL_API_COMPAT 0x00908000L
 #include <openssl/opensslv.h>
 #include <openssl/bio.h>
@@ -292,6 +294,131 @@ DEFINE_FFX_AES128_ALGORITHMS(openssl);
 DEFINE_FFX_CHACHA20_ALGORITHMS(openssl);
 #endif
 
+static ENGINE *load_engine(const char *name)
+{
+    ENGINE *e;
+
+    if ((e = ENGINE_by_id("dynamic")) == NULL)
+        return NULL;
+    if (!ENGINE_ctrl_cmd_string(e, "SO_PATH", name, 0) || !ENGINE_ctrl_cmd_string(e, "LOAD", NULL, 0)) {
+        ENGINE_free(e);
+        return NULL;
+    }
+
+    return e;
+}
+
+static struct {
+    struct {
+        size_t next_pending;
+        ptls_t *tls;
+        int wait_fd;
+    } conns[10];
+    size_t first_pending;
+} qat;
+
+static void qat_set_pending(size_t index)
+{
+    qat.conns[index].next_pending = qat.first_pending;
+    qat.first_pending = index;
+}
+
+static void many_handshakes(void)
+{
+    ptls_buffer_t hellobuf;
+    int ret;
+
+    { /* generate ClientHello (that we would be used as a template) */
+        ptls_buffer_init(&hellobuf, "", 0);
+        ptls_t *client = ptls_new(ctx, 0);
+        ret = ptls_handshake(client, &hellobuf, NULL, NULL, NULL);
+        ok(ret == PTLS_ERROR_IN_PROGRESS);
+        ptls_free(client);
+    }
+
+    qat.first_pending = 0;
+    for (size_t i = 0; i < PTLS_ELEMENTSOF(qat.conns); ++i) {
+        qat.conns[i].next_pending = i + 1;
+        qat.conns[i].tls = NULL;
+        qat.conns[i].wait_fd = -1;
+    }
+    qat.conns[PTLS_ELEMENTSOF(qat.conns) - 1].next_pending = SIZE_MAX;
+
+    struct timeval start, end;
+    gettimeofday(&start, NULL);
+
+    static const size_t num_total = 10000;
+    size_t num_issued = 0, num_running = 0;
+    while (1) {
+        while (qat.first_pending != SIZE_MAX) {
+            size_t offending = qat.first_pending;
+            /* detach the offending entry from pending list */
+            qat.first_pending = qat.conns[offending].next_pending;
+            qat.conns[offending].next_pending = SIZE_MAX;
+            /* run the offending entry */
+            if (qat.conns[offending].tls == NULL) {
+                qat.conns[offending].tls = ptls_new(ctx_peer, 1);
+                ++num_issued;
+                ++num_running;
+            }
+            ptls_buffer_t hsbuf;
+            uint8_t hsbuf_small[8192];
+            ptls_buffer_init(&hsbuf, hsbuf_small, sizeof(hsbuf_small));
+            size_t inlen = hellobuf.off;
+            ret = ptls_handshake(qat.conns[offending].tls, &hsbuf, hellobuf.base, &inlen, NULL);
+            ptls_buffer_dispose(&hsbuf);
+            /* advance the handshake context */
+            switch (ret) {
+            case 0:
+                ptls_free(qat.conns[offending].tls);
+                qat.conns[offending].tls = NULL;
+                --num_running;
+                if (num_issued < num_total)
+                    qat_set_pending(offending);
+                break;
+#ifdef PTLS_OPENSSL_HAVE_ASYNC
+            case PTLS_ERROR_ASYNC_OPERATION:
+                qat.conns[offending].wait_fd = ptls_openssl_get_async_fd(qat.conns[offending].tls);
+                assert(qat.conns[offending].wait_fd != -1);
+                break;
+#endif
+            default:
+                fprintf(stderr, "ptls_handshake returned %d\n", ret);
+                abort();
+                break;
+            }
+        }
+        if (num_running == 0)
+            break;
+        /* poll for next action */
+        fd_set rfds;
+        FD_ZERO(&rfds);
+        int nfds = 0;
+        for (size_t i = 0; i < PTLS_ELEMENTSOF(qat.conns); ++i) {
+            if (qat.conns[i].wait_fd != -1) {
+                FD_SET(qat.conns[i].wait_fd, &rfds);
+                if (nfds <= qat.conns[i].wait_fd)
+                    nfds = qat.conns[i].wait_fd + 1;
+            }
+        }
+        if (select(nfds, &rfds, NULL, NULL, NULL) > 0) {
+            for (size_t i = 0; i < PTLS_ELEMENTSOF(qat.conns); ++i) {
+                if (qat.conns[i].wait_fd != -1 && FD_ISSET(qat.conns[i].wait_fd, &rfds)) {
+                    qat.conns[i].wait_fd = -1;
+                    qat_set_pending(i);
+                }
+            }
+        }
+    }
+
+    gettimeofday(&end, NULL);
+
+    note("run %zu handshakes in %f seconds", num_total,
+         (end.tv_sec + end.tv_usec / 1000000.) - (start.tv_sec + start.tv_usec / 1000000.));
+
+    ptls_buffer_dispose(&hellobuf);
+}
+
 int main(int argc, char **argv)
 {
     ptls_openssl_sign_certificate_t openssl_sign_certificate;
@@ -383,6 +510,30 @@ int main(int argc, char **argv)
     ctx = &minicrypto_ctx;
     ctx_peer = &openssl_ctx;
     subtest("minicrypto vs.", test_picotls);
+
+#if defined(PTLS_OPENSSL_HAVE_ASYNC) && PTLS_OPENSSL_HAVE_X25519
+    // switch to x25519 as we run benchmarks
+    static ptls_key_exchange_algorithm_t *x25519_keyex[] = {&ptls_openssl_x25519, NULL}; // use x25519 for speed
+    openssl_ctx.key_exchanges = x25519_keyex;
+    ctx = &openssl_ctx;
+    ctx_peer = &openssl_ctx;
+    openssl_sign_certificate.async = 0;
+    subtest("many-handshakes-non-async", many_handshakes);
+    openssl_sign_certificate.async = 0;
+    subtest("many-handshakes-async", many_handshakes);
+    { /* qatengine should be tested at last, because we do not have the code to unload or un-default it */
+        const char *engine_name = "qatengine";
+        ENGINE *qatengine;
+        if ((qatengine = ENGINE_by_id(engine_name)) != NULL || (qatengine = load_engine(engine_name)) != NULL) {
+            ENGINE_set_default_RSA(qatengine);
+            ptls_openssl_dispose_sign_certificate(&openssl_sign_certificate); // reload cert to use qatengine
+            setup_sign_certificate(&openssl_sign_certificate);
+            subtest("many-handshakes-qatengine", many_handshakes);
+        } else {
+            note("%s not found", engine_name);
+        }
+    }
+#endif
 
     esni_private_keys[0]->on_exchange(esni_private_keys, 1, NULL, ptls_iovec_init(NULL, 0));
     int ret = done_testing();
