@@ -45,10 +45,6 @@
 #include "picotls.h"
 #include "picotls/openssl.h"
 
-#ifdef PTLS_OPENSSL_HAVE_ASYNC
-#include <openssl/async.h>
-#endif
-
 #ifdef _WINDOWS
 #ifndef _CRT_SECURE_NO_WARNINGS
 #define _CRT_SECURE_NO_WARNINGS
@@ -745,9 +741,9 @@ static ptls_async_sign_certificate_t *async_sign_ctx_new(const struct st_ptls_op
     return &self->super;
 }
 
-int ptls_openssl_get_async_fd(ptls_t *ptls)
+OSSL_ASYNC_FD ptls_openssl_get_async_fd(ptls_t *ptls)
 {
-    int fds[1];
+    OSSL_ASYNC_FD fds[1];
     size_t numfds;
     struct async_sign_ctx *async = (void *)ptls_get_async_sign_context(ptls);
     assert(async != NULL);
