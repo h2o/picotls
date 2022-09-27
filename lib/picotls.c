@@ -5750,10 +5750,7 @@ void ptlslog__do_write(const ptls_buffer_t *buf)
                 close(ptlslog.fds[i]);
                 memmove(ptlslog.fds + i, ptlslog.fds + i + 1, sizeof(ptlslog.fds[0]) * (ptlslog.num_fds - i - 1));
                 ptlslog.fds = realloc(ptlslog.fds, sizeof(ptlslog.fds[0]) * (ptlslog.num_fds - 1));
-                if (--ptlslog.num_fds == 0) {
-                    free(ptlslog.fds);
-                    ptlslog.fds = NULL;
-                }
+                --ptlslog.num_fds;
             }
         }
     }
