@@ -1473,6 +1473,8 @@ int ptlslog_add_fd(int fd);
 
 #define PTLSLOG(module, type, block)                                                                                               \
     do {                                                                                                                           \
+        if (!ptlslog_is_active())                                                                                                  \
+            break;                                                                                                                 \
         char smallbuf[128];                                                                                                        \
         ptls_buffer_t ptlslogbuf;                                                                                                  \
         ptls_buffer_init(&ptlslogbuf, smallbuf, sizeof(smallbuf));                                                                 \
@@ -1488,8 +1490,6 @@ int ptlslog_add_fd(int fd);
 
 #define PTLSLOG_CONN(type, tls, block)                                                                                             \
     do {                                                                                                                           \
-        if (!ptlslog_is_active())                                                                                                  \
-            break;                                                                                                                 \
         ptls_t *_tls = (tls);                                                                                                      \
         if (ptls_skip_tracing(_tls))                                                                                               \
             break;                                                                                                                 \
@@ -1766,7 +1766,6 @@ inline size_t ptls_aead_decrypt(ptls_aead_context_t *ctx, void *output, const vo
         init_func(&ctx->ctx);                                                                                                      \
         return &ctx->super;                                                                                                        \
     }
-
 
 int ptlslog_is_active(void)
 {
