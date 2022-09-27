@@ -5713,24 +5713,14 @@ static size_t escape_json_unsafe_string(char *buf, const void *bytes, size_t len
 
     return (size_t)(dst - buf);
 }
-struct st_ptlslog_context_t {
-    int *fds;
-    size_t num_fds;
 
-    size_t lost;
-    pthread_mutex_t mutex;
-} ptlslog = {
+ptlslog_context_t ptlslog = {
     .mutex = PTHREAD_MUTEX_INITIALIZER,
 };
 
-int ptlslog_is_active(void)
-{
-    return ptlslog.fds != NULL;
-}
-
 size_t ptlslog_num_lost(void)
 {
-    return ptlslog.lost;
+    return ptlslog.num_lost;
 }
 
 int ptlslog_add_fd(int fd)
@@ -5754,9 +5744,9 @@ void ptlslog__do_write(const ptls_buffer_t *buf)
             ;
         if (ret == -1) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                ptlslog.lost++;
+                ptlslog.num_lost++;
             } else {
-                // close fd and remove the entry of the fds array
+                // close fd and remove the entry of it from the array
                 close(ptlslog.fds[i]);
                 memmove(ptlslog.fds + i, ptlslog.fds + i + 1, sizeof(ptlslog.fds[0]) * (ptlslog.num_fds - i - 1));
                 ptlslog.fds = realloc(ptlslog.fds, sizeof(ptlslog.fds[0]) * (ptlslog.num_fds - 1));

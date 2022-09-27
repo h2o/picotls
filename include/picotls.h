@@ -1447,7 +1447,20 @@ extern PTLS_THREADLOCAL unsigned ptls_default_skip_tracing;
 #define ptls_default_skip_tracing 0
 #endif
 
-int ptlslog_is_active(void);
+typedef struct st_ptlslog_context_t {
+    int *fds;
+    size_t num_fds;
+
+    size_t num_lost;
+    pthread_mutex_t mutex;
+} ptlslog_context_t;
+
+extern ptlslog_context_t ptlslog;
+
+/**
+ * Retrusn true if one has installed an fd to the ptlslog context with `ptlslog_add_fd()`.
+ */
+static int ptlslog_is_active(void);
 
 /**
  * Returns the number of lost events.
@@ -1753,6 +1766,12 @@ inline size_t ptls_aead_decrypt(ptls_aead_context_t *ctx, void *output, const vo
         init_func(&ctx->ctx);                                                                                                      \
         return &ctx->super;                                                                                                        \
     }
+
+
+int ptlslog_is_active(void)
+{
+    return ptlslog.fds != NULL;
+}
 
 inline int ptlslog__do_push_safestr(ptls_buffer_t *buf, const char *s)
 {
