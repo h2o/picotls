@@ -1767,7 +1767,7 @@ inline size_t ptls_aead_decrypt(ptls_aead_context_t *ctx, void *output, const vo
         return &ctx->super;                                                                                                        \
     }
 
-int ptlslog_is_active(void)
+inline int ptlslog_is_active(void)
 {
     return ptlslog.fds != NULL;
 }
