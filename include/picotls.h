@@ -1475,6 +1475,7 @@ int ptlslog_add_fd(int fd);
     do {                                                                                                                           \
         if (!ptlslog_is_active())                                                                                                  \
             break;                                                                                                                 \
+        int ptlslog_skip = 0;                                                                                                      \
         char smallbuf[128];                                                                                                        \
         ptls_buffer_t ptlslogbuf;                                                                                                  \
         ptls_buffer_init(&ptlslogbuf, smallbuf, sizeof(smallbuf));                                                                 \
@@ -1483,8 +1484,8 @@ int ptlslog_add_fd(int fd);
             block                                                                                                                  \
         } while (0);                                                                                                               \
         PTLSLOG__DO_PUSH_SAFESTR("}\n");                                                                                           \
-        ptlslog__do_write(&ptlslogbuf);                                                                                            \
-    ptlslog__Exit:                                                                                                                 \
+        if (!ptlslog_skip)                                                                                                         \
+            ptlslog__do_write(&ptlslogbuf);                                                                                        \
         ptls_buffer_dispose(&ptlslogbuf);                                                                                          \
     } while (0)
 
@@ -1536,28 +1537,28 @@ int ptlslog_add_fd(int fd);
 
 #define PTLSLOG__DO_PUSH_SAFESTR(v)                                                                                                \
     do {                                                                                                                           \
-        if (PTLS_UNLIKELY(!ptlslog__do_push_safestr(&ptlslogbuf, (v))))                                                            \
-            goto ptlslog__Exit;                                                                                                    \
+        if (PTLS_UNLIKELY(!ptlslog_skip && !ptlslog__do_push_safestr(&ptlslogbuf, (v))))                                           \
+            ptlslog_skip = 1;                                                                                                      \
     } while (0)
 #define PTLSLOG__DO_PUSH_UNSAFESTR(v, l)                                                                                           \
     do {                                                                                                                           \
-        if (PTLS_UNLIKELY(!ptlslog__do_push_unsafestr(&ptlslogbuf, (v), (l))))                                                     \
-            goto ptlslog__Exit;                                                                                                    \
+        if (PTLS_UNLIKELY(!ptlslog_skip && !ptlslog__do_push_unsafestr(&ptlslogbuf, (v), (l))))                                    \
+            ptlslog_skip = 1;                                                                                                      \
     } while (0)
 #define PTLSLOG__DO_PUSH_HEXDUMP(v, l)                                                                                             \
     do {                                                                                                                           \
-        if (PTLS_UNLIKELY(!ptlslog__do_push_hexdump(&ptlslogbuf, (v), (l))))                                                       \
-            goto ptlslog__Exit;                                                                                                    \
+        if (PTLS_UNLIKELY(!ptlslog_skip && !ptlslog__do_push_hexdump(&ptlslogbuf, (v), (l))))                                      \
+            ptlslog_skip = 1;                                                                                                      \
     } while (0)
 #define PTLSLOG__DO_PUSH_SIGNED(v)                                                                                                 \
     do {                                                                                                                           \
-        if (PTLS_UNLIKELY(!ptlslog__do_push_signed(&ptlslogbuf, (v))))                                                             \
-            goto ptlslog__Exit;                                                                                                    \
+        if (PTLS_UNLIKELY(!ptlslog_skip && !ptlslog__do_push_signed(&ptlslogbuf, (v))))                                            \
+            ptlslog_skip = 1;                                                                                                      \
     } while (0)
 #define PTLSLOG__DO_PUSH_UNSIGNED(v)                                                                                               \
     do {                                                                                                                           \
-        if (PTLS_UNLIKELY(!ptlslog__do_push_unsigned(&ptlslogbuf, (v))))                                                           \
-            goto ptlslog__Exit;                                                                                                    \
+        if (PTLS_UNLIKELY(!ptlslog_skip && !ptlslog__do_push_unsigned(&ptlslogbuf, (v))))                                          \
+            ptlslog_skip = 1;                                                                                                      \
     } while (0)
 
 /**
