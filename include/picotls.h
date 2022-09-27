@@ -1460,34 +1460,33 @@ int ptlslog_add_fd(int fd);
 
 #define PTLSLOG(module, type, block)                                                                                               \
     do {                                                                                                                           \
-        if (!ptlslog_is_active())                                                                                                  \
-            break;                                                                                                                 \
         char smallbuf[128];                                                                                                        \
         ptls_buffer_t ptlslogbuf;                                                                                                  \
         ptls_buffer_init(&ptlslogbuf, smallbuf, sizeof(smallbuf));                                                                 \
-        int ptlslog_skip = 0;                                                                                                      \
         PTLSLOG__DO_PUSH_SAFESTR("{\"module\":\"" PTLS_TO_STR(module) "\",\"type\":\"" PTLS_TO_STR(type) "\"");                    \
         do {                                                                                                                       \
             block                                                                                                                  \
         } while (0);                                                                                                               \
         PTLSLOG__DO_PUSH_SAFESTR("}\n");                                                                                           \
-        if (!ptlslog_skip) {                                                                                                       \
-            ptlslog__do_write(&ptlslogbuf);                                                                                        \
-        }                                                                                                                          \
+        ptlslog__do_write(&ptlslogbuf);                                                                                            \
+    ptlslog__Exit:                                                                                                                 \
         ptls_buffer_dispose(&ptlslogbuf);                                                                                          \
     } while (0)
 
 #define PTLSLOG_CONN(type, tls, block)                                                                                             \
-    PTLSLOG(picotls, type, {                                                                                                       \
-        ptls_t *_tls = (tls);                                                                                                      \
-        ptlslog_skip = ptls_skip_tracing(_tls);                                                                                    \
-        if (ptlslog_skip)                                                                                                          \
+    do {                                                                                                                           \
+        if (!ptlslog_is_active())                                                                                                  \
             break;                                                                                                                 \
-        PTLSLOG_ELEMENT_PTR(tls, _tls);                                                                                            \
-        do {                                                                                                                       \
-            block                                                                                                                  \
-        } while (0);                                                                                                               \
-    })
+        ptls_t *_tls = (tls);                                                                                                      \
+        if (ptls_skip_tracing(_tls))                                                                                               \
+            break;                                                                                                                 \
+        PTLSLOG(picotls, type, {                                                                                                   \
+            PTLSLOG_ELEMENT_PTR(tls, _tls);                                                                                        \
+            do {                                                                                                                   \
+                block                                                                                                              \
+            } while (0);                                                                                                           \
+        });                                                                                                                        \
+    } while (0)
 
 #define PTLSLOG_ELEMENT_SAFESTR(name, value)                                                                                       \
     do {                                                                                                                           \
@@ -1524,28 +1523,28 @@ int ptlslog_add_fd(int fd);
 
 #define PTLSLOG__DO_PUSH_SAFESTR(v)                                                                                                \
     do {                                                                                                                           \
-        if (!ptlslog_skip && PTLS_UNLIKELY(!ptlslog__do_push_safestr(&ptlslogbuf, (v))))                                           \
-            ptlslog_skip = 1;                                                                                                      \
+        if (PTLS_UNLIKELY(!ptlslog__do_push_safestr(&ptlslogbuf, (v))))                                                            \
+            goto ptlslog__Exit;                                                                                                    \
     } while (0)
 #define PTLSLOG__DO_PUSH_UNSAFESTR(v, l)                                                                                           \
     do {                                                                                                                           \
-        if (!ptlslog_skip && PTLS_UNLIKELY(!ptlslog__do_push_unsafestr(&ptlslogbuf, (v), (l))))                                    \
-            ptlslog_skip = 1;                                                                                                      \
+        if (PTLS_UNLIKELY(!ptlslog__do_push_unsafestr(&ptlslogbuf, (v), (l))))                                                     \
+            goto ptlslog__Exit;                                                                                                    \
     } while (0)
 #define PTLSLOG__DO_PUSH_HEXDUMP(v, l)                                                                                             \
     do {                                                                                                                           \
-        if (!ptlslog_skip && PTLS_UNLIKELY(!ptlslog__do_push_hexdump(&ptlslogbuf, (v), (l))))                                      \
-            ptlslog_skip = 1;                                                                                                      \
+        if (PTLS_UNLIKELY(!ptlslog__do_push_hexdump(&ptlslogbuf, (v), (l))))                                                       \
+            goto ptlslog__Exit;                                                                                                    \
     } while (0)
 #define PTLSLOG__DO_PUSH_SIGNED(v)                                                                                                 \
     do {                                                                                                                           \
-        if (!ptlslog_skip && PTLS_UNLIKELY(!ptlslog__do_push_signed(&ptlslogbuf, (v))))                                            \
-            ptlslog_skip = 1;                                                                                                      \
+        if (PTLS_UNLIKELY(!ptlslog__do_push_signed(&ptlslogbuf, (v))))                                                             \
+            goto ptlslog__Exit;                                                                                                    \
     } while (0)
 #define PTLSLOG__DO_PUSH_UNSIGNED(v)                                                                                               \
     do {                                                                                                                           \
-        if (!ptlslog_skip && PTLS_UNLIKELY(!ptlslog__do_push_unsigned(&ptlslogbuf, (v))))                                          \
-            ptlslog_skip = 1;                                                                                                      \
+        if (PTLS_UNLIKELY(!ptlslog__do_push_unsigned(&ptlslogbuf, (v))))                                                           \
+            goto ptlslog__Exit;                                                                                                    \
     } while (0)
 
 /**
