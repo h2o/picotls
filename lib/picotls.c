@@ -5672,14 +5672,14 @@ static size_t escape_json_unsafe_string(char *buf, const void *bytes, size_t len
         dst += sizeof(escaped) - 1;                                                                                                \
     } break;
 
-        MAP('"', "\\\"");
-        MAP('\\', "\\\\");
-        MAP('/', "\\/");
-        MAP('\b', "\\b");
-        MAP('\f', "\\f");
-        MAP('\n', "\\n");
-        MAP('\r', "\\r");
-        MAP('\t', "\\t");
+            MAP('"', "\\\"");
+            MAP('\\', "\\\\");
+            MAP('/', "\\/");
+            MAP('\b', "\\b");
+            MAP('\f', "\\f");
+            MAP('\n', "\\n");
+            MAP('\r', "\\r");
+            MAP('\t', "\\t");
 
 #undef MAP
 
