@@ -35,6 +35,10 @@
 #if !defined(LIBRESSL_VERSION_NUMBER) && OPENSSL_VERSION_NUMBER >= 0x30000000L
 #include <openssl/provider.h>
 #endif
+#if OPENSSL_VERSION_NUMBER >= 0x10100010L && !defined(LIBRESSL_VERSION_NUMBER) && !defined(OPENSSL_NO_ASYNC)
+#include <openssl/async.h>
+#define HAVE_ASYNC 1
+#endif
 #include "picotls.h"
 #include "picotls/minicrypto.h"
 #include "../deps/picotest/picotest.h"
@@ -147,7 +151,7 @@ static void test_sign_verify(EVP_PKEY *key, const struct st_ptls_openssl_signatu
         uint8_t sigbuf_small[1024];
 
         ptls_buffer_init(&sigbuf, sigbuf_small, sizeof(sigbuf_small));
-        ok(do_sign(key, schemes + i, &sigbuf, ptls_iovec_init(message, strlen(message)), NULL) == 0);
+        ok(do_sign(key, NULL, schemes + i, &sigbuf, ptls_iovec_init(message, strlen(message)), NULL, NULL) == 0);
         EVP_PKEY_up_ref(key);
         ok(verify_sign(key, schemes[i].scheme_id, ptls_iovec_init(message, strlen(message)),
                        ptls_iovec_init(sigbuf.base, sigbuf.off)) == 0);
@@ -309,26 +313,65 @@ static ENGINE *load_engine(const char *name)
 }
 
 static struct {
-    struct {
-        size_t next_pending;
-        ptls_t *tls;
-        int wait_fd;
-    } conns[10];
-    size_t first_pending;
-} qat;
+    ptls_t *pending;
+    struct async_ctx {
+        struct async_ctx *next;
+        ASYNC_WAIT_CTX *waitctx;
+        ASYNC_JOB *job;
+        ptls_t **tls;
+        int waitfd;
+    } * jobs;
+} qat = {};
 
-static void qat_set_pending(size_t index)
+static void qat_set_pending(ptls_t *tls)
 {
-    qat.conns[index].next_pending = qat.first_pending;
-    qat.first_pending = index;
+    *ptls_get_data_ptr(tls) = qat.pending;
+    qat.pending = tls;
+}
+
+static int async_run(struct async_ctx *job, int (*job_func)(void *), void *job_arg)
+{
+    assert(job->waitfd == -1);
+    assert(job->next == NULL);
+
+    int job_ret_ignored;
+    switch (ASYNC_start_job(&job->job, job->waitctx, &job_ret_ignored, job_func, &job_arg, sizeof(job_arg))) {
+    case ASYNC_PAUSE: {
+        size_t numfds;
+        ASYNC_WAIT_CTX_get_all_fds(job->waitctx, NULL, &numfds);
+        assert(numfds == 1);
+        ASYNC_WAIT_CTX_get_all_fds(job->waitctx, &job->waitfd, &numfds);
+        job->next = qat.jobs;
+        qat.jobs = job;
+        return PTLS_ERROR_ASYNC_OPERATION;
+    } break;
+    case ASYNC_FINISH:
+        if (job_func == NULL && *job->tls != NULL)
+            qat_set_pending(*job->tls);
+        ASYNC_WAIT_CTX_free(job->waitctx);
+        free(job);
+        return 0;
+    default:
+        fprintf(stderr, "ASYNC_start_job failed\n");
+        abort();
+    }
+}
+
+static int async_submit(ptls_openssl_async_runner_t *self, ptls_t **tls, int (*job_func)(void *), void *job_arg)
+{
+    struct async_ctx *newjob = malloc(sizeof(*newjob));
+
+    *newjob = (struct async_ctx){.waitctx = ASYNC_WAIT_CTX_new(), .tls = tls, .waitfd = -1};
+    return async_run(newjob, job_func, job_arg);
 }
 
 static void many_handshakes(void)
 {
+    static const size_t num_total = 10000, max_concurrency = 10;
     ptls_buffer_t hellobuf;
     int ret;
 
-    { /* generate ClientHello (that we would be used as a template) */
+    { /* generate ClientHello that would be used as a template */
         ptls_buffer_init(&hellobuf, "", 0);
         ptls_t *client = ptls_new(ctx, 0);
         ret = ptls_handshake(client, &hellobuf, NULL, NULL, NULL);
@@ -336,78 +379,74 @@ static void many_handshakes(void)
         ptls_free(client);
     }
 
-    qat.first_pending = 0;
-    for (size_t i = 0; i < PTLS_ELEMENTSOF(qat.conns); ++i) {
-        qat.conns[i].next_pending = i + 1;
-        qat.conns[i].tls = NULL;
-        qat.conns[i].wait_fd = -1;
-    }
-    qat.conns[PTLS_ELEMENTSOF(qat.conns) - 1].next_pending = SIZE_MAX;
-
     struct timeval start, end;
     gettimeofday(&start, NULL);
 
-    static const size_t num_total = 10000;
     size_t num_issued = 0, num_running = 0;
     while (1) {
-        while (qat.first_pending != SIZE_MAX) {
-            size_t offending = qat.first_pending;
-            /* detach the offending entry from pending list */
-            qat.first_pending = qat.conns[offending].next_pending;
-            qat.conns[offending].next_pending = SIZE_MAX;
-            /* run the offending entry */
-            if (qat.conns[offending].tls == NULL) {
-                qat.conns[offending].tls = ptls_new(ctx_peer, 1);
+        /* proceed all pending handshakes that can be, as well as instatiating new ones */
+        do {
+            while (qat.pending != NULL) {
+                ptls_t *tls = qat.pending;
+                qat.pending = *ptls_get_data_ptr(tls);
+                ptls_buffer_t hsbuf;
+                uint8_t hsbuf_small[8192];
+                ptls_buffer_init(&hsbuf, hsbuf_small, sizeof(hsbuf_small));
+                size_t inlen = hellobuf.off;
+                ret = ptls_handshake(tls, &hsbuf, hellobuf.base, &inlen, NULL);
+                ptls_buffer_dispose(&hsbuf);
+                /* advance the handshake context */
+                switch (ret) {
+                case 0:
+                    ptls_free(tls);
+                    --num_running;
+                    break;
+                case PTLS_ERROR_ASYNC_OPERATION:
+                    break;
+                default:
+                    fprintf(stderr, "ptls_handshake returned %d\n", ret);
+                    abort();
+                    break;
+                }
+            }
+            while (num_issued < num_total && num_running < max_concurrency) {
+                ptls_t *tls = ptls_new(ctx_peer, 1);
                 ++num_issued;
                 ++num_running;
+                qat_set_pending(tls);
             }
-            ptls_buffer_t hsbuf;
-            uint8_t hsbuf_small[8192];
-            ptls_buffer_init(&hsbuf, hsbuf_small, sizeof(hsbuf_small));
-            size_t inlen = hellobuf.off;
-            ret = ptls_handshake(qat.conns[offending].tls, &hsbuf, hellobuf.base, &inlen, NULL);
-            ptls_buffer_dispose(&hsbuf);
-            /* advance the handshake context */
-            switch (ret) {
-            case 0:
-                ptls_free(qat.conns[offending].tls);
-                qat.conns[offending].tls = NULL;
-                --num_running;
-                if (num_issued < num_total)
-                    qat_set_pending(offending);
-                break;
-#ifdef PTLS_OPENSSL_HAVE_ASYNC
-            case PTLS_ERROR_ASYNC_OPERATION:
-                qat.conns[offending].wait_fd = ptls_openssl_get_async_fd(qat.conns[offending].tls);
-                assert(qat.conns[offending].wait_fd != -1);
-                break;
-#endif
-            default:
-                fprintf(stderr, "ptls_handshake returned %d\n", ret);
-                abort();
-                break;
-            }
-        }
-        if (num_running == 0)
+        } while (qat.pending != NULL);
+        if (num_running == 0) {
+            assert(num_issued == num_total);
             break;
+        }
+        assert(num_running != 0);
+        assert(qat.jobs != NULL);
         /* poll for next action */
         fd_set rfds;
         FD_ZERO(&rfds);
         int nfds = 0;
-        for (size_t i = 0; i < PTLS_ELEMENTSOF(qat.conns); ++i) {
-            if (qat.conns[i].wait_fd != -1) {
-                FD_SET(qat.conns[i].wait_fd, &rfds);
-                if (nfds <= qat.conns[i].wait_fd)
-                    nfds = qat.conns[i].wait_fd + 1;
-            }
+        for (struct async_ctx *job = qat.jobs; job != NULL; job = job->next) {
+            assert(job->waitfd != -1);
+            FD_SET(job->waitfd, &rfds);
+            if (nfds <= job->waitfd)
+                nfds = job->waitfd + 1;
         }
         if (select(nfds, &rfds, NULL, NULL, NULL) > 0) {
-            for (size_t i = 0; i < PTLS_ELEMENTSOF(qat.conns); ++i) {
-                if (qat.conns[i].wait_fd != -1 && FD_ISSET(qat.conns[i].wait_fd, &rfds)) {
-                    qat.conns[i].wait_fd = -1;
-                    qat_set_pending(i);
+            struct async_ctx *new_list = NULL;
+            while (qat.jobs != NULL) {
+                struct async_ctx *offending = qat.jobs;
+                qat.jobs = offending->next;
+                offending->next = NULL;
+                if (FD_ISSET(offending->waitfd, &rfds)) {
+                    offending->waitfd = -1;
+                    async_run(offending, NULL, NULL);
+                } else {
+                    offending->next = new_list;
+                    new_list = offending;
                 }
             }
+            qat.jobs = new_list;
         }
     }
 
@@ -511,15 +550,16 @@ int main(int argc, char **argv)
     ctx_peer = &openssl_ctx;
     subtest("minicrypto vs.", test_picotls);
 
-#if defined(PTLS_OPENSSL_HAVE_ASYNC) && PTLS_OPENSSL_HAVE_X25519
+#if PTLS_OPENSSL_HAVE_X25519
     // switch to x25519 as we run benchmarks
     static ptls_key_exchange_algorithm_t *x25519_keyex[] = {&ptls_openssl_x25519, NULL}; // use x25519 for speed
     openssl_ctx.key_exchanges = x25519_keyex;
     ctx = &openssl_ctx;
     ctx_peer = &openssl_ctx;
-    openssl_sign_certificate.async = 0;
     subtest("many-handshakes-non-async", many_handshakes);
-    openssl_sign_certificate.async = 0;
+#if HAVE_ASYNC
+    ptls_openssl_async_runner_t async_runner = {async_submit};
+    openssl_sign_certificate.async_runner = &async_runner;
     subtest("many-handshakes-async", many_handshakes);
     { /* qatengine should be tested at last, because we do not have the code to unload or un-default it */
         const char *engine_name = "qatengine";
@@ -528,11 +568,13 @@ int main(int argc, char **argv)
             ENGINE_set_default_RSA(qatengine);
             ptls_openssl_dispose_sign_certificate(&openssl_sign_certificate); // reload cert to use qatengine
             setup_sign_certificate(&openssl_sign_certificate);
+            openssl_sign_certificate.async_runner = &async_runner;
             subtest("many-handshakes-qatengine", many_handshakes);
         } else {
             note("%s not found", engine_name);
         }
     }
+#endif
 #endif
 
     esni_private_keys[0]->on_exchange(esni_private_keys, 1, NULL, ptls_iovec_init(NULL, 0));

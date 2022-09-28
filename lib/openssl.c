@@ -694,110 +694,86 @@ int ptls_openssl_create_key_exchange(ptls_key_exchange_context_t **ctx, EVP_PKEY
     }
 }
 
-#ifdef PTLS_OPENSSL_HAVE_ASYNC
-
 struct async_sign_ctx {
     ptls_async_sign_certificate_t super;
     const struct st_ptls_openssl_signature_scheme_t *scheme;
     EVP_MD_CTX *ctx;
-    ASYNC_WAIT_CTX *waitctx;
-    ASYNC_JOB *job;
+    ptls_t *tls;
+    int ptls_error;
     size_t siglen;
     uint8_t sig[0]; // must be last, see `async_sign_ctx_new`
 };
 
-static void async_sign_ctx_free(ptls_async_sign_certificate_t *_self)
+static void async_sign_ctx_cancel(ptls_async_sign_certificate_t *_self)
 {
-    struct async_sign_ctx *self = (void *)_self;
-
-    if (self->ctx != NULL)
-        EVP_MD_CTX_destroy(self->ctx);
-    if (self->job != NULL) {
-        int _ret;
-        // resume the job to free resources
-        ASYNC_start_job(&self->job, self->waitctx, &_ret, NULL, NULL, 0);
-    }
-    if (self->waitctx != NULL)
-        ASYNC_WAIT_CTX_free(self->waitctx);
-    free(self);
+    struct async_sign_ctx *self = (struct async_sign_ctx *)_self;
+    self->tls = NULL;
 }
 
-static ptls_async_sign_certificate_t *async_sign_ctx_new(const struct st_ptls_openssl_signature_scheme_t *scheme, EVP_MD_CTX *ctx,
-                                                         size_t siglen)
+static struct async_sign_ctx *async_sign_ctx_new(const struct st_ptls_openssl_signature_scheme_t *scheme, EVP_MD_CTX *ctx,
+                                                 ptls_t *tls, size_t siglen)
 {
     struct async_sign_ctx *self;
 
     if ((self = malloc(offsetof(struct async_sign_ctx, sig) + siglen)) == NULL)
         return NULL;
 
-    self->super = (ptls_async_sign_certificate_t){async_sign_ctx_free};
+    self->super = (ptls_async_sign_certificate_t){async_sign_ctx_cancel};
     self->scheme = scheme;
     self->ctx = ctx;
-    self->waitctx = ASYNC_WAIT_CTX_new();
-    self->job = NULL;
+    self->tls = tls;
+    self->ptls_error = PTLS_ERROR_ASYNC_OPERATION;
     self->siglen = siglen;
     memset(self->sig, 0, siglen);
 
-    return &self->super;
+    return self;
 }
 
-OSSL_ASYNC_FD ptls_openssl_get_async_fd(ptls_t *ptls)
+static void async_sign_ctx_free(struct async_sign_ctx *self)
 {
-    OSSL_ASYNC_FD fds[1];
-    size_t numfds;
-    struct async_sign_ctx *async = (void *)ptls_get_async_sign_context(ptls);
-    assert(async != NULL);
-    ASYNC_WAIT_CTX_get_all_fds(async->waitctx, NULL, &numfds);
-    assert(numfds == 1);
-    ASYNC_WAIT_CTX_get_all_fds(async->waitctx, fds, &numfds);
-    return fds[0];
+    EVP_MD_CTX_destroy(self->ctx);
+    free(self);
 }
 
 static int do_sign_async_job(void *_async)
 {
     struct async_sign_ctx *async = *(struct async_sign_ctx **)_async;
-    return EVP_DigestSignFinal(async->ctx, async->sig, &async->siglen);
+
+    async->ptls_error = EVP_DigestSignFinal(async->ctx, async->sig, &async->siglen) == 1 ? 0 : PTLS_ERROR_LIBRARY;
+
+    /* Now that the calculation is complete, destroy the object when the TLS context is gone. Otherwise, the user calls
+     * `ptls_handshake` again, at which point the signature is copied and the async context is destroyed. */
+    if (async->tls == NULL)
+        async_sign_ctx_free(async);
+
+    return 1;
 }
 
-static int do_sign_async(ptls_buffer_t *outbuf, ptls_async_sign_certificate_t **_async)
+static int do_sign_async(ptls_t *tls, ptls_buffer_t *outbuf, ptls_async_sign_certificate_t **_async)
 {
-    struct async_sign_ctx *async = (void *)*_async;
-    int ret;
+    struct async_sign_ctx *async = (struct async_sign_ctx *)*_async;
 
-    switch (ASYNC_start_job(&async->job, async->waitctx, &ret, do_sign_async_job, &async, sizeof(async))) {
-    case ASYNC_PAUSE:
-        return PTLS_ERROR_ASYNC_OPERATION; // async operation inflight; bail out without getting rid of async context
-    case ASYNC_ERR:
-        ret = PTLS_ERROR_LIBRARY;
-        break;
-    case ASYNC_NO_JOBS:
-        ret = PTLS_ERROR_LIBRARY;
-        break;
-    case ASYNC_FINISH:
-        async->job = NULL;
-        ptls_buffer_pushv(outbuf, async->sig, async->siglen);
-        ret = 0;
-        break;
-    default:
-        ret = PTLS_ERROR_LIBRARY;
-        break;
+    assert(tls == async->tls);
+
+    int ret = async->ptls_error;
+
+    /* If the operation has completed, write the result back and destroy the async context. */
+    if (ret != PTLS_ERROR_ASYNC_OPERATION) {
+        if (ret == 0)
+            ptls_buffer_pushv(outbuf, async->sig, async->siglen);
+        async_sign_ctx_free(async);
+        *_async = NULL;
     }
 
 Exit:
-    async_sign_ctx_free(&async->super);
-    *_async = NULL;
     return ret;
 }
 
-#endif
-
-static int do_sign(EVP_PKEY *key, const struct st_ptls_openssl_signature_scheme_t *scheme, ptls_buffer_t *outbuf,
-                   ptls_iovec_t input, ptls_async_sign_certificate_t **async)
+static int do_sign(EVP_PKEY *key, ptls_t *tls, const struct st_ptls_openssl_signature_scheme_t *scheme, ptls_buffer_t *outbuf,
+                   ptls_iovec_t input, ptls_async_sign_certificate_t **async, ptls_openssl_async_runner_t *async_runner)
 {
-#ifdef PTLS_OPENSSL_HAVE_ASYNC
     if (async != NULL && *async != NULL)
-        return do_sign_async(outbuf, async);
-#endif
+        return do_sign_async(tls, outbuf, async);
 
     EVP_MD_CTX *ctx = NULL;
     const EVP_MD *md = scheme->scheme_md != NULL ? scheme->scheme_md() : NULL;
@@ -853,17 +829,13 @@ static int do_sign(EVP_PKEY *key, const struct st_ptls_openssl_signature_scheme_
             ret = PTLS_ERROR_LIBRARY;
             goto Exit;
         }
-        /* If permitted by the caller (by providing a non-NULL `async` slot), use the asynchronous signing method and return
-         * immediately. */
-#ifdef PTLS_OPENSSL_HAVE_ASYNC
+        /* If permitted by the caller (by providing a non-NULL `async` slot), use the asynchronous signing method. */
         if (async != NULL) {
-            if ((*async = async_sign_ctx_new(scheme, ctx, siglen)) == NULL) {
-                ret = PTLS_ERROR_NO_MEMORY;
-                goto Exit;
-            }
-            return do_sign_async(outbuf, async);
+            struct async_sign_ctx *actx = async_sign_ctx_new(scheme, ctx, tls, siglen);
+            *async = &actx->super;
+            ret = async_runner->cb(async_runner, &actx->tls, do_sign_async_job, actx);
+            return ret == PTLS_ERROR_ASYNC_OPERATION ? ret : do_sign_async(tls, outbuf, async);
         }
-#endif
         /* Otherwise, generate signature synchronously. */
         if ((ret = ptls_buffer_reserve(outbuf, siglen)) != 0)
             goto Exit;
@@ -1165,13 +1137,10 @@ static int sign_certificate(ptls_sign_certificate_t *_self, ptls_t *tls, ptls_as
     ptls_openssl_sign_certificate_t *self = (ptls_openssl_sign_certificate_t *)_self;
     const struct st_ptls_openssl_signature_scheme_t *scheme;
 
-    /* When resuming from an asynchronous signing operation, the scheme is already known. */
-#ifdef PTLS_OPENSSL_HAVE_ASYNC
     if (async != NULL && *async != NULL) {
         scheme = ((struct async_sign_ctx *)*async)->scheme;
         goto Found;
     }
-#endif
 
     /* Determine the scheme. */
     for (scheme = self->schemes; scheme->scheme_id != UINT16_MAX; ++scheme) {
@@ -1185,14 +1154,12 @@ static int sign_certificate(ptls_sign_certificate_t *_self, ptls_t *tls, ptls_as
 
 Found:
     *selected_algorithm = scheme->scheme_id;
-#ifdef PTLS_OPENSSL_HAVE_ASYNC
-    if (!self->async && async != NULL) {
+    if (self->async_runner == NULL && async != NULL) {
         /* indicate to `do_sign` that async mode is disabled for this operation */
         assert(*async == NULL);
         async = NULL;
     }
-#endif
-    return do_sign(self->key, scheme, outbuf, input, async);
+    return do_sign(self->key, tls, scheme, outbuf, input, async, self->async_runner);
 }
 
 static X509 *to_x509(ptls_iovec_t vec)
@@ -1282,7 +1249,7 @@ Exit:
 
 int ptls_openssl_init_sign_certificate(ptls_openssl_sign_certificate_t *self, EVP_PKEY *key)
 {
-    *self = (ptls_openssl_sign_certificate_t){.super = {sign_certificate}, .async = 1};
+    *self = (ptls_openssl_sign_certificate_t){{sign_certificate}};
 
     if ((self->schemes = lookup_signature_schemes(key)) == NULL)
         return PTLS_ERROR_INCOMPATIBLE_KEY;

@@ -39,13 +39,6 @@ extern "C" {
 #endif
 #endif
 
-#if OPENSSL_VERSION_NUMBER >= 0x10100010L && !defined(LIBRESSL_VERSION_NUMBER)
-#if !defined(OPENSSL_NO_ASYNC)
-#include <openssl/async.h>
-#define PTLS_OPENSSL_HAVE_ASYNC 1
-#endif
-#endif
-
 extern ptls_key_exchange_algorithm_t ptls_openssl_secp256r1;
 #ifdef NID_secp384r1
 #define PTLS_OPENSSL_HAVE_SECP384R1 1
@@ -98,23 +91,31 @@ void ptls_openssl_random_bytes(void *buf, size_t len);
  * constructs a key exchange context. pkey's reference count is incremented.
  */
 int ptls_openssl_create_key_exchange(ptls_key_exchange_context_t **ctx, EVP_PKEY *pkey);
-#ifdef PTLS_OPENSSL_HAVE_ASYNC
-OSSL_ASYNC_FD ptls_openssl_get_async_fd(ptls_t *ptls);
-#endif
 
 struct st_ptls_openssl_signature_scheme_t {
     uint16_t scheme_id;
     const EVP_MD *(*scheme_md)(void);
 };
 
+PTLS_CALLBACK_TYPE(int, openssl_async_runner, ptls_t **tls, int (*job_func)(void *), void *job_arg);
+
 typedef struct st_ptls_openssl_sign_certificate_t {
     ptls_sign_certificate_t super;
     EVP_PKEY *key;
     const struct st_ptls_openssl_signature_scheme_t *schemes; /* terminated by .scheme_id == UINT16_MAX */
     /**
-     * boolean indicating if signing should be asynchronous
+     * If set to a non-NULL, this callback is used for generating RSA signatures asynchronously. The callback is invoked when the
+     * backend is about to dispatch a job that can be run using the ASYNC_JOB interface. `tls` contains a pointer to a TLS
+     * connection object for which the signature is being generated. When invoked, this callback should perform the following steps:
+     * 1. Invoke the provide job either synchronously or asynchronously.
+     * 2. If the job completed in a synchronous manner, return 0 to the caller.
+     * 3. If the job did not complete synchronously, return PTLS_ERROR_ASYNC_OPERATION. This error code delegates through the call
+     *    stack and `ptls_handshake` will return `PTLS_ERROR_ASYNC_OPERATION`.
+     *    Once the job completes, the user should invoke `ptls_handshake` once again, if `*tls` still contains a non-NULL pointer.
+     *    If `*tls` is NULL, the connection was discarded while the async operation was inflight. In such case, nothing has to be
+     *    done by the user; async states are discarded automatically.
      */
-    unsigned async : 1;
+    ptls_openssl_async_runner_t *async_runner;
 } ptls_openssl_sign_certificate_t;
 
 int ptls_openssl_init_sign_certificate(ptls_openssl_sign_certificate_t *self, EVP_PKEY *key);
