@@ -5666,45 +5666,33 @@ static size_t escape_json_unsafe_string(char *buf, const void *bytes, size_t len
 
     for (; src != end; ++src) {
         switch (*src) {
-        case '"':
-            *dst++ = '\\';
-            *dst++ = '"';
-            break;
-        case '\'':
-            *dst++ = '\\';
-            *dst++ = '\'';
-            break;
-        case '\\':
-            *dst++ = '\\';
-            *dst++ = '\\';
-            break;
-        case '/':
-            *dst++ = '\\';
-            *dst++ = '/';
-            break;
-        case '\r':
-            *dst++ = '\\';
-            *dst++ = 'r';
-            break;
-        case '\n':
-            *dst++ = '\\';
-            *dst++ = 'n';
-            break;
-        case '\t':
-            *dst++ = '\\';
-            *dst++ = 't';
-            break;
+#define MAP(ch, escaped)                                                                                                           \
+    case ch: {                                                                                                                     \
+        memcpy(dst, (escaped), sizeof(escaped) - 1);                                                                               \
+        dst += sizeof(escaped) - 1;                                                                                                \
+    } break;
+
+        MAP('"', "\\\"");
+        MAP('\\', "\\\\");
+        MAP('/', "\\/");
+        MAP('\b', "\\b");
+        MAP('\f', "\\f");
+        MAP('\n', "\\n");
+        MAP('\r', "\\r");
+        MAP('\t', "\\t");
+
+#undef MAP
+
         default:
-            if (0x20 <= *src && *src <= 0x7e) {
-                *dst++ = *src;
-            } else {
-                // FIXME: recognize UTF-8 characters
+            if (*src < 0x20 || *src == 0x7f) {
                 *dst++ = '\\';
                 *dst++ = 'u';
                 *dst++ = '0';
                 *dst++ = '0';
                 ptls_byte_to_hex(dst, *src);
                 dst += 2;
+            } else {
+                *dst++ = *src;
             }
             break;
         }
