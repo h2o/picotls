@@ -97,6 +97,18 @@ struct st_ptls_openssl_signature_scheme_t {
     const EVP_MD *(*scheme_md)(void);
 };
 
+/**
+ * This callback is used for submitting async jobs to the application. The callback is invoked when the picotls openssl backend is
+ * about to dispatch a job that can be run using the ASYNC_JOB interface. `tls` contains a pointer to a TLS connection object for
+ * which the job is run. When invoked, the async runner callback should perform the following steps:
+ * 1. Run the provided job either synchronously or asynchronously.
+ * 2. If the job completed in a synchronous manner, return 0 to the caller.
+ * 3. If the job did not complete synchronously, return PTLS_ERROR_ASYNC_OPERATION. This error code delegates through the call stack
+ *    and `ptls_handshake` will return `PTLS_ERROR_ASYNC_OPERATION`.
+ *    Once the job completes, the user should invoke `ptls_handshake` once again, if `*tls` still contains a non-NULL pointer. If
+ *    `*tls` is NULL, the connection was discarded while the async operation was inflight. In such case, nothing has to be done by
+ *    the user; async states are discarded automatically.
+ */
 PTLS_CALLBACK_TYPE(int, openssl_async_runner, ptls_t **tls, int (*job_func)(void *), void *job_arg);
 
 typedef struct st_ptls_openssl_sign_certificate_t {
@@ -104,16 +116,7 @@ typedef struct st_ptls_openssl_sign_certificate_t {
     EVP_PKEY *key;
     const struct st_ptls_openssl_signature_scheme_t *schemes; /* terminated by .scheme_id == UINT16_MAX */
     /**
-     * If set to a non-NULL, this callback is used for generating RSA signatures asynchronously. The callback is invoked when the
-     * backend is about to dispatch a job that can be run using the ASYNC_JOB interface. `tls` contains a pointer to a TLS
-     * connection object for which the signature is being generated. When invoked, this callback should perform the following steps:
-     * 1. Invoke the provide job either synchronously or asynchronously.
-     * 2. If the job completed in a synchronous manner, return 0 to the caller.
-     * 3. If the job did not complete synchronously, return PTLS_ERROR_ASYNC_OPERATION. This error code delegates through the call
-     *    stack and `ptls_handshake` will return `PTLS_ERROR_ASYNC_OPERATION`.
-     *    Once the job completes, the user should invoke `ptls_handshake` once again, if `*tls` still contains a non-NULL pointer.
-     *    If `*tls` is NULL, the connection was discarded while the async operation was inflight. In such case, nothing has to be
-     *    done by the user; async states are discarded automatically.
+     * optional callback for running signature generation asynchronously
      */
     ptls_openssl_async_runner_t *async_runner;
 } ptls_openssl_sign_certificate_t;
