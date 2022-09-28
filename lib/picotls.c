@@ -5747,6 +5747,7 @@ void ptlslog__do_write(const ptls_buffer_t *buf)
                 ptlslog.num_lost++;
             } else {
                 // close fd and remove the entry of it from the array
+                // ptlslog.fds is released by realloc(ptlslog.fds, 0) when ptlslog.num_fds is 1.
                 close(ptlslog.fds[i]);
                 memmove(ptlslog.fds + i, ptlslog.fds + i + 1, sizeof(ptlslog.fds[0]) * (ptlslog.num_fds - i - 1));
                 ptlslog.fds = realloc(ptlslog.fds, sizeof(ptlslog.fds[0]) * (ptlslog.num_fds - 1));
