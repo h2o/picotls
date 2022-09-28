@@ -34,6 +34,7 @@ extern "C" {
 #include <inttypes.h>
 #include <string.h>
 #include <sys/types.h>
+#include <pthread.h>
 
 #if __GNUC__ >= 3
 #define PTLS_LIKELY(x) __builtin_expect(!!(x), 1)
