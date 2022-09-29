@@ -35,9 +35,10 @@
 #if !defined(LIBRESSL_VERSION_NUMBER) && OPENSSL_VERSION_NUMBER >= 0x30000000L
 #include <openssl/provider.h>
 #endif
-#if OPENSSL_VERSION_NUMBER >= 0x10100010L && !defined(LIBRESSL_VERSION_NUMBER) && !defined(OPENSSL_NO_ASYNC)
+#if !defined(WINDOWS) && OPENSSL_VERSION_NUMBER >= 0x10100010L && !defined(LIBRESSL_VERSION_NUMBER) && !defined(OPENSSL_NO_ASYNC)
+#include <sys/select.h>
 #include <openssl/async.h>
-#define HAVE_ASYNC 1
+#define TEST_ASYNC 1
 #endif
 #include "picotls.h"
 #include "picotls/minicrypto.h"
@@ -298,7 +299,7 @@ DEFINE_FFX_AES128_ALGORITHMS(openssl);
 DEFINE_FFX_CHACHA20_ALGORITHMS(openssl);
 #endif
 
-#if HAVE_ASYNC
+#if TEST_ASYNC
 
 static ENGINE *load_engine(const char *name)
 {
@@ -554,7 +555,7 @@ int main(int argc, char **argv)
     ctx_peer = &openssl_ctx;
     subtest("minicrypto vs.", test_picotls);
 
-#if HAVE_ASYNC
+#if TEST_ASYNC
     // switch to x25519 as we run benchmarks
     static ptls_key_exchange_algorithm_t *x25519_keyex[] = {&ptls_openssl_x25519, NULL}; // use x25519 for speed
     openssl_ctx.key_exchanges = x25519_keyex;
