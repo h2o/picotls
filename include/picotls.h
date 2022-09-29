@@ -1535,6 +1535,11 @@ int ptlslog_add_fd(int fd);
         PTLSLOG__DO_PUSH_SAFESTR(",\"" PTLS_TO_STR(name) "\":");                                                                   \
         PTLSLOG__DO_PUSH_UNSIGNED(value);                                                                                          \
     } while (0)
+#define PTLSLOG_ELEMENT_BOOL(name, value)                                                                                          \
+    do {                                                                                                                           \
+        PTLSLOG__DO_PUSH_SAFESTR(",\"" PTLS_TO_STR(name) "\":");                                                                   \
+        PTLSLOG__DO_PUSH_SAFESTR(value ? "true" : "false");                                                                        \
+    } while (0)
 
 #define PTLSLOG__DO_PUSH_SAFESTR(v)                                                                                                \
     do {                                                                                                                           \
@@ -1553,13 +1558,27 @@ int ptlslog_add_fd(int fd);
     } while (0)
 #define PTLSLOG__DO_PUSH_SIGNED(v)                                                                                                 \
     do {                                                                                                                           \
-        if (PTLS_UNLIKELY(!ptlslog_skip && !ptlslog__do_push_signed(&ptlslogbuf, (v))))                                            \
-            ptlslog_skip = 1;                                                                                                      \
+        if (PTLS_UNLIKELY(!ptlslog_skip)) {                                                                                        \
+            if (sizeof(v) <= sizeof(int32_t)) {                                                                                    \
+                if (PTLS_UNLIKELY(!ptlslog__do_push_signed32(&ptlslogbuf, (v))))                                                   \
+                    ptlslog_skip = 1;                                                                                              \
+            } else {                                                                                                               \
+                if (PTLS_UNLIKELY(!ptlslog__do_push_signed64(&ptlslogbuf, (v))))                                                   \
+                    ptlslog_skip = 1;                                                                                              \
+            }                                                                                                                      \
+        }                                                                                                                          \
     } while (0)
 #define PTLSLOG__DO_PUSH_UNSIGNED(v)                                                                                               \
     do {                                                                                                                           \
-        if (PTLS_UNLIKELY(!ptlslog_skip && !ptlslog__do_push_unsigned(&ptlslogbuf, (v))))                                          \
-            ptlslog_skip = 1;                                                                                                      \
+        if (PTLS_UNLIKELY(!ptlslog_skip)) {                                                                                        \
+            if (sizeof(v) <= sizeof(uint32_t)) {                                                                                   \
+                if (PTLS_UNLIKELY(!ptlslog__do_push_unsigned32(&ptlslogbuf, (v))))                                                 \
+                    ptlslog_skip = 1;                                                                                              \
+            } else {                                                                                                               \
+                if (PTLS_UNLIKELY(!ptlslog__do_push_unsigned64(&ptlslogbuf, (v))))                                                 \
+                    ptlslog_skip = 1;                                                                                              \
+            }                                                                                                                      \
+        }                                                                                                                          \
     } while (0)
 
 /**
@@ -1571,8 +1590,10 @@ static int ptlslog__do_push_safestr(ptls_buffer_t *buf, const char *s);
 int ptlslog__do_push_unsafestr(ptls_buffer_t *buf, const char *s, size_t l);
 int ptlslog__do_push_hexdump(ptls_buffer_t *buf, const void *s, size_t l);
 int ptlslog__do_pushv(ptls_buffer_t *buf, const void *p, size_t l);
-int ptlslog__do_push_signed(ptls_buffer_t *buf, int64_t v);
-int ptlslog__do_push_unsigned(ptls_buffer_t *buf, uint64_t v);
+int ptlslog__do_push_signed32(ptls_buffer_t *buf, int32_t v);
+int ptlslog__do_push_signed64(ptls_buffer_t *buf, int64_t v);
+int ptlslog__do_push_unsigned32(ptls_buffer_t *buf, uint32_t v);
+int ptlslog__do_push_unsigned64(ptls_buffer_t *buf, uint64_t v);
 void ptlslog__do_write(const ptls_buffer_t *buf);
 
 /* inline functions */

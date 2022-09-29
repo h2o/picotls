@@ -4404,7 +4404,7 @@ ptls_t *ptls_client_new(ptls_context_t *ctx)
     }
 
     PTLS_PROBE(NEW, tls, 0);
-    PTLSLOG_CONN(new, tls, { PTLSLOG_ELEMENT_SIGNED(is_server, 0); });
+    PTLSLOG_CONN(new, tls, { PTLSLOG_ELEMENT_BOOL(is_server, 0); });
     return tls;
 }
 
@@ -4415,7 +4415,7 @@ ptls_t *ptls_server_new(ptls_context_t *ctx)
     tls->server.early_data_skipped_bytes = UINT32_MAX;
 
     PTLS_PROBE(NEW, tls, 1);
-    PTLSLOG_CONN(new, tls, { PTLSLOG_ELEMENT_SIGNED(is_server, 1); });
+    PTLSLOG_CONN(new, tls, { PTLSLOG_ELEMENT_BOOL(is_server, 1); });
     return tls;
 }
 
@@ -4642,8 +4642,8 @@ static int handle_client_handshake_message(ptls_t *tls, ptls_message_emitter_t *
     PTLS_PROBE(RECEIVE_MESSAGE, tls, message.base[0], message.base + PTLS_HANDSHAKE_HEADER_SIZE,
                message.len - PTLS_HANDSHAKE_HEADER_SIZE, ret);
     PTLSLOG_CONN(receive_message, tls, {
-        PTLSLOG_ELEMENT_SIGNED(message, message.base[0]);
-        PTLSLOG_ELEMENT_SIGNED(len, message.len - PTLS_HANDSHAKE_HEADER_SIZE);
+        PTLSLOG_ELEMENT_UNSIGNED(message, message.base[0]);
+        PTLSLOG_ELEMENT_UNSIGNED(len, message.len - PTLS_HANDSHAKE_HEADER_SIZE);
         PTLSLOG_ELEMENT_SIGNED(result, ret);
     });
 
@@ -4713,8 +4713,8 @@ static int handle_server_handshake_message(ptls_t *tls, ptls_message_emitter_t *
     PTLS_PROBE(RECEIVE_MESSAGE, tls, message.base[0], message.base + PTLS_HANDSHAKE_HEADER_SIZE,
                message.len - PTLS_HANDSHAKE_HEADER_SIZE, ret);
     PTLSLOG_CONN(receive_message, tls, {
-        PTLSLOG_ELEMENT_SIGNED(message, message.base[0]);
-        PTLSLOG_ELEMENT_SIGNED(len, message.len - PTLS_HANDSHAKE_HEADER_SIZE);
+        PTLSLOG_ELEMENT_UNSIGNED(message, message.base[0]);
+        PTLSLOG_ELEMENT_UNSIGNED(len, message.len - PTLS_HANDSHAKE_HEADER_SIZE);
         PTLSLOG_ELEMENT_SIGNED(result, ret);
     });
 
@@ -5775,20 +5775,33 @@ int ptlslog__do_push_hexdump(ptls_buffer_t *buf, const void *s, size_t l)
     return 1;
 }
 
-int ptlslog__do_push_signed(ptls_buffer_t *buf, int64_t v)
+int ptlslog__do_push_signed32(ptls_buffer_t *buf, int32_t v)
+{
+    /* TODO optimize */
+    char s[sizeof("-9223372036854775808")];
+    int len = sprintf(s, "%" PRId32, v);
+    return ptlslog__do_pushv(buf, s, (size_t)len);
+}
+int ptlslog__do_push_signed64(ptls_buffer_t *buf, int64_t v)
 {
     /* TODO optimize */
     char s[sizeof("-9223372036854775808")];
     int len = sprintf(s, "%" PRId64, v);
-
     return ptlslog__do_pushv(buf, s, (size_t)len);
 }
 
-int ptlslog__do_push_unsigned(ptls_buffer_t *buf, uint64_t v)
+int ptlslog__do_push_unsigned32(ptls_buffer_t *buf, uint32_t v)
+{
+    /* TODO optimize */
+    char s[sizeof("4294967295")];
+    int len = sprintf(s, "%" PRIu32, v);
+    return ptlslog__do_pushv(buf, s, (size_t)len);
+}
+
+int ptlslog__do_push_unsigned64(ptls_buffer_t *buf, uint64_t v)
 {
     /* TODO optimize */
     char s[sizeof("18446744073709551615")];
     int len = sprintf(s, "%" PRIu64, v);
-
     return ptlslog__do_pushv(buf, s, (size_t)len);
 }
