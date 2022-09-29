@@ -298,6 +298,8 @@ DEFINE_FFX_AES128_ALGORITHMS(openssl);
 DEFINE_FFX_CHACHA20_ALGORITHMS(openssl);
 #endif
 
+#if HAVE_ASYNC
+
 static ENGINE *load_engine(const char *name)
 {
     ENGINE *e;
@@ -458,6 +460,8 @@ static void many_handshakes(void)
     ptls_buffer_dispose(&hellobuf);
 }
 
+#endif
+
 int main(int argc, char **argv)
 {
     ptls_openssl_sign_certificate_t openssl_sign_certificate;
@@ -550,14 +554,13 @@ int main(int argc, char **argv)
     ctx_peer = &openssl_ctx;
     subtest("minicrypto vs.", test_picotls);
 
-#if PTLS_OPENSSL_HAVE_X25519
+#if HAVE_ASYNC
     // switch to x25519 as we run benchmarks
     static ptls_key_exchange_algorithm_t *x25519_keyex[] = {&ptls_openssl_x25519, NULL}; // use x25519 for speed
     openssl_ctx.key_exchanges = x25519_keyex;
     ctx = &openssl_ctx;
     ctx_peer = &openssl_ctx;
     subtest("many-handshakes-non-async", many_handshakes);
-#if HAVE_ASYNC
     ptls_openssl_async_runner_t async_runner = {async_submit};
     openssl_sign_certificate.async_runner = &async_runner;
     subtest("many-handshakes-async", many_handshakes);
@@ -574,7 +577,6 @@ int main(int argc, char **argv)
             note("%s not found", engine_name);
         }
     }
-#endif
 #endif
 
     esni_private_keys[0]->on_exchange(esni_private_keys, 1, NULL, ptls_iovec_init(NULL, 0));
