@@ -25,7 +25,6 @@
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
-#include <sys/select.h>
 #include <sys/time.h>
 #define OPENSSL_API_COMPAT 0x00908000L
 #include <openssl/opensslv.h>
