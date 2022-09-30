@@ -20,17 +20,14 @@
  * IN THE SOFTWARE.
  */
 #ifdef _WINDOWS
-#define _CRT_SECURE_NO_WARNINGS
-#define _CRT_NONSTDC_NO_WARNINGS
+#include "wincompat.h"
 #endif
 #include <assert.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#ifdef _WINDOWS
-#include "wincompat.h"
-#else
+#ifndef _WINDOWS
 #include <arpa/inet.h>
 #include <sys/time.h>
 #endif

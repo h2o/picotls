@@ -19,8 +19,13 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
-
+#ifdef _WINDOWS
+#include "wincompat.h"
+#endif
 #include <stdio.h>
+#include <stdint.h>
+#include <inttypes.h>
+#include <string.h>
 #include <errno.h>
 #include <pthread.h>
 #include <unistd.h>
@@ -44,7 +49,6 @@ int ptlslog_add_fd(int fd)
     ptlslog.fds = realloc(ptlslog.fds, sizeof(ptlslog.fds[0]) * (ptlslog.num_fds + 1));
     ptlslog.fds[ptlslog.num_fds] = fd;
     ptlslog.num_fds++;
-
 
     pthread_mutex_unlock(&ptlslog.mutex);
     return 1;
