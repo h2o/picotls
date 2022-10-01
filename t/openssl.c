@@ -33,7 +33,7 @@
 #if !defined(LIBRESSL_VERSION_NUMBER) && OPENSSL_VERSION_NUMBER >= 0x30000000L
 #include <openssl/provider.h>
 #endif
-#if !defined(WINDOWS) && OPENSSL_VERSION_NUMBER >= 0x10100010L && !defined(LIBRESSL_VERSION_NUMBER) && !defined(OPENSSL_NO_ASYNC)
+#if !defined(_WINDOWS) && OPENSSL_VERSION_NUMBER >= 0x10100010L && !defined(LIBRESSL_VERSION_NUMBER) && !defined(OPENSSL_NO_ASYNC)
 #include <sys/select.h>
 #include <sys/time.h>
 #include <openssl/async.h>
