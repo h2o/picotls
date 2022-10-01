@@ -25,7 +25,6 @@
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
-#include <sys/time.h>
 #define OPENSSL_API_COMPAT 0x00908000L
 #include <openssl/opensslv.h>
 #include <openssl/bio.h>
@@ -36,6 +35,7 @@
 #endif
 #if !defined(WINDOWS) && OPENSSL_VERSION_NUMBER >= 0x10100010L && !defined(LIBRESSL_VERSION_NUMBER) && !defined(OPENSSL_NO_ASYNC)
 #include <sys/select.h>
+#include <sys/time.h>
 #include <openssl/async.h>
 #define TEST_ASYNC 1
 #endif
