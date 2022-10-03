@@ -930,7 +930,7 @@ static int async_sign_certificate(ptls_sign_certificate_t *self, ptls_t *tls, pt
             int ret = sign_certificate(self, tls, NULL, selected_algorithm, &fakebuf, input, algorithms, num_algorithms);
             assert(ret == 0);
             ptls_buffer_dispose(&fakebuf);
-            async_ctx.super.cancel_ = (void (*)(ptls_async_job_t *))0xdeadbeef;
+            async_ctx.super.destroy_ = (void (*)(ptls_async_job_t *))0xdeadbeef;
             async_ctx.selected_algorithm = *selected_algorithm;
             *async = &async_ctx.super;
             --server_sc_callcnt;

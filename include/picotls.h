@@ -608,17 +608,11 @@ PTLS_CALLBACK_TYPE(int, emit_certificate, ptls_t *tls, ptls_message_emitter_t *e
  * context object of an async operation (e.g., RSA signature generation)
  */
 typedef struct st_ptls_async_job_t {
-    void (*cancel_)(struct st_ptls_async_job_t *self);
+    void (*destroy_)(struct st_ptls_async_job_t *self);
 } ptls_async_job_t;
 /**
  * When gerenating CertificateVerify, the core calls the callback to sign the handshake context using the certificate. This callback
- * may return PTLS_ERROR_ASYNC_OPERATION, and signal the application outside of picotls when the signature has been generated. At
- * that point, the application should call `ptls_handshake`, which in turn would invoke this callback once again. The callback then
- * fills `*selected_algorithm` and `output` with the signature being generated. Note that `algorithms` and `num_algorithms` are
- * provided only when the callback is called for the first time. The callback can store an object specific to each signature
- * generation in `*async_ctx`.
- * When `ptls_t` is disposed of while the async operation is in flight, `(*async_ctx)->cancel_` is invoked. The backend should abort
- * the calculation and free any temporary data allocated for that calculation.
+ * supports asynchronous mode; see `ptls_openssl_sign_certificate_t` for more information.
  */
 PTLS_CALLBACK_TYPE(int, sign_certificate, ptls_t *tls, ptls_async_job_t **async, uint16_t *selected_algorithm,
                    ptls_buffer_t *output, ptls_iovec_t input, const uint16_t *algorithms, size_t num_algorithms);
