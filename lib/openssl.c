@@ -710,12 +710,17 @@ static void async_sign_ctx_free(ptls_async_job_t *_self)
 {
     struct async_sign_ctx *self = (void *)_self;
 
-    assert(self->job == NULL);
+    /* Once the async operation is complete, the user might call `ptls_free` instead of `ptls_handshake`. In such case, to avoid
+     * desynchronization, let the backend read the result from the socket. The code below is a loop, but it is not going to block;
+     * it is the responsibility of the user to refrain from calling `ptls_free` until the asynchronous operation is complete. */
+    if (self->job != NULL) {
+        int ret;
+        while (ASYNC_start_job(&async->job, async->waitctx, &ret, NULL, NULL, 0) == ASYNC_PAUSE)
+            ;
+    }
 
-    if (self->ctx != NULL)
-        EVP_MD_CTX_destroy(self->ctx);
-    if (self->waitctx != NULL)
-        ASYNC_WAIT_CTX_free(self->waitctx);
+    EVP_MD_CTX_destroy(self->ctx);
+    ASYNC_WAIT_CTX_free(self->waitctx);
     free(self);
 }
 

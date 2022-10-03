@@ -119,7 +119,8 @@ typedef struct st_ptls_openssl_sign_certificate_t {
      * When set to true, indicates to the backend that the signature can be generated asynchronously. When the backend decides to
      * generate the signature asynchronously, `ptls_handshake` will return PTLS_ERROR_ASYNC_OPERATION. When receiving that error
      * code, the user should call `ptls_openssl_get_async_fd` to obtain the file descriptor that represents the asynchronous
-     * operation and poll it for read. Once the file descriptor becomes readable, the user calls `ptls_handshake` once again.
+     * operation and poll it for read. Once the file descriptor becomes readable, the user calls `ptls_handshake` once again to
+     * obtain the handshake messages being generated, or call `ptls_free` to discard TLS state.
      */
     unsigned async : 1;
 } ptls_openssl_sign_certificate_t;
