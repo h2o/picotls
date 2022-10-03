@@ -605,11 +605,11 @@ PTLS_CALLBACK_TYPE(int, on_client_hello, ptls_t *tls, ptls_on_client_hello_param
 PTLS_CALLBACK_TYPE(int, emit_certificate, ptls_t *tls, ptls_message_emitter_t *emitter, ptls_key_schedule_t *key_sched,
                    ptls_iovec_t context, int push_status_request, const uint16_t *compress_algos, size_t num_compress_algos);
 /**
- * Context object used for generating public key signature in an asynchronous manner.
+ * context object of an async operation (e.g., RSA signature generation)
  */
-typedef struct st_ptls_async_sign_certificate_t {
-    void (*destroy_)(struct st_ptls_async_sign_certificate_t *self);
-} ptls_async_sign_certificate_t;
+typedef struct st_ptls_async_job_t {
+    void (*destroy_)(struct st_ptls_async_job_t *self);
+} ptls_async_job_t;
 /**
  * When gerenating CertificateVerify, the core calls the callback to sign the handshake context using the certificate. This callback
  * may return PTLS_ERROR_ASYNC_OPERATION, and signal the application outside of picotls when the signature has been generated. At
@@ -620,7 +620,7 @@ typedef struct st_ptls_async_sign_certificate_t {
  * When `ptls_t` is disposed of while the async operation is in flight, `(*async_ctx)->cancel_` is invoked. The backend should abort
  * the calculation and free any temporary data allocated for that calculation.
  */
-PTLS_CALLBACK_TYPE(int, sign_certificate, ptls_t *tls, ptls_async_sign_certificate_t **async_ctx, uint16_t *selected_algorithm,
+PTLS_CALLBACK_TYPE(int, sign_certificate, ptls_t *tls, ptls_async_job_t **async, uint16_t *selected_algorithm,
                    ptls_buffer_t *output, ptls_iovec_t input, const uint16_t *algorithms, size_t num_algorithms);
 /**
  * after receiving Certificate, the core calls the callback to verify the certificate chain and to obtain a pointer to a
@@ -1174,7 +1174,7 @@ void ptls_set_context(ptls_t *tls, ptls_context_t *ctx);
 /**
  * get the signature context
  */
-ptls_async_sign_certificate_t *ptls_get_async_sign_context(ptls_t *tls);
+ptls_async_job_t *ptls_get_async_job(ptls_t *tls);
 /**
  * returns the client-random
  */
