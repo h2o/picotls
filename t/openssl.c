@@ -376,7 +376,7 @@ static void many_handshakes(void)
                 if (num_issued < num_total)
                     qat_set_pending(offending);
                 break;
-#ifdef PTLS_OPENSSL_HAVE_ASYNC
+#if PTLS_OPENSSL_HAVE_ASYNC
             case PTLS_ERROR_ASYNC_OPERATION:
                 qat.conns[offending].wait_fd = ptls_openssl_get_async_fd(qat.conns[offending].tls);
                 assert(qat.conns[offending].wait_fd != -1);
@@ -511,7 +511,7 @@ int main(int argc, char **argv)
     ctx_peer = &openssl_ctx;
     subtest("minicrypto vs.", test_picotls);
 
-#if defined(PTLS_OPENSSL_HAVE_ASYNC) && PTLS_OPENSSL_HAVE_X25519
+#if PTLS_OPENSSL_HAVE_ASYNC && PTLS_OPENSSL_HAVE_X25519
     // switch to x25519 as we run benchmarks
     static ptls_key_exchange_algorithm_t *x25519_keyex[] = {&ptls_openssl_x25519, NULL}; // use x25519 for speed
     openssl_ctx.key_exchanges = x25519_keyex;

@@ -98,7 +98,7 @@ void ptls_openssl_random_bytes(void *buf, size_t len);
  * constructs a key exchange context. pkey's reference count is incremented.
  */
 int ptls_openssl_create_key_exchange(ptls_key_exchange_context_t **ctx, EVP_PKEY *pkey);
-#ifdef PTLS_OPENSSL_HAVE_ASYNC
+#if PTLS_OPENSSL_HAVE_ASYNC
 OSSL_ASYNC_FD ptls_openssl_get_async_fd(ptls_t *ptls);
 #endif
 

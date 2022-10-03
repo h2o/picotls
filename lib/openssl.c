@@ -694,7 +694,7 @@ int ptls_openssl_create_key_exchange(ptls_key_exchange_context_t **ctx, EVP_PKEY
     }
 }
 
-#ifdef PTLS_OPENSSL_HAVE_ASYNC
+#if PTLS_OPENSSL_HAVE_ASYNC
 
 struct async_sign_ctx {
     ptls_async_sign_certificate_t super;
@@ -794,7 +794,7 @@ Exit:
 static int do_sign(EVP_PKEY *key, const struct st_ptls_openssl_signature_scheme_t *scheme, ptls_buffer_t *outbuf,
                    ptls_iovec_t input, ptls_async_sign_certificate_t **async)
 {
-#ifdef PTLS_OPENSSL_HAVE_ASYNC
+#if PTLS_OPENSSL_HAVE_ASYNC
     if (async != NULL && *async != NULL)
         return do_sign_async(outbuf, async);
 #endif
@@ -855,7 +855,7 @@ static int do_sign(EVP_PKEY *key, const struct st_ptls_openssl_signature_scheme_
         }
         /* If permitted by the caller (by providing a non-NULL `async` slot), use the asynchronous signing method and return
          * immediately. */
-#ifdef PTLS_OPENSSL_HAVE_ASYNC
+#if PTLS_OPENSSL_HAVE_ASYNC
         if (async != NULL) {
             if ((*async = async_sign_ctx_new(scheme, ctx, siglen)) == NULL) {
                 ret = PTLS_ERROR_NO_MEMORY;
@@ -1166,7 +1166,7 @@ static int sign_certificate(ptls_sign_certificate_t *_self, ptls_t *tls, ptls_as
     const struct st_ptls_openssl_signature_scheme_t *scheme;
 
     /* When resuming from an asynchronous signing operation, the scheme is already known. */
-#ifdef PTLS_OPENSSL_HAVE_ASYNC
+#if PTLS_OPENSSL_HAVE_ASYNC
     if (async != NULL && *async != NULL) {
         scheme = ((struct async_sign_ctx *)*async)->scheme;
         goto Found;
@@ -1185,7 +1185,7 @@ static int sign_certificate(ptls_sign_certificate_t *_self, ptls_t *tls, ptls_as
 
 Found:
     *selected_algorithm = scheme->scheme_id;
-#ifdef PTLS_OPENSSL_HAVE_ASYNC
+#if PTLS_OPENSSL_HAVE_ASYNC
     if (!self->async && async != NULL) {
         /* indicate to `do_sign` that async mode is disabled for this operation */
         assert(*async == NULL);
