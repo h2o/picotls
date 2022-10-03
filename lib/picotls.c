@@ -4472,7 +4472,7 @@ void ptls_free(ptls_t *tls)
     free(tls->negotiated_protocol);
     if (tls->is_server) {
         if (tls->server.async_sign_certificate != NULL)
-            tls->server.async_sign_certificate->cancel_(tls->server.async_sign_certificate);
+            tls->server.async_sign_certificate->destroy_(tls->server.async_sign_certificate);
     } else {
         if (tls->client.key_share_ctx != NULL)
             tls->client.key_share_ctx->on_exchange(&tls->client.key_share_ctx, 1, NULL, ptls_iovec_init(NULL, 0));

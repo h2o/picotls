@@ -710,13 +710,10 @@ static void async_sign_ctx_free(ptls_async_sign_certificate_t *_self)
 {
     struct async_sign_ctx *self = (void *)_self;
 
+    assert(self->job == NULL);
+
     if (self->ctx != NULL)
         EVP_MD_CTX_destroy(self->ctx);
-    if (self->job != NULL) {
-        int _ret;
-        // resume the job to free resources
-        ASYNC_start_job(&self->job, self->waitctx, &_ret, NULL, NULL, 0);
-    }
     if (self->waitctx != NULL)
         ASYNC_WAIT_CTX_free(self->waitctx);
     free(self);
