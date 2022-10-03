@@ -715,7 +715,7 @@ static void async_sign_ctx_free(ptls_async_job_t *_self)
      * it is the responsibility of the user to refrain from calling `ptls_free` until the asynchronous operation is complete. */
     if (self->job != NULL) {
         int ret;
-        while (ASYNC_start_job(&async->job, async->waitctx, &ret, NULL, NULL, 0) == ASYNC_PAUSE)
+        while (ASYNC_start_job(&self->job, self->waitctx, &ret, NULL, NULL, 0) == ASYNC_PAUSE)
             ;
     }
 
