@@ -4471,7 +4471,8 @@ void ptls_free(ptls_t *tls)
     free(tls->server_name);
     free(tls->negotiated_protocol);
     if (tls->is_server) {
-        /* nothing to do */
+        if (tls->server.async_sign_certificate != NULL)
+            tls->server.async_sign_certificate->cancel_(tls->server.async_sign_certificate);
     } else {
         if (tls->client.key_share_ctx != NULL)
             tls->client.key_share_ctx->on_exchange(&tls->client.key_share_ctx, 1, NULL, ptls_iovec_init(NULL, 0));
@@ -4480,8 +4481,6 @@ void ptls_free(ptls_t *tls)
     }
     if (tls->certificate_verify.cb != NULL)
         tls->certificate_verify.cb(tls->certificate_verify.verify_ctx, 0, ptls_iovec_init(NULL, 0), ptls_iovec_init(NULL, 0));
-    if (tls->server.async_sign_certificate != NULL)
-        tls->server.async_sign_certificate->cancel_(tls->server.async_sign_certificate);
     if (tls->pending_handshake_secret != NULL) {
         ptls_clear_memory(tls->pending_handshake_secret, PTLS_MAX_DIGEST_SIZE);
         free(tls->pending_handshake_secret);
