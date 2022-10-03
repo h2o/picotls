@@ -793,11 +793,6 @@ Exit:
 static int do_sign(EVP_PKEY *key, const struct st_ptls_openssl_signature_scheme_t *scheme, ptls_buffer_t *outbuf,
                    ptls_iovec_t input, ptls_async_job_t **async)
 {
-#if PTLS_OPENSSL_HAVE_ASYNC
-    if (async != NULL && *async != NULL)
-        return do_sign_async(outbuf, async);
-#endif
-
     EVP_MD_CTX *ctx = NULL;
     const EVP_MD *md = scheme->scheme_md != NULL ? scheme->scheme_md() : NULL;
     EVP_PKEY_CTX *pkey_ctx;
@@ -1163,22 +1158,19 @@ static int sign_certificate(ptls_sign_certificate_t *_self, ptls_t *tls, ptls_as
     ptls_openssl_sign_certificate_t *self = (ptls_openssl_sign_certificate_t *)_self;
     const struct st_ptls_openssl_signature_scheme_t *scheme;
 
-    /* When resuming from an asynchronous signing operation, the scheme is already known. */
+    /* Just resume the asynchronous operation, if one is in flight. */
 #if PTLS_OPENSSL_HAVE_ASYNC
-    if (async != NULL && *async != NULL) {
-        scheme = ((struct async_sign_ctx *)*async)->scheme;
-        goto Found;
-    }
+    if (async != NULL && *async != NULL)
+        return do_sign_async(outbuf, async);
 #endif
 
-    /* Determine the scheme. */
+    /* Select the algorithm (driven by server-side preference of `self->schemes`), or return failure if none found. */
     for (scheme = self->schemes; scheme->scheme_id != UINT16_MAX; ++scheme) {
         size_t i;
         for (i = 0; i != num_algorithms; ++i)
             if (algorithms[i] == scheme->scheme_id)
                 goto Found;
     }
-
     return PTLS_ALERT_HANDSHAKE_FAILURE;
 
 Found:
