@@ -697,7 +697,7 @@ int ptls_openssl_create_key_exchange(ptls_key_exchange_context_t **ctx, EVP_PKEY
 #if PTLS_OPENSSL_HAVE_ASYNC
 
 struct async_sign_ctx {
-    ptls_async_sign_certificate_t super;
+    ptls_async_job_t super;
     const struct st_ptls_openssl_signature_scheme_t *scheme;
     EVP_MD_CTX *ctx;
     ASYNC_WAIT_CTX *waitctx;
@@ -706,7 +706,7 @@ struct async_sign_ctx {
     uint8_t sig[0]; // must be last, see `async_sign_ctx_new`
 };
 
-static void async_sign_ctx_free(ptls_async_sign_certificate_t *_self)
+static void async_sign_ctx_free(ptls_async_job_t *_self)
 {
     struct async_sign_ctx *self = (void *)_self;
 
@@ -722,15 +722,14 @@ static void async_sign_ctx_free(ptls_async_sign_certificate_t *_self)
     free(self);
 }
 
-static ptls_async_sign_certificate_t *async_sign_ctx_new(const struct st_ptls_openssl_signature_scheme_t *scheme, EVP_MD_CTX *ctx,
-                                                         size_t siglen)
+static ptls_async_job_t *async_sign_ctx_new(const struct st_ptls_openssl_signature_scheme_t *scheme, EVP_MD_CTX *ctx, size_t siglen)
 {
     struct async_sign_ctx *self;
 
     if ((self = malloc(offsetof(struct async_sign_ctx, sig) + siglen)) == NULL)
         return NULL;
 
-    self->super = (ptls_async_sign_certificate_t){async_sign_ctx_free};
+    self->super = (ptls_async_job_t){async_sign_ctx_free};
     self->scheme = scheme;
     self->ctx = ctx;
     self->waitctx = ASYNC_WAIT_CTX_new();
@@ -745,7 +744,7 @@ OSSL_ASYNC_FD ptls_openssl_get_async_fd(ptls_t *ptls)
 {
     OSSL_ASYNC_FD fds[1];
     size_t numfds;
-    struct async_sign_ctx *async = (void *)ptls_get_async_sign_context(ptls);
+    struct async_sign_ctx *async = (void *)ptls_get_async_job(ptls);
     assert(async != NULL);
     ASYNC_WAIT_CTX_get_all_fds(async->waitctx, NULL, &numfds);
     assert(numfds == 1);
@@ -759,7 +758,7 @@ static int do_sign_async_job(void *_async)
     return EVP_DigestSignFinal(async->ctx, async->sig, &async->siglen);
 }
 
-static int do_sign_async(ptls_buffer_t *outbuf, ptls_async_sign_certificate_t **_async)
+static int do_sign_async(ptls_buffer_t *outbuf, ptls_async_job_t **_async)
 {
     struct async_sign_ctx *async = (void *)*_async;
     int ret;
@@ -792,7 +791,7 @@ Exit:
 #endif
 
 static int do_sign(EVP_PKEY *key, const struct st_ptls_openssl_signature_scheme_t *scheme, ptls_buffer_t *outbuf,
-                   ptls_iovec_t input, ptls_async_sign_certificate_t **async)
+                   ptls_iovec_t input, ptls_async_job_t **async)
 {
 #if PTLS_OPENSSL_HAVE_ASYNC
     if (async != NULL && *async != NULL)
@@ -1158,9 +1157,8 @@ ptls_define_hash(sha256, SHA256_CTX, SHA256_Init, SHA256_Update, _sha256_final);
 #define _sha384_final(ctx, md) SHA384_Final((md), (ctx))
 ptls_define_hash(sha384, SHA512_CTX, SHA384_Init, SHA384_Update, _sha384_final);
 
-static int sign_certificate(ptls_sign_certificate_t *_self, ptls_t *tls, ptls_async_sign_certificate_t **async,
-                            uint16_t *selected_algorithm, ptls_buffer_t *outbuf, ptls_iovec_t input, const uint16_t *algorithms,
-                            size_t num_algorithms)
+static int sign_certificate(ptls_sign_certificate_t *_self, ptls_t *tls, ptls_async_job_t **async, uint16_t *selected_algorithm,
+                            ptls_buffer_t *outbuf, ptls_iovec_t input, const uint16_t *algorithms, size_t num_algorithms)
 {
     ptls_openssl_sign_certificate_t *self = (ptls_openssl_sign_certificate_t *)_self;
     const struct st_ptls_openssl_signature_scheme_t *scheme;

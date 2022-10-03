@@ -906,20 +906,19 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int expect_ticket, int
 
 static ptls_sign_certificate_t *sc_orig;
 
-static int sign_certificate(ptls_sign_certificate_t *self, ptls_t *tls, ptls_async_sign_certificate_t **async_ctx,
-                            uint16_t *selected_algorithm, ptls_buffer_t *output, ptls_iovec_t input, const uint16_t *algorithms,
-                            size_t num_algorithms)
+static int sign_certificate(ptls_sign_certificate_t *self, ptls_t *tls, ptls_async_job_t **async, uint16_t *selected_algorithm,
+                            ptls_buffer_t *output, ptls_iovec_t input, const uint16_t *algorithms, size_t num_algorithms)
 {
     ++*(ptls_is_server(tls) ? &server_sc_callcnt : &client_sc_callcnt);
-    return sc_orig->cb(sc_orig, tls, async_ctx, selected_algorithm, output, input, algorithms, num_algorithms);
+    return sc_orig->cb(sc_orig, tls, async, selected_algorithm, output, input, algorithms, num_algorithms);
 }
 
-static int async_sign_certificate(ptls_sign_certificate_t *self, ptls_t *tls, ptls_async_sign_certificate_t **async,
+static int async_sign_certificate(ptls_sign_certificate_t *self, ptls_t *tls, ptls_async_job_t **async,
                                   uint16_t *selected_algorithm, ptls_buffer_t *output, ptls_iovec_t input,
                                   const uint16_t *algorithms, size_t num_algorithms)
 {
     static struct {
-        ptls_async_sign_certificate_t super;
+        ptls_async_job_t super;
         uint16_t selected_algorithm;
     } async_ctx;
 
@@ -931,7 +930,7 @@ static int async_sign_certificate(ptls_sign_certificate_t *self, ptls_t *tls, pt
             int ret = sign_certificate(self, tls, NULL, selected_algorithm, &fakebuf, input, algorithms, num_algorithms);
             assert(ret == 0);
             ptls_buffer_dispose(&fakebuf);
-            async_ctx.super.cancel_ = (void (*)(ptls_async_sign_certificate_t *))0xdeadbeef;
+            async_ctx.super.cancel_ = (void (*)(ptls_async_job_t *))0xdeadbeef;
             async_ctx.selected_algorithm = *selected_algorithm;
             *async = &async_ctx.super;
             --server_sc_callcnt;
@@ -952,7 +951,7 @@ static int async_sign_certificate(ptls_sign_certificate_t *self, ptls_t *tls, pt
 
 static ptls_sign_certificate_t *second_sc_orig;
 
-static int second_sign_certificate(ptls_sign_certificate_t *self, ptls_t *tls, ptls_async_sign_certificate_t **async,
+static int second_sign_certificate(ptls_sign_certificate_t *self, ptls_t *tls, ptls_async_job_t **async,
                                    uint16_t *selected_algorithm, ptls_buffer_t *output, ptls_iovec_t input,
                                    const uint16_t *algorithms, size_t num_algorithms)
 {
