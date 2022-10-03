@@ -25,8 +25,6 @@
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
-#include <sys/select.h>
-#include <sys/time.h>
 #define OPENSSL_API_COMPAT 0x00908000L
 #include <openssl/opensslv.h>
 #include <openssl/bio.h>
@@ -37,9 +35,16 @@
 #endif
 #include "picotls.h"
 #include "picotls/minicrypto.h"
+#include "picotls/openssl.h"
+#if PTLS_OPENSSL_HAVE_ASYNC && PTLS_OPENSSL_HAVE_X25519 && !defined(_WINDOWS)
+#include <sys/select.h>
+#include <sys/time.h>
+#define ASYNC_TESTS 1
+#endif
 #include "../deps/picotest/picotest.h"
 #undef OPENSSL_API_COMPAT
 #include "../lib/openssl.c"
+
 #include "test.h"
 
 #define RSA_PRIVATE_KEY                                                                                                            \
@@ -294,6 +299,8 @@ DEFINE_FFX_AES128_ALGORITHMS(openssl);
 DEFINE_FFX_CHACHA20_ALGORITHMS(openssl);
 #endif
 
+#if ASYNC_TESTS
+
 static ENGINE *load_engine(const char *name)
 {
     ENGINE *e;
@@ -376,12 +383,10 @@ static void many_handshakes(void)
                 if (num_issued < num_total)
                     qat_set_pending(offending);
                 break;
-#if PTLS_OPENSSL_HAVE_ASYNC
             case PTLS_ERROR_ASYNC_OPERATION:
                 qat.conns[offending].wait_fd = ptls_openssl_get_async_fd(qat.conns[offending].tls);
                 assert(qat.conns[offending].wait_fd != -1);
                 break;
-#endif
             default:
                 fprintf(stderr, "ptls_handshake returned %d\n", ret);
                 abort();
@@ -418,6 +423,8 @@ static void many_handshakes(void)
 
     ptls_buffer_dispose(&hellobuf);
 }
+
+#endif
 
 int main(int argc, char **argv)
 {
@@ -511,7 +518,7 @@ int main(int argc, char **argv)
     ctx_peer = &openssl_ctx;
     subtest("minicrypto vs.", test_picotls);
 
-#if PTLS_OPENSSL_HAVE_ASYNC && PTLS_OPENSSL_HAVE_X25519
+#if ASYNC_TESTS
     // switch to x25519 as we run benchmarks
     static ptls_key_exchange_algorithm_t *x25519_keyex[] = {&ptls_openssl_x25519, NULL}; // use x25519 for speed
     openssl_ctx.key_exchanges = x25519_keyex;
