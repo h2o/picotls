@@ -607,8 +607,8 @@ PTLS_CALLBACK_TYPE(int, emit_certificate, ptls_t *tls, ptls_message_emitter_t *e
 /**
  * context object of an async operation (e.g., RSA signature generation)
  */
-typedef struct st_ptls_async_sign_certificate_t {
-    void (*cancel_)(struct st_ptls_async_sign_certificate_t *self);
+typedef struct st_ptls_async_job_t {
+    void (*cancel_)(struct st_ptls_async_job_t *self);
 } ptls_async_job_t;
 /**
  * When gerenating CertificateVerify, the core calls the callback to sign the handshake context using the certificate. This callback
