@@ -123,21 +123,24 @@ void ptlslog__do_write(const ptls_buffer_t *buf)
 #if PTLS_HAVE_LOG
     pthread_mutex_lock(&logctx.mutex);
 
-    for (size_t fd_index = 0; fd_index < logctx.num_fds; ++fd_index) {
+    for (size_t fd_index = 0; fd_index < logctx.num_fds;) {
         ssize_t ret;
         while ((ret = write(logctx.fds[fd_index], buf->base, buf->off)) == -1 && errno == EINTR)
             ;
         if (ret == buf->off) {
             /* success */
+            ++fd_index;
         } else if (ret > 0 || (ret == -1 && (errno == EAGAIN || errno == EWOULDBLOCK))) {
             /* partial write or buffer full */
-            logctx.num_lost++;
+            ++logctx.num_lost;
+            ++fd_index;
         } else {
-            /* write error; close fd and remove the entry of it from the array. */
+            /* write error; close and remove that fd from array */
             close(logctx.fds[fd_index]);
-            memmove(logctx.fds + fd_index, logctx.fds + fd_index + 1, sizeof(logctx.fds[0]) * (logctx.num_fds - fd_index - 1));
-            logctx.fds = realloc(logctx.fds, sizeof(logctx.fds[0]) * (logctx.num_fds - 1));
+            logctx.fds[fd_index] = logctx.fds[logctx.num_fds - 1];
             --logctx.num_fds;
+            if (logctx.num_fds == 0)
+                ptls_log_is_active = 0;
         }
     }
 
