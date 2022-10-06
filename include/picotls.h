@@ -1139,7 +1139,7 @@ uint64_t ptls_decode_quicint(const uint8_t **src, const uint8_t *end);
 
 #define PTLSLOG(module, type, block)                                                                                               \
     do {                                                                                                                           \
-        if (!ptlslog_is_active())                                                                                                  \
+        if (!ptlslog_is_active)                                                                                                    \
             break;                                                                                                                 \
         int ptlslog_skip = 0;                                                                                                      \
         char smallbuf[128];                                                                                                        \
@@ -1246,23 +1246,12 @@ uint64_t ptls_decode_quicint(const uint8_t **src, const uint8_t *end);
         }                                                                                                                          \
     } while (0)
 
-typedef struct st_ptlslog_context_t {
-    int *fds;
-    size_t num_fds;
-
-    size_t num_lost;
-    pthread_mutex_t mutex;
-} ptlslog_context_t;
-
-extern ptlslog_context_t ptlslog;
-
 /* User API is exposed only when logging is supported by the platform. */
 #if PTLS_HAVE_LOG
-
 /**
- * Retrusn true if one has installed an fd to the ptlslog context with `ptlslog_add_fd()`.
+ * If logging is currently active.
  */
-static int ptlslog_is_active(void);
+extern volatile int ptlslog_is_active;
 /**
  * Returns the number of lost events.
  */
@@ -1271,6 +1260,10 @@ size_t ptlslog_num_lost(void);
  * Registers an fd for ptslog. A registered fd is automatically closed and removed if it is invalidated.
  */
 int ptlslog_add_fd(int fd);
+
+#else
+
+static const int ptlslog_is_active = 0;
 
 #endif
 
@@ -1598,11 +1591,6 @@ extern PTLS_THREADLOCAL unsigned ptls_default_skip_tracing;
 static void ptls_byte_to_hex(char *dst, uint8_t byte);
 
 /* inline functions */
-
-inline int ptlslog_is_active(void)
-{
-    return ptlslog.fds != NULL;
-}
 
 inline int ptlslog__do_push_safestr(ptls_buffer_t *buf, const char *s)
 {

@@ -32,26 +32,32 @@
 #include <unistd.h>
 #include "picotls.h"
 
-ptlslog_context_t ptlslog = {
-    .mutex = PTHREAD_MUTEX_INITIALIZER,
-};
-
 #if PTLS_HAVE_LOG
+
+volatile int ptlslog_is_active;
+
+static struct {
+    int *fds;
+    size_t num_fds;
+    size_t num_lost;
+    pthread_mutex_t mutex;
+} logctx = {.mutex = PTHREAD_MUTEX_INITIALIZER};
 
 size_t ptlslog_num_lost(void)
 {
-    return ptlslog.num_lost;
+    return logctx.num_lost;
 }
 
 int ptlslog_add_fd(int fd)
 {
-    pthread_mutex_lock(&ptlslog.mutex);
+    pthread_mutex_lock(&logctx.mutex);
 
-    ptlslog.fds = realloc(ptlslog.fds, sizeof(ptlslog.fds[0]) * (ptlslog.num_fds + 1));
-    ptlslog.fds[ptlslog.num_fds] = fd;
-    ptlslog.num_fds++;
+    logctx.fds = realloc(logctx.fds, sizeof(logctx.fds[0]) * (logctx.num_fds + 1));
+    logctx.fds[logctx.num_fds] = fd;
+    logctx.num_fds++;
+    ptlslog_is_active = 1;
 
-    pthread_mutex_unlock(&ptlslog.mutex);
+    pthread_mutex_unlock(&logctx.mutex);
     return 1;
 }
 
@@ -106,25 +112,25 @@ static size_t escape_json_unsafe_string(char *buf, const void *unsafe_str, size_
 void ptlslog__do_write(const ptls_buffer_t *buf)
 {
 #if PTLS_HAVE_LOG
-    pthread_mutex_lock(&ptlslog.mutex);
-    for (size_t i = 0; i < ptlslog.num_fds; ++i) {
+    pthread_mutex_lock(&logctx.mutex);
+    for (size_t i = 0; i < logctx.num_fds; ++i) {
         ssize_t ret;
-        while ((ret = write(ptlslog.fds[i], buf->base, buf->off)) == -1 && errno == EINTR)
+        while ((ret = write(logctx.fds[i], buf->base, buf->off)) == -1 && errno == EINTR)
             ;
         if (ret == -1) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                ptlslog.num_lost++;
+                logctx.num_lost++;
             } else {
                 // close fd and remove the entry of it from the array
-                // ptlslog.fds is released by realloc(ptlslog.fds, 0) when ptlslog.num_fds is 1.
-                close(ptlslog.fds[i]);
-                memmove(ptlslog.fds + i, ptlslog.fds + i + 1, sizeof(ptlslog.fds[0]) * (ptlslog.num_fds - i - 1));
-                ptlslog.fds = realloc(ptlslog.fds, sizeof(ptlslog.fds[0]) * (ptlslog.num_fds - 1));
-                --ptlslog.num_fds;
+                // logctx.fds is released by realloc(logctx.fds, 0) when logctx.num_fds is 1.
+                close(logctx.fds[i]);
+                memmove(logctx.fds + i, logctx.fds + i + 1, sizeof(logctx.fds[0]) * (logctx.num_fds - i - 1));
+                logctx.fds = realloc(logctx.fds, sizeof(logctx.fds[0]) * (logctx.num_fds - 1));
+                --logctx.num_fds;
             }
         }
     }
-    pthread_mutex_unlock(&ptlslog.mutex);
+    pthread_mutex_unlock(&logctx.mutex);
 #endif
 }
 
