@@ -1576,6 +1576,10 @@ ptls_esni_secret_t *ptls_get_esni_secret(ptls_t *ctx);
  */
 char *ptls_hexdump(char *dst, const void *src, size_t len);
 /**
+ * Builds a JSON-safe string without double quotes. Supplied buffer MUST be at least 6x + 1 bytes larger than the input.
+ */
+char *ptls_jsonescape(char *buf, const char *s, size_t len);
+/**
  * the default get_time callback
  */
 extern ptls_get_time_t ptls_get_time;
@@ -1587,8 +1591,6 @@ extern PTLS_THREADLOCAL unsigned ptls_default_skip_tracing;
 #else
 #define ptls_default_skip_tracing 0
 #endif
-
-static void ptls_byte_to_hex(char *dst, uint8_t byte);
 
 /* inline functions */
 
@@ -1788,12 +1790,6 @@ inline size_t ptls_aead_decrypt(ptls_aead_context_t *ctx, void *output, const vo
         init_func(&ctx->ctx);                                                                                                      \
         return &ctx->super;                                                                                                        \
     }
-
-inline void ptls_byte_to_hex(char *dst, uint8_t v)
-{
-    dst[0] = "0123456789abcdef"[v >> 4];
-    dst[1] = "0123456789abcdef"[v & 0xf];
-}
 
 #ifdef __cplusplus
 }

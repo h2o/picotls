@@ -72,52 +72,6 @@ Exit:
 
 #endif
 
-/**
- * Builds a JSON-safe string without double quotes. Supplied buffer MUST be 6x + 1 bytes larger than the input.
- */
-static size_t escape_json_unsafe_string(char *buf, const void *unsafe_str, size_t len)
-{
-    char *dst = buf;
-    const uint8_t *src = unsafe_str, *end = src + len;
-
-    for (; src != end; ++src) {
-        switch (*src) {
-#define MAP(ch, escaped)                                                                                                           \
-    case ch: {                                                                                                                     \
-        memcpy(dst, (escaped), sizeof(escaped) - 1);                                                                               \
-        dst += sizeof(escaped) - 1;                                                                                                \
-    } break;
-
-            MAP('"', "\\\"");
-            MAP('\\', "\\\\");
-            MAP('/', "\\/");
-            MAP('\b', "\\b");
-            MAP('\f', "\\f");
-            MAP('\n', "\\n");
-            MAP('\r', "\\r");
-            MAP('\t', "\\t");
-
-#undef MAP
-
-        default:
-            if (*src < 0x20 || *src == 0x7f) {
-                *dst++ = '\\';
-                *dst++ = 'u';
-                *dst++ = '0';
-                *dst++ = '0';
-                ptls_byte_to_hex(dst, *src);
-                dst += 2;
-            } else {
-                *dst++ = *src;
-            }
-            break;
-        }
-    }
-    *dst = '\0';
-
-    return (size_t)(dst - buf);
-}
-
 void ptlslog__do_write(const ptls_buffer_t *buf)
 {
 #if PTLS_HAVE_LOG
@@ -163,7 +117,8 @@ int ptlslog__do_push_unsafestr(ptls_buffer_t *buf, const char *s, size_t l)
     if (ptls_buffer_reserve(buf, l * (sizeof("\\uXXXX") - 1) + 1) != 0)
         return 0;
 
-    buf->off += escape_json_unsafe_string((char *)(buf->base + buf->off), s, l);
+    buf->off = (uint8_t *)ptls_jsonescape((char *)(buf->base + buf->off), s, l) - buf->base;
+
     return 1;
 }
 

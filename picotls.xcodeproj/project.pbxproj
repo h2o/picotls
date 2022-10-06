@@ -8,6 +8,9 @@
 
 /* Begin PBXBuildFile section */
 		085125F128EEB30F0074C124 /* log.c in Sources */ = {isa = PBXBuildFile; fileRef = 085125F028EEB30F0074C124 /* log.c */; };
+		085125F428EEBE170074C124 /* log.c in Sources */ = {isa = PBXBuildFile; fileRef = 085125F028EEB30F0074C124 /* log.c */; };
+		085125F528EEBE180074C124 /* log.c in Sources */ = {isa = PBXBuildFile; fileRef = 085125F028EEB30F0074C124 /* log.c */; };
+		085125F628EEBE1B0074C124 /* log.c in Sources */ = {isa = PBXBuildFile; fileRef = 085125F028EEB30F0074C124 /* log.c */; };
 		105900431DC8D57000FB4085 /* picotls.c in Sources */ = {isa = PBXBuildFile; fileRef = 106530E91D9B7C13005B2C60 /* picotls.c */; };
 		105900441DC8D57000FB4085 /* picotest.c in Sources */ = {isa = PBXBuildFile; fileRef = 106530E31D9B4021005B2C60 /* picotest.c */; };
 		1059004C1DC8D5B700FB4085 /* openssl.c in Sources */ = {isa = PBXBuildFile; fileRef = 106530C51D9B1A98005B2C60 /* openssl.c */; };
@@ -849,6 +852,7 @@
 				E9F20BEF22E34B480018D260 /* aes128.c in Sources */,
 				10EACAF01DCC843A00CA0341 /* drbg.c in Sources */,
 				E9F20BF222E34B480018D260 /* x25519.c in Sources */,
+				085125F528EEBE180074C124 /* log.c in Sources */,
 				E9BC76E11EF3CCDE00EB7A09 /* poly1305.c in Sources */,
 				1059006A1DC8DFE300FB4085 /* hmac.c in Sources */,
 				1059006F1DC8E00B00FB4085 /* chash.c in Sources */,
@@ -877,6 +881,7 @@
 				105900CF1DCBECFB00FB4085 /* modes.c in Sources */,
 				E9925A122354C37500CA2082 /* picotls-probes.d in Sources */,
 				106530EA1D9B7C13005B2C60 /* picotls.c in Sources */,
+				085125F428EEBE170074C124 /* log.c in Sources */,
 				E9925A142354C3CF00CA2082 /* aes128.c in Sources */,
 				105900CD1DCBECF400FB4085 /* gcm.c in Sources */,
 				E9E865EC203BD46600E2FFCD /* sha512.c in Sources */,
@@ -968,6 +973,7 @@
 			files = (
 				E9B43DC224619D5100824E51 /* picotls-probes.d in Sources */,
 				E9B43E1024689FE700824E51 /* picotls.c in Sources */,
+				085125F628EEBE1B0074C124 /* log.c in Sources */,
 				E9B43DE424619D7E00824E51 /* fusion.c in Sources */,
 				E9B43DC824619D5100824E51 /* picotest.c in Sources */,
 			);

@@ -5639,17 +5639,63 @@ int ptls_server_name_is_ipaddr(const char *name)
     return 0;
 }
 
+static char *byte_to_hex(char *dst, uint8_t v)
+{
+    *dst++ = "0123456789abcdef"[v >> 4];
+    *dst++ = "0123456789abcdef"[v & 0xf];
+    return dst;
+}
+
 char *ptls_hexdump(char *buf, const void *_src, size_t len)
 {
     char *dst = buf;
     const uint8_t *src = _src;
-    size_t i;
 
-    for (i = 0; i != len; ++i) {
-        ptls_byte_to_hex(dst, src[i]);
-        dst += 2;
-    }
+    for (size_t i = 0; i != len; ++i)
+        dst = byte_to_hex(dst, src[i]);
     *dst++ = '\0';
     return buf;
+}
+
+char *ptls_jsonescape(char *buf, const char *unsafe_str, size_t len)
+{
+    char *dst = buf;
+    const uint8_t *src = (const uint8_t *)unsafe_str, *end = src + len;
+
+    for (; src != end; ++src) {
+        switch (*src) {
+#define MAP(ch, escaped)                                                                                                           \
+    case ch: {                                                                                                                     \
+        memcpy(dst, (escaped), sizeof(escaped) - 1);                                                                               \
+        dst += sizeof(escaped) - 1;                                                                                                \
+    } break;
+
+            MAP('"', "\\\"");
+            MAP('\\', "\\\\");
+            MAP('/', "\\/");
+            MAP('\b', "\\b");
+            MAP('\f', "\\f");
+            MAP('\n', "\\n");
+            MAP('\r', "\\r");
+            MAP('\t', "\\t");
+
+#undef MAP
+
+        default:
+            if (*src < 0x20 || *src == 0x7f) {
+                *dst++ = '\\';
+                *dst++ = 'u';
+                *dst++ = '0';
+                *dst++ = '0';
+                dst = byte_to_hex(dst, *src);
+            } else {
+                *dst++ = *src;
+            }
+            break;
+        }
+    }
+    *dst = '\0';
+
+    return dst;
 }
 
