@@ -50,15 +50,24 @@ size_t ptls_log_num_lost(void)
 
 int ptls_log_add_fd(int fd)
 {
+    int ret;
+
     pthread_mutex_lock(&logctx.mutex);
 
-    logctx.fds = realloc(logctx.fds, sizeof(logctx.fds[0]) * (logctx.num_fds + 1));
-    logctx.fds[logctx.num_fds] = fd;
-    logctx.num_fds++;
+    int *newfds;
+    if ((newfds = realloc(logctx.fds, sizeof(logctx.fds[0]) * (logctx.num_fds + 1))) == NULL) {
+        ret = PTLS_ERROR_NO_MEMORY;
+        goto Exit;
+    }
+    logctx.fds = newfds;
+    logctx.fds[logctx.num_fds++] = fd;
     ptls_log_is_active = 1;
 
+    ret = 0; /* success */
+
+Exit:
     pthread_mutex_unlock(&logctx.mutex);
-    return 1;
+    return ret;
 }
 
 #endif

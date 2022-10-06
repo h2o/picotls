@@ -1253,11 +1253,11 @@ uint64_t ptls_decode_quicint(const uint8_t **src, const uint8_t *end);
  */
 extern volatile int ptls_log_is_active;
 /**
- * Returns the number of lost events.
+ * Returns the number of log events that were unable to be emitted.
  */
 size_t ptls_log_num_lost(void);
 /**
- * Registers an fd for ptslog. A registered fd is automatically closed and removed if it is invalidated.
+ * Registers an fd to the logger. A registered fd is automatically closed and removed if it is invalidated.
  */
 int ptls_log_add_fd(int fd);
 
