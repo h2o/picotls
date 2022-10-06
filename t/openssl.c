@@ -539,9 +539,11 @@ int main(int argc, char **argv)
     subtest("minicrypto vs.", test_picotls);
 
 #if ASYNC_TESTS
-    // switch to x25519 as we run benchmarks
-    static ptls_key_exchange_algorithm_t *x25519_keyex[] = {&ptls_openssl_x25519, NULL}; // use x25519 for speed
-    openssl_ctx.key_exchanges = x25519_keyex;
+    // switch to x25519 / aes128gcmsha256 as we run benchmarks
+    static ptls_key_exchange_algorithm_t *fast_keyex[] = {&ptls_openssl_x25519, NULL}; // use x25519 for speed
+    static ptls_cipher_suite_t *fast_cipher[] = {&ptls_openssl_aes128gcmsha256, NULL};
+    openssl_ctx.key_exchanges = fast_keyex;
+    openssl_ctx.cipher_suites = fast_cipher;
     ctx = &openssl_ctx;
     ctx_peer = &openssl_ctx;
     openssl_sign_certificate.async = 0;
