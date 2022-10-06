@@ -122,23 +122,25 @@ void ptlslog__do_write(const ptls_buffer_t *buf)
 {
 #if PTLS_HAVE_LOG
     pthread_mutex_lock(&logctx.mutex);
+
     for (size_t i = 0; i < logctx.num_fds; ++i) {
         ssize_t ret;
         while ((ret = write(logctx.fds[i], buf->base, buf->off)) == -1 && errno == EINTR)
             ;
-        if (ret == -1) {
-            if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                logctx.num_lost++;
-            } else {
-                // close fd and remove the entry of it from the array
-                // logctx.fds is released by realloc(logctx.fds, 0) when logctx.num_fds is 1.
-                close(logctx.fds[i]);
-                memmove(logctx.fds + i, logctx.fds + i + 1, sizeof(logctx.fds[0]) * (logctx.num_fds - i - 1));
-                logctx.fds = realloc(logctx.fds, sizeof(logctx.fds[0]) * (logctx.num_fds - 1));
-                --logctx.num_fds;
-            }
+        if (ret == buf->off) {
+            /* success */
+        } else if (ret > 0 || (ret == -1 && (errno == EAGAIN || errno == EWOULDBLOCK))) {
+            /* partial write or buffer full */
+            logctx.num_lost++;
+        } else {
+            /* write error; close fd and remove the entry of it from the array. */
+            close(logctx.fds[i]);
+            memmove(logctx.fds + i, logctx.fds + i + 1, sizeof(logctx.fds[0]) * (logctx.num_fds - i - 1));
+            logctx.fds = realloc(logctx.fds, sizeof(logctx.fds[0]) * (logctx.num_fds - 1));
+            --logctx.num_fds;
         }
     }
+
     pthread_mutex_unlock(&logctx.mutex);
 #endif
 }
