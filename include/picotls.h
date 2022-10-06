@@ -1139,7 +1139,7 @@ uint64_t ptls_decode_quicint(const uint8_t **src, const uint8_t *end);
 
 #define PTLSLOG(module, type, block)                                                                                               \
     do {                                                                                                                           \
-        if (!ptlslog_is_active)                                                                                                    \
+        if (!ptls_log_is_active)                                                                                                   \
             break;                                                                                                                 \
         int ptlslog_skip = 0;                                                                                                      \
         char smallbuf[128];                                                                                                        \
@@ -1251,19 +1251,19 @@ uint64_t ptls_decode_quicint(const uint8_t **src, const uint8_t *end);
 /**
  * If logging is currently active.
  */
-extern volatile int ptlslog_is_active;
+extern volatile int ptls_log_is_active;
 /**
  * Returns the number of lost events.
  */
-size_t ptlslog_num_lost(void);
+size_t ptls_log_num_lost(void);
 /**
  * Registers an fd for ptslog. A registered fd is automatically closed and removed if it is invalidated.
  */
-int ptlslog_add_fd(int fd);
+int ptls_log_add_fd(int fd);
 
 #else
 
-static const int ptlslog_is_active = 0;
+static const int ptls_log_is_active = 0;
 
 #endif
 

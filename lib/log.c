@@ -34,7 +34,7 @@
 
 #if PTLS_HAVE_LOG
 
-volatile int ptlslog_is_active;
+volatile int ptls_log_is_active;
 
 static struct {
     int *fds;
@@ -43,19 +43,19 @@ static struct {
     pthread_mutex_t mutex;
 } logctx = {.mutex = PTHREAD_MUTEX_INITIALIZER};
 
-size_t ptlslog_num_lost(void)
+size_t ptls_log_num_lost(void)
 {
     return logctx.num_lost;
 }
 
-int ptlslog_add_fd(int fd)
+int ptls_log_add_fd(int fd)
 {
     pthread_mutex_lock(&logctx.mutex);
 
     logctx.fds = realloc(logctx.fds, sizeof(logctx.fds[0]) * (logctx.num_fds + 1));
     logctx.fds[logctx.num_fds] = fd;
     logctx.num_fds++;
-    ptlslog_is_active = 1;
+    ptls_log_is_active = 1;
 
     pthread_mutex_unlock(&logctx.mutex);
     return 1;
