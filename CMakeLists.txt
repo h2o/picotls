@@ -25,17 +25,6 @@ IF (WITH_FUSION)
     MESSAGE(STATUS "Enabling 'fusion' AES-GCM engine")
 ENDIF ()
 
-# ptlslog is enabled by default only on Linux and macOS, because it depends on pthreads.
-IF (CMAKE_SYSTEM_NAME STREQUAL "Linux" OR CMAKE_SYSTEM_NAME STREQUAL "Darwin")
-    SET(WITH_PTLSLOG_DEFAULT "ON")
-ELSE ()
-    SET(WITH_PTLSLOG_DEFAULT "OFF")
-ENDIF ()
-OPTION(WITH_PTLSLOG "build ptlslog probes" ${WITH_PTLSLOG_DEFAULT})
-IF (WITH_PTLSLOG)
-    MESSAGE(STATUS "Enabling ptlslog support")
-ENDIF()
-
 SET(CMAKE_C_FLAGS "-std=c99 -Wall -O2 -g ${CC_WARNING_FLAGS} ${CMAKE_C_FLAGS}")
 INCLUDE_DIRECTORIES(
     deps/cifra/src/ext
@@ -61,7 +50,8 @@ SET(MINICRYPTO_LIBRARY_FILES
     deps/cifra/src/sha512.c)
 SET(CORE_FILES
     lib/picotls.c
-    lib/pembase64.c)
+    lib/pembase64.c
+    lib/log.c)
 SET(CORE_TEST_FILES
     t/picotls.c)
 IF (WITH_DTRACE)
@@ -73,10 +63,6 @@ IF (WITH_DTRACE)
         LIST(APPEND CORE_FILES ${CMAKE_CURRENT_BINARY_DIR}/picotls-probes.o)
         LIST(APPEND CORE_TEST_FILES ${CMAKE_CURRENT_BINARY_DIR}/picotls-probes.o)
     ENDIF ()
-ENDIF ()
-IF (WITH_PTLSLOG)
-    SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DPICOTLS_USE_PTLSLOG=1")
-    LIST(APPEND CORE_FILES "include/picotls/ptlslog.h" "lib/ptlslog.c")
 ENDIF ()
 
 PKG_CHECK_MODULES(BROTLI_DEC libbrotlidec)
@@ -113,6 +99,7 @@ ADD_EXECUTABLE(test-minicrypto.t
     t/minicrypto.c
     lib/asn1.c
     lib/pembase64.c
+    lib/log.c
     lib/ffx.c
     lib/cifra/x25519.c
     lib/cifra/chacha20.c
@@ -147,6 +134,7 @@ IF (OPENSSL_FOUND AND NOT (OPENSSL_VERSION VERSION_LESS "1.0.1"))
         lib/uecc.c
         lib/asn1.c
         lib/pembase64.c
+        lib/log.c
         lib/ffx.c
         deps/picotest/picotest.c
         ${CORE_TEST_FILES}

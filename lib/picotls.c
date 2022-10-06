@@ -35,7 +35,6 @@
 #if PICOTLS_USE_DTRACE
 #include "picotls-probes.h"
 #endif
-#include "picotls/ptlslog.h"
 
 #define PTLS_MAX_PLAINTEXT_RECORD_SIZE 16384
 #define PTLS_MAX_ENCRYPTED_RECORD_SIZE (16384 + 256)

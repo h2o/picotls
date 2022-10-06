@@ -24,18 +24,19 @@
 #endif
 #include <stdio.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <inttypes.h>
 #include <string.h>
 #include <errno.h>
 #include <pthread.h>
 #include <unistd.h>
-
 #include "picotls.h"
-#include "picotls/ptlslog.h"
 
 ptlslog_context_t ptlslog = {
     .mutex = PTHREAD_MUTEX_INITIALIZER,
 };
+
+#if PTLS_HAVE_LOG
 
 size_t ptlslog_num_lost(void)
 {
@@ -53,6 +54,8 @@ int ptlslog_add_fd(int fd)
     pthread_mutex_unlock(&ptlslog.mutex);
     return 1;
 }
+
+#endif
 
 /**
  * Builds a JSON-safe string without double quotes. Supplied buffer MUST be 6x + 1 bytes larger than the input.
@@ -102,6 +105,7 @@ static size_t escape_json_unsafe_string(char *buf, const void *unsafe_str, size_
 
 void ptlslog__do_write(const ptls_buffer_t *buf)
 {
+#if PTLS_HAVE_LOG
     pthread_mutex_lock(&ptlslog.mutex);
     for (size_t i = 0; i < ptlslog.num_fds; ++i) {
         ssize_t ret;
@@ -121,6 +125,7 @@ void ptlslog__do_write(const ptls_buffer_t *buf)
         }
     }
     pthread_mutex_unlock(&ptlslog.mutex);
+#endif
 }
 
 int ptlslog__do_pushv(ptls_buffer_t *buf, const void *p, size_t l)
