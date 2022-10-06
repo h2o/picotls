@@ -160,7 +160,7 @@ int ptlslog__do_pushv(ptls_buffer_t *buf, const void *p, size_t l)
 
 int ptlslog__do_push_unsafestr(ptls_buffer_t *buf, const char *s, size_t l)
 {
-    if (ptls_buffer_reserve(buf, l * strlen("\\u0000") + 1) != 0)
+    if (ptls_buffer_reserve(buf, l * (sizeof("\\uXXXX") - 1) + 1) != 0)
         return 0;
 
     buf->off += escape_json_unsafe_string((char *)(buf->base + buf->off), s, l);
@@ -169,7 +169,7 @@ int ptlslog__do_push_unsafestr(ptls_buffer_t *buf, const char *s, size_t l)
 
 int ptlslog__do_push_hexdump(ptls_buffer_t *buf, const void *s, size_t l)
 {
-    if (ptls_buffer_reserve(buf, l * strlen("ff") + 1) != 0)
+    if (ptls_buffer_reserve(buf, l * 2 + 1) != 0)
         return 0;
 
     ptls_hexdump((char *)(buf->base + buf->off), s, l);
