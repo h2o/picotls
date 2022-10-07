@@ -1169,7 +1169,8 @@ static ptls_t *ptls_new(ptls_context_t *ctx, int is_server);
  */
 int ptls_build_tls12_export_params(ptls_context_t *ctx, ptls_buffer_t *output, int is_server, int session_reused,
                                    ptls_cipher_suite_t *cipher, const void *master_secret, const void *hello_randoms,
-                                   uint64_t next_send_record_iv, const char *server_name, ptls_iovec_t negotiated_protocol);
+                                   uint64_t next_send_record_iv, const char *server_name, ptls_iovec_t negotiated_protocol,
+                                   uint16_t iana_id);
 /**
  * create a post-handshake TLS connection object using given parameters
  */
@@ -1190,6 +1191,14 @@ void ptls_set_context(ptls_t *tls, ptls_context_t *ctx);
  * returns the client-random
  */
 ptls_iovec_t ptls_get_client_random(ptls_t *tls);
+/**
+ * returns the cipher-suite id being used
+ */
+uint32_t ptls_get_cipher_id(ptls_t *tls);
+/**
+ * returns the cipher-suite name being used
+ */
+const char *ptls_get_cipher_name(ptls_t *tls);
 /**
  * returns the cipher-suite being used
  */
