@@ -5733,7 +5733,7 @@ int ptlslog__do_push_signed32(ptls_buffer_t *buf, int32_t v)
 {
     /* TODO optimize */
     char s[sizeof("-2147483648")];
-    int len = sprintf(s, "%" PRId32, v);
+    int len = snprintf(s, sizeof(s), "%" PRId32, v);
     return ptlslog__do_pushv(buf, s, (size_t)len);
 }
 
@@ -5741,7 +5741,7 @@ int ptlslog__do_push_signed64(ptls_buffer_t *buf, int64_t v)
 {
     /* TODO optimize */
     char s[sizeof("-9223372036854775808")];
-    int len = sprintf(s, "%" PRId64, v);
+    int len = snprintf(s, sizeof(s), "%" PRId64, v);
     return ptlslog__do_pushv(buf, s, (size_t)len);
 }
 
@@ -5749,7 +5749,7 @@ int ptlslog__do_push_unsigned32(ptls_buffer_t *buf, uint32_t v)
 {
     /* TODO optimize */
     char s[sizeof("4294967295")];
-    int len = sprintf(s, "%" PRIu32, v);
+    int len = snprintf(s, sizeof(s), "%" PRIu32, v);
     return ptlslog__do_pushv(buf, s, (size_t)len);
 }
 
@@ -5757,7 +5757,7 @@ int ptlslog__do_push_unsigned64(ptls_buffer_t *buf, uint64_t v)
 {
     /* TODO optimize */
     char s[sizeof("18446744073709551615")];
-    int len = sprintf(s, "%" PRIu64, v);
+    int len = snprintf(s, sizeof(s), "%" PRIu64, v);
     return ptlslog__do_pushv(buf, s, (size_t)len);
 }
 
