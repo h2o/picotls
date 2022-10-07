@@ -116,21 +116,6 @@ static const uint8_t hello_retry_random[PTLS_HELLO_RANDOM_SIZE] = {0xCF, 0x21, 0
                                                                    0x02, 0x1E, 0x65, 0xB8, 0x91, 0xC2, 0xA2, 0x11, 0x16, 0x7A, 0xBB,
                                                                    0x8C, 0x5E, 0x07, 0x9E, 0x09, 0xE2, 0xC8, 0xA8, 0x33, 0x9C};
 
-struct st_ptls12_cipher {
-    char *name;
-    uint16_t iana_id;
-    uint16_t algo_id;
-};
-
-static const struct st_ptls12_cipher tls12_ciphers[] = {
-    {"RSA-AES128-GCM-SHA256", 0x009C, 0x1301},         {"DHE-RSA-AES128-GCM-SHA256", 0x009E, 0x1301},
-    {"ECDHE-RSA-AES128-GCM-SHA256", 0xC02F, 0x1301},   {"ECDHE-ECDSA-AES128-GCM-SHA256", 0xC02B, 0x1301},
-    {"RSA-AES256-GCM-SHA384", 0x009D, 0x1302},         {"DHE-RSA-AES256-GCM-SHA384", 0x009F, 0x1302},
-    {"ECDHE-RSA-AES256-GCM-SHA384", 0xC030, 0x1302},   {"ECDHE-ECDSA-AES256-GCM-SHA384", 0xC02C, 0x1302},
-    {"DHE-RSA-CHACHA20-POLY1305", 0xCCAA, 0x1303},     {"ECDHE-RSA-CHACHA20-POLY1305", 0xCCA8, 0x1303},
-    {"ECDHE-ECDSA-CHACHA20-POLY1305", 0xCCA9, 0x1303}, {NULL, 0},
-};
-
 struct st_ptls_traffic_protection_t {
     uint8_t secret[PTLS_MAX_DIGEST_SIZE];
     size_t epoch;
@@ -221,7 +206,6 @@ struct st_ptls_t {
      * selected cipher-suite
      */
     ptls_cipher_suite_t *cipher_suite;
-    const struct st_ptls12_cipher *tls12_meta;
     /**
      * clienthello.random
      */
@@ -4543,7 +4527,7 @@ int ptls_export(ptls_t *tls, ptls_buffer_t *output)
         output, tls->is_server, tls->is_psk_handshake, tls->cipher_suite, tls->client_random, tls->server_name, negotiated_protocol,
         tls->traffic_protection.enc.secret, tls->traffic_protection.enc.secret + PTLS_MAX_SECRET_SIZE,
         tls->traffic_protection.enc.seq, tls->traffic_protection.enc.tls12_enc_record_iv, tls->traffic_protection.dec.secret,
-        tls->traffic_protection.dec.secret + PTLS_MAX_SECRET_SIZE, tls->traffic_protection.dec.seq, tls->tls12_meta->iana_id);
+        tls->traffic_protection.dec.secret + PTLS_MAX_SECRET_SIZE, tls->traffic_protection.dec.seq, tls->cipher_suite->id);
 }
 
 static int build_tls12_traffic_protection(ptls_t *tls, int is_enc, const uint8_t **src, const uint8_t *const end)
@@ -4597,18 +4581,8 @@ int ptls_import(ptls_context_t *ctx, ptls_t **tls, ptls_iovec_t params)
             goto Exit;
         if ((ret = ptls_decode16(&csid, &src, end)) != 0)
             goto Exit;
-        for (size_t i = 0; i < sizeof(tls12_ciphers) / sizeof(tls12_ciphers[0]); i++) {
-            if (tls12_ciphers[i].iana_id == csid) {
-                (*tls)->tls12_meta = &tls12_ciphers[i];
-                break;
-            }
-        }
-        if ((*tls)->tls12_meta == NULL) {
-            ret = PTLS_ALERT_HANDSHAKE_FAILURE;
-            goto Exit;
-        }
         for (ptls_cipher_suite_t **cipher = ctx->cipher_suites; *cipher != NULL; ++cipher) {
-            if ((*cipher)->id == (*tls)->tls12_meta->algo_id) {
+            if ((*cipher)->id == csid) {
                 (*tls)->cipher_suite = *cipher;
                 break;
             }
@@ -4735,8 +4709,6 @@ uint32_t ptls_get_cipher_id(ptls_t *tls)
     ptls_cipher_suite_t *cipher = ptls_get_cipher(tls);
     if (!cipher)
         return 0;
-    if (tls->traffic_protection.enc.tls12)
-        return tls->tls12_meta->iana_id;
     return cipher->id;
 }
 
@@ -4746,7 +4718,7 @@ const char *ptls_get_cipher_name(ptls_t *tls)
     if (!cipher)
         return NULL;
     if (tls->traffic_protection.enc.tls12)
-        return tls->tls12_meta->name;
+        return cipher->name;
     return cipher->aead->name;
 }
 

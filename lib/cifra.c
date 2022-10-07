@@ -23,5 +23,20 @@
 #include "picotls.h"
 #include "picotls/minicrypto.h"
 
-ptls_cipher_suite_t *ptls_minicrypto_cipher_suites[] = {&ptls_minicrypto_aes256gcmsha384, &ptls_minicrypto_aes128gcmsha256,
-                                                        &ptls_minicrypto_chacha20poly1305sha256, NULL};
+ptls_cipher_suite_t *ptls_minicrypto_cipher_suites[] = {
+    &ptls_minicrypto_aes256gcmsha384,
+    &ptls_minicrypto_aes128gcmsha256_tls12_a,
+    &ptls_minicrypto_aes128gcmsha256_tls12_b,
+    &ptls_minicrypto_aes128gcmsha256_tls12_c,
+    &ptls_minicrypto_aes128gcmsha256_tls12_d,
+    &ptls_minicrypto_aes128gcmsha256,
+    &ptls_minicrypto_aes256gcmsha384_tls12_a,
+    &ptls_minicrypto_aes256gcmsha384_tls12_b,
+    &ptls_minicrypto_aes256gcmsha384_tls12_c,
+    &ptls_minicrypto_aes256gcmsha384_tls12_d,
+    &ptls_minicrypto_chacha20poly1305sha256,
+    &ptls_minicrypto_chacha20poly1305sha256_tls12_a,
+    &ptls_minicrypto_chacha20poly1305sha256_tls12_b,
+    &ptls_minicrypto_chacha20poly1305sha256_tls12_c,
+    NULL};
+
