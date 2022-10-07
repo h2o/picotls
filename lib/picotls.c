@@ -920,7 +920,7 @@ static void log_secret(ptls_t *tls, const char *type, ptls_iovec_t secret)
     char hexbuf[PTLS_MAX_DIGEST_SIZE * 2 + 1];
 
     PTLS_PROBE(NEW_SECRET, tls, type, ptls_hexdump(hexbuf, secret.base, secret.len));
-    PTLSLOG_CONN(new_secret, tls, { PTLSLOG_ELEMENT_SAFESTR(label, type); });
+    PTLS_LOG_CONN(new_secret, tls, { PTLS_LOG_ELEMENT_SAFESTR(label, type); });
 
     if (tls->ctx->log_event != NULL)
         tls->ctx->log_event->cb(tls->ctx->log_event, tls, type, "%s", ptls_hexdump(hexbuf, secret.base, secret.len));
@@ -1333,7 +1333,7 @@ static void log_client_random(ptls_t *tls)
     char buf[sizeof(tls->client_random) * 2 + 1];
     /* FIXME probe says the argument is `void *` but we emit hexstring? */
     PTLS_PROBE(CLIENT_RANDOM, tls, ptls_hexdump(buf, tls->client_random, sizeof(tls->client_random)));
-    PTLSLOG_CONN(client_random, tls, { PTLSLOG_ELEMENT_HEXDUMP(bytes, tls->client_random, sizeof(tls->client_random)); });
+    PTLS_LOG_CONN(client_random, tls, { PTLS_LOG_ELEMENT_HEXDUMP(bytes, tls->client_random, sizeof(tls->client_random)); });
 }
 
 #define SESSION_IDENTIFIER_MAGIC "ptls0001" /* the number should be changed upon incompatible format change */
@@ -4433,7 +4433,7 @@ ptls_t *ptls_client_new(ptls_context_t *ctx)
     }
 
     PTLS_PROBE(NEW, tls, 0);
-    PTLSLOG_CONN(new, tls, { PTLSLOG_ELEMENT_BOOL(is_server, 0); });
+    PTLS_LOG_CONN(new, tls, { PTLS_LOG_ELEMENT_BOOL(is_server, 0); });
     return tls;
 }
 
@@ -4444,7 +4444,7 @@ ptls_t *ptls_server_new(ptls_context_t *ctx)
     tls->server.early_data_skipped_bytes = UINT32_MAX;
 
     PTLS_PROBE(NEW, tls, 1);
-    PTLSLOG_CONN(new, tls, { PTLSLOG_ELEMENT_BOOL(is_server, 1); });
+    PTLS_LOG_CONN(new, tls, { PTLS_LOG_ELEMENT_BOOL(is_server, 1); });
     return tls;
 }
 
@@ -4656,7 +4656,7 @@ Exit:
 void ptls_free(ptls_t *tls)
 {
     PTLS_PROBE0(FREE, tls);
-    PTLSLOG_CONN(free, tls, {});
+    PTLS_LOG_CONN(free, tls, {});
 
     ptls_buffer_dispose(&tls->recvbuf.rec);
     ptls_buffer_dispose(&tls->recvbuf.mess);
@@ -4883,10 +4883,10 @@ static int handle_client_handshake_message(ptls_t *tls, ptls_message_emitter_t *
 
     PTLS_PROBE(RECEIVE_MESSAGE, tls, message.base[0], message.base + PTLS_HANDSHAKE_HEADER_SIZE,
                message.len - PTLS_HANDSHAKE_HEADER_SIZE, ret);
-    PTLSLOG_CONN(receive_message, tls, {
-        PTLSLOG_ELEMENT_UNSIGNED(message, message.base[0]);
-        PTLSLOG_ELEMENT_UNSIGNED(len, message.len - PTLS_HANDSHAKE_HEADER_SIZE);
-        PTLSLOG_ELEMENT_SIGNED(result, ret);
+    PTLS_LOG_CONN(receive_message, tls, {
+        PTLS_LOG_ELEMENT_UNSIGNED(message, message.base[0]);
+        PTLS_LOG_ELEMENT_UNSIGNED(len, message.len - PTLS_HANDSHAKE_HEADER_SIZE);
+        PTLS_LOG_ELEMENT_SIGNED(result, ret);
     });
 
     return ret;
@@ -4954,10 +4954,10 @@ static int handle_server_handshake_message(ptls_t *tls, ptls_message_emitter_t *
 
     PTLS_PROBE(RECEIVE_MESSAGE, tls, message.base[0], message.base + PTLS_HANDSHAKE_HEADER_SIZE,
                message.len - PTLS_HANDSHAKE_HEADER_SIZE, ret);
-    PTLSLOG_CONN(receive_message, tls, {
-        PTLSLOG_ELEMENT_UNSIGNED(message, message.base[0]);
-        PTLSLOG_ELEMENT_UNSIGNED(len, message.len - PTLS_HANDSHAKE_HEADER_SIZE);
-        PTLSLOG_ELEMENT_SIGNED(result, ret);
+    PTLS_LOG_CONN(receive_message, tls, {
+        PTLS_LOG_ELEMENT_UNSIGNED(message, message.base[0]);
+        PTLS_LOG_ELEMENT_UNSIGNED(len, message.len - PTLS_HANDSHAKE_HEADER_SIZE);
+        PTLS_LOG_ELEMENT_SIGNED(result, ret);
     });
 
     return ret;
