@@ -6010,15 +6010,14 @@ static char *byte_to_hex(char *dst, uint8_t v)
     return dst;
 }
 
-char *ptls_hexdump(char *buf, const void *_src, size_t len)
+char *ptls_hexdump(char *dst, const void *_src, size_t len)
 {
-    char *dst = buf;
     const uint8_t *src = _src;
 
     for (size_t i = 0; i != len; ++i)
         dst = byte_to_hex(dst, src[i]);
-    *dst++ = '\0';
-    return buf;
+    *dst = '\0';
+    return dst;
 }
 
 char *ptls_jsonescape(char *buf, const char *unsafe_str, size_t len)
