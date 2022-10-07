@@ -5668,11 +5668,10 @@ char *ptls_jsonescape(char *buf, const char *unsafe_str, size_t len)
     for (; src != end; ++src) {
         switch (*src) {
 #define MAP(ch, escaped)                                                                                                           \
-    case ch: {                                                                                                                     \
+    case ch:                                                                                                                       \
         memcpy(dst, (escaped), sizeof(escaped) - 1);                                                                               \
         dst += sizeof(escaped) - 1;                                                                                                \
-    } break;
-
+        break
             MAP('"', "\\\"");
             MAP('\\', "\\\\");
             MAP('/', "\\/");
@@ -5681,9 +5680,7 @@ char *ptls_jsonescape(char *buf, const char *unsafe_str, size_t len)
             MAP('\n', "\\n");
             MAP('\r', "\\r");
             MAP('\t', "\\t");
-
 #undef MAP
-
         default:
             if (*src < 0x20 || *src == 0x7f) {
                 *dst++ = '\\';
