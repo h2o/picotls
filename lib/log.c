@@ -19,9 +19,6 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
-#ifdef _WINDOWS
-#include "wincompat.h"
-#endif
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
