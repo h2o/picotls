@@ -50,8 +50,7 @@ SET(MINICRYPTO_LIBRARY_FILES
     deps/cifra/src/sha512.c)
 SET(CORE_FILES
     lib/picotls.c
-    lib/pembase64.c
-    lib/log.c)
+    lib/pembase64.c)
 SET(CORE_TEST_FILES
     t/picotls.c)
 IF (WITH_DTRACE)
@@ -99,7 +98,6 @@ ADD_EXECUTABLE(test-minicrypto.t
     t/minicrypto.c
     lib/asn1.c
     lib/pembase64.c
-    lib/log.c
     lib/ffx.c
     lib/cifra/x25519.c
     lib/cifra/chacha20.c
@@ -134,7 +132,6 @@ IF (OPENSSL_FOUND AND NOT (OPENSSL_VERSION VERSION_LESS "1.0.1"))
         lib/uecc.c
         lib/asn1.c
         lib/pembase64.c
-        lib/log.c
         lib/ffx.c
         deps/picotest/picotest.c
         ${CORE_TEST_FILES}

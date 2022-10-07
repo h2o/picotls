@@ -7,10 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		085125F128EEB30F0074C124 /* log.c in Sources */ = {isa = PBXBuildFile; fileRef = 085125F028EEB30F0074C124 /* log.c */; };
-		085125F428EEBE170074C124 /* log.c in Sources */ = {isa = PBXBuildFile; fileRef = 085125F028EEB30F0074C124 /* log.c */; };
-		085125F528EEBE180074C124 /* log.c in Sources */ = {isa = PBXBuildFile; fileRef = 085125F028EEB30F0074C124 /* log.c */; };
-		085125F628EEBE1B0074C124 /* log.c in Sources */ = {isa = PBXBuildFile; fileRef = 085125F028EEB30F0074C124 /* log.c */; };
 		105900431DC8D57000FB4085 /* picotls.c in Sources */ = {isa = PBXBuildFile; fileRef = 106530E91D9B7C13005B2C60 /* picotls.c */; };
 		105900441DC8D57000FB4085 /* picotest.c in Sources */ = {isa = PBXBuildFile; fileRef = 106530E31D9B4021005B2C60 /* picotest.c */; };
 		1059004C1DC8D5B700FB4085 /* openssl.c in Sources */ = {isa = PBXBuildFile; fileRef = 106530C51D9B1A98005B2C60 /* openssl.c */; };
@@ -226,7 +222,6 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		085125F028EEB30F0074C124 /* log.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = log.c; sourceTree = "<group>"; };
 		105900241DC8D37500FB4085 /* aes.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = aes.c; path = src/aes.c; sourceTree = "<group>"; };
 		105900251DC8D37500FB4085 /* aes.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = aes.h; path = src/aes.h; sourceTree = "<group>"; };
 		105900281DC8D39800FB4085 /* bitops.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = bitops.h; path = src/bitops.h; sourceTree = "<group>"; };
@@ -471,7 +466,6 @@
 				E99B75DF1F5CDDB500CF503E /* pembase64.c */,
 				E9F20BDF22E34B210018D260 /* cifra */,
 				1059003F1DC8D53200FB4085 /* cifra.c */,
-				085125F028EEB30F0074C124 /* log.c */,
 				106530C21D9B004B005B2C60 /* openssl.c */,
 				106530BF1D998641005B2C60 /* picotls.c */,
 				105900C51DC9798800FB4085 /* uecc.c */,
@@ -852,7 +846,6 @@
 				E9F20BEF22E34B480018D260 /* aes128.c in Sources */,
 				10EACAF01DCC843A00CA0341 /* drbg.c in Sources */,
 				E9F20BF222E34B480018D260 /* x25519.c in Sources */,
-				085125F528EEBE180074C124 /* log.c in Sources */,
 				E9BC76E11EF3CCDE00EB7A09 /* poly1305.c in Sources */,
 				1059006A1DC8DFE300FB4085 /* hmac.c in Sources */,
 				1059006F1DC8E00B00FB4085 /* chash.c in Sources */,
@@ -881,7 +874,6 @@
 				105900CF1DCBECFB00FB4085 /* modes.c in Sources */,
 				E9925A122354C37500CA2082 /* picotls-probes.d in Sources */,
 				106530EA1D9B7C13005B2C60 /* picotls.c in Sources */,
-				085125F428EEBE170074C124 /* log.c in Sources */,
 				E9925A142354C3CF00CA2082 /* aes128.c in Sources */,
 				105900CD1DCBECF400FB4085 /* gcm.c in Sources */,
 				E9E865EC203BD46600E2FFCD /* sha512.c in Sources */,
@@ -916,7 +908,6 @@
 				E99B75E11F5CDDB500CF503E /* pembase64.c in Sources */,
 				E95E95382290456B00215ACD /* picotls-probes.d in Sources */,
 				E97577032212405D00D1EF74 /* ffx.c in Sources */,
-				085125F128EEB30F0074C124 /* log.c in Sources */,
 				106530EB1D9B7C5C005B2C60 /* picotls.c in Sources */,
 				E9E4B12B2180530400514B47 /* certificate_compression.c in Sources */,
 			);
@@ -973,7 +964,6 @@
 			files = (
 				E9B43DC224619D5100824E51 /* picotls-probes.d in Sources */,
 				E9B43E1024689FE700824E51 /* picotls.c in Sources */,
-				085125F628EEBE1B0074C124 /* log.c in Sources */,
 				E9B43DE424619D7E00824E51 /* fusion.c in Sources */,
 				E9B43DC824619D5100824E51 /* picotest.c in Sources */,
 			);
