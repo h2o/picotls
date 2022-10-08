@@ -236,6 +236,3 @@ ptls_cipher_suite_t ptls_minicrypto_chacha20poly1305sha256 = {.id = PTLS_CIPHER_
                                                               .name = PTLS_CIPHER_SUITE_NAME_CHACHA20_POLY1305_SHA256,
                                                               .aead = &ptls_minicrypto_chacha20poly1305,
                                                               .hash = &ptls_minicrypto_sha256};
-ptls_cipher_suite_t ptls_minicrypto_chacha20poly1305sha256_tls12_a = {.id = 0xccaa, .name = "DHE-RSA-CHACHA20-POLY1305", .aead = &ptls_minicrypto_chacha20poly1305, .hash = &ptls_minicrypto_sha256};
-ptls_cipher_suite_t ptls_minicrypto_chacha20poly1305sha256_tls12_b = {.id = 0xcca8, .name = "ECDHE-RSA-CHACHA20-POLY1305", .aead = &ptls_minicrypto_chacha20poly1305, .hash = &ptls_minicrypto_sha256};
-ptls_cipher_suite_t ptls_minicrypto_chacha20poly1305sha256_tls12_c = {.id = 0xcca9, .name = "ECDHE-ECDSA-CHACHA20-POLY1305", .aead = &ptls_minicrypto_chacha20poly1305, .hash = &ptls_minicrypto_sha256};

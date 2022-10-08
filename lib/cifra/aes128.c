@@ -64,7 +64,3 @@ ptls_cipher_suite_t ptls_minicrypto_aes128gcmsha256 = {.id = PTLS_CIPHER_SUITE_A
                                                        .name = PTLS_CIPHER_SUITE_NAME_AES_128_GCM_SHA256,
                                                        .aead = &ptls_minicrypto_aes128gcm,
                                                        .hash = &ptls_minicrypto_sha256};
-ptls_cipher_suite_t ptls_minicrypto_aes128gcmsha256_tls12_a = {.id = 0x009c, .name = "RSA-AES128-GCM-SHA256", .aead = &ptls_minicrypto_aes128gcm, .hash = &ptls_minicrypto_sha256};
-ptls_cipher_suite_t ptls_minicrypto_aes128gcmsha256_tls12_b = {.id = 0x009d, .name = "DHE-RSA-AES128-GCM-SHA256", .aead = &ptls_minicrypto_aes128gcm, .hash = &ptls_minicrypto_sha256};
-ptls_cipher_suite_t ptls_minicrypto_aes128gcmsha256_tls12_c = {.id = 0xc02f, .name = "ECDHE-RSA-AES128-GCM-SHA256", .aead = &ptls_minicrypto_aes128gcm, .hash = &ptls_minicrypto_sha256};
-ptls_cipher_suite_t ptls_minicrypto_aes128gcmsha256_tls12_d = {.id = 0xc02b, .name = "ECDHE-ECDSA-AES128-GCM-SHA256", .aead = &ptls_minicrypto_aes128gcm, .hash = &ptls_minicrypto_sha256};
