@@ -1192,14 +1192,6 @@ void ptls_set_context(ptls_t *tls, ptls_context_t *ctx);
  */
 ptls_iovec_t ptls_get_client_random(ptls_t *tls);
 /**
- * returns the cipher-suite id being used
- */
-uint32_t ptls_get_cipher_id(ptls_t *tls);
-/**
- * returns the cipher-suite name being used
- */
-const char *ptls_get_cipher_name(ptls_t *tls);
-/**
  * returns the cipher-suite being used
  */
 ptls_cipher_suite_t *ptls_get_cipher(ptls_t *tls);

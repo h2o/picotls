@@ -4704,24 +4704,6 @@ ptls_cipher_suite_t *ptls_get_cipher(ptls_t *tls)
     return tls->cipher_suite;
 }
 
-uint32_t ptls_get_cipher_id(ptls_t *tls)
-{
-    ptls_cipher_suite_t *cipher = ptls_get_cipher(tls);
-    if (!cipher)
-        return 0;
-    return cipher->id;
-}
-
-const char *ptls_get_cipher_name(ptls_t *tls)
-{
-    ptls_cipher_suite_t *cipher = ptls_get_cipher(tls);
-    if (!cipher)
-        return NULL;
-    if (tls->traffic_protection.enc.tls12)
-        return cipher->name;
-    return cipher->aead->name;
-}
-
 uint16_t ptls_get_protocol_version(ptls_t *tls)
 {
     if (tls->traffic_protection.enc.tls12)
