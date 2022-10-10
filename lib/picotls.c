@@ -2239,12 +2239,15 @@ Exit:
     return ret;
 }
 
-static ptls_cipher_suite_t *find_cipher_suite(ptls_context_t *ctx, uint16_t id)
+ptls_cipher_suite_t *ptls_find_cipher_suite(ptls_context_t *ctx, uint16_t id)
 {
     ptls_cipher_suite_t **cs;
 
     for (cs = ctx->cipher_suites; *cs != NULL && (*cs)->id != id; ++cs)
         ;
+    if (*cs == NULL && ctx->tls12_cipher_suites)
+        for (cs = ctx->tls12_cipher_suites; *cs != NULL && (*cs)->id != id; ++cs)
+            ;
     return *cs;
 }
 
@@ -2283,7 +2286,7 @@ static int decode_server_hello(ptls_t *tls, struct st_ptls_server_hello_t *sh, c
         uint16_t csid;
         if ((ret = ptls_decode16(&csid, &src, end)) != 0)
             goto Exit;
-        if ((tls->cipher_suite = find_cipher_suite(tls->ctx, csid)) == NULL) {
+        if ((tls->cipher_suite = ptls_find_cipher_suite(tls->ctx, csid)) == NULL) {
             ret = PTLS_ALERT_ILLEGAL_PARAMETER;
             goto Exit;
         }
@@ -4580,12 +4583,7 @@ int ptls_import(ptls_context_t *ctx, ptls_t **tls, ptls_iovec_t params)
             goto Exit;
         if ((ret = ptls_decode16(&csid, &src, end)) != 0)
             goto Exit;
-        for (ptls_cipher_suite_t **cipher = ctx->cipher_suites; *cipher != NULL; ++cipher) {
-            if ((*cipher)->id == csid) {
-                (*tls)->cipher_suite = *cipher;
-                break;
-            }
-        }
+        (*tls)->cipher_suite = ptls_find_cipher_suite(ctx, csid);
         if ((*tls)->cipher_suite == NULL) {
             ret = PTLS_ALERT_HANDSHAKE_FAILURE;
             goto Exit;

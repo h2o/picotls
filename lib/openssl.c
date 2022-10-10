@@ -1831,6 +1831,23 @@ ptls_cipher_suite_t *ptls_openssl_cipher_suites[] = {&ptls_openssl_aes256gcmsha3
 #endif
                                                      NULL};
 
+ptls_cipher_suite_t *ptls_openssl_tls12_cipher_suites[] = {
+    &ptls_openssl_tls12_rsa_aes128gcmsha256,
+    &ptls_openssl_tls12_dhe_rsa_aes128gcmsha256,
+    &ptls_openssl_tls12_ecdhe_rsa_aes128gcmsha256,
+    &ptls_openssl_tls12_ecdhe_ecdsa_aes128gcmsha256,
+    &ptls_openssl_tls12_rsa_aes256gcmsha384,
+    &ptls_openssl_tls12_dhe_rsa_aes256gcmsha384,
+    &ptls_openssl_tls12_ecdhe_rsa_aes256gcmsha384,
+    &ptls_openssl_tls12_ecdhe_ecdsa_aes256gcmsha384,
+#if defined(PTLS_OPENSSL_HAVE_CHACHA20_POLY1305)
+    &ptls_openssl_tls12_dhe_rsa_chacha20poly1305sha256,
+    &ptls_openssl_tls12_ecdhe_rsa_chacha20poly1305sha256,
+    &ptls_openssl_tls12_ecdhe_ecdsa_chacha20poly1305sha256,
+#endif
+    NULL
+};
+
 #if PTLS_OPENSSL_HAVE_BF
 ptls_cipher_algorithm_t ptls_openssl_bfecb = {"BF-ECB",        PTLS_BLOWFISH_KEY_SIZE,          PTLS_BLOWFISH_BLOCK_SIZE,
                                               0 /* iv size */, sizeof(struct cipher_context_t), bfecb_setup_crypto};
