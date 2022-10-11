@@ -414,7 +414,7 @@ int main(int argc, char **argv)
 
     ptls_key_exchange_algorithm_t *key_exchanges[128] = {NULL};
     ptls_cipher_suite_t *cipher_suites[128] = {NULL};
-    ptls_context_t ctx = {ptls_openssl_random_bytes, &ptls_get_time, key_exchanges, cipher_suites, NULL};
+    ptls_context_t ctx = {ptls_openssl_random_bytes, &ptls_get_time, key_exchanges, cipher_suites};
     ptls_handshake_properties_t hsprop = {{{{NULL}}}};
     const char *host, *port, *input_file = NULL, *esni_file = NULL;
     struct {
