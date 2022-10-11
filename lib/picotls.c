@@ -6122,7 +6122,7 @@ int ptlslog__do_push_unsigned64(ptls_buffer_t *buf, uint64_t v)
 
 #if PTLS_HAVE_LOG
 
-volatile int ptls_log_is_active;
+volatile ptls_log_t ptls_log = {};
 
 static struct {
     int *fds;
@@ -6149,7 +6149,7 @@ int ptls_log_add_fd(int fd)
     }
     logctx.fds = newfds;
     logctx.fds[logctx.num_fds++] = fd;
-    ptls_log_is_active = 1;
+    ptls_log.is_active = 1;
 
     ret = 0; /* success */
 
@@ -6182,7 +6182,7 @@ void ptlslog__do_write(const ptls_buffer_t *buf)
             logctx.fds[fd_index] = logctx.fds[logctx.num_fds - 1];
             --logctx.num_fds;
             if (logctx.num_fds == 0)
-                ptls_log_is_active = 0;
+                ptls_log.is_active = 0;
         }
     }
 
