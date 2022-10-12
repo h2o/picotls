@@ -49,7 +49,6 @@
 #endif
 #include "picotls.h"
 #include "picotls/openssl.h"
-#include "picotls/ptlslog.h"
 #if PICOTLS_USE_BROTLI
 #include "picotls/certificate_compression.h"
 #endif
@@ -75,7 +74,7 @@ static void setup_ptlslog(const char *fn)
         fprintf(stderr, "failed to open file:%s:%s\n", fn, strerror(errno));
         exit(1);
     }
-    ptlslog_add_fd(fd);
+    ptls_log_add_fd(fd);
 }
 
 static int handle_connection(int sockfd, ptls_context_t *ctx, const char *server_name, const char *input_file,

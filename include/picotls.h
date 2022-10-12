@@ -64,6 +64,7 @@ extern "C" {
 #define PTLS_THREADLOCAL __declspec(thread)
 #else
 #define PTLS_THREADLOCAL __thread
+#define PTLS_HAVE_LOG 1
 #endif
 
 #ifndef PTLS_FUZZ_HANDSHAKE
@@ -1155,6 +1156,160 @@ uint64_t ptls_decode_quicint(const uint8_t **src, const uint8_t *end);
         ptls_decode_assert_block_close((src), end);                                                                                \
     } while (0)
 
+#define PTLS_LOG(module, type, block)                                                                                              \
+    do {                                                                                                                           \
+        if (!ptls_log.is_active)                                                                                                   \
+            break;                                                                                                                 \
+        int ptlslog_skip = 0;                                                                                                      \
+        char smallbuf[128];                                                                                                        \
+        ptls_buffer_t ptlslogbuf;                                                                                                  \
+        ptls_buffer_init(&ptlslogbuf, smallbuf, sizeof(smallbuf));                                                                 \
+        PTLS_LOG__DO_PUSH_SAFESTR("{\"module\":\"" PTLS_TO_STR(module) "\",\"type\":\"" PTLS_TO_STR(type) "\"");                   \
+        do {                                                                                                                       \
+            block                                                                                                                  \
+        } while (0);                                                                                                               \
+        PTLS_LOG__DO_PUSH_SAFESTR("}\n");                                                                                          \
+        if (!ptlslog_skip)                                                                                                         \
+            ptlslog__do_write(&ptlslogbuf);                                                                                        \
+        ptls_buffer_dispose(&ptlslogbuf);                                                                                          \
+    } while (0)
+
+#define PTLS_LOG_CONN(type, tls, block)                                                                                            \
+    do {                                                                                                                           \
+        ptls_t *_tls = (tls);                                                                                                      \
+        if (ptls_skip_tracing(_tls))                                                                                               \
+            break;                                                                                                                 \
+        PTLS_LOG(picotls, type, {                                                                                                  \
+            PTLS_LOG_ELEMENT_PTR(tls, _tls);                                                                                       \
+            do {                                                                                                                   \
+                block                                                                                                              \
+            } while (0);                                                                                                           \
+        });                                                                                                                        \
+    } while (0)
+
+#define PTLS_LOG_ELEMENT_SAFESTR(name, value)                                                                                      \
+    do {                                                                                                                           \
+        PTLS_LOG__DO_PUSH_SAFESTR(",\"" PTLS_TO_STR(name) "\":\"");                                                                \
+        PTLS_LOG__DO_PUSH_SAFESTR(value);                                                                                          \
+        PTLS_LOG__DO_PUSH_SAFESTR("\"");                                                                                           \
+    } while (0)
+#define PTLS_LOG_ELEMENT_UNSAFESTR(name, value, value_len)                                                                         \
+    do {                                                                                                                           \
+        PTLS_LOG__DO_PUSH_SAFESTR(",\"" PTLS_TO_STR(name) "\":\"");                                                                \
+        PTLS_LOG__DO_PUSH_UNSAFESTR(value, value_len);                                                                             \
+        PTLS_LOG__DO_PUSH_SAFESTR("\"");                                                                                           \
+    } while (0)
+#define PTLS_LOG_ELEMENT_HEXDUMP(name, value, value_len)                                                                           \
+    do {                                                                                                                           \
+        PTLS_LOG__DO_PUSH_SAFESTR(",\"" PTLS_TO_STR(name) "\":\"");                                                                \
+        PTLS_LOG__DO_PUSH_HEXDUMP(value, value_len);                                                                               \
+        PTLS_LOG__DO_PUSH_SAFESTR("\"");                                                                                           \
+    } while (0)
+#define PTLS_LOG_ELEMENT_PTR(name, value) PTLS_LOG_ELEMENT_UNSIGNED(name, (uint64_t)(value))
+#define PTLS_LOG_ELEMENT_SIGNED(name, value)                                                                                       \
+    do {                                                                                                                           \
+        PTLS_LOG__DO_PUSH_SAFESTR(",\"" PTLS_TO_STR(name) "\":");                                                                  \
+        PTLS_LOG__DO_PUSH_SIGNED(value);                                                                                           \
+    } while (0)
+#define PTLS_LOG_ELEMENT__DO_UNSIGNED(name, suffix, value)                                                                         \
+    do {                                                                                                                           \
+        PTLS_LOG__DO_PUSH_SAFESTR(",\"" PTLS_TO_STR(name) suffix "\":");                                                           \
+        PTLS_LOG__DO_PUSH_UNSIGNED(value);                                                                                         \
+    } while (0)
+#define PTLS_LOG_ELEMENT_UNSIGNED(name, value) PTLS_LOG_ELEMENT__DO_UNSIGNED(name, "", value)
+#define PTLS_LOG_ELEMENT_BOOL(name, value)                                                                                         \
+    do {                                                                                                                           \
+        PTLS_LOG__DO_PUSH_SAFESTR(",\"" PTLS_TO_STR(name) "\":");                                                                  \
+        PTLS_LOG__DO_PUSH_SAFESTR(value ? "true" : "false");                                                                       \
+    } while (0)
+
+#define PTLS_LOG_APPDATA_ELEMENT_UNSAFESTR(name, value, value_len)                                                                 \
+    do {                                                                                                                           \
+        size_t _len = (value_len);                                                                                                 \
+        if (ptls_log.include_appdata)                                                                                              \
+            PTLS_LOG_ELEMENT_UNSAFESTR(name, value, _len);                                                                         \
+        PTLS_LOG_ELEMENT__DO_UNSIGNED(name, "_len", _len);                                                                         \
+    } while (0)
+#define PTLS_LOG_APPDATA_ELEMENT_HEXDUMP(name, value, value_len)                                                                   \
+    do {                                                                                                                           \
+        size_t _len = (value_len);                                                                                                 \
+        if (ptls_log.include_appdata)                                                                                              \
+            PTLS_LOG_ELEMENT_HEXDUMP(name, value, _len);                                                                           \
+        PTLS_LOG_ELEMENT__DO_UNSIGNED(name, "_len", _len);                                                                         \
+    } while (0)
+
+#define PTLS_LOG__DO_PUSH_SAFESTR(v)                                                                                               \
+    do {                                                                                                                           \
+        if (PTLS_UNLIKELY(!ptlslog_skip && !ptlslog__do_push_safestr(&ptlslogbuf, (v))))                                           \
+            ptlslog_skip = 1;                                                                                                      \
+    } while (0)
+#define PTLS_LOG__DO_PUSH_UNSAFESTR(v, l)                                                                                          \
+    do {                                                                                                                           \
+        if (PTLS_UNLIKELY(!ptlslog_skip && !ptlslog__do_push_unsafestr(&ptlslogbuf, (v), (l))))                                    \
+            ptlslog_skip = 1;                                                                                                      \
+    } while (0)
+#define PTLS_LOG__DO_PUSH_HEXDUMP(v, l)                                                                                            \
+    do {                                                                                                                           \
+        if (PTLS_UNLIKELY(!ptlslog_skip && !ptlslog__do_push_hexdump(&ptlslogbuf, (v), (l))))                                      \
+            ptlslog_skip = 1;                                                                                                      \
+    } while (0)
+#define PTLS_LOG__DO_PUSH_SIGNED(v)                                                                                                \
+    do {                                                                                                                           \
+        if (PTLS_UNLIKELY(!ptlslog_skip)) {                                                                                        \
+            if (sizeof(v) <= sizeof(int32_t)) {                                                                                    \
+                if (PTLS_UNLIKELY(!ptlslog__do_push_signed32(&ptlslogbuf, (v))))                                                   \
+                    ptlslog_skip = 1;                                                                                              \
+            } else {                                                                                                               \
+                if (PTLS_UNLIKELY(!ptlslog__do_push_signed64(&ptlslogbuf, (v))))                                                   \
+                    ptlslog_skip = 1;                                                                                              \
+            }                                                                                                                      \
+        }                                                                                                                          \
+    } while (0)
+#define PTLS_LOG__DO_PUSH_UNSIGNED(v)                                                                                              \
+    do {                                                                                                                           \
+        if (PTLS_UNLIKELY(!ptlslog_skip)) {                                                                                        \
+            if (sizeof(v) <= sizeof(uint32_t)) {                                                                                   \
+                if (PTLS_UNLIKELY(!ptlslog__do_push_unsigned32(&ptlslogbuf, (v))))                                                 \
+                    ptlslog_skip = 1;                                                                                              \
+            } else {                                                                                                               \
+                if (PTLS_UNLIKELY(!ptlslog__do_push_unsigned64(&ptlslogbuf, (v))))                                                 \
+                    ptlslog_skip = 1;                                                                                              \
+            }                                                                                                                      \
+        }                                                                                                                          \
+    } while (0)
+
+/**
+ * User API is exposed only when logging is supported by the platform.
+ */
+typedef struct st_ptls_log_t {
+    unsigned is_active : 1;
+    unsigned include_appdata : 1;
+} ptls_log_t;
+
+#if PTLS_HAVE_LOG
+extern volatile ptls_log_t ptls_log;
+/**
+ * Returns the number of log events that were unable to be emitted.
+ */
+size_t ptls_log_num_lost(void);
+/**
+ * Registers an fd to the logger. A registered fd is automatically closed and removed if it is invalidated.
+ */
+int ptls_log_add_fd(int fd);
+#else
+static const ptls_log_t ptls_log = {0};
+#endif
+
+static int ptlslog__do_push_safestr(ptls_buffer_t *buf, const char *s);
+int ptlslog__do_push_unsafestr(ptls_buffer_t *buf, const char *s, size_t l);
+int ptlslog__do_push_hexdump(ptls_buffer_t *buf, const void *s, size_t l);
+int ptlslog__do_pushv(ptls_buffer_t *buf, const void *p, size_t l);
+int ptlslog__do_push_signed32(ptls_buffer_t *buf, int32_t v);
+int ptlslog__do_push_signed64(ptls_buffer_t *buf, int64_t v);
+int ptlslog__do_push_unsigned32(ptls_buffer_t *buf, uint32_t v);
+int ptlslog__do_push_unsigned64(ptls_buffer_t *buf, uint64_t v);
+void ptlslog__do_write(const ptls_buffer_t *buf);
+
 /**
  * create a client object to handle new TLS connection
  */
@@ -1474,6 +1629,10 @@ ptls_esni_secret_t *ptls_get_esni_secret(ptls_t *ctx);
  */
 char *ptls_hexdump(char *dst, const void *src, size_t len);
 /**
+ * Builds a JSON-safe string without double quotes. Supplied buffer MUST be at least 6x + 1 bytes larger than the input.
+ */
+char *ptls_jsonescape(char *buf, const char *s, size_t len);
+/**
  * the default get_time callback
  */
 extern ptls_get_time_t ptls_get_time;
@@ -1486,9 +1645,12 @@ extern PTLS_THREADLOCAL unsigned ptls_default_skip_tracing;
 #define ptls_default_skip_tracing 0
 #endif
 
-static void ptls_byte_to_hex(char *dst, uint8_t byte);
-
 /* inline functions */
+
+inline int ptlslog__do_push_safestr(ptls_buffer_t *buf, const char *s)
+{
+    return ptlslog__do_pushv(buf, s, strlen(s));
+}
 
 inline ptls_t *ptls_new(ptls_context_t *ctx, int is_server)
 {
@@ -1681,12 +1843,6 @@ inline size_t ptls_aead_decrypt(ptls_aead_context_t *ctx, void *output, const vo
         init_func(&ctx->ctx);                                                                                                      \
         return &ctx->super;                                                                                                        \
     }
-
-inline void ptls_byte_to_hex(char *dst, uint8_t v)
-{
-    dst[0] = "0123456789abcdef"[v >> 4];
-    dst[1] = "0123456789abcdef"[v & 0xf];
-}
 
 #ifdef __cplusplus
 }
