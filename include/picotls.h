@@ -1156,10 +1156,8 @@ uint64_t ptls_decode_quicint(const uint8_t **src, const uint8_t *end);
         ptls_decode_assert_block_close((src), end);                                                                                \
     } while (0)
 
-#define PTLS_LOG(module, type, block)                                                                                              \
+#define PTLS_LOG__DO_LOG(module, type, block)                                                                                      \
     do {                                                                                                                           \
-        if (!ptls_log.is_active)                                                                                                   \
-            break;                                                                                                                 \
         int ptlslog_skip = 0;                                                                                                      \
         char smallbuf[128];                                                                                                        \
         ptls_buffer_t ptlslogbuf;                                                                                                  \
@@ -1174,12 +1172,19 @@ uint64_t ptls_decode_quicint(const uint8_t **src, const uint8_t *end);
         ptls_buffer_dispose(&ptlslogbuf);                                                                                          \
     } while (0)
 
+#define PTLS_LOG(module, type, block)                                                                                              \
+    do {                                                                                                                           \
+        if (!ptls_log.is_active)                                                                                                   \
+            break;                                                                                                                 \
+        PTLS_LOG__DO_LOG((module), (type), (block));                                                                               \
+    } while (0)
+
 #define PTLS_LOG_CONN(type, tls, block)                                                                                            \
     do {                                                                                                                           \
         ptls_t *_tls = (tls);                                                                                                      \
-        if (ptls_skip_tracing(_tls))                                                                                               \
+        if (ptls_log_skip_conn(_tls))                                                                                              \
             break;                                                                                                                 \
-        PTLS_LOG(picotls, type, {                                                                                                  \
+        PTLS_LOG__DO_LOG(picotls, type, {                                                                                          \
             PTLS_LOG_ELEMENT_PTR(tls, _tls);                                                                                       \
             do {                                                                                                                   \
                 block                                                                                                              \
@@ -1296,8 +1301,13 @@ size_t ptls_log_num_lost(void);
  * Registers an fd to the logger. A registered fd is automatically closed and removed if it is invalidated.
  */
 int ptls_log_add_fd(int fd);
+/**
+ * Return if the connection is to be logged.
+ */
+int ptls_log_skip_conn(ptls_t *tls);
 #else
 static const ptls_log_t ptls_log = {0};
+#define ptls_log_skip_conn(t) (1)
 #endif
 
 static int ptls_log__do_push_safestr(ptls_buffer_t *buf, const char *s);

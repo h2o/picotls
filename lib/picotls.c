@@ -6157,6 +6157,13 @@ Exit:
     return ret;
 }
 
+int ptls_log_skip_conn(ptls_t *tls)
+{
+    if (PTLS_LIKELY(!ptls_log.is_active))
+        return 1;
+    return ptls_skip_tracing(tls);
+}
+
 #endif
 
 void ptls_log__do_write(const ptls_buffer_t *buf)
