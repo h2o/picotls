@@ -1156,10 +1156,8 @@ uint64_t ptls_decode_quicint(const uint8_t **src, const uint8_t *end);
         ptls_decode_assert_block_close((src), end);                                                                                \
     } while (0)
 
-#define PTLS_LOG(module, type, block)                                                                                              \
+#define PTLS_LOG__DO_LOG(module, type, block)                                                                                      \
     do {                                                                                                                           \
-        if (!ptls_log.is_active)                                                                                                   \
-            break;                                                                                                                 \
         int ptlslog_skip = 0;                                                                                                      \
         char smallbuf[128];                                                                                                        \
         ptls_buffer_t ptlslogbuf;                                                                                                  \
@@ -1174,12 +1172,19 @@ uint64_t ptls_decode_quicint(const uint8_t **src, const uint8_t *end);
         ptls_buffer_dispose(&ptlslogbuf);                                                                                          \
     } while (0)
 
+#define PTLS_LOG(module, type, block)                                                                                              \
+    do {                                                                                                                           \
+        if (!ptls_log.is_active)                                                                                                   \
+            break;                                                                                                                 \
+        PTLS_LOG__DO_LOG((module), (type), (block));                                                                               \
+    } while (0)
+
 #define PTLS_LOG_CONN(type, tls, block)                                                                                            \
     do {                                                                                                                           \
         ptls_t *_tls = (tls);                                                                                                      \
-        if (ptls_skip_tracing(_tls))                                                                                               \
+        if (!ptls_log.is_active || ptls_skip_tracing(_tls))                                                                        \
             break;                                                                                                                 \
-        PTLS_LOG(picotls, type, {                                                                                                  \
+        PTLS_LOG__DO_LOG(picotls, type, {                                                                                          \
             PTLS_LOG_ELEMENT_PTR(tls, _tls);                                                                                       \
             do {                                                                                                                   \
                 block                                                                                                              \
