@@ -719,10 +719,6 @@ struct st_ptls_context_t {
      */
     ptls_cipher_suite_t **cipher_suites;
     /**
-     * list of supported tls12 cipher-suites terminated by NULL
-     */
-    ptls_cipher_suite_t **tls12_cipher_suites;
-    /**
      * list of certificates
      */
     struct {
@@ -837,6 +833,10 @@ struct st_ptls_context_t {
      *
      */
     ptls_on_extension_t *on_extension;
+    /**
+     * (optional) list of supported tls12 cipher-suites terminated by NULL
+     */
+    ptls_cipher_suite_t **tls12_cipher_suites;
 };
 
 typedef struct st_ptls_raw_extension_t {
