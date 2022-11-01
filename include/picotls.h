@@ -435,6 +435,10 @@ typedef const struct st_ptls_aead_algorithm_t {
         size_t record_iv_size;
     } tls12;
     /**
+     * HPKE AEAD ID (RFC 9180 section 7.3)
+     */
+    uint16_t hpke_id;
+    /**
      * if encrypted bytes are going to be written using non-temporal store instructions (i.e., skip cache)
      */
     unsigned non_temporal : 1;
@@ -501,6 +505,10 @@ typedef const struct st_ptls_hash_algorithm_t {
      * digest size
      */
     size_t digest_size;
+    /**
+     * HPKE KDF ID (RFC 9180 section 7.2)
+     */
+    uint16_t hpke_id;
     /**
      * constructor that creates the hash context
      */

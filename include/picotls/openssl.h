@@ -32,6 +32,7 @@ extern "C" {
 #include <openssl/x509.h>
 #include <openssl/opensslconf.h>
 #include "../picotls.h"
+#include "../picotls/hpke.h"
 
 #if OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)
 #if !defined(OPENSSL_NO_CHACHA) && !defined(OPENSSL_NO_POLY1305)
@@ -95,6 +96,13 @@ extern ptls_cipher_suite_t ptls_openssl_tls12_ecdhe_ecdsa_chacha20poly1305sha256
 #if PTLS_OPENSSL_HAVE_BF
 extern ptls_cipher_algorithm_t ptls_openssl_bfecb;
 #endif
+
+extern ptls_hpke_kem_t ptls_openssl_hpke_kem_p256sha256;
+extern ptls_hpke_kem_t ptls_openssl_hpke_kem_p384sha384;
+#if PTLS_OPENSSL_HAVE_X25519
+extern ptls_hpke_kem_t ptls_openssl_hpke_kem_x25519sha256;
+#endif
+extern ptls_hpke_kem_t *ptls_openssl_hpke_kems[];
 
 void ptls_openssl_random_bytes(void *buf, size_t len);
 /**
