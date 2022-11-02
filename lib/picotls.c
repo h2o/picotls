@@ -6015,12 +6015,13 @@ char *ptls_hexdump(char *dst, const void *_src, size_t len)
     return dst;
 }
 
-char *ptls_jsonescape(char *buf, const char *unsafe_str, size_t len)
+char *ptls_jsonescape(char *buf, const char *unsafe_str, size_t len, size_t max_len)
 {
     char *dst = buf;
     const uint8_t *src = (const uint8_t *)unsafe_str, *end = src + len;
 
     for (; src != end; ++src) {
+        char *dst_last = dst;
         switch (*src) {
 #define MAP(ch, escaped)                                                                                                           \
     case ch:                                                                                                                       \
@@ -6048,6 +6049,11 @@ char *ptls_jsonescape(char *buf, const char *unsafe_str, size_t len)
             }
             break;
         }
+
+        if (PTLS_UNLIKELY((dst - (const char *)buf) > max_len)) {
+            dst = dst_last;
+            break;
+        }
     }
     *dst = '\0';
 
@@ -6069,7 +6075,7 @@ int ptls_log__do_push_unsafestr(ptls_buffer_t *buf, const char *s, size_t l)
     if (ptls_buffer_reserve(buf, l * (sizeof("\\uXXXX") - 1) + 1) != 0)
         return 0;
 
-    buf->off = (uint8_t *)ptls_jsonescape((char *)(buf->base + buf->off), s, l) - buf->base;
+    buf->off = (uint8_t *)ptls_jsonescape((char *)(buf->base + buf->off), s, l, ptls_log.max_str_len) - buf->base;
 
     return 1;
 }
@@ -6079,6 +6085,8 @@ int ptls_log__do_push_hexdump(ptls_buffer_t *buf, const void *s, size_t l)
     if (ptls_buffer_reserve(buf, l * 2 + 1) != 0)
         return 0;
 
+    if (l > (ptls_log.max_str_len / 2))
+        l = ptls_log.max_str_len / 2;
     buf->off = (uint8_t *)ptls_hexdump((char *)(buf->base + buf->off), s, l) - buf->base;
     return 1;
 }
@@ -6117,7 +6125,9 @@ int ptls_log__do_push_unsigned64(ptls_buffer_t *buf, uint64_t v)
 
 #if PTLS_HAVE_LOG
 
-volatile ptls_log_t ptls_log = {};
+volatile ptls_log_t ptls_log = {
+    .max_str_len = SIZE_MAX,
+};
 
 static struct {
     int *fds;

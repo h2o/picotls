@@ -1695,15 +1695,43 @@ static void test_escape_json_unsafe_string(void)
     char buf[100];
     size_t escaped_len;
 
-    escaped_len = ptls_jsonescape(buf, STRLIT("\" \\ / \b \f \n \r \t foo bar")) - buf;
+    escaped_len = ptls_jsonescape(buf, STRLIT("\" \\ / \b \f \n \r \t foo bar"), SIZE_MAX) - buf;
     ok(escaped_len == strlen(buf));
     ok(strcmp(buf, "\\\" \\\\ \\/ \\b \\f \\n \\r \\t foo bar") == 0);
 
-    escaped_len = ptls_jsonescape(buf, STRLIT("こんにちは、🌏！")) - buf;
+    escaped_len = ptls_jsonescape(buf, STRLIT("こんにちは、🌏！"), SIZE_MAX) - buf;
     ok(strcmp(buf, "こんにちは、🌏！") == 0);
 
-    escaped_len = ptls_jsonescape(buf, STRLIT("\x00 \x1f \x7f")) - buf;
+    escaped_len = ptls_jsonescape(buf, STRLIT("\x00 \x1f \x7f"), SIZE_MAX) - buf;
     ok(strcmp(buf, "\\u0000 \\u001f \\u007f") == 0);
+
+    // max_len
+
+    escaped_len = ptls_jsonescape(buf, STRLIT("\n\n\n\n\n"), 3) - buf;
+    ok(escaped_len == 2);
+    ok(strcmp(buf, "\\n") == 0);
+
+    escaped_len = ptls_jsonescape(buf, STRLIT("\n\n\n\n\n"), 4) - buf;
+    ok(escaped_len == 4);
+    ok(strcmp(buf, "\\n\\n") == 0);
+
+    escaped_len = ptls_jsonescape(buf, STRLIT("\n\n\n\n\n"), 5) - buf;
+    ok(escaped_len == 4);
+    ok(strcmp(buf, "\\n\\n") == 0);
+
+    escaped_len = ptls_jsonescape(buf, STRLIT("\0\0\0\0\0"), 11) - buf;
+    ok(escaped_len == 6);
+    ok(strcmp(buf, "\\u0000") == 0);
+
+    escaped_len = ptls_jsonescape(buf, STRLIT("\0\0\0\0\0"), 12) - buf;
+    ok(escaped_len == 12);
+    ok(strcmp(buf, "\\u0000\\u0000") == 0);
+
+    escaped_len = ptls_jsonescape(buf, STRLIT("\0\0\0\0\0"), 13) - buf;
+    ok(escaped_len == 12);
+    ok(strcmp(buf, "\\u0000\\u0000") == 0);
+
+
 #undef STRLIT
 }
 

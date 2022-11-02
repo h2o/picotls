@@ -1307,6 +1307,12 @@ uint64_t ptls_decode_quicint(const uint8_t **src, const uint8_t *end);
 typedef struct st_ptls_log_t {
     unsigned is_active : 1;
     unsigned include_appdata : 1;
+
+    /**
+     * Maximum size of the string value. A string value might be escaped in JSON or hexdump, but this limit is applied to the result
+     * of escaping. It does not include double quotes. Defaults to SIZE_MAX.
+     */
+    size_t max_str_len;
 } ptls_log_t;
 
 #if PTLS_HAVE_LOG
@@ -1658,7 +1664,7 @@ char *ptls_hexdump(char *dst, const void *src, size_t len);
 /**
  * Builds a JSON-safe string without double quotes. Supplied buffer MUST be at least 6x + 1 bytes larger than the input.
  */
-char *ptls_jsonescape(char *buf, const char *s, size_t len);
+char *ptls_jsonescape(char *buf, const char *s, size_t len, size_t max_len);
 /**
  * the default get_time callback
  */
