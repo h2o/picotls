@@ -6072,7 +6072,12 @@ int ptls_log__do_pushv(ptls_buffer_t *buf, const void *p, size_t l)
 
 int ptls_log__do_push_unsafestr(ptls_buffer_t *buf, const char *s, size_t l)
 {
-    if (ptls_buffer_reserve(buf, l * (sizeof("\\uXXXX") - 1) + 1) != 0)
+    // The resutl won't exceed `ptls_log.max_str_len`, but we can't use it as is because it defaults to SIZE_MAX.
+    size_t max_len = ptls_log.max_str_len;
+    size_t max_possible_len = l * (sizeof("\\uXXXX") - 1) + 1;
+    if (max_possible_len < max_len)
+        max_len = max_possible_len;
+    if (ptls_buffer_reserve(buf, max_len) != 0)
         return 0;
 
     buf->off = (uint8_t *)ptls_jsonescape((char *)(buf->base + buf->off), s, l, ptls_log.max_str_len) - buf->base;
@@ -6082,6 +6087,8 @@ int ptls_log__do_push_unsafestr(ptls_buffer_t *buf, const char *s, size_t l)
 
 int ptls_log__do_push_hexdump(ptls_buffer_t *buf, const void *s, size_t l)
 {
+    // It might reserve more than necessary, but that's fine so far.
+    // A possible optimization is to make ptls_hexdump() to have a max_len argiment.
     if (ptls_buffer_reserve(buf, l * 2 + 1) != 0)
         return 0;
 
