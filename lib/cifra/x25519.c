@@ -32,10 +32,15 @@ struct st_x25519_key_exchange_t {
     uint8_t pub[X25519_KEY_SIZE];
 };
 
+static void x25519_derive_pubkey(uint8_t *pub, const uint8_t *priv)
+{
+    cf_curve25519_mul_base(pub, priv);
+}
+
 static void x25519_create_keypair(uint8_t *priv, uint8_t *pub)
 {
     ptls_minicrypto_random_bytes(priv, X25519_KEY_SIZE);
-    cf_curve25519_mul_base(pub, priv);
+    return x25519_derive_pubkey(pub, priv);
 }
 
 static int x25519_derive_secret(ptls_iovec_t *secret, const uint8_t *clientpriv, const uint8_t *clientpub,
@@ -87,6 +92,23 @@ static int x25519_create_key_exchange(ptls_key_exchange_algorithm_t *algo, ptls_
     return 0;
 }
 
+static int x25519_load_key_exchange(ptls_key_exchange_algorithm_t *algo, ptls_key_exchange_context_t **_ctx, ptls_iovec_t privkey)
+{
+    struct st_x25519_key_exchange_t *ctx;
+
+    if (privkey.len != X25519_KEY_SIZE)
+        return PTLS_ERROR_INCOMPATIBLE_KEY;
+
+    if ((ctx = (struct st_x25519_key_exchange_t *)malloc(sizeof(*ctx))) == NULL)
+        return PTLS_ERROR_NO_MEMORY;
+    ctx->super = (ptls_key_exchange_context_t){algo, ptls_iovec_init(ctx->pub, sizeof(ctx->pub)), x25519_on_exchange};
+    memcpy(ctx->priv, privkey.base, X25519_KEY_SIZE);
+    x25519_derive_pubkey(ctx->pub, ctx->priv);
+
+    *_ctx = &ctx->super;
+    return 0;
+}
+
 static int x25519_key_exchange(ptls_key_exchange_algorithm_t *algo, ptls_iovec_t *pubkey, ptls_iovec_t *secret,
                                ptls_iovec_t peerkey)
 {
@@ -117,4 +139,9 @@ Exit:
 }
 
 ptls_key_exchange_algorithm_t ptls_minicrypto_x25519 = {
-    .id = PTLS_GROUP_X25519, .name = PTLS_GROUP_NAME_X25519, .create = x25519_create_key_exchange, .exchange = x25519_key_exchange};
+    .id = PTLS_GROUP_X25519,
+    .name = PTLS_GROUP_NAME_X25519,
+    .create = x25519_create_key_exchange,
+    .exchange = x25519_key_exchange,
+    .load = x25519_load_key_exchange,
+};
