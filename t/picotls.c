@@ -1779,7 +1779,6 @@ void test_static_key_exchange(ptls_key_exchange_algorithm_t *calgo, ptls_key_exc
     /* we only have x25519 keys to test */
     if (!(calgo->load != NULL && salgo->load != NULL && salgo->id == PTLS_GROUP_X25519))
         return;
-    assert(calgo->load != NULL);
     assert(calgo->id == salgo->id);
 
     struct {
