@@ -1777,7 +1777,7 @@ void test_ephemeral_key_exchange(ptls_key_exchange_algorithm_t *client, ptls_key
 void test_static_key_exchange(ptls_key_exchange_algorithm_t *calgo, ptls_key_exchange_algorithm_t *salgo)
 {
     /* we only have x25519 keys to test */
-    if (!(salgo->load != NULL && salgo->id == PTLS_GROUP_X25519))
+    if (!(calgo->load != NULL && salgo->load != NULL && salgo->id == PTLS_GROUP_X25519))
         return;
     assert(calgo->load != NULL);
     assert(calgo->id == salgo->id);
