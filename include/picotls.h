@@ -548,41 +548,6 @@ typedef struct st_ptls_message_emitter_t {
     int (*commit_message)(struct st_ptls_message_emitter_t *self);
 } ptls_message_emitter_t;
 
-/**
- * holds ESNIKeys and the private key (instantiated by ptls_esni_parse, freed using ptls_esni_dispose)
- */
-typedef struct st_ptls_esni_context_t {
-    ptls_key_exchange_context_t **key_exchanges;
-    struct {
-        ptls_cipher_suite_t *cipher_suite;
-        uint8_t record_digest[PTLS_MAX_DIGEST_SIZE];
-    } * cipher_suites;
-    uint16_t padded_length;
-    uint64_t not_before;
-    uint64_t not_after;
-    uint16_t version;
-} ptls_esni_context_t;
-
-/**
- * holds the ESNI secret, as exchanged during the handshake
- */
-
-#define PTLS_ESNI_NONCE_SIZE 16
-
-typedef struct st_ptls_esni_secret_t {
-    ptls_iovec_t secret;
-    uint8_t nonce[PTLS_ESNI_NONCE_SIZE];
-    uint8_t esni_contents_hash[PTLS_MAX_DIGEST_SIZE];
-    struct {
-        ptls_key_exchange_algorithm_t *key_share;
-        ptls_cipher_suite_t *cipher;
-        ptls_iovec_t pubkey;
-        uint8_t record_digest[PTLS_MAX_DIGEST_SIZE];
-        uint16_t padded_length;
-    } client;
-    uint16_t version;
-} ptls_esni_secret_t;
-
 #define PTLS_CALLBACK_TYPE0(ret, name)                                                                                             \
     typedef struct st_ptls_##name##_t {                                                                                            \
         ret (*cb)(struct st_ptls_##name##_t * self);                                                                               \
@@ -628,10 +593,6 @@ typedef struct st_ptls_on_client_hello_parameters_t {
         const uint8_t *list;
         size_t count;
     } server_certificate_types;
-    /**
-     * if ESNI was used
-     */
-    unsigned esni : 1;
     /**
      * set to 1 if ClientHello is too old (or too new) to be handled by picotls
      */
@@ -751,10 +712,6 @@ struct st_ptls_context_t {
         ptls_iovec_t *list;
         size_t count;
     } certificates;
-    /**
-     * list of ESNI data terminated by NULL
-     */
-    ptls_esni_context_t **esni;
     /**
      *
      */
@@ -1650,19 +1607,6 @@ int ptls_server_name_is_ipaddr(const char *name);
  * malloc.  It is the responsibility of the user to free them when discarding the TLS context.
  */
 int ptls_load_certificates(ptls_context_t *ctx, char const *cert_pem_file);
-/**
- *
- */
-int ptls_esni_init_context(ptls_context_t *ctx, ptls_esni_context_t *esni, ptls_iovec_t esni_keys,
-                           ptls_key_exchange_context_t **key_exchanges);
-/**
- *
- */
-void ptls_esni_dispose_context(ptls_esni_context_t *esni);
-/**
- * Obtain the ESNI secrets negotiated during the handshake.
- */
-ptls_esni_secret_t *ptls_get_esni_secret(ptls_t *ctx);
 /**
  *
  */

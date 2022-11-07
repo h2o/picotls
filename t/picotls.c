@@ -604,16 +604,12 @@ static void test_fragmented_message(void)
 #undef SET_RECORD
 }
 
-static int was_esni;
-
 static int save_client_hello(ptls_on_client_hello_t *self, ptls_t *tls, ptls_on_client_hello_parameters_t *params)
 {
     ptls_set_server_name(tls, (const char *)params->server_name.base, params->server_name.len);
     if (params->negotiated_protocols.count != 0)
         ptls_set_negotiated_protocol(tls, (const char *)params->negotiated_protocols.list[0].base,
                                      params->negotiated_protocols.list[0].len);
-    if (params->esni)
-        ++was_esni;
     return 0;
 }
 
@@ -666,11 +662,6 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int expect_ticket, int
 
     if (require_client_authentication)
         ctx_peer->require_client_authentication = 1;
-
-    if (ctx_peer->esni != NULL) {
-        was_esni = 0;
-        client_hs_prop.client.esni_keys = ptls_iovec_init(ESNIKEYS, sizeof(ESNIKEYS) - 1);
-    }
 
     switch (mode) {
     case TEST_HANDSHAKE_HRR:
@@ -737,7 +728,6 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int expect_ticket, int
         ok(strcmp(ptls_get_server_name(server), "test.example.com") == 0);
         ok(ptls_get_negotiated_protocol(server) != NULL);
         ok(strcmp(ptls_get_negotiated_protocol(server), "h2") == 0);
-        ok(was_esni == (ctx_peer->esni != NULL));
     } else {
         ok(ptls_get_server_name(server) == NULL);
         ok(ptls_get_negotiated_protocol(server) == NULL);
@@ -1729,17 +1719,6 @@ void test_picotls(void)
     subtest("quic", test_quic);
     subtest("tls12-hello", test_tls12_hello);
     subtest("ptls_escape_json_unsafe_string", test_escape_json_unsafe_string);
-}
-
-void test_picotls_esni(ptls_key_exchange_context_t **keys)
-{
-    ptls_esni_context_t esni, *esni_list[] = {&esni, NULL};
-    ptls_esni_init_context(ctx_peer, &esni, ptls_iovec_init(ESNIKEYS, sizeof(ESNIKEYS) - 1), keys);
-    ctx_peer->esni = esni_list;
-
-    subtest("esni-handshake", test_picotls);
-
-    ctx_peer->esni = NULL;
 }
 
 void test_ephemeral_key_exchange(ptls_key_exchange_algorithm_t *client, ptls_key_exchange_algorithm_t *server)

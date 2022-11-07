@@ -159,38 +159,6 @@ static inline void setup_raw_pubkey_verify_certificate(ptls_context_t *ctx, EVP_
     ctx->verify_certificate = &vc.super;
 }
 
-static inline void setup_esni(ptls_context_t *ctx, const char *esni_fn, ptls_key_exchange_context_t **key_exchanges)
-{
-    uint8_t esnikeys[65536];
-    size_t esnikeys_len;
-    int ret = 0;
-
-    { /* read esnikeys */
-        FILE *fp;
-        if ((fp = fopen(esni_fn, "rb")) == NULL) {
-            fprintf(stderr, "failed to open file:%s:%s\n", esni_fn, strerror(errno));
-            exit(1);
-        }
-        esnikeys_len = fread(esnikeys, 1, sizeof(esnikeys), fp);
-        if (esnikeys_len == 0 || !feof(fp)) {
-            fprintf(stderr, "failed to load ESNI data from file:%s\n", esni_fn);
-            exit(1);
-        }
-        fclose(fp);
-    }
-
-    if ((ctx->esni = (ptls_esni_context_t **)malloc(sizeof(*ctx->esni) * 2)) == NULL ||
-        (*ctx->esni = (ptls_esni_context_t *)malloc(sizeof(**ctx->esni))) == NULL) {
-        fprintf(stderr, "no memory\n");
-        exit(1);
-    }
-
-    if ((ret = ptls_esni_init_context(ctx, ctx->esni[0], ptls_iovec_init(esnikeys, esnikeys_len), key_exchanges)) != 0) {
-        fprintf(stderr, "failed to parse ESNI data of file:%s:error=%d\n", esni_fn, ret);
-        exit(1);
-    }
-}
-
 struct st_util_log_event_t {
     ptls_log_event_t super;
     FILE *fp;

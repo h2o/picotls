@@ -157,7 +157,6 @@ int main(int argc, char **argv)
                              {&cert, 1},
                              NULL,
                              NULL,
-                             NULL,
                              &sign_certificate.super};
     ctx = ctx_peer = &ctxbuf;
     ADD_FFX_AES128_ALGORITHMS(minicrypto);

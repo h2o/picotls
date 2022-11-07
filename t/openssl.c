@@ -355,7 +355,6 @@ int main(int argc, char **argv)
     subtest("ed25519-sign", test_ed25519_sign);
     subtest("cert-verify", test_cert_verify);
     subtest("picotls", test_picotls);
-    test_picotls_esni(esni_private_keys);
 
     ctx = ctx_peer = &openssl_ctx_sha256only;
     subtest("picotls", test_picotls);
@@ -377,7 +376,6 @@ int main(int argc, char **argv)
                                      ptls_minicrypto_key_exchanges,
                                      ptls_minicrypto_cipher_suites,
                                      {&minicrypto_certificate, 1},
-                                     NULL,
                                      NULL,
                                      NULL,
                                      &minicrypto_sign_certificate.super};

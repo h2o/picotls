@@ -427,7 +427,7 @@ int main(int argc, char **argv)
     ptls_cipher_suite_t *cipher_suites[128] = {NULL};
     ptls_context_t ctx = {ptls_openssl_random_bytes, &ptls_get_time, key_exchanges, cipher_suites};
     ptls_handshake_properties_t hsprop = {{{{NULL}}}};
-    const char *host, *port, *input_file = NULL, *esni_file = NULL;
+    const char *host, *port, *input_file = NULL;
     struct {
         ptls_key_exchange_context_t *elements[16];
         size_t count;
@@ -495,9 +495,6 @@ int main(int argc, char **argv)
             break;
         case 'S':
             ctx.require_dhe_on_psk = 1;
-            break;
-        case 'E':
-            esni_file = optarg;
             break;
         case 'K': {
             FILE *fp;
@@ -643,13 +640,6 @@ int main(int argc, char **argv)
         size_t i;
         for (i = 0; ptls_openssl_cipher_suites[i] != NULL; ++i)
             cipher_suites[i] = ptls_openssl_cipher_suites[i];
-    }
-    if (esni_file != NULL) {
-        if (esni_key_exchanges.count == 0) {
-            fprintf(stderr, "-E must be used together with -K\n");
-            return 1;
-        }
-        setup_esni(&ctx, esni_file, esni_key_exchanges.elements);
     }
     if (argc != 2) {
         fprintf(stderr, "missing host and port\n");

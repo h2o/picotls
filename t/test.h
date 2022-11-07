@@ -117,7 +117,6 @@ extern struct st_ptls_ffx_test_variants_t ffx_variants[7];
 
 void test_key_exchange(ptls_key_exchange_algorithm_t *client, ptls_key_exchange_algorithm_t *server);
 void test_picotls(void);
-void test_picotls_esni(ptls_key_exchange_context_t **keys);
 
 void test_hpke(ptls_hpke_kem_t *kem, ptls_aead_algorithm_t *aead);
 
