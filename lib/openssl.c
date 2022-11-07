@@ -612,6 +612,8 @@ Exit:
     return ret;
 }
 
+/* loads raw private key; only available on OpenSSL 3.0 */
+#if !defined(LIBRESSL_VERSION_NUMBER) && OPENSSL_VERSION_NUMBER >= 0x30000000L
 static int evp_keyex_load(ptls_key_exchange_algorithm_t *algo, ptls_key_exchange_context_t **ctx, ptls_iovec_t privkey)
 {
     EVP_PKEY *pkey = NULL;
@@ -630,6 +632,9 @@ Exit:
         EVP_PKEY_free(pkey);
     return ret;
 }
+#else
+#define evp_keyex_load NULL
+#endif
 
 static int evp_keyex_exchange(ptls_key_exchange_algorithm_t *algo, ptls_iovec_t *outpubkey, ptls_iovec_t *secret,
                               ptls_iovec_t peerkey)
