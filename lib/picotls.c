@@ -694,12 +694,12 @@ static int aead_decrypt(struct st_ptls_traffic_protection_t *ctx, void *output, 
 static void build_tls12_aad(uint8_t *aad, uint8_t type, uint64_t seq, uint16_t length)
 {
     for (size_t i = 0; i < 8; ++i)
-        aad[i] = seq >> (56 - i * 8);
+        aad[i] = (uint8_t)(seq >> (56 - i * 8));
     aad[8] = type;
     aad[9] = PTLS_RECORD_VERSION_MAJOR;
     aad[10] = PTLS_RECORD_VERSION_MINOR;
     aad[11] = length >> 8;
-    aad[12] = length;
+    aad[12] = (uint8_t)length;
 }
 
 #define buffer_push_record(buf, type, block)                                                                                       \
@@ -736,7 +736,7 @@ static int buffer_push_encrypted_records(ptls_buffer_t *buf, uint8_t type, const
                 }
                 /* build AAD */
                 uint8_t aad[PTLS_TLS12_AAD_SIZE];
-                build_tls12_aad(aad, type, enc->seq, chunk_size);
+                build_tls12_aad(aad, type, enc->seq, (uint16_t)chunk_size);
                 /* encrypt */
                 buf->off += ptls_aead_encrypt(enc->aead, buf->base + buf->off, src, chunk_size, nonce, aad, sizeof(aad));
                 ++enc->seq;
@@ -4542,7 +4542,7 @@ static int build_tls12_traffic_protection(ptls_t *tls, int is_enc, const uint8_t
 {
     struct st_ptls_traffic_protection_t *tp = is_enc ? &tls->traffic_protection.enc : &tls->traffic_protection.dec;
 
-    if (end - *src < tls->cipher_suite->aead->key_size + tls->cipher_suite->aead->tls12.fixed_iv_size + sizeof(uint64_t))
+    if ((size_t)(end - *src) < tls->cipher_suite->aead->key_size + tls->cipher_suite->aead->tls12.fixed_iv_size + sizeof(uint64_t))
         return PTLS_ALERT_DECODE_ERROR;
 
     /* set properties */
