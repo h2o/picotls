@@ -46,6 +46,7 @@
 #include <nmmintrin.h>
 #include <wmmintrin.h>
 #include "picotls.h"
+#include "picotls/hpke.h"
 #include "picotls/fusion.h"
 
 #if defined(__clang__)
@@ -1225,6 +1226,7 @@ ptls_aead_algorithm_t ptls_fusion_aes128gcm = {"AES128-GCM",
                                                PTLS_AESGCM_IV_SIZE,
                                                PTLS_AESGCM_TAG_SIZE,
                                                {0}, // while it may work, no reason to support TLS/1.2
+                                               PTLS_HPKE_AEAD_AES_128_GCM,
                                                0,
                                                0,
                                                sizeof(struct aesgcm_context),
@@ -1238,6 +1240,7 @@ ptls_aead_algorithm_t ptls_fusion_aes256gcm = {"AES256-GCM",
                                                PTLS_AESGCM_IV_SIZE,
                                                PTLS_AESGCM_TAG_SIZE,
                                                {0}, // while it may work, no reason to support TLS/1.2
+                                               PTLS_HPKE_AEAD_AES_256_GCM,
                                                0,
                                                0,
                                                sizeof(struct aesgcm_context),
@@ -2147,6 +2150,7 @@ ptls_aead_algorithm_t ptls_non_temporal_aes128gcm = {"AES128-GCM",
                                                      PTLS_AESGCM_IV_SIZE,
                                                      PTLS_AESGCM_TAG_SIZE,
                                                      {PTLS_TLS12_AESGCM_FIXED_IV_SIZE, PTLS_TLS12_AESGCM_RECORD_IV_SIZE},
+                                                     PTLS_HPKE_AEAD_AES_128_GCM,
                                                      1,
                                                      PTLS_X86_CACHE_LINE_ALIGN_BITS,
                                                      sizeof(struct aesgcm_context),
@@ -2160,6 +2164,7 @@ ptls_aead_algorithm_t ptls_non_temporal_aes256gcm = {"AES256-GCM",
                                                      PTLS_AESGCM_IV_SIZE,
                                                      PTLS_AESGCM_TAG_SIZE,
                                                      {PTLS_TLS12_AESGCM_FIXED_IV_SIZE, PTLS_TLS12_AESGCM_RECORD_IV_SIZE},
+                                                     PTLS_HPKE_AEAD_AES_256_GCM,
                                                      1,
                                                      PTLS_X86_CACHE_LINE_ALIGN_BITS,
                                                      sizeof(struct aesgcm_context),

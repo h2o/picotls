@@ -1742,7 +1742,7 @@ void test_picotls_esni(ptls_key_exchange_context_t **keys)
     ctx_peer->esni = NULL;
 }
 
-void test_key_exchange(ptls_key_exchange_algorithm_t *client, ptls_key_exchange_algorithm_t *server)
+void test_ephemeral_key_exchange(ptls_key_exchange_algorithm_t *client, ptls_key_exchange_algorithm_t *server)
 {
     ptls_key_exchange_context_t *ctx;
     ptls_iovec_t client_secret, server_pubkey, server_secret;
@@ -1772,4 +1772,51 @@ void test_key_exchange(ptls_key_exchange_algorithm_t *client, ptls_key_exchange_
     ret = ctx->on_exchange(&ctx, 1, NULL, ptls_iovec_init(NULL, 0));
     ok(ret == 0);
     ok(ctx == NULL);
+}
+
+void test_static_key_exchange(ptls_key_exchange_algorithm_t *calgo, ptls_key_exchange_algorithm_t *salgo)
+{
+    /* we only have x25519 keys to test */
+    if (!(calgo->load != NULL && salgo->load != NULL && salgo->id == PTLS_GROUP_X25519))
+        return;
+    assert(calgo->id == salgo->id);
+
+    struct {
+        ptls_key_exchange_context_t *ctx;
+        ptls_iovec_t shared_secret;
+    } server = {{NULL}}, client = {{NULL}};
+    int ret;
+
+    /* load */
+    ret = salgo->load(salgo, &server.ctx, ptls_iovec_init(X25519_SERVER_RAWKEY, sizeof(X25519_SERVER_RAWKEY) - 1));
+    ok(ret == 0);
+    ok(server.ctx->pubkey.len == sizeof(X25519_SERVER_PUBKEY) - 1 &&
+       memcmp(server.ctx->pubkey.base, X25519_SERVER_PUBKEY, sizeof(X25519_SERVER_PUBKEY) - 1) == 0);
+    ret = calgo->load(calgo, &client.ctx, ptls_iovec_init(X25519_CLIENT_RAWKEY, sizeof(X25519_CLIENT_RAWKEY) - 1));
+    ok(ret == 0);
+    ok(client.ctx->pubkey.len == sizeof(X25519_CLIENT_PUBKEY) - 1 &&
+       memcmp(client.ctx->pubkey.base, X25519_CLIENT_PUBKEY, sizeof(X25519_CLIENT_PUBKEY) - 1) == 0);
+
+    /* generate shared secret on both sides */
+    ret = client.ctx->on_exchange(&client.ctx, 0, &client.shared_secret, server.ctx->pubkey);
+    ok(ret == 0);
+    ret = server.ctx->on_exchange(&server.ctx, 0, &server.shared_secret, client.ctx->pubkey);
+    ok(ret == 0);
+
+    ok(client.shared_secret.len == server.shared_secret.len &&
+       memcmp(client.shared_secret.base, server.shared_secret.base, client.shared_secret.len) == 0);
+
+    /* cleanup */
+    ret = server.ctx->on_exchange(&server.ctx, 1, NULL, ptls_iovec_init(NULL, 0));
+    ok(ret == 0);
+    free(server.shared_secret.base);
+    ret = client.ctx->on_exchange(&client.ctx, 1, NULL, ptls_iovec_init(NULL, 0));
+    ok(ret == 0);
+    free(client.shared_secret.base);
+}
+
+void test_key_exchange(ptls_key_exchange_algorithm_t *client, ptls_key_exchange_algorithm_t *server)
+{
+    test_ephemeral_key_exchange(client, server);
+    test_static_key_exchange(client, server);
 }

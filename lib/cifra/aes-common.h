@@ -25,6 +25,7 @@
 #include "modes.h"
 #include "sha2.h"
 #include "picotls.h"
+#include "picotls/hpke.h"
 #include "picotls/minicrypto.h"
 
 struct aesecb_context_t {
