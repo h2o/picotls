@@ -2856,8 +2856,8 @@ Exit:
     return ret;
 }
 
-static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, const uint8_t *src, const uint8_t *const end,
-                               ptls_handshake_properties_t *properties)
+static int decode_client_hello(ptls_context_t *ctx, struct st_ptls_client_hello_t *ch, const uint8_t *src, const uint8_t *const end,
+                               ptls_handshake_properties_t *properties, ptls_t *tls_cbarg)
 {
     uint16_t exttype = 0;
     int ret;
@@ -2918,9 +2918,9 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
     /* decode extensions */
     decode_extensions(src, end, PTLS_HANDSHAKE_TYPE_CLIENT_HELLO, &exttype, {
         ch->psk.is_last_extension = 0;
-        if (tls->ctx->on_extension != NULL &&
-            (ret = tls->ctx->on_extension->cb(tls->ctx->on_extension, tls, PTLS_HANDSHAKE_TYPE_CLIENT_HELLO, exttype,
-                                              ptls_iovec_init(src, end - src)) != 0))
+        if (ctx->on_extension != NULL && tls_cbarg != NULL &&
+            (ret = ctx->on_extension->cb(ctx->on_extension, tls_cbarg, PTLS_HANDSHAKE_TYPE_CLIENT_HELLO, exttype,
+                                         ptls_iovec_init(src, end - src)) != 0))
             goto Exit;
         switch (exttype) {
         case PTLS_EXTENSION_TYPE_SERVER_NAME:
@@ -3093,8 +3093,8 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
             ch->status_request = 1;
             break;
         default:
-            if (should_collect_unknown_extension(tls, properties, exttype)) {
-                if ((ret = collect_unknown_extension(tls, exttype, src, end, ch->unknown_extensions)) != 0)
+            if (tls_cbarg != NULL && should_collect_unknown_extension(tls_cbarg, properties, exttype)) {
+                if ((ret = collect_unknown_extension(tls_cbarg, exttype, src, end, ch->unknown_extensions)) != 0)
                     goto Exit;
             }
             break;
@@ -3329,8 +3329,8 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
     *ch = (struct st_ptls_client_hello_t){.unknown_extensions = {{UINT16_MAX}}};
 
     /* decode ClientHello */
-    if ((ret = decode_client_hello(tls, ch, message.base + PTLS_HANDSHAKE_HEADER_SIZE, message.base + message.len, properties)) !=
-        0)
+    if ((ret = decode_client_hello(tls->ctx, ch, message.base + PTLS_HANDSHAKE_HEADER_SIZE, message.base + message.len,
+                                   properties, tls)) != 0)
         goto Exit;
 
     /* bail out if CH cannot be handled as TLS 1.3, providing the application the raw CH and SNI, to help them fallback */
