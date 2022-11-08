@@ -1784,7 +1784,7 @@ void test_static_key_exchange(ptls_key_exchange_algorithm_t *calgo, ptls_key_exc
     struct {
         ptls_key_exchange_context_t *ctx;
         ptls_iovec_t shared_secret;
-    } server = {}, client = {};
+    } server = {{NULL}}, client = {{NULL}};
     int ret;
 
     /* load */
