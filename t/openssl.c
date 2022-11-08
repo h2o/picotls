@@ -311,6 +311,7 @@ int main(int argc, char **argv)
     ENGINE_register_all_digests();
 #endif
 
+
     subtest("bf", test_bf);
 
     subtest("key-exchange", test_key_exchanges);
