@@ -292,6 +292,13 @@ DEFINE_FFX_AES128_ALGORITHMS(openssl);
 DEFINE_FFX_CHACHA20_ALGORITHMS(openssl);
 #endif
 
+static void test_all_hpke(void)
+{
+#if PTLS_OPENSSL_HAVE_X25519
+    test_hpke(&ptls_openssl_hpke_kem_x25519sha256, &ptls_openssl_aes128gcm);
+#endif
+}
+
 int main(int argc, char **argv)
 {
     ptls_openssl_sign_certificate_t openssl_sign_certificate;
@@ -383,6 +390,9 @@ int main(int argc, char **argv)
     subtest("minicrypto vs.", test_picotls);
 
     esni_private_keys[0]->on_exchange(esni_private_keys, 1, NULL, ptls_iovec_init(NULL, 0));
+
+    subtest("hpke", test_all_hpke);
+
     int ret = done_testing();
 #if !defined(LIBRESSL_VERSION_NUMBER) && OPENSSL_VERSION_NUMBER >= 0x30000000L
     OSSL_PROVIDER_unload(dflt);
