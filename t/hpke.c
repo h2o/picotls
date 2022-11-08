@@ -45,7 +45,8 @@ void test_hpke(ptls_hpke_kem_t *kem, ptls_aead_algorithm_t *aead)
                                                   0x2a, 0xb4, 0xf8, 0x43, 0x31, 0xac, 0xc0, 0x2f, 0xc9, 0x7b, 0xab, 0xc5,
                                                   0x3a, 0x52, 0xae, 0x82, 0x18, 0xa3, 0x55, 0xa9, 0x6d, 0x87, 0x70, 0xac,
                                                   0x83, 0xd0, 0x7b, 0xea, 0x87, 0xe1, 0x3c, 0x51, 0x2a};
-    static const char *info = "Ode on a Grecian Urn", *cleartext = "Beauty is truth, truth beauty", *aad = "Count-0";
+#define TEST_HPKE_CLEAR_TEXT "Beauty is truth, truth beauty"
+    static const char *info = "Ode on a Grecian Urn", *cleartext = TEST_HPKE_CLEAR_TEXT, *aad = "Count-0";
     uint8_t secret[PTLS_MAX_DIGEST_SIZE];
     int ret;
 
@@ -70,7 +71,7 @@ void test_hpke(ptls_hpke_kem_t *kem, ptls_aead_algorithm_t *aead)
 
     { /* decryption */
         ptls_aead_context_t *dec;
-        uint8_t text_recovered[strlen(cleartext)];
+        uint8_t text_recovered[sizeof(TEST_HPKE_CLEAR_TEXT)];
         ret = key_schedule(kem, aead, &dec, 0, secret, ptls_iovec_init(info, strlen(info)));
         ok(ret == 0);
         ok(ptls_aead_decrypt(dec, text_recovered, expected_ciphertext, sizeof(expected_ciphertext), 0, aad, strlen(aad)) ==
