@@ -32,7 +32,6 @@ extern "C" {
 #include <openssl/x509.h>
 #include <openssl/opensslconf.h>
 #include "../picotls.h"
-#include "../picotls/hpke.h"
 
 #if OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)
 #if !defined(OPENSSL_NO_CHACHA) && !defined(OPENSSL_NO_POLY1305)

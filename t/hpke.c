@@ -25,7 +25,6 @@
 #include <assert.h>
 #include <string.h>
 #include "picotls.h"
-#include "picotls/hpke.h"
 #include "../deps/picotest/picotest.h"
 #include "test.h"
 #include "../lib/hpke.c"

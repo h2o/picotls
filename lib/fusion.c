@@ -46,7 +46,6 @@
 #include <nmmintrin.h>
 #include <wmmintrin.h>
 #include "picotls.h"
-#include "picotls/hpke.h"
 #include "picotls/fusion.h"
 
 #if defined(__clang__)

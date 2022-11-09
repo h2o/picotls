@@ -26,7 +26,6 @@
 #include "salsa20.h"
 #include "sha2.h"
 #include "picotls.h"
-#include "picotls/hpke.h"
 #include "picotls/minicrypto.h"
 
 struct chacha20_context_t {

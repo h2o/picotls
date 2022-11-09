@@ -24,7 +24,6 @@
 
 #include "picotls.h"
 #include "picotls/ffx.h"
-#include "picotls/hpke.h"
 
 /* raw private key and certificate using secp256v1 */
 #define SECP256R1_PRIVATE_KEY                                                                                                      \
