@@ -45,12 +45,13 @@ void test_hpke(ptls_hpke_kem_t *kem, ptls_aead_algorithm_t *aead)
                                                   0x2a, 0xb4, 0xf8, 0x43, 0x31, 0xac, 0xc0, 0x2f, 0xc9, 0x7b, 0xab, 0xc5,
                                                   0x3a, 0x52, 0xae, 0x82, 0x18, 0xa3, 0x55, 0xa9, 0x6d, 0x87, 0x70, 0xac,
                                                   0x83, 0xd0, 0x7b, 0xea, 0x87, 0xe1, 0x3c, 0x51, 0x2a};
-#define TEST_HPKE_CLEAR_TEXT "Beauty is truth, truth beauty"
-    static const char *info = "Ode on a Grecian Urn", *cleartext = TEST_HPKE_CLEAR_TEXT, *aad = "Count-0";
+#define CLEARTEXT "Beauty is truth, truth beauty"
+#define INFO "Ode on a Grecian Urn"
+#define AAD "Count-0"
     uint8_t secret[PTLS_MAX_DIGEST_SIZE];
     int ret;
 
-    assert(sizeof(expected_ciphertext) == strlen(cleartext) + aead->tag_size);
+    assert(sizeof(expected_ciphertext) == sizeof(CLEARTEXT) - 1 + aead->tag_size);
 
     /* derivation from DH shared secret */
     ret = dh_derive(kem, secret, ptls_iovec_init(X25519_CLIENT_PUBKEY, sizeof(X25519_CLIENT_PUBKEY) - 1),
@@ -62,20 +63,20 @@ void test_hpke(ptls_hpke_kem_t *kem, ptls_aead_algorithm_t *aead)
     { /* encryption */
         ptls_aead_context_t *enc;
         uint8_t ciphertext[sizeof(expected_ciphertext)];
-        ret = key_schedule(kem, aead, &enc, 1, secret, ptls_iovec_init(info, strlen(info)));
+        ret = key_schedule(kem, aead, &enc, 1, secret, ptls_iovec_init(INFO, sizeof(INFO) - 1));
         ok(ret == 0);
-        ptls_aead_encrypt(enc, ciphertext, cleartext, strlen(cleartext), 0, aad, strlen(aad));
+        ptls_aead_encrypt(enc, ciphertext, CLEARTEXT, sizeof(CLEARTEXT) - 1, 0, AAD, sizeof(AAD) - 1);
         ptls_aead_free(enc);
-        ok(memcmp(ciphertext, expected_ciphertext, sizeof(ciphertext)) == 0);
+        ok(memcmp(ciphertext, expected_ciphertext, sizeof(CLEARTEXT) - 1) == 0);
     }
 
     { /* decryption */
         ptls_aead_context_t *dec;
-        uint8_t text_recovered[sizeof(TEST_HPKE_CLEAR_TEXT)];
-        ret = key_schedule(kem, aead, &dec, 0, secret, ptls_iovec_init(info, strlen(info)));
+        uint8_t text_recovered[sizeof(CLEARTEXT) - 1];
+        ret = key_schedule(kem, aead, &dec, 0, secret, ptls_iovec_init(INFO, sizeof(INFO) - 1));
         ok(ret == 0);
-        ok(ptls_aead_decrypt(dec, text_recovered, expected_ciphertext, sizeof(expected_ciphertext), 0, aad, strlen(aad)) ==
-           strlen(cleartext));
+        ok(ptls_aead_decrypt(dec, text_recovered, expected_ciphertext, sizeof(expected_ciphertext), 0, AAD, sizeof(AAD) - 1) ==
+           sizeof(CLEARTEXT) - 1);
         ptls_aead_free(dec);
     }
 }
