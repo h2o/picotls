@@ -1903,3 +1903,15 @@ ptls_hpke_kem_t *ptls_openssl_hpke_kems[] = {&ptls_openssl_hpke_kem_p384sha384,
                                              &ptls_openssl_hpke_kem_x25519sha256,
 #endif
                                              &ptls_openssl_hpke_kem_p256sha256, NULL};
+
+ptls_hpke_cipher_suite_t ptls_openssl_hpke_aes128gcmsha256 = {&ptls_openssl_sha256, &ptls_openssl_aes128gcm};
+ptls_hpke_cipher_suite_t ptls_openssl_hpke_aes256gcmsha384 = {&ptls_openssl_sha384, &ptls_openssl_aes256gcm};
+#if PTLS_OPENSSL_HAVE_CHACHA20_POLY1305
+ptls_hpke_cipher_suite_t ptls_openssl_hpke_chacha20poly1305sha256 = {&ptls_openssl_sha256, &ptls_openssl_chacha20poly1305};
+#endif
+ptls_hpke_cipher_suite_t *ptls_opensl_hpke_cipher_suites[] = {&ptls_openssl_hpke_aes128gcmsha256,
+                                                              &ptls_openssl_hpke_aes256gcmsha384,
+#if PTLS_OPENSSL_HAVE_CHACHA20_POLY1305
+                                                              &ptls_openssl_hpke_chacha20poly1305sha256,
+#endif
+                                                              NULL};
