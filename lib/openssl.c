@@ -1044,6 +1044,9 @@ ptls_define_hash(sha256, SHA256_CTX, SHA256_Init, SHA256_Update, _sha256_final);
 #define _sha384_final(ctx, md) SHA384_Final((md), (ctx))
 ptls_define_hash(sha384, SHA512_CTX, SHA384_Init, SHA384_Update, _sha384_final);
 
+#define _sha512_final(ctx, md) SHA512_Final((md), (ctx))
+ptls_define_hash(sha512, SHA512_CTX, SHA512_Init, SHA512_Update, _sha512_final);
+
 static int sign_certificate(ptls_sign_certificate_t *_self, ptls_t *tls, uint16_t *selected_algorithm, ptls_buffer_t *outbuf,
                             ptls_iovec_t input, const uint16_t *algorithms, size_t num_algorithms)
 {
@@ -1784,6 +1787,8 @@ ptls_hash_algorithm_t ptls_openssl_sha256 = {PTLS_SHA256_BLOCK_SIZE, PTLS_SHA256
                                              PTLS_ZERO_DIGEST_SHA256};
 ptls_hash_algorithm_t ptls_openssl_sha384 = {PTLS_SHA384_BLOCK_SIZE, PTLS_SHA384_DIGEST_SIZE, sha384_create,
                                              PTLS_ZERO_DIGEST_SHA384};
+ptls_hash_algorithm_t ptls_openssl_sha512 = {PTLS_SHA512_BLOCK_SIZE, PTLS_SHA512_DIGEST_SIZE, sha512_create,
+                                             PTLS_ZERO_DIGEST_SHA512};
 ptls_cipher_suite_t ptls_openssl_aes128gcmsha256 = {.id = PTLS_CIPHER_SUITE_AES_128_GCM_SHA256,
                                                     .name = PTLS_CIPHER_SUITE_NAME_AES_128_GCM_SHA256,
                                                     .aead = &ptls_openssl_aes128gcm,
