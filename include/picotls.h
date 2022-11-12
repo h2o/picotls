@@ -501,6 +501,10 @@ typedef struct st_ptls_hash_context_t {
  */
 typedef const struct st_ptls_hash_algorithm_t {
     /**
+     * name of the hash algorithm
+     */
+    const char *name;
+    /**
      * block size
      */
     size_t block_size;
