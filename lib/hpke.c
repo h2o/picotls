@@ -34,8 +34,8 @@ static int build_suite_id(ptls_buffer_t *buf, ptls_hpke_kem_t *kem, ptls_hpke_ci
     } else {
         ptls_buffer_pushv(buf, "HPKE", 4);
         ptls_buffer_push16(buf, kem->id);
-        ptls_buffer_push16(buf, cipher->hash->hpke_id);
-        ptls_buffer_push16(buf, cipher->aead->hpke_id);
+        ptls_buffer_push16(buf, cipher->id.hkdf);
+        ptls_buffer_push16(buf, cipher->id.aead);
     }
 
     ret = 0;

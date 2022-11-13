@@ -33,8 +33,8 @@
 void test_hpke(ptls_hpke_kem_t *kem, ptls_hpke_cipher_suite_t *cipher)
 {
     assert(kem->id == PTLS_HPKE_KEM_X25519_SHA256);
-    assert(cipher->hash->hpke_id == PTLS_HPKE_HKDF_SHA256);
-    assert(cipher->aead->hpke_id == PTLS_HPKE_AEAD_AES_128_GCM);
+    assert(cipher->id.hkdf == PTLS_HPKE_HKDF_SHA256);
+    assert(cipher->id.aead == PTLS_HPKE_AEAD_AES_128_GCM);
 
     static const uint8_t dh[] = {0xb3, 0xb5, 0xc1, 0x9e, 0xab, 0x3f, 0x08, 0x8a, 0xc1, 0x8f, 0x23, 0xf7, 0x74, 0xff, 0x64, 0x14,
                                  0xba, 0x4f, 0xde, 0x45, 0x40, 0x4d, 0x10, 0x08, 0x5e, 0xfc, 0x3e, 0x4d, 0xc9, 0xc7, 0x2e, 0x35},

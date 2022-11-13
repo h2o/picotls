@@ -228,7 +228,6 @@ ptls_aead_algorithm_t ptls_minicrypto_chacha20poly1305 = {
     PTLS_CHACHA20POLY1305_IV_SIZE,
     PTLS_CHACHA20POLY1305_TAG_SIZE,
     {PTLS_TLS12_CHACHAPOLY_FIXED_IV_SIZE, PTLS_TLS12_CHACHAPOLY_RECORD_IV_SIZE},
-    PTLS_HPKE_AEAD_CHACHA20POLY1305,
     0,
     0,
     sizeof(struct chacha20poly1305_context_t),

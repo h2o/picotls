@@ -1782,7 +1782,6 @@ ptls_aead_algorithm_t ptls_openssl_aes128gcm = {"AES128-GCM",
                                                 PTLS_AESGCM_IV_SIZE,
                                                 PTLS_AESGCM_TAG_SIZE,
                                                 {PTLS_TLS12_AESGCM_FIXED_IV_SIZE, PTLS_TLS12_AESGCM_RECORD_IV_SIZE},
-                                                PTLS_HPKE_AEAD_AES_128_GCM,
                                                 0,
                                                 0,
                                                 sizeof(struct aead_crypto_context_t),
@@ -1802,14 +1801,13 @@ ptls_aead_algorithm_t ptls_openssl_aes256gcm = {"AES256-GCM",
                                                 PTLS_AESGCM_IV_SIZE,
                                                 PTLS_AESGCM_TAG_SIZE,
                                                 {PTLS_TLS12_AESGCM_FIXED_IV_SIZE, PTLS_TLS12_AESGCM_RECORD_IV_SIZE},
-                                                PTLS_HPKE_AEAD_AES_256_GCM,
                                                 0,
                                                 0,
                                                 sizeof(struct aead_crypto_context_t),
                                                 aead_aes256gcm_setup_crypto};
-ptls_hash_algorithm_t ptls_openssl_sha256 = {PTLS_SHA256_BLOCK_SIZE, PTLS_SHA256_DIGEST_SIZE, PTLS_HPKE_HKDF_SHA256, sha256_create,
+ptls_hash_algorithm_t ptls_openssl_sha256 = {PTLS_SHA256_BLOCK_SIZE, PTLS_SHA256_DIGEST_SIZE, sha256_create,
                                              PTLS_ZERO_DIGEST_SHA256};
-ptls_hash_algorithm_t ptls_openssl_sha384 = {PTLS_SHA384_BLOCK_SIZE, PTLS_SHA384_DIGEST_SIZE, PTLS_HPKE_HKDF_SHA384, sha384_create,
+ptls_hash_algorithm_t ptls_openssl_sha384 = {PTLS_SHA384_BLOCK_SIZE, PTLS_SHA384_DIGEST_SIZE, sha384_create,
                                              PTLS_ZERO_DIGEST_SHA384};
 ptls_cipher_suite_t ptls_openssl_aes128gcmsha256 = {.id = PTLS_CIPHER_SUITE_AES_128_GCM_SHA256,
                                                     .name = PTLS_CIPHER_SUITE_NAME_AES_128_GCM_SHA256,
@@ -1852,7 +1850,6 @@ ptls_aead_algorithm_t ptls_openssl_chacha20poly1305 = {"CHACHA20-POLY1305",
                                                        PTLS_CHACHA20POLY1305_IV_SIZE,
                                                        PTLS_CHACHA20POLY1305_TAG_SIZE,
                                                        {PTLS_TLS12_CHACHAPOLY_FIXED_IV_SIZE, PTLS_TLS12_CHACHAPOLY_RECORD_IV_SIZE},
-                                                       PTLS_HPKE_AEAD_CHACHA20POLY1305,
                                                        0,
                                                        0,
                                                        sizeof(struct aead_crypto_context_t),
@@ -1904,10 +1901,19 @@ ptls_hpke_kem_t *ptls_openssl_hpke_kems[] = {&ptls_openssl_hpke_kem_p384sha384,
 #endif
                                              &ptls_openssl_hpke_kem_p256sha256, NULL};
 
-ptls_hpke_cipher_suite_t ptls_openssl_hpke_aes128gcmsha256 = {&ptls_openssl_sha256, &ptls_openssl_aes128gcm};
-ptls_hpke_cipher_suite_t ptls_openssl_hpke_aes256gcmsha384 = {&ptls_openssl_sha384, &ptls_openssl_aes256gcm};
+ptls_hpke_cipher_suite_t ptls_openssl_hpke_aes128gcmsha256 = {
+    .id = {.hkdf = PTLS_HPKE_HKDF_SHA256, .aead = PTLS_HPKE_AEAD_AES_128_GCM},
+    .hash = &ptls_openssl_sha256,
+    .aead = &ptls_openssl_aes128gcm};
+ptls_hpke_cipher_suite_t ptls_openssl_hpke_aes256gcmsha384 = {
+    .id = {.hkdf = PTLS_HPKE_HKDF_SHA384, .aead = PTLS_HPKE_AEAD_AES_256_GCM},
+    .hash = &ptls_openssl_sha384,
+    .aead = &ptls_openssl_aes256gcm};
 #if PTLS_OPENSSL_HAVE_CHACHA20_POLY1305
-ptls_hpke_cipher_suite_t ptls_openssl_hpke_chacha20poly1305sha256 = {&ptls_openssl_sha256, &ptls_openssl_chacha20poly1305};
+ptls_hpke_cipher_suite_t ptls_openssl_hpke_chacha20poly1305sha256 = {
+    .id = {.hkdf = PTLS_HPKE_HKDF_SHA256, .aead = PTLS_HPKE_AEAD_CHACHA20POLY1305},
+    .hash = &ptls_openssl_sha256,
+    .aead = &ptls_openssl_chacha20poly1305};
 #endif
 ptls_hpke_cipher_suite_t *ptls_opensl_hpke_cipher_suites[] = {&ptls_openssl_hpke_aes128gcmsha256,
                                                               &ptls_openssl_hpke_aes256gcmsha384,
