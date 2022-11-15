@@ -124,9 +124,6 @@ static int dh_derive(ptls_hpke_kem_t *kem, void *secret, ptls_iovec_t pk_s, ptls
 
 static int dh_encap(ptls_hpke_kem_t *kem, void *secret, ptls_iovec_t *pk_s, ptls_iovec_t pk_r)
 {
-    /* ATM support only the ones that use the identical encoding */
-    assert(kem->keyex->id == PTLS_GROUP_X25519 || kem->keyex->id == PTLS_GROUP_X448);
-
     ptls_iovec_t dh = {NULL};
     int ret;
 
