@@ -1885,6 +1885,10 @@ ptls_hpke_cipher_suite_t ptls_openssl_hpke_aes128gcmsha256 = {
     .id = {.hkdf = PTLS_HPKE_HKDF_SHA256, .aead = PTLS_HPKE_AEAD_AES_128_GCM},
     .hash = &ptls_openssl_sha256,
     .aead = &ptls_openssl_aes128gcm};
+ptls_hpke_cipher_suite_t ptls_openssl_hpke_aes128gcmsha512 = {
+    .id = {.hkdf = PTLS_HPKE_HKDF_SHA512, .aead = PTLS_HPKE_AEAD_AES_128_GCM},
+    .hash = &ptls_openssl_sha512,
+    .aead = &ptls_openssl_aes128gcm};
 ptls_hpke_cipher_suite_t ptls_openssl_hpke_aes256gcmsha384 = {
     .id = {.hkdf = PTLS_HPKE_HKDF_SHA384, .aead = PTLS_HPKE_AEAD_AES_256_GCM},
     .hash = &ptls_openssl_sha384,

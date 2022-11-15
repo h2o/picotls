@@ -105,6 +105,7 @@ extern ptls_hpke_kem_t ptls_openssl_hpke_kem_x25519sha256;
 extern ptls_hpke_kem_t *ptls_openssl_hpke_kems[];
 
 extern ptls_hpke_cipher_suite_t ptls_openssl_hpke_aes128gcmsha256;
+extern ptls_hpke_cipher_suite_t ptls_openssl_hpke_aes128gcmsha512;
 extern ptls_hpke_cipher_suite_t ptls_openssl_hpke_aes256gcmsha384;
 #if PTLS_OPENSSL_HAVE_CHACHA20_POLY1305
 extern ptls_hpke_cipher_suite_t ptls_openssl_hpke_chacha20poly1305sha256;

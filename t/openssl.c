@@ -328,6 +328,8 @@ static void test_all_hpke(void)
 #if PTLS_OPENSSL_HAVE_X25519
     test_hpke(&ptls_openssl_hpke_kem_x25519sha256, &ptls_openssl_hpke_aes128gcmsha256);
 #endif
+    test_hpke(&ptls_openssl_hpke_kem_p256sha256, &ptls_openssl_hpke_aes128gcmsha256);
+    test_hpke(&ptls_openssl_hpke_kem_p256sha256, &ptls_openssl_hpke_aes128gcmsha512);
 }
 
 int main(int argc, char **argv)
