@@ -575,7 +575,7 @@ typedef const struct st_ptls_hpke_kem_t {
     ptls_hash_algorithm_t *hash;
 } ptls_hpke_kem_t;
 
-typedef const struct st_ptls_hpke_cipher_suite_id_t {
+typedef struct st_ptls_hpke_cipher_suite_id_t {
     uint16_t kdf;
     uint16_t aead;
 } ptls_hpke_cipher_suite_id_t;
