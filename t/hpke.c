@@ -43,7 +43,7 @@ void test_one_hpke(void)
     static const struct {
         struct {
             uint16_t kem;
-            uint16_t hkdf;
+            uint16_t kdf;
             uint16_t aead;
         } id;
         struct {
@@ -111,7 +111,7 @@ void test_one_hpke(void)
 
     /* find the corresponding test vector or bail out if not found */
     for (test = all;
-         !(test->id.kem == test_kem->id && test->id.hkdf == test_cipher->id.hkdf && test->id.aead == test_cipher->id.aead);
+         !(test->id.kem == test_kem->id && test->id.kdf == test_cipher->id.kdf && test->id.aead == test_cipher->id.aead);
          ++test) {
         if (test->id.kem == 0) {
             note("no test vector for given kem / cipher");
