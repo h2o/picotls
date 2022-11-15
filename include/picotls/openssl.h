@@ -110,7 +110,7 @@ extern ptls_hpke_cipher_suite_t ptls_openssl_hpke_aes256gcmsha384;
 #if PTLS_OPENSSL_HAVE_CHACHA20_POLY1305
 extern ptls_hpke_cipher_suite_t ptls_openssl_hpke_chacha20poly1305sha256;
 #endif
-extern ptls_hpke_cipher_suite_t *ptls_opensl_hpke_cipher_suites[];
+extern ptls_hpke_cipher_suite_t *ptls_openssl_hpke_cipher_suites[];
 
 void ptls_openssl_random_bytes(void *buf, size_t len);
 /**
