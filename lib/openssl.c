@@ -1882,20 +1882,20 @@ ptls_hpke_kem_t *ptls_openssl_hpke_kems[] = {&ptls_openssl_hpke_kem_p384sha384,
                                              &ptls_openssl_hpke_kem_p256sha256, NULL};
 
 ptls_hpke_cipher_suite_t ptls_openssl_hpke_aes128gcmsha256 = {
-    .id = {.hkdf = PTLS_HPKE_HKDF_SHA256, .aead = PTLS_HPKE_AEAD_AES_128_GCM},
+    .id = {.kdf = PTLS_HPKE_HKDF_SHA256, .aead = PTLS_HPKE_AEAD_AES_128_GCM},
     .hash = &ptls_openssl_sha256,
     .aead = &ptls_openssl_aes128gcm};
 ptls_hpke_cipher_suite_t ptls_openssl_hpke_aes128gcmsha512 = {
-    .id = {.hkdf = PTLS_HPKE_HKDF_SHA512, .aead = PTLS_HPKE_AEAD_AES_128_GCM},
+    .id = {.kdf = PTLS_HPKE_HKDF_SHA512, .aead = PTLS_HPKE_AEAD_AES_128_GCM},
     .hash = &ptls_openssl_sha512,
     .aead = &ptls_openssl_aes128gcm};
 ptls_hpke_cipher_suite_t ptls_openssl_hpke_aes256gcmsha384 = {
-    .id = {.hkdf = PTLS_HPKE_HKDF_SHA384, .aead = PTLS_HPKE_AEAD_AES_256_GCM},
+    .id = {.kdf = PTLS_HPKE_HKDF_SHA384, .aead = PTLS_HPKE_AEAD_AES_256_GCM},
     .hash = &ptls_openssl_sha384,
     .aead = &ptls_openssl_aes256gcm};
 #if PTLS_OPENSSL_HAVE_CHACHA20_POLY1305
 ptls_hpke_cipher_suite_t ptls_openssl_hpke_chacha20poly1305sha256 = {
-    .id = {.hkdf = PTLS_HPKE_HKDF_SHA256, .aead = PTLS_HPKE_AEAD_CHACHA20POLY1305},
+    .id = {.kdf = PTLS_HPKE_HKDF_SHA256, .aead = PTLS_HPKE_AEAD_CHACHA20POLY1305},
     .hash = &ptls_openssl_sha256,
     .aead = &ptls_openssl_chacha20poly1305};
 #endif
