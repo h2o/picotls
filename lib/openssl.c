@@ -612,30 +612,6 @@ Exit:
     return ret;
 }
 
-/* loads raw private key; only available on OpenSSL 3.0 */
-#if !defined(LIBRESSL_VERSION_NUMBER) && OPENSSL_VERSION_NUMBER >= 0x30000000L
-static int evp_keyex_load(ptls_key_exchange_algorithm_t *algo, ptls_key_exchange_context_t **ctx, ptls_iovec_t privkey)
-{
-    EVP_PKEY *pkey = NULL;
-    int ret;
-
-    if ((pkey = EVP_PKEY_new_raw_private_key((int)algo->data, NULL, privkey.base, privkey.len)) == NULL) {
-        ret = PTLS_ERROR_INCOMPATIBLE_KEY;
-        goto Exit;
-    }
-    if ((ret = evp_keyex_init(algo, ctx, pkey)) != 0)
-        goto Exit;
-    pkey = NULL;
-
-Exit:
-    if (pkey != NULL)
-        EVP_PKEY_free(pkey);
-    return ret;
-}
-#else
-#define evp_keyex_load NULL
-#endif
-
 static int evp_keyex_exchange(ptls_key_exchange_algorithm_t *algo, ptls_iovec_t *outpubkey, ptls_iovec_t *secret,
                               ptls_iovec_t peerkey)
 {
@@ -1766,7 +1742,6 @@ ptls_key_exchange_algorithm_t ptls_openssl_secp521r1 = {.id = PTLS_GROUP_SECP521
 ptls_key_exchange_algorithm_t ptls_openssl_x25519 = {.id = PTLS_GROUP_X25519,
                                                      .name = PTLS_GROUP_NAME_X25519,
                                                      .create = evp_keyex_create,
-                                                     .load = evp_keyex_load,
                                                      .exchange = evp_keyex_exchange,
                                                      .data = NID_X25519};
 #endif

@@ -353,10 +353,6 @@ typedef const struct st_ptls_key_exchange_algorithm_t {
     int (*exchange)(const struct st_ptls_key_exchange_algorithm_t *algo, ptls_iovec_t *pubkey, ptls_iovec_t *secret,
                     ptls_iovec_t peerkey);
     /**
-     * creates a context using given private key. This optional callback is used for (semi-)static key exchange.
-     */
-    int (*load)(const struct st_ptls_key_exchange_algorithm_t *algo, ptls_key_exchange_context_t **ctx, ptls_iovec_t privkey);
-    /**
      * crypto-specific data
      */
     intptr_t data;
