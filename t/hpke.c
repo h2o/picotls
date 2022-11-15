@@ -29,8 +29,11 @@
 #include "test.h"
 #include "../lib/hpke.c"
 
-/* RFC 9180 A.1.1 */
-void test_hpke(ptls_hpke_kem_t *kem, ptls_hpke_cipher_suite_t *cipher)
+static ptls_hpke_kem_t *test_kem;
+static ptls_hpke_cipher_suite_t *test_cipher;
+
+
+void test_one_hpke(void)
 {
     static const uint8_t cleartext[] = {0x42, 0x65, 0x61, 0x75, 0x74, 0x79, 0x20, 0x69, 0x73, 0x20, 0x74, 0x72, 0x75, 0x74, 0x68,
                                         0x2c, 0x20, 0x74, 0x72, 0x75, 0x74, 0x68, 0x20, 0x62, 0x65, 0x61, 0x75, 0x74, 0x79},
@@ -103,43 +106,60 @@ void test_hpke(ptls_hpke_kem_t *kem, ptls_hpke_cipher_suite_t *cipher)
           .expected_ciphertext = {0xd3, 0xcf, 0x49, 0x84, 0x93, 0x14, 0x84, 0xa0, 0x80, 0xf7, 0x4c, 0x1b, 0xb2, 0xa6, 0x78,
                                   0x27, 0x00, 0xdc, 0x1f, 0xef, 0x9a, 0xbe, 0x84, 0x42, 0xe4, 0x4a, 0x6f, 0x09, 0x04, 0x4c,
                                   0x88, 0x90, 0x72, 0x00, 0xb3, 0x32, 0x00, 0x35, 0x43, 0x75, 0x4e, 0xb5, 0x19, 0x17, 0xba}},
-         {{0}}},
-      *test;
+            {{0}}}, *test;
     int ret;
 
     /* find the corresponding test vector or bail out if not found */
-    for (test = all; !(test->id.kem == kem->id && test->id.hkdf == cipher->id.hkdf && test->id.aead == cipher->id.aead); ++test) {
-        if (test->id.kem == 0)
+    for (test = all;
+         !(test->id.kem == test_kem->id && test->id.hkdf == test_cipher->id.hkdf && test->id.aead == test_cipher->id.aead);
+         ++test) {
+        if (test->id.kem == 0) {
+            note("no test vector for given kem / cipher");
             return;
+        }
     }
 
     { /* derivation from DH shared secret */
         uint8_t secret[PTLS_MAX_DIGEST_SIZE];
-        ret = dh_derive(kem, secret, ptls_iovec_init(test->client_pubkey.bytes, test->client_pubkey.len),
+        ret = dh_derive(test_kem, secret, ptls_iovec_init(test->client_pubkey.bytes, test->client_pubkey.len),
                         ptls_iovec_init(test->server_pubkey.bytes, test->server_pubkey.len),
                         ptls_iovec_init(test->dh.bytes, test->dh.len));
         ok(ret == 0);
-        ok(memcmp(secret, test->expected_secret, kem->hash->digest_size) == 0);
+        ok(memcmp(secret, test->expected_secret, test_kem->hash->digest_size) == 0);
     }
 
     { /* encryption */
         ptls_aead_context_t *enc;
-        uint8_t ciphertext[sizeof(cleartext) + cipher->aead->tag_size];
-        ret = key_schedule(kem, cipher, &enc, 1, test->expected_secret, ptls_iovec_init(info, sizeof(info)));
+        uint8_t ciphertext[sizeof(cleartext) + 32];
+        ret = key_schedule(test_kem, test_cipher, &enc, 1, test->expected_secret, ptls_iovec_init(info, sizeof(info)));
         ok(ret == 0);
         ptls_aead_encrypt(enc, ciphertext, cleartext, sizeof(cleartext), 0, aad, sizeof(aad));
         ptls_aead_free(enc);
-        ok(memcmp(ciphertext, test->expected_ciphertext, sizeof(ciphertext)) == 0);
+        ok(memcmp(ciphertext, test->expected_ciphertext, sizeof(cleartext) + test_cipher->aead->tag_size) == 0);
     }
 
     { /* decryption */
         ptls_aead_context_t *dec;
         uint8_t text_recovered[sizeof(cleartext)];
-        ret = key_schedule(kem, cipher, &dec, 0, test->expected_secret, ptls_iovec_init(info, sizeof(info)));
+        ret = key_schedule(test_kem, test_cipher, &dec, 0, test->expected_secret, ptls_iovec_init(info, sizeof(info)));
         ok(ret == 0);
-        ok(ptls_aead_decrypt(dec, text_recovered, test->expected_ciphertext, sizeof(text_recovered) + cipher->aead->tag_size, 0,
+        ok(ptls_aead_decrypt(dec, text_recovered, test->expected_ciphertext, sizeof(text_recovered) + test_cipher->aead->tag_size, 0,
                              aad, sizeof(aad)) == sizeof(cleartext));
         ptls_aead_free(dec);
         ok(memcmp(text_recovered, cleartext, sizeof(cleartext)) == 0);
+    }
+}
+
+void test_hpke(ptls_hpke_kem_t **all_kems, ptls_hpke_cipher_suite_t **all_ciphers)
+{
+
+    for (ptls_hpke_kem_t **kem = all_kems; *kem != NULL; ++kem) {
+        for (ptls_hpke_cipher_suite_t **cipher = all_ciphers; *cipher != NULL; ++cipher) {
+            char namebuf[64];
+            sprintf(namebuf, "%s-%s/%s-%s", (*kem)->keyex->name, (*kem)->hash->name, (*cipher)->hash->name, (*cipher)->aead->name);
+            test_kem = *kem;
+            test_cipher = *cipher;
+            subtest(namebuf, test_one_hpke);
+        }
     }
 }
