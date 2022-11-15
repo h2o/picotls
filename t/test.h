@@ -24,7 +24,6 @@
 
 #include "picotls.h"
 #include "picotls/ffx.h"
-#include "picotls/hpke.h"
 
 /* raw private key and certificate using secp256v1 */
 #define SECP256R1_PRIVATE_KEY                                                                                                      \
@@ -65,20 +64,6 @@
     "KEY-----\nMHcCAQEEIGrRVTfTXuOVewLt/g+Ugvg9XW/g4lGXrkZ8fdYaYuJCoAoGCCqGSM49\nAwEHoUQDQgAEPu73EON1B6j7PvxiUCSVoGFu/"            \
     "2tjD6P9zDM20LEtVbqwBr20KYLG\n2e5mhKljlES+BOfuz6vCyd1A5siJiO2Uhg==\n-----END EC PRIVATE KEY-----\n"
 
-/* vectors come from RFC 9180 A.1.1 */
-#define X25519_SERVER_RAWKEY                                                                                                       \
-    "\x46\x12\xc5\x50\x26\x3f\xc8\xad\x58\x37\x5d\xf3\xf5\x57\xaa\xc5\x31\xd2\x68\x50\x90\x3e\x55\xa9\xf2\x3f\x21\xd8\x53\x4e\x8a" \
-    "\xc8"
-#define X25519_SERVER_PUBKEY                                                                                                       \
-    "\x39\x48\xcf\xe0\xad\x1d\xdb\x69\x5d\x78\x0e\x59\x07\x71\x95\xda\x6c\x56\x50\x6b\x02\x73\x29\x79\x4a\xb0\x2b\xca\x80\x81\x5c" \
-    "\x4d"
-#define X25519_CLIENT_RAWKEY                                                                                                       \
-    "\x52\xc4\xa7\x58\xa8\x02\xcd\x8b\x93\x6e\xce\xea\x31\x44\x32\x79\x8d\x5b\xaf\x2d\x7e\x92\x35\xdc\x08\x4a\xb1\xb9\xcf\xa2\xf7" \
-    "\x36"
-#define X25519_CLIENT_PUBKEY                                                                                                       \
-    "\x37\xfd\xa3\x56\x7b\xdb\xd6\x28\xe8\x86\x68\xc3\xc8\xd7\xe9\x7d\x1d\x12\x53\xb6\xd4\xea\x6d\x44\xc1\x50\xf7\x41\xf1\xbf\x44" \
-    "\x31"
-
 extern ptls_context_t *ctx, *ctx_peer;
 extern ptls_verify_certificate_t *verify_certificate;
 
@@ -118,6 +103,6 @@ extern struct st_ptls_ffx_test_variants_t ffx_variants[7];
 void test_key_exchange(ptls_key_exchange_algorithm_t *client, ptls_key_exchange_algorithm_t *server);
 void test_picotls(void);
 
-void test_hpke(ptls_hpke_kem_t *kem, ptls_aead_algorithm_t *aead);
+void test_hpke(ptls_hpke_kem_t **all_kems, ptls_hpke_cipher_suite_t **all_ciphers);
 
 #endif

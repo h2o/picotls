@@ -100,6 +100,9 @@ extern "C" {
 #define PTLS_SHA384_BLOCK_SIZE 128
 #define PTLS_SHA384_DIGEST_SIZE 48
 
+#define PTLS_SHA512_BLOCK_SIZE 128
+#define PTLS_SHA512_DIGEST_SIZE 64
+
 #define PTLS_MAX_SECRET_SIZE 32
 #define PTLS_MAX_IV_SIZE 16
 #define PTLS_MAX_DIGEST_SIZE 64
@@ -152,6 +155,21 @@ extern "C" {
 #define PTLS_SIGNATURE_RSA_PSS_RSAE_SHA384 0x0805
 #define PTLS_SIGNATURE_RSA_PSS_RSAE_SHA512 0x0806
 #define PTLS_SIGNATURE_ED25519 0x0807
+
+/* HPKE */
+#define PTLS_HPKE_MODE_BASE 0
+#define PTLS_HPKE_MODE_PSK 1
+#define PTLS_HPKE_MODE_AUTH 2
+#define PTLS_HPKE_MODE_AUTH_PSK 3
+#define PTLS_HPKE_KEM_P256_SHA256 16
+#define PTLS_HPKE_KEM_P384_SHA384 17
+#define PTLS_HPKE_KEM_X25519_SHA256 32
+#define PTLS_HPKE_HKDF_SHA256 1
+#define PTLS_HPKE_HKDF_SHA384 2
+#define PTLS_HPKE_HKDF_SHA512 3
+#define PTLS_HPKE_AEAD_AES_128_GCM 1
+#define PTLS_HPKE_AEAD_AES_256_GCM 2
+#define PTLS_HPKE_AEAD_CHACHA20POLY1305 3
 
 /* ESNI */
 #define PTLS_ESNI_VERSION_DRAFT03 0xff02
@@ -264,6 +282,14 @@ extern "C" {
             0xfb, 0xd5, 0x1a, 0xd2, 0xf1, 0x48, 0x98, 0xb9, 0x5b                                                                   \
     }
 
+#define PTLS_ZERO_DIGEST_SHA512                                                                                                    \
+    {                                                                                                                              \
+        0xcf, 0x83, 0xe1, 0x35, 0x7e, 0xef, 0xb8, 0xbd, 0xf1, 0x54, 0x28, 0x50, 0xd6, 0x6d, 0x80, 0x07, 0xd6, 0x20, 0xe4, 0x05,    \
+            0x0b, 0x57, 0x15, 0xdc, 0x83, 0xf4, 0xa9, 0x21, 0xd3, 0x6c, 0xe9, 0xce, 0x47, 0xd0, 0xd1, 0x3c, 0x5d, 0x85, 0xf2,      \
+            0xb0, 0xff, 0x83, 0x18, 0xd2, 0x87, 0x7e, 0xec, 0x2f, 0x63, 0xb9, 0x31, 0xbd, 0x47, 0x41, 0x7a, 0x81, 0xa5, 0x38,      \
+            0x32, 0x7a, 0xf9, 0x27, 0xda, 0x3e                                                                                     \
+    }
+
 #define PTLS_TO__STR(n) #n
 #define PTLS_TO_STR(n) PTLS_TO__STR(n)
 
@@ -326,10 +352,6 @@ typedef const struct st_ptls_key_exchange_algorithm_t {
      */
     int (*exchange)(const struct st_ptls_key_exchange_algorithm_t *algo, ptls_iovec_t *pubkey, ptls_iovec_t *secret,
                     ptls_iovec_t peerkey);
-    /**
-     * creates a context using given private key. This optional callback is used for (semi-)static key exchange.
-     */
-    int (*load)(const struct st_ptls_key_exchange_algorithm_t *algo, ptls_key_exchange_context_t **ctx, ptls_iovec_t privkey);
     /**
      * crypto-specific data
      */
@@ -435,10 +457,6 @@ typedef const struct st_ptls_aead_algorithm_t {
         size_t record_iv_size;
     } tls12;
     /**
-     * HPKE AEAD ID (RFC 9180 section 7.3)
-     */
-    uint16_t hpke_id;
-    /**
      * if encrypted bytes are going to be written using non-temporal store instructions (i.e., skip cache)
      */
     unsigned non_temporal : 1;
@@ -498,6 +516,10 @@ typedef struct st_ptls_hash_context_t {
  */
 typedef const struct st_ptls_hash_algorithm_t {
     /**
+     * name of the hash algorithm
+     */
+    const char *name;
+    /**
      * block size
      */
     size_t block_size;
@@ -505,10 +527,6 @@ typedef const struct st_ptls_hash_algorithm_t {
      * digest size
      */
     size_t digest_size;
-    /**
-     * HPKE KDF ID (RFC 9180 section 7.2)
-     */
-    uint16_t hpke_id;
     /**
      * constructor that creates the hash context
      */
@@ -547,6 +565,24 @@ typedef struct st_ptls_message_emitter_t {
     int (*begin_message)(struct st_ptls_message_emitter_t *self);
     int (*commit_message)(struct st_ptls_message_emitter_t *self);
 } ptls_message_emitter_t;
+
+/**
+ * HPKE KEM
+ */
+typedef const struct st_ptls_hpke_kem_t {
+    uint16_t id;
+    ptls_key_exchange_algorithm_t *keyex;
+    ptls_hash_algorithm_t *hash;
+} ptls_hpke_kem_t;
+
+typedef const struct st_ptls_hpke_cipher_suite_t {
+    struct {
+        uint16_t hkdf;
+        uint16_t aead;
+    } id;
+    ptls_hash_algorithm_t *hash;
+    ptls_aead_algorithm_t *aead;
+} ptls_hpke_cipher_suite_t;
 
 #define PTLS_CALLBACK_TYPE0(ret, name)                                                                                             \
     typedef struct st_ptls_##name##_t {                                                                                            \
@@ -1607,6 +1643,18 @@ int ptls_server_name_is_ipaddr(const char *name);
  * malloc.  It is the responsibility of the user to free them when discarding the TLS context.
  */
 int ptls_load_certificates(ptls_context_t *ctx, char const *cert_pem_file);
+/**
+ * SetupBaseS function of RFC 9180. Given `kem`, `algo`, `info`, and receiver's public key, returns an ephemeral public key and an
+ * AEAD context used for encrypting data.
+ */
+int ptls_hpke_setup_base_s(ptls_hpke_kem_t *kem, ptls_hpke_cipher_suite_t *cipher, ptls_iovec_t *pk_s, ptls_aead_context_t **ctx,
+                           ptls_iovec_t pk_r, ptls_iovec_t info);
+/**
+ * SetupBaseR function of RFC 9180. Given `kem`, `algo`, `info`, receiver's private key (`keyex`), and the esnder's public key,
+ * returns the AEAD context to be used for decrypting data.
+ */
+int ptls_hpke_setup_base_r(ptls_hpke_kem_t *kem, ptls_hpke_cipher_suite_t *cipher, ptls_key_exchange_context_t *keyex,
+                           ptls_aead_context_t **ctx, ptls_iovec_t pk_s, ptls_iovec_t info);
 /**
  *
  */

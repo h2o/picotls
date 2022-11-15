@@ -20,22 +20,22 @@
  * IN THE SOFTWARE.
  */
 #include <stdlib.h>
-#include "picotls/hpke.h"
+#include "picotls.h"
 
 #define HPKE_V1_LABEL "HPKE-v1"
 
-static int build_suite_id(ptls_buffer_t *buf, ptls_hpke_kem_t *kem, const uint16_t *aead_id)
+static int build_suite_id(ptls_buffer_t *buf, ptls_hpke_kem_t *kem, ptls_hpke_cipher_suite_t *cipher)
 {
     int ret;
 
-    if (aead_id == NULL) {
+    if (cipher == NULL) {
         ptls_buffer_pushv(buf, "KEM", 3);
         ptls_buffer_push16(buf, kem->id);
     } else {
         ptls_buffer_pushv(buf, "HPKE", 4);
         ptls_buffer_push16(buf, kem->id);
-        ptls_buffer_push16(buf, kem->hash->hpke_id);
-        ptls_buffer_push16(buf, *aead_id);
+        ptls_buffer_push16(buf, cipher->id.hkdf);
+        ptls_buffer_push16(buf, cipher->id.aead);
     }
 
     ret = 0;
@@ -44,8 +44,8 @@ Exit:
     return ret;
 }
 
-static int labeled_extract(ptls_hpke_kem_t *kem, void *output, ptls_iovec_t salt, const char *label, ptls_iovec_t ikm,
-                           const uint16_t *aead_id)
+static int labeled_extract(ptls_hpke_kem_t *kem, ptls_hpke_cipher_suite_t *cipher, void *output, ptls_iovec_t salt,
+                           const char *label, ptls_iovec_t ikm)
 {
     ptls_buffer_t labeled_ikm;
     uint8_t labeled_ikm_smallbuf[64];
@@ -54,20 +54,21 @@ static int labeled_extract(ptls_hpke_kem_t *kem, void *output, ptls_iovec_t salt
     ptls_buffer_init(&labeled_ikm, labeled_ikm_smallbuf, sizeof(labeled_ikm_smallbuf));
 
     ptls_buffer_pushv(&labeled_ikm, HPKE_V1_LABEL, strlen(HPKE_V1_LABEL));
-    if ((ret = build_suite_id(&labeled_ikm, kem, aead_id)) != 0)
+    if ((ret = build_suite_id(&labeled_ikm, kem, cipher)) != 0)
         goto Exit;
     ptls_buffer_pushv(&labeled_ikm, label, strlen(label));
     ptls_buffer_pushv(&labeled_ikm, ikm.base, ikm.len);
 
-    ret = ptls_hkdf_extract(kem->hash, output, salt, ptls_iovec_init(labeled_ikm.base, labeled_ikm.off));
+    ret = ptls_hkdf_extract(cipher != NULL ? cipher->hash : kem->hash, output, salt,
+                            ptls_iovec_init(labeled_ikm.base, labeled_ikm.off));
 
 Exit:
     ptls_buffer_dispose(&labeled_ikm);
     return ret;
 }
 
-static int labeled_expand(ptls_hpke_kem_t *kem, void *output, size_t outlen, ptls_iovec_t prk, const char *label, ptls_iovec_t info,
-                          const uint16_t *aead_id)
+static int labeled_expand(ptls_hpke_kem_t *kem, ptls_hpke_cipher_suite_t *cipher, void *output, size_t outlen, ptls_iovec_t prk,
+                          const char *label, ptls_iovec_t info)
 {
     ptls_buffer_t labeled_info;
     uint8_t labeled_info_smallbuf[64];
@@ -79,12 +80,13 @@ static int labeled_expand(ptls_hpke_kem_t *kem, void *output, size_t outlen, ptl
 
     ptls_buffer_push16(&labeled_info, (uint16_t)outlen);
     ptls_buffer_pushv(&labeled_info, HPKE_V1_LABEL, strlen(HPKE_V1_LABEL));
-    if ((ret = build_suite_id(&labeled_info, kem, aead_id)) != 0)
+    if ((ret = build_suite_id(&labeled_info, kem, cipher)) != 0)
         goto Exit;
     ptls_buffer_pushv(&labeled_info, label, strlen(label));
     ptls_buffer_pushv(&labeled_info, info.base, info.len);
 
-    ret = ptls_hkdf_expand(kem->hash, output, outlen, prk, ptls_iovec_init(labeled_info.base, labeled_info.off));
+    ret = ptls_hkdf_expand(cipher != NULL ? cipher->hash : kem->hash, output, outlen, prk,
+                           ptls_iovec_init(labeled_info.base, labeled_info.off));
 
 Exit:
     ptls_buffer_dispose(&labeled_info);
@@ -103,10 +105,10 @@ static int extract_and_expand(ptls_hpke_kem_t *kem, void *secret, size_t secret_
     ptls_buffer_pushv(&kem_context, pk_s.base, pk_s.len);
     ptls_buffer_pushv(&kem_context, pk_r.base, pk_r.len);
 
-    if ((ret = labeled_extract(kem, eae_prk, ptls_iovec_init("", 0), "eae_prk", dh, NULL)) != 0)
+    if ((ret = labeled_extract(kem, NULL, eae_prk, ptls_iovec_init("", 0), "eae_prk", dh)) != 0)
         goto Exit;
-    if ((ret = labeled_expand(kem, secret, secret_len, ptls_iovec_init(eae_prk, kem->hash->digest_size), "shared_secret",
-                              ptls_iovec_init(kem_context.base, kem_context.off), NULL)) != 0)
+    if ((ret = labeled_expand(kem, NULL, secret, secret_len, ptls_iovec_init(eae_prk, kem->hash->digest_size), "shared_secret",
+                              ptls_iovec_init(kem_context.base, kem_context.off))) != 0)
         goto Exit;
 
 Exit:
@@ -122,9 +124,6 @@ static int dh_derive(ptls_hpke_kem_t *kem, void *secret, ptls_iovec_t pk_s, ptls
 
 static int dh_encap(ptls_hpke_kem_t *kem, void *secret, ptls_iovec_t *pk_s, ptls_iovec_t pk_r)
 {
-    /* ATM support only the ones that use the identical encoding */
-    assert(kem->keyex->id == PTLS_GROUP_X25519 || kem->keyex->id == PTLS_GROUP_X448);
-
     ptls_iovec_t dh = {NULL};
     int ret;
 
@@ -173,7 +172,7 @@ Exit:
 
 #include <stdio.h>
 
-static int key_schedule(ptls_hpke_kem_t *kem, ptls_aead_algorithm_t *algo, ptls_aead_context_t **ctx, int is_enc,
+static int key_schedule(ptls_hpke_kem_t *kem, ptls_hpke_cipher_suite_t *cipher, ptls_aead_context_t **ctx, int is_enc,
                         const void *shared_secret, ptls_iovec_t info)
 {
     ptls_buffer_t key_schedule_context;
@@ -187,31 +186,31 @@ static int key_schedule(ptls_hpke_kem_t *kem, ptls_aead_algorithm_t *algo, ptls_
 
     /* key_schedule_context = concat(mode, LabeledExtract("", "psk_id_hash", psk_id), LabeledExtract("", "info_hash", info)) */
     ptls_buffer_push(&key_schedule_context, PTLS_HPKE_MODE_BASE);
-    if ((ret = ptls_buffer_reserve(&key_schedule_context, kem->hash->digest_size)) != 0 ||
-        (ret = labeled_extract(kem, key_schedule_context.base + key_schedule_context.off, ptls_iovec_init(NULL, 0), "psk_id_hash",
-                               ptls_iovec_init(NULL, 0), &algo->hpke_id)) != 0)
+    if ((ret = ptls_buffer_reserve(&key_schedule_context, cipher->hash->digest_size)) != 0 ||
+        (ret = labeled_extract(kem, cipher, key_schedule_context.base + key_schedule_context.off, ptls_iovec_init(NULL, 0),
+                               "psk_id_hash", ptls_iovec_init(NULL, 0))) != 0)
         goto Exit;
-    key_schedule_context.off += kem->hash->digest_size;
-    if ((ret = ptls_buffer_reserve(&key_schedule_context, kem->hash->digest_size)) != 0 ||
-        (ret = labeled_extract(kem, key_schedule_context.base + key_schedule_context.off, ptls_iovec_init(NULL, 0), "info_hash",
-                               info, &algo->hpke_id)) != 0)
+    key_schedule_context.off += cipher->hash->digest_size;
+    if ((ret = ptls_buffer_reserve(&key_schedule_context, cipher->hash->digest_size)) != 0 ||
+        (ret = labeled_extract(kem, cipher, key_schedule_context.base + key_schedule_context.off, ptls_iovec_init(NULL, 0),
+                               "info_hash", info)) != 0)
         goto Exit;
-    key_schedule_context.off += kem->hash->digest_size;
+    key_schedule_context.off += cipher->hash->digest_size;
 
     /* secret = LabeledExtract(shared_secret, "secret", psk) */
-    if ((ret = labeled_extract(kem, secret, ptls_iovec_init(shared_secret, kem->hash->digest_size), "secret",
-                               ptls_iovec_init("", 0), &algo->hpke_id)) != 0)
+    if ((ret = labeled_extract(kem, cipher, secret, ptls_iovec_init(shared_secret, cipher->hash->digest_size), "secret",
+                               ptls_iovec_init("", 0))) != 0)
         goto Exit;
 
     /* key, base_nonce */
-    if ((ret = labeled_expand(kem, key, algo->key_size, ptls_iovec_init(secret, kem->hash->digest_size), "key",
-                              ptls_iovec_init(key_schedule_context.base, key_schedule_context.off), &algo->hpke_id)) != 0)
+    if ((ret = labeled_expand(kem, cipher, key, cipher->aead->key_size, ptls_iovec_init(secret, cipher->hash->digest_size), "key",
+                              ptls_iovec_init(key_schedule_context.base, key_schedule_context.off))) != 0)
         goto Exit;
-    if ((ret = labeled_expand(kem, base_nonce, algo->iv_size, ptls_iovec_init(secret, kem->hash->digest_size), "base_nonce",
-                              ptls_iovec_init(key_schedule_context.base, key_schedule_context.off), &algo->hpke_id)) != 0)
+    if ((ret = labeled_expand(kem, cipher, base_nonce, cipher->aead->iv_size, ptls_iovec_init(secret, cipher->hash->digest_size),
+                              "base_nonce", ptls_iovec_init(key_schedule_context.base, key_schedule_context.off))) != 0)
         goto Exit;
 
-    *ctx = ptls_aead_new_direct(algo, is_enc, key, base_nonce);
+    *ctx = ptls_aead_new_direct(cipher->aead, is_enc, key, base_nonce);
 
 Exit:
     ptls_buffer_dispose(&key_schedule_context);
@@ -221,7 +220,7 @@ Exit:
     return ret;
 }
 
-int ptls_hpke_setup_base_s(ptls_hpke_kem_t *kem, ptls_aead_algorithm_t *algo, ptls_iovec_t *pk_s, ptls_aead_context_t **ctx,
+int ptls_hpke_setup_base_s(ptls_hpke_kem_t *kem, ptls_hpke_cipher_suite_t *cipher, ptls_iovec_t *pk_s, ptls_aead_context_t **ctx,
                            ptls_iovec_t pk_r, ptls_iovec_t info)
 {
     uint8_t secret[PTLS_MAX_DIGEST_SIZE];
@@ -232,7 +231,7 @@ int ptls_hpke_setup_base_s(ptls_hpke_kem_t *kem, ptls_aead_algorithm_t *algo, pt
     if ((ret = dh_encap(kem, secret, pk_s, pk_r)) != 0)
         goto Exit;
 
-    if ((ret = key_schedule(kem, algo, ctx, 1, secret, info)) != 0)
+    if ((ret = key_schedule(kem, cipher, ctx, 1, secret, info)) != 0)
         goto Exit;
 
 Exit:
@@ -245,7 +244,7 @@ Exit:
     return ret;
 }
 
-int ptls_hpke_setup_base_r(ptls_hpke_kem_t *kem, ptls_aead_algorithm_t *algo, ptls_key_exchange_context_t *keyex,
+int ptls_hpke_setup_base_r(ptls_hpke_kem_t *kem, ptls_hpke_cipher_suite_t *cipher, ptls_key_exchange_context_t *keyex,
                            ptls_aead_context_t **ctx, ptls_iovec_t pk_s, ptls_iovec_t info)
 {
     uint8_t secret[PTLS_MAX_DIGEST_SIZE];
@@ -254,7 +253,7 @@ int ptls_hpke_setup_base_r(ptls_hpke_kem_t *kem, ptls_aead_algorithm_t *algo, pt
     if ((ret = dh_decap(kem, secret, keyex, pk_s, keyex->pubkey)) != 0)
         goto Exit;
 
-    if ((ret = key_schedule(kem, algo, ctx, 0, secret, info)) != 0)
+    if ((ret = key_schedule(kem, cipher, ctx, 0, secret, info)) != 0)
         goto Exit;
 
 Exit:

@@ -32,7 +32,6 @@ extern "C" {
 #include <openssl/x509.h>
 #include <openssl/opensslconf.h>
 #include "../picotls.h"
-#include "../picotls/hpke.h"
 
 #if OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)
 #if !defined(OPENSSL_NO_CHACHA) && !defined(OPENSSL_NO_POLY1305)
@@ -73,6 +72,7 @@ extern ptls_cipher_algorithm_t ptls_openssl_aes256ctr;
 extern ptls_aead_algorithm_t ptls_openssl_aes256gcm;
 extern ptls_hash_algorithm_t ptls_openssl_sha256;
 extern ptls_hash_algorithm_t ptls_openssl_sha384;
+extern ptls_hash_algorithm_t ptls_openssl_sha512;
 extern ptls_cipher_suite_t ptls_openssl_aes128gcmsha256;
 extern ptls_cipher_suite_t ptls_openssl_aes256gcmsha384;
 extern ptls_cipher_suite_t *ptls_openssl_cipher_suites[];
@@ -103,6 +103,14 @@ extern ptls_hpke_kem_t ptls_openssl_hpke_kem_p384sha384;
 extern ptls_hpke_kem_t ptls_openssl_hpke_kem_x25519sha256;
 #endif
 extern ptls_hpke_kem_t *ptls_openssl_hpke_kems[];
+
+extern ptls_hpke_cipher_suite_t ptls_openssl_hpke_aes128gcmsha256;
+extern ptls_hpke_cipher_suite_t ptls_openssl_hpke_aes128gcmsha512;
+extern ptls_hpke_cipher_suite_t ptls_openssl_hpke_aes256gcmsha384;
+#if PTLS_OPENSSL_HAVE_CHACHA20_POLY1305
+extern ptls_hpke_cipher_suite_t ptls_openssl_hpke_chacha20poly1305sha256;
+#endif
+extern ptls_hpke_cipher_suite_t *ptls_openssl_hpke_cipher_suites[];
 
 void ptls_openssl_random_bytes(void *buf, size_t len);
 /**
