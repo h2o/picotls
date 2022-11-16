@@ -497,6 +497,43 @@ static void test_base64_decode(void)
     ptls_buffer_dispose(&buf);
 }
 
+static void test_ech_decode_config(void)
+{
+    static ptls_hpke_kem_t x25519 = {PTLS_HPKE_KEM_X25519_SHA256}, *kems[] = {&x25519, NULL};
+    static ptls_hpke_cipher_suite_t aes128gcmsha256 = {{PTLS_HPKE_HKDF_SHA256, PTLS_HPKE_AEAD_AES_128_GCM}},
+                                    *ciphers[] = {&aes128gcmsha256, NULL};
+    struct st_ptls_ech_client_t ech;
+    ptls_iovec_t public_key, public_name;
+
+    { /* broken list */
+        const uint8_t *src = (const uint8_t *)"a", *end = src + 1;
+        int ret = decode_one_ech_config(kems, ciphers, &ech, &public_key, &public_name, &src, end);
+        ok(ret == PTLS_ALERT_DECODE_ERROR);
+    }
+
+    {
+        uint8_t input[] = {0x00, 0x3e, 0x12, 0x00, 0x20, 0x00, 0x20, 0x0,  0x1,  0x2,  0x3,  0x4,  0x5,  0x6,  0x7,  0x8,
+                           0x9,  0xa,  0xb,  0xc,  0xd,  0xe,  0xf,  0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18,
+                           0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x00, 0x08, 0x00, 0x02, 0x00, 0x02, 0x00, 0x01, 0x00,
+                           0x01, 0x40, 0x0b, 0x65, 0x78, 0x61, 0x6d, 0x70, 0x6c, 0x65, 0x2e, 0x63, 0x6f, 0x6d, 0x00, 0x00};
+        const uint8_t *src = input, *const end = input + sizeof(input);
+        int ret = decode_one_ech_config(kems, ciphers, &ech, &public_key, &public_name, &src, end);
+        ok(ret == 0);
+        ok(ech.key_config.config_id == 0x12);
+        ok(ech.key_config.kem == &x25519);
+        ok(public_key.len == 32);
+        ok(public_key.base == input + 7);
+        ok(ech.key_config.cipher == &aes128gcmsha256);
+        ok(public_name.len == sizeof("example.com") - 1);
+        ok(memcmp(public_name.base, "example.com", sizeof("example.com") - 1) == 0);
+    }
+}
+
+static void test_ech(void)
+{
+    subtest("decode-config", test_ech_decode_config);
+}
+
 static struct {
     struct {
         uint8_t buf[32];
@@ -1714,6 +1751,7 @@ void test_picotls(void)
     subtest("chacha20", test_chacha20);
     subtest("ffx", test_ffx);
     subtest("base64-decode", test_base64_decode);
+    subtest("ech", test_ech);
     subtest("fragmented-message", test_fragmented_message);
     subtest("handshake", test_all_handshakes);
     subtest("quic", test_quic);
