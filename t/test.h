@@ -51,18 +51,18 @@
     "\x1d\x99\x42\xe0\xa2\xb7\x75\xbb\x14\x03\x79\x9a\xf6\x07\xd8\xa5\xab\x2b\x3a\x70\x8b\x77\x85\x70\x8a\x98\x38\x9b\x35\x09\xf6" \
     "\x62\x6b\x29\x4a\xa7\xa7\xf9\x3b\xde\xd8\xc8\x90\x57\xf2\x76\x2a\x23\x0b\x01\x68\xc6\x9a\xf2"
 
-/* secp256r1 key that lasts until 2028 */
-#define ESNIKEYS                                                                                                                   \
-    "\xff\x02\xcf\x27\xde\x17\x00\x0b\x65\x78\x61\x6d\x70\x6c\x65\x2e\x63\x6f\x6d\x00\x45"                                         \
-    "\x00\x17\x00\x41\x04\x3e\xee\xf7\x10\xe3\x75\x07\xa8\xfb\x3e\xfc\x62\x50\x24\x95\xa0"                                         \
-    "\x61\x6e\xff\x6b\x63\x0f\xa3\xfd\xcc\x33\x36\xd0\xb1\x2d\x55\xba\xb0\x06\xbd\xb4\x29"                                         \
-    "\x82\xc6\xd9\xee\x66\x84\xa9\x63\x94\x44\xbe\x04\xe7\xee\xcf\xab\xc2\xc9\xdd\x40\xe6"                                         \
-    "\xc8\x89\x88\xed\x94\x86\x00\x02\x13\x01\x01\x04\x00\x00\x00\x00\x5d\x1c\xc0\x63\x00"                                         \
-    "\x00\x4e\x94\xee\x6b\xc0\x62\x00\x00"
-#define ESNI_SECP256R1KEY                                                                                                          \
-    "-----BEGIN EC PARAMETERS-----\nBggqhkjOPQMBBw==\n-----END EC PARAMETERS-----\n-----BEGIN EC PRIVATE "                         \
-    "KEY-----\nMHcCAQEEIGrRVTfTXuOVewLt/g+Ugvg9XW/g4lGXrkZ8fdYaYuJCoAoGCCqGSM49\nAwEHoUQDQgAEPu73EON1B6j7PvxiUCSVoGFu/"            \
-    "2tjD6P9zDM20LEtVbqwBr20KYLG\n2e5mhKljlES+BOfuz6vCyd1A5siJiO2Uhg==\n-----END EC PRIVATE KEY-----\n"
+/* test vector from RFC 9180 A.3 */
+#define ECH_CONFIG_LIST                                                                                                            \
+    "\x00\x63\xfe\x0d\x00\x5f\x12\x00\x10\x00\x41\x04\xfe\x8c\x19\xce\x09\x05\x19\x1e\xbc\x29\x8a\x92\x45\x79\x25\x31\xf2\x6f\x0c" \
+    "\xec\xe2\x46\x06\x39\xe8\xbc\x39\xcb\x7f\x70\x6a\x82\x6a\x77\x9b\x4c\xf9\x69\xb8\xa0\xe5\x39\xc7\xf6\x2f\xb3\xd3\x0a\xd6\xaa" \
+    "\x8f\x80\xe3\x0f\x1d\x12\x8a\xaf\xd6\x8a\x2c\xe7\x2e\xa0\x00\x08\x00\x02\x00\x02\x00\x01\x00\x01\x40\x0b\x65\x78\x61\x6d\x70" \
+    "\x6c\x65\x2e\x63\x6f\x6d\x00\x00"
+#define ECH_PRIVATE_KEY                                                                                                            \
+    "-----BEGIN PRIVATE KEY-----\n"                                                                                                \
+    "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQg885/2uV+GjENh/Hr\n"                                                           \
+    "vebzKL4Kmc28rfTWWJzyneS4/9KhRANCAAT+jBnOCQUZHrwpipJFeSUx8m8M7OJG\n"                                                           \
+    "BjnovDnLf3Bqgmp3m0z5abig5TnH9i+z0wrWqo+A4w8dEoqv1oos5y6g\n"                                                                   \
+    "-----END PRIVATE KEY-----\n"
 
 extern ptls_context_t *ctx, *ctx_peer;
 extern ptls_verify_certificate_t *verify_certificate;

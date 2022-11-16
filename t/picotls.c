@@ -499,7 +499,7 @@ static void test_base64_decode(void)
 
 static void test_ech_decode_config(void)
 {
-    static ptls_hpke_kem_t x25519 = {PTLS_HPKE_KEM_X25519_SHA256}, *kems[] = {&x25519, NULL};
+    static ptls_hpke_kem_t p256 = {PTLS_HPKE_KEM_P256_SHA256}, *kems[] = {&p256, NULL};
     static ptls_hpke_cipher_suite_t aes128gcmsha256 = {{PTLS_HPKE_HKDF_SHA256, PTLS_HPKE_AEAD_AES_128_GCM}},
                                     *ciphers[] = {&aes128gcmsha256, NULL};
     uint8_t config_id, max_name_length;
@@ -515,18 +515,15 @@ static void test_ech_decode_config(void)
     }
 
     {
-        uint8_t input[] = {0x12, 0x00, 0x20, 0x00, 0x20, 0x0,  0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a,
-                           0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a,
-                           0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x00, 0x08, 0x00, 0x02, 0x00, 0x02, 0x00, 0x01, 0x00, 0x01, 0x40,
-                           0x0b, 0x65, 0x78, 0x61, 0x6d, 0x70, 0x6c, 0x65, 0x2e, 0x63, 0x6f, 0x6d, 0x00, 0x00};
-        const uint8_t *src = input, *const end = input + sizeof(input);
+        ptls_iovec_t input = ptls_iovec_init(ECH_CONFIG_LIST, sizeof(ECH_CONFIG_LIST) - 1);
+        const uint8_t *src = input.base + 6 /* dive into ECHConfigContents */, *const end = input.base + input.len;
         int ret =
             decode_one_ech_config(kems, ciphers, &config_id, &kem, &public_key, &cipher, &max_name_length, &public_name, &src, end);
         ok(ret == 0);
         ok(config_id == 0x12);
-        ok(kem == &x25519);
-        ok(public_key.len == 32);
-        ok(public_key.base == input + 5);
+        ok(kem == &p256);
+        ok(public_key.len == 65);
+        ok(public_key.base == input.base + 11);
         ok(cipher == &aes128gcmsha256);
         ok(max_name_length == 64);
         ok(public_name.len == sizeof("example.com") - 1);
@@ -700,14 +697,8 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int expect_ticket, int
         ptls_set_server_name(client, "test.example.com", 0);
     }
 
-    if (ech) {
-        static const uint8_t ech_config_list[] = {
-            0x00, 0x42, 0xfe, 0x0d, 0x00, 0x3e, 0x12, 0x00, 0x20, 0x00, 0x20, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05,
-            0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16,
-            0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x00, 0x08, 0x00, 0x02, 0x00, 0x02, 0x00, 0x01,
-            0x00, 0x01, 0x40, 0x0b, 0x65, 0x78, 0x61, 0x6d, 0x70, 0x6c, 0x65, 0x2e, 0x63, 0x6f, 0x6d, 0x00, 0x00};
-        client_hs_prop.client.ech_config_list = ptls_iovec_init(ech_config_list, sizeof(ech_config_list));
-    }
+    if (ech)
+        client_hs_prop.client.ech_config_list = ptls_iovec_init(ECH_CONFIG_LIST, sizeof(ECH_CONFIG_LIST) - 1);
 
     static ptls_on_extension_t cb = {on_extension_cb};
     ctx_peer->on_extension = &cb;

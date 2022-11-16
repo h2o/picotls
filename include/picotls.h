@@ -717,6 +717,13 @@ typedef struct st_ptls_decompress_certificate_t {
     int (*cb)(struct st_ptls_decompress_certificate_t *self, ptls_t *tls, uint16_t algorithm, ptls_iovec_t output,
               ptls_iovec_t input);
 } ptls_decompress_certificate_t;
+/**
+ * ECH: creates the AEAD context to be used for "Open"-ing inner CH. Given `condig_id`, the callback looks up the ECH config and the
+ * corresponding private key, invokes `ptls_hpke_setup_base_r` with provided `cipher`, `enc`, and `info_prefix` (which will be
+ * "tls ech" || 00).
+ */
+PTLS_CALLBACK_TYPE(ptls_aead_context_t *, ech_create_opener, ptls_t *tls, uint8_t config_id, ptls_hpke_cipher_suite_t *cipher,
+                   ptls_iovec_t enc, ptls_iovec_t info_prefix);
 
 /**
  * the configuration
@@ -751,6 +758,7 @@ struct st_ptls_context_t {
     struct {
         ptls_hpke_kem_t **kems;
         ptls_hpke_cipher_suite_t **ciphers;
+        ptls_ech_create_opener_t *create_opener;
     } ech;
     /**
      *
