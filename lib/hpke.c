@@ -149,10 +149,6 @@ Exit:
 
 static int dh_decap(ptls_hpke_kem_t *kem, void *secret, ptls_key_exchange_context_t *keyex, ptls_iovec_t pk_s, ptls_iovec_t pk_r)
 {
-    /* ATM support only the ones that use the identical encoding */
-
-    assert(kem->keyex->id == PTLS_GROUP_X25519 || kem->keyex->id == PTLS_GROUP_X448);
-
     ptls_iovec_t dh = {NULL};
     int ret;
 
@@ -198,7 +194,7 @@ static int key_schedule(ptls_hpke_kem_t *kem, ptls_hpke_cipher_suite_t *cipher, 
     key_schedule_context.off += cipher->hash->digest_size;
 
     /* secret = LabeledExtract(shared_secret, "secret", psk) */
-    if ((ret = labeled_extract(kem, cipher, secret, ptls_iovec_init(shared_secret, cipher->hash->digest_size), "secret",
+    if ((ret = labeled_extract(kem, cipher, secret, ptls_iovec_init(shared_secret, kem->hash->digest_size), "secret",
                                ptls_iovec_init("", 0))) != 0)
         goto Exit;
 
@@ -235,7 +231,7 @@ int ptls_hpke_setup_base_s(ptls_hpke_kem_t *kem, ptls_hpke_cipher_suite_t *ciphe
         goto Exit;
 
 Exit:
-    if (pk_s->len != 0) {
+    if (ret != 0 && pk_s->len != 0) {
         ptls_clear_memory(pk_s->base, pk_s->len);
         free(pk_s->base);
         *pk_s = ptls_iovec_init(NULL, 0);
