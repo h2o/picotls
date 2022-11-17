@@ -719,7 +719,7 @@ typedef struct st_ptls_decompress_certificate_t {
               ptls_iovec_t input);
 } ptls_decompress_certificate_t;
 /**
- * ECH: creates the AEAD context to be used for "Open"-ing inner CH. Given `condig_id`, the callback looks up the ECH config and the
+ * ECH: creates the AEAD context to be used for "Open"-ing inner CH. Given `config_id`, the callback looks up the ECH config and the
  * corresponding private key, invokes `ptls_hpke_setup_base_r` with provided `cipher`, `enc`, and `info_prefix` (which will be
  * "tls ech" || 00).
  */
