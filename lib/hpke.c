@@ -194,7 +194,7 @@ static int key_schedule(ptls_hpke_kem_t *kem, ptls_hpke_cipher_suite_t *cipher, 
     key_schedule_context.off += cipher->hash->digest_size;
 
     /* secret = LabeledExtract(shared_secret, "secret", psk) */
-    if ((ret = labeled_extract(kem, cipher, secret, ptls_iovec_init(shared_secret, cipher->hash->digest_size), "secret",
+    if ((ret = labeled_extract(kem, cipher, secret, ptls_iovec_init(shared_secret, kem->hash->digest_size), "secret",
                                ptls_iovec_init("", 0))) != 0)
         goto Exit;
 
