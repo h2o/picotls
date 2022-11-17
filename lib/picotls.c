@@ -3832,7 +3832,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
     /* ECH */
     if (ch->ech.payload.base != NULL) {
         if (ch->ech.type != PTLS_ECH_CLIENT_HELLO_TYPE_OUTER) {
-            ret = PTLS_ALERT_HANDSHAKE_FAILURE;
+            ret = PTLS_ALERT_ILLEGAL_PARAMETER;
             goto Exit;
         }
         /* obtain AEAD context for opening inner CH (FIXME second flight?) */
@@ -3860,6 +3860,10 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
                 if ((ret = decode_client_hello(tls->ctx, ch, ech.ch_inner.base + PTLS_HANDSHAKE_HEADER_SIZE,
                                                ech.ch_inner.base + ech.ch_inner.off, properties, tls)) != 0)
                     goto Exit;
+                if (ch->ech.payload.base == NULL || ch->ech.type != PTLS_ECH_CLIENT_HELLO_TYPE_INNER) {
+                    ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+                    goto Exit;
+                }
                 if ((ret = check_client_hello_constraints(tls->ctx, ch, is_second_flight, 1, message, tls)) != 0)
                     goto Exit;
             }
