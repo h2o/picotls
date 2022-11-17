@@ -149,10 +149,6 @@ Exit:
 
 static int dh_decap(ptls_hpke_kem_t *kem, void *secret, ptls_key_exchange_context_t *keyex, ptls_iovec_t pk_s, ptls_iovec_t pk_r)
 {
-    /* ATM support only the ones that use the identical encoding */
-
-    assert(kem->keyex->id == PTLS_GROUP_X25519 || kem->keyex->id == PTLS_GROUP_X448);
-
     ptls_iovec_t dh = {NULL};
     int ret;
 
