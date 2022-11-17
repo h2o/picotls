@@ -3552,7 +3552,7 @@ Exit:
 }
 
 static int check_client_hello_constraints(ptls_context_t *ctx, struct st_ptls_client_hello_t *ch, int is_second_flight,
-                                          ptls_iovec_t raw_message, ptls_t *tls_cbarg)
+                                          int ech_is_inner_ch, ptls_iovec_t raw_message, ptls_t *tls_cbarg)
 {
     /* bail out if CH cannot be handled as TLS 1.3, providing the application the raw CH and SNI, to help them fallback */
     if (!is_supported_version(ch->selected_version)) {
@@ -3561,6 +3561,7 @@ static int check_client_hello_constraints(ptls_context_t *ctx, struct st_ptls_cl
                 .server_name = ch->server_name,
                 .raw_message = raw_message,
                 .negotiated_protocols = {ch->alpn.list, ch->alpn.count},
+                .ech_is_inner_ch = ech_is_inner_ch,
                 .incompatible_version = 1,
             };
             int ret;
@@ -3825,7 +3826,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
     if ((ret = decode_client_hello(tls->ctx, ch, message.base + PTLS_HANDSHAKE_HEADER_SIZE, message.base + message.len, properties,
                                    tls)) != 0)
         goto Exit;
-    if ((ret = check_client_hello_constraints(tls->ctx, ch, is_second_flight, message, tls)) != 0)
+    if ((ret = check_client_hello_constraints(tls->ctx, ch, is_second_flight, 0, message, tls)) != 0)
         goto Exit;
 
     /* ECH */
@@ -3859,7 +3860,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
                 if ((ret = decode_client_hello(tls->ctx, ch, ech.ch_inner.base + PTLS_HANDSHAKE_HEADER_SIZE,
                                                ech.ch_inner.base + ech.ch_inner.off, properties, tls)) != 0)
                     goto Exit;
-                if ((ret = check_client_hello_constraints(tls->ctx, ch, is_second_flight, message, tls)) != 0)
+                if ((ret = check_client_hello_constraints(tls->ctx, ch, is_second_flight, 1, message, tls)) != 0)
                     goto Exit;
             }
         }

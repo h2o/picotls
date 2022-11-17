@@ -631,6 +631,7 @@ typedef struct st_ptls_on_client_hello_parameters_t {
         const uint8_t *list;
         size_t count;
     } server_certificate_types;
+    unsigned ech_is_inner_ch : 1;
     /**
      * set to 1 if ClientHello is too old (or too new) to be handled by picotls
      */
