@@ -156,6 +156,21 @@ extern "C" {
 #define PTLS_SIGNATURE_RSA_PSS_RSAE_SHA512 0x0806
 #define PTLS_SIGNATURE_ED25519 0x0807
 
+/* HPKE */
+#define PTLS_HPKE_MODE_BASE 0
+#define PTLS_HPKE_MODE_PSK 1
+#define PTLS_HPKE_MODE_AUTH 2
+#define PTLS_HPKE_MODE_AUTH_PSK 3
+#define PTLS_HPKE_KEM_P256_SHA256 16
+#define PTLS_HPKE_KEM_P384_SHA384 17
+#define PTLS_HPKE_KEM_X25519_SHA256 32
+#define PTLS_HPKE_HKDF_SHA256 1
+#define PTLS_HPKE_HKDF_SHA384 2
+#define PTLS_HPKE_HKDF_SHA512 3
+#define PTLS_HPKE_AEAD_AES_128_GCM 1
+#define PTLS_HPKE_AEAD_AES_256_GCM 2
+#define PTLS_HPKE_AEAD_CHACHA20POLY1305 3
+
 /* ESNI */
 #define PTLS_ESNI_VERSION_DRAFT03 0xff02
 
@@ -550,6 +565,26 @@ typedef struct st_ptls_message_emitter_t {
     int (*begin_message)(struct st_ptls_message_emitter_t *self);
     int (*commit_message)(struct st_ptls_message_emitter_t *self);
 } ptls_message_emitter_t;
+
+/**
+ * HPKE KEM
+ */
+typedef const struct st_ptls_hpke_kem_t {
+    uint16_t id;
+    ptls_key_exchange_algorithm_t *keyex;
+    ptls_hash_algorithm_t *hash;
+} ptls_hpke_kem_t;
+
+typedef struct st_ptls_hpke_cipher_suite_id_t {
+    uint16_t kdf;
+    uint16_t aead;
+} ptls_hpke_cipher_suite_id_t;
+
+typedef const struct st_ptls_hpke_cipher_suite_t {
+    ptls_hpke_cipher_suite_id_t id;
+    ptls_hash_algorithm_t *hash;
+    ptls_aead_algorithm_t *aead;
+} ptls_hpke_cipher_suite_t;
 
 /**
  * holds ESNIKeys and the private key (instantiated by ptls_esni_parse, freed using ptls_esni_dispose)
@@ -1653,6 +1688,18 @@ int ptls_server_name_is_ipaddr(const char *name);
  * malloc.  It is the responsibility of the user to free them when discarding the TLS context.
  */
 int ptls_load_certificates(ptls_context_t *ctx, char const *cert_pem_file);
+/**
+ * SetupBaseS function of RFC 9180. Given `kem`, `algo`, `info`, and receiver's public key, returns an ephemeral public key and an
+ * AEAD context used for encrypting data.
+ */
+int ptls_hpke_setup_base_s(ptls_hpke_kem_t *kem, ptls_hpke_cipher_suite_t *cipher, ptls_iovec_t *pk_s, ptls_aead_context_t **ctx,
+                           ptls_iovec_t pk_r, ptls_iovec_t info);
+/**
+ * SetupBaseR function of RFC 9180. Given `kem`, `algo`, `info`, receiver's private key (`keyex`), and the esnder's public key,
+ * returns the AEAD context to be used for decrypting data.
+ */
+int ptls_hpke_setup_base_r(ptls_hpke_kem_t *kem, ptls_hpke_cipher_suite_t *cipher, ptls_key_exchange_context_t *keyex,
+                           ptls_aead_context_t **ctx, ptls_iovec_t pk_s, ptls_iovec_t info);
 /**
  *
  */

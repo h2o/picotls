@@ -1869,3 +1869,40 @@ ptls_cipher_suite_t *ptls_openssl_tls12_cipher_suites[] = {&ptls_openssl_tls12_e
 ptls_cipher_algorithm_t ptls_openssl_bfecb = {"BF-ECB",        PTLS_BLOWFISH_KEY_SIZE,          PTLS_BLOWFISH_BLOCK_SIZE,
                                               0 /* iv size */, sizeof(struct cipher_context_t), bfecb_setup_crypto};
 #endif
+
+ptls_hpke_kem_t ptls_openssl_hpke_kem_p256sha256 = {PTLS_HPKE_KEM_P256_SHA256, &ptls_openssl_secp256r1, &ptls_openssl_sha256};
+ptls_hpke_kem_t ptls_openssl_hpke_kem_p384sha384 = {PTLS_HPKE_KEM_P384_SHA384, &ptls_openssl_secp384r1, &ptls_openssl_sha384};
+#if PTLS_OPENSSL_HAVE_X25519
+ptls_hpke_kem_t ptls_openssl_hpke_kem_x25519sha256 = {PTLS_HPKE_KEM_X25519_SHA256, &ptls_openssl_x25519, &ptls_openssl_sha256};
+#endif
+ptls_hpke_kem_t *ptls_openssl_hpke_kems[] = {&ptls_openssl_hpke_kem_p384sha384,
+#if PTLS_OPENSSL_HAVE_X25519
+                                             &ptls_openssl_hpke_kem_x25519sha256,
+#endif
+                                             &ptls_openssl_hpke_kem_p256sha256, NULL};
+
+ptls_hpke_cipher_suite_t ptls_openssl_hpke_aes128gcmsha256 = {
+    .id = {.kdf = PTLS_HPKE_HKDF_SHA256, .aead = PTLS_HPKE_AEAD_AES_128_GCM},
+    .hash = &ptls_openssl_sha256,
+    .aead = &ptls_openssl_aes128gcm};
+ptls_hpke_cipher_suite_t ptls_openssl_hpke_aes128gcmsha512 = {
+    .id = {.kdf = PTLS_HPKE_HKDF_SHA512, .aead = PTLS_HPKE_AEAD_AES_128_GCM},
+    .hash = &ptls_openssl_sha512,
+    .aead = &ptls_openssl_aes128gcm};
+ptls_hpke_cipher_suite_t ptls_openssl_hpke_aes256gcmsha384 = {
+    .id = {.kdf = PTLS_HPKE_HKDF_SHA384, .aead = PTLS_HPKE_AEAD_AES_256_GCM},
+    .hash = &ptls_openssl_sha384,
+    .aead = &ptls_openssl_aes256gcm};
+#if PTLS_OPENSSL_HAVE_CHACHA20_POLY1305
+ptls_hpke_cipher_suite_t ptls_openssl_hpke_chacha20poly1305sha256 = {
+    .id = {.kdf = PTLS_HPKE_HKDF_SHA256, .aead = PTLS_HPKE_AEAD_CHACHA20POLY1305},
+    .hash = &ptls_openssl_sha256,
+    .aead = &ptls_openssl_chacha20poly1305};
+#endif
+ptls_hpke_cipher_suite_t *ptls_openssl_hpke_cipher_suites[] = {&ptls_openssl_hpke_aes128gcmsha256,
+                                                               &ptls_openssl_hpke_aes256gcmsha384,
+#if PTLS_OPENSSL_HAVE_CHACHA20_POLY1305
+                                                               &ptls_openssl_hpke_chacha20poly1305sha256,
+#endif
+                                                               &ptls_openssl_hpke_aes128gcmsha512, /* likely only for tests */
+                                                               NULL};
