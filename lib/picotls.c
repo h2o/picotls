@@ -1115,6 +1115,27 @@ Exit:
     return ech;
 }
 
+static int ech_calc_accept_confirmation(ptls_key_schedule_t *sched, void *dst, const uint8_t *client_random)
+{
+    uint8_t secret[PTLS_MAX_DIGEST_SIZE], transcript_hash[PTLS_MAX_DIGEST_SIZE];
+    int ret;
+
+    if ((ret = ptls_hkdf_extract(sched->hashes[0].algo, secret, ptls_iovec_init(NULL, 0),
+                                 ptls_iovec_init(client_random, PTLS_HELLO_RANDOM_SIZE))) != 0)
+        goto Exit;
+
+    sched->hashes[0].ctx->final(sched->hashes[0].ctx, transcript_hash, PTLS_HASH_FINAL_MODE_SNAPSHOT);
+    if ((ret = ptls_hkdf_expand_label(sched->hashes[0].algo, dst, 8, ptls_iovec_init(secret, sched->hashes[0].algo->digest_size),
+                                      "ech accept confirmation",
+                                      ptls_iovec_init(transcript_hash, sched->hashes[0].algo->digest_size), "")) != 0)
+        goto Exit;
+
+Exit:
+    ptls_clear_memory(secret, sizeof(secret));
+    ptls_clear_memory(transcript_hash, sizeof(transcript_hash));
+    return ret;
+}
+
 static void key_schedule_free(ptls_key_schedule_t *sched)
 {
     size_t i;
@@ -2482,6 +2503,7 @@ static int client_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
                                ptls_handshake_properties_t *properties)
 {
     struct st_ptls_server_hello_t sh;
+    ptls_hash_context_t *ech_hash_backup = NULL;
     ptls_iovec_t ecdh_secret = {NULL};
     int ret;
 
@@ -2503,12 +2525,35 @@ static int client_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
         0)
         goto Exit;
 
+    /* check if ECH is accepted (at the same time rolling the hash) */
+    if (tls->client.ech != NULL) {
+        uint8_t confirm_hash_delivered[8], confirm_hash_expected[8];
+        static const size_t confirm_hash_off =
+            PTLS_HANDSHAKE_HEADER_SIZE + 2 /* legacy_version */ + PTLS_HELLO_RANDOM_SIZE - sizeof(confirm_hash_delivered);
+        /* move out ECH accept confirmation hash, create a backup of transcript hash */
+        memcpy(confirm_hash_delivered, message.base + confirm_hash_off, sizeof(confirm_hash_delivered));
+        memset(message.base + confirm_hash_off, 0, sizeof(confirm_hash_delivered));
+        ech_hash_backup = tls->key_schedule->hashes[0].ctx->clone_(tls->key_schedule->hashes[0].ctx);
+        /* run the transcript hash, check if ECH is accepted; if not, dispose ECH state and revert to the original transcript */
+        ptls__key_schedule_update_hash(tls->key_schedule, message.base, message.len);
+        if ((ret = ech_calc_accept_confirmation(tls->key_schedule, confirm_hash_expected, tls->client_random)) != 0)
+            goto Exit;
+        if (memcmp(confirm_hash_delivered, confirm_hash_expected, sizeof(confirm_hash_delivered)) != 0) {
+            memcpy(message.base + confirm_hash_off, confirm_hash_delivered, sizeof(confirm_hash_delivered));
+            tls->key_schedule->hashes[0].ctx->final(tls->key_schedule->hashes[0].ctx, NULL, PTLS_HASH_FINAL_MODE_FREE);
+            tls->key_schedule->hashes[0].ctx = ech_hash_backup;
+            ech_hash_backup = NULL;
+            client_free_ech(tls->client.ech);
+            tls->client.ech = NULL;
+        }
+    }
+    if (tls->client.ech == NULL)
+        ptls__key_schedule_update_hash(tls->key_schedule, message.base, message.len);
+
     if (sh.peerkey.base != NULL) {
         if ((ret = tls->client.key_share_ctx->on_exchange(&tls->client.key_share_ctx, 1, &ecdh_secret, sh.peerkey)) != 0)
             goto Exit;
     }
-
-    ptls__key_schedule_update_hash(tls->key_schedule, message.base, message.len);
 
     if ((ret = key_schedule_extract(tls->key_schedule, ecdh_secret)) != 0)
         goto Exit;
@@ -2533,6 +2578,8 @@ static int client_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
     ret = PTLS_ERROR_IN_PROGRESS;
 
 Exit:
+    if (ech_hash_backup != NULL)
+        ech_hash_backup->final(ech_hash_backup, NULL, PTLS_HASH_FINAL_MODE_FREE);
     if (ecdh_secret.base != NULL) {
         ptls_clear_memory(ecdh_secret.base, ecdh_secret.len);
         free(ecdh_secret.base);
@@ -3840,7 +3887,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
     enum { HANDSHAKE_MODE_FULL, HANDSHAKE_MODE_PSK, HANDSHAKE_MODE_PSK_DHE } mode;
     size_t psk_index = SIZE_MAX;
     ptls_iovec_t pubkey = {0}, ecdh_secret = {0};
-    int accept_early_data = 0, is_second_flight = tls->state == PTLS_STATE_SERVER_EXPECT_SECOND_CLIENT_HELLO, ret;
+    int accept_early_data = 0, accept_ech = 0, is_second_flight = tls->state == PTLS_STATE_SERVER_EXPECT_SECOND_CLIENT_HELLO, ret;
 
     ptls_buffer_init(&ech.ch_inner, "", 0);
 
@@ -3895,6 +3942,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
                 }
                 if ((ret = check_client_hello_constraints(tls->ctx, ch, is_second_flight, 1, message, tls)) != 0)
                     goto Exit;
+                accept_ech = 1;
             }
         }
     }
@@ -4143,22 +4191,38 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
         tls->key_share = key_share.algorithm;
     }
 
-    /* send ServerHello */
-    EMIT_SERVER_HELLO(
-        tls->key_schedule, { tls->ctx->random_bytes(emitter->buf->base + emitter->buf->off, PTLS_HELLO_RANDOM_SIZE); },
-        {
-            ptls_buffer_t *sendbuf = emitter->buf;
-            if (mode != HANDSHAKE_MODE_PSK) {
-                buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_KEY_SHARE, {
-                    ptls_buffer_push16(sendbuf, key_share.algorithm->id);
-                    ptls_buffer_push_block(sendbuf, 2, { ptls_buffer_pushv(sendbuf, pubkey.base, pubkey.len); });
-                });
-            }
-            if (mode != HANDSHAKE_MODE_FULL) {
-                buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_PRE_SHARED_KEY,
-                                      { ptls_buffer_push16(sendbuf, (uint16_t)psk_index); });
-            }
-        });
+    { /* send ServerHello */
+        size_t accept_confirm_off = 0;
+        EMIT_SERVER_HELLO(
+            tls->key_schedule,
+            {
+                tls->ctx->random_bytes(emitter->buf->base + emitter->buf->off, PTLS_HELLO_RANDOM_SIZE);
+                /* when accepting CHInner, last 8 byte of SH.random is zero for the handshake transcript */
+                if (accept_ech) {
+                    accept_confirm_off = emitter->buf->off + PTLS_HELLO_RANDOM_SIZE - 8;
+                    memset(emitter->buf->base + accept_confirm_off, 0, 8);
+                }
+            },
+            {
+                ptls_buffer_t *sendbuf = emitter->buf;
+                if (mode != HANDSHAKE_MODE_PSK) {
+                    buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_KEY_SHARE, {
+                        ptls_buffer_push16(sendbuf, key_share.algorithm->id);
+                        ptls_buffer_push_block(sendbuf, 2, { ptls_buffer_pushv(sendbuf, pubkey.base, pubkey.len); });
+                    });
+                }
+                if (mode != HANDSHAKE_MODE_FULL) {
+                    buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_PRE_SHARED_KEY,
+                                          { ptls_buffer_push16(sendbuf, (uint16_t)psk_index); });
+                }
+            });
+        if (accept_ech) {
+            if ((ret = ech_calc_accept_confirmation(tls->key_schedule, emitter->buf->base + accept_confirm_off,
+                                                    tls->client_random)) != 0)
+                goto Exit;
+        }
+    }
+
     if ((ret = push_change_cipher_spec(tls, emitter)) != 0)
         goto Exit;
 
