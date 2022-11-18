@@ -163,6 +163,7 @@ struct st_ptls_ech_client_t {
     ptls_iovec_t enc;
     ptls_hpke_cipher_suite_t *cipher;
     ptls_aead_context_t *aead;
+    uint8_t max_name_length;
     char public_name[0];
 };
 
@@ -1047,7 +1048,7 @@ static struct st_ptls_ech_client_t *client_setup_ech_instantiate(uint8_t config_
         ret = PTLS_ERROR_NO_MEMORY;
         goto Exit;
     }
-    *ech = (struct st_ptls_ech_client_t){.config_id = config_id, .cipher = cipher};
+    *ech = (struct st_ptls_ech_client_t){.config_id = config_id, .cipher = cipher, .max_name_length = max_name_length};
     memcpy(ech->public_name, public_name.base, public_name.len);
     ech->public_name[public_name.len] = '\0';
 
@@ -2224,7 +2225,25 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
             memcpy(encoded_ch_inner.base + encoded_ch_inner.off - tls->key_schedule->hashes[0].algo->digest_size,
                    emitter->buf->base + emitter->buf->off - tls->key_schedule->hashes[0].algo->digest_size,
                    tls->key_schedule->hashes[0].algo->digest_size);
-        /* FIXME pad EncodedCHInner? */
+        { /* pad EncodedCHInner (following draft-ietf-tls-esni-15 6.1.3) */
+            size_t padding_len;
+            if (sni_name != NULL) {
+                padding_len = strlen(sni_name);
+                if (padding_len < tls->client.ech->max_name_length)
+                    padding_len = tls->client.ech->max_name_length;
+            } else {
+                padding_len = tls->client.ech->max_name_length + 9;
+            }
+            size_t final_len = encoded_ch_inner.off - PTLS_HANDSHAKE_HEADER_SIZE + padding_len;
+            final_len = (final_len + 31) / 32 * 32;
+            padding_len = final_len - (encoded_ch_inner.off - PTLS_HANDSHAKE_HEADER_SIZE);
+            if (padding_len != 0) {
+                if ((ret = ptls_buffer_reserve(&encoded_ch_inner, padding_len)) != 0)
+                    goto Exit;
+                memset(encoded_ch_inner.base + encoded_ch_inner.off, 0, padding_len);
+                encoded_ch_inner.off += padding_len;
+            }
+        }
         /* flush CHInner, build CHOuterAAD */
         emitter->buf->off = mess_start;
         uint8_t outer_random[PTLS_HELLO_RANDOM_SIZE];
@@ -3513,7 +3532,7 @@ static int rebuild_ch_inner(ptls_buffer_t *buf, const uint8_t *src, const uint8_
 
         /* extensions */
         ptls_buffer_push_block(buf, 2, {
-            decode_extensions(src, end, PTLS_HANDSHAKE_TYPE_CLIENT_HELLO, &exttype, {
+            decode_open_extensions(src, end, PTLS_HANDSHAKE_TYPE_CLIENT_HELLO, &exttype, {
                 if (exttype == PTLS_EXTENSION_TYPE_ECH_OUTER_EXTENSIONS) {
                     ptls_decode_open_block(src, end, 1, {
                         do {
@@ -3546,6 +3565,14 @@ static int rebuild_ch_inner(ptls_buffer_t *buf, const uint8_t *src, const uint8_
             });
         });
     });
+
+    /* padding must be all zero */
+    for (; src != end; ++src) {
+        if (*src != '\0') {
+            ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+            goto Exit;
+        }
+    }
 
 Exit:
     return ret;
