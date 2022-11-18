@@ -1956,6 +1956,8 @@ static int encode_client_hello(ptls_context_t *ctx, ptls_buffer_t *sendbuf, enum
 {
     int ret;
 
+    assert(mode == ENCODE_CH_MODE_INNER || ech != NULL);
+
     ptls_buffer_push_message_body(sendbuf, NULL, PTLS_HANDSHAKE_TYPE_CLIENT_HELLO, {
         /* legacy_version */
         ptls_buffer_push16(sendbuf, 0x0303);
@@ -1976,25 +1978,23 @@ static int encode_client_hello(ptls_context_t *ctx, ptls_buffer_t *sendbuf, enum
         ptls_buffer_push_block(sendbuf, 1, { ptls_buffer_push(sendbuf, 0); });
         /* extensions */
         ptls_buffer_push_block(sendbuf, 2, {
-            if (ech != NULL) {
-                if (mode == ENCODE_CH_MODE_OUTER) {
-                    buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_ENCRYPTED_CLIENT_HELLO, {
-                        ptls_buffer_push(sendbuf, PTLS_ECH_CLIENT_HELLO_TYPE_OUTER, ech->config_id);
-                        ptls_buffer_push16(sendbuf, ech->cipher->id.kdf);
-                        ptls_buffer_push16(sendbuf, ech->cipher->id.aead);
-                        ptls_buffer_push_block(sendbuf, 2, { ptls_buffer_pushv(sendbuf, ech->enc.base, ech->enc.len); });
-                        ptls_buffer_push_block(sendbuf, 2, {
-                            if ((ret = ptls_buffer_reserve(sendbuf, *ech_size_offset)) != 0)
-                                goto Exit;
-                            memset(sendbuf->base + sendbuf->off, 0, *ech_size_offset);
-                            sendbuf->off += *ech_size_offset;
-                            *ech_size_offset = sendbuf->off - *ech_size_offset;
-                        });
+            if (mode == ENCODE_CH_MODE_OUTER) {
+                buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_ENCRYPTED_CLIENT_HELLO, {
+                    ptls_buffer_push(sendbuf, PTLS_ECH_CLIENT_HELLO_TYPE_OUTER, ech->config_id);
+                    ptls_buffer_push16(sendbuf, ech->cipher->id.kdf);
+                    ptls_buffer_push16(sendbuf, ech->cipher->id.aead);
+                    ptls_buffer_push_block(sendbuf, 2, { ptls_buffer_pushv(sendbuf, ech->enc.base, ech->enc.len); });
+                    ptls_buffer_push_block(sendbuf, 2, {
+                        if ((ret = ptls_buffer_reserve(sendbuf, *ech_size_offset)) != 0)
+                            goto Exit;
+                        memset(sendbuf->base + sendbuf->off, 0, *ech_size_offset);
+                        sendbuf->off += *ech_size_offset;
+                        *ech_size_offset = sendbuf->off - *ech_size_offset;
                     });
-                } else {
-                    buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_ENCRYPTED_CLIENT_HELLO,
-                                          { ptls_buffer_push(sendbuf, PTLS_ECH_CLIENT_HELLO_TYPE_INNER); });
-                }
+                });
+            } else if (ech != NULL) {
+                buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_ENCRYPTED_CLIENT_HELLO,
+                                      { ptls_buffer_push(sendbuf, PTLS_ECH_CLIENT_HELLO_TYPE_INNER); });
             }
             if (mode == ENCODE_CH_MODE_ENCODED_INNER) {
                 buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_ECH_OUTER_EXTENSIONS, {
@@ -2084,7 +2084,7 @@ static int encode_client_hello(ptls_context_t *ctx, ptls_buffer_t *sendbuf, enum
                 buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_PRE_SHARED_KEY, {
                     ptls_buffer_push_block(sendbuf, 2, {
                         ptls_buffer_push_block(sendbuf, 2, {
-                            if (mode == ENCODE_CH_MODE_OUTER && ech != NULL) {
+                            if (mode == ENCODE_CH_MODE_OUTER) {
                                 if ((ret = ptls_buffer_reserve(sendbuf, resumption_ticket.len)) != 0)
                                     goto Exit;
                                 ctx->random_bytes(sendbuf->base + sendbuf->off, resumption_ticket.len);
@@ -2094,7 +2094,7 @@ static int encode_client_hello(ptls_context_t *ctx, ptls_buffer_t *sendbuf, enum
                             }
                         });
                         uint32_t age;
-                        if (mode == ENCODE_CH_MODE_OUTER && ech != NULL) {
+                        if (mode == ENCODE_CH_MODE_OUTER) {
                             ctx->random_bytes(&age, sizeof(age));
                         } else {
                             age = obfuscated_ticket_age;
