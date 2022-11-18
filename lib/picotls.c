@@ -383,7 +383,7 @@ struct st_ptls_key_schedule_t {
     size_t num_hashes;
     struct {
         ptls_hash_algorithm_t *algo;
-        ptls_hash_context_t *ctx;
+        ptls_hash_context_t *ctx, *ctx_outer;
     } hashes[1];
 };
 
@@ -1137,12 +1137,15 @@ static void key_schedule_free(ptls_key_schedule_t *sched)
 {
     size_t i;
     ptls_clear_memory(sched->secret, sizeof(sched->secret));
-    for (i = 0; i != sched->num_hashes; ++i)
+    for (i = 0; i != sched->num_hashes; ++i) {
         sched->hashes[i].ctx->final(sched->hashes[i].ctx, NULL, PTLS_HASH_FINAL_MODE_FREE);
+        if (sched->hashes[i].ctx_outer != NULL)
+            sched->hashes[i].ctx_outer->final(sched->hashes[i].ctx_outer, NULL, PTLS_HASH_FINAL_MODE_FREE);
+    }
     free(sched);
 }
 
-static ptls_key_schedule_t *key_schedule_new(ptls_cipher_suite_t *preferred, ptls_cipher_suite_t **offered)
+static ptls_key_schedule_t *key_schedule_new(ptls_cipher_suite_t *preferred, ptls_cipher_suite_t **offered, int use_outer)
 {
 #define FOREACH_HASH(block)                                                                                                        \
     do {                                                                                                                           \
@@ -1180,6 +1183,12 @@ static ptls_key_schedule_t *key_schedule_new(ptls_cipher_suite_t *preferred, ptl
         sched->hashes[sched->num_hashes].algo = cs->hash;
         if ((sched->hashes[sched->num_hashes].ctx = cs->hash->create()) == NULL)
             goto Fail;
+        if (use_outer) {
+            if ((sched->hashes[sched->num_hashes].ctx_outer = cs->hash->create()) == NULL)
+                goto Fail;
+        } else {
+            sched->hashes[sched->num_hashes].ctx_outer = NULL;
+        }
         ++sched->num_hashes;
     });
 
@@ -1226,6 +1235,8 @@ static int key_schedule_select_one(ptls_key_schedule_t *sched, ptls_cipher_suite
             found_slot = i;
         } else {
             sched->hashes[i].ctx->final(sched->hashes[i].ctx, NULL, PTLS_HASH_FINAL_MODE_FREE);
+            if (sched->hashes[i].ctx_outer != NULL)
+                sched->hashes[i].ctx_outer->final(sched->hashes[i].ctx_outer, NULL, PTLS_HASH_FINAL_MODE_FREE);
         }
     }
     if (found_slot != 0) {
@@ -1247,23 +1258,39 @@ Exit:
     return ret;
 }
 
-void ptls__key_schedule_update_hash(ptls_key_schedule_t *sched, const uint8_t *msg, size_t msglen)
+static void key_schedule_select_outer(ptls_key_schedule_t *sched)
+{
+    /* This function is called when receiving a cleartext message (Server Hello), after the cipher-suite is determined (and hence
+     * the hash also), if ECH was offered */
+    assert(sched->generation == 1);
+    assert(sched->num_hashes == 1);
+    assert(sched->hashes[0].ctx_outer != NULL);
+
+    sched->hashes[0].ctx->final(sched->hashes[0].ctx, NULL, PTLS_HASH_FINAL_MODE_FREE);
+    sched->hashes[0].ctx = sched->hashes[0].ctx_outer;
+    sched->hashes[0].ctx_outer = NULL;
+}
+
+void ptls__key_schedule_update_hash(ptls_key_schedule_t *sched, const uint8_t *msg, size_t msglen, int use_outer)
 {
     size_t i;
 
     PTLS_DEBUGF("%s:%zu\n", __FUNCTION__, msglen);
-    for (i = 0; i != sched->num_hashes; ++i)
-        sched->hashes[i].ctx->update(sched->hashes[i].ctx, msg, msglen);
+    for (i = 0; i != sched->num_hashes; ++i) {
+        ptls_hash_context_t *ctx = use_outer ? sched->hashes[i].ctx_outer : sched->hashes[i].ctx;
+        ctx->update(ctx, msg, msglen);
+    }
 }
 
 static void key_schedule_update_ch1hash_prefix(ptls_key_schedule_t *sched)
 {
     uint8_t prefix[4] = {PTLS_HANDSHAKE_TYPE_MESSAGE_HASH, 0, 0, (uint8_t)sched->hashes[0].algo->digest_size};
-    ptls__key_schedule_update_hash(sched, prefix, sizeof(prefix));
+    ptls__key_schedule_update_hash(sched, prefix, sizeof(prefix), 0);
 }
 
 static void key_schedule_extract_ch1hash(ptls_key_schedule_t *sched, uint8_t *hash)
 {
+    assert(sched->hashes[0].ctx_outer == NULL);
     sched->hashes[0].ctx->final(sched->hashes[0].ctx, hash, PTLS_HASH_FINAL_MODE_RESET);
 }
 
@@ -1274,7 +1301,7 @@ static void key_schedule_transform_post_ch1hash(ptls_key_schedule_t *sched)
     key_schedule_extract_ch1hash(sched, ch1hash);
 
     key_schedule_update_ch1hash_prefix(sched);
-    ptls__key_schedule_update_hash(sched, ch1hash, sched->hashes[0].algo->digest_size);
+    ptls__key_schedule_update_hash(sched, ch1hash, sched->hashes[0].algo->digest_size, 0);
 }
 
 static int derive_secret_with_hash(ptls_key_schedule_t *sched, void *secret, const char *label, const uint8_t *hash)
@@ -2197,7 +2224,7 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
 
     /* initialize key schedule */
     if (!is_second_flight) {
-        tls->key_schedule = key_schedule_new(tls->cipher_suite, tls->ctx->cipher_suites);
+        tls->key_schedule = key_schedule_new(tls->cipher_suite, tls->ctx->cipher_suites, tls->client.ech != NULL);
         if ((ret = key_schedule_extract(tls->key_schedule, resumption_secret)) != 0)
             goto Exit;
     }
@@ -2219,12 +2246,12 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
         size_t psk_binder_off = emitter->buf->off - (3 + tls->key_schedule->hashes[0].algo->digest_size);
         if ((ret = derive_secret_with_empty_digest(tls->key_schedule, binder_key, "res binder")) != 0)
             goto Exit;
-        ptls__key_schedule_update_hash(tls->key_schedule, emitter->buf->base + msghash_off, psk_binder_off - msghash_off);
+        ptls__key_schedule_update_hash(tls->key_schedule, emitter->buf->base + msghash_off, psk_binder_off - msghash_off, 0);
         msghash_off = psk_binder_off;
         if ((ret = calc_verify_data(emitter->buf->base + psk_binder_off + 3, tls->key_schedule, binder_key)) != 0)
             goto Exit;
     }
-    ptls__key_schedule_update_hash(tls->key_schedule, emitter->buf->base + msghash_off, emitter->buf->off - msghash_off);
+    ptls__key_schedule_update_hash(tls->key_schedule, emitter->buf->base + msghash_off, emitter->buf->off - msghash_off, 0);
 
     /* ECH */
     if (tls->client.ech != NULL) {
@@ -2273,6 +2300,8 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
                           encoded_ch_inner.base + PTLS_HANDSHAKE_HEADER_SIZE, encoded_ch_inner.off - PTLS_HANDSHAKE_HEADER_SIZE, 0,
                           emitter->buf->base + mess_start + PTLS_HANDSHAKE_HEADER_SIZE,
                           emitter->buf->off - (mess_start + PTLS_HANDSHAKE_HEADER_SIZE));
+        /* update hash */
+        ptls__key_schedule_update_hash(tls->key_schedule, emitter->buf->base + mess_start, emitter->buf->off - mess_start, 1);
     }
 
     /* commit CH to the record layer */
@@ -2484,7 +2513,7 @@ static int handle_hello_retry_request(ptls_t *tls, ptls_message_emitter_t *emitt
     }
 
     key_schedule_transform_post_ch1hash(tls->key_schedule);
-    ptls__key_schedule_update_hash(tls->key_schedule, message.base, message.len);
+    ptls__key_schedule_update_hash(tls->key_schedule, message.base, message.len, 0);
     ret = send_client_hello(tls, emitter, properties, &sh->retry_request.cookie);
 
 Exit:
@@ -2495,7 +2524,6 @@ static int client_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
                                ptls_handshake_properties_t *properties)
 {
     struct st_ptls_server_hello_t sh;
-    ptls_hash_context_t *ech_hash_backup = NULL;
     ptls_iovec_t ecdh_secret = {NULL};
     int ret;
 
@@ -2525,22 +2553,19 @@ static int client_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
         /* move out ECH accept confirmation hash, create a backup of transcript hash */
         memcpy(confirm_hash_delivered, message.base + confirm_hash_off, sizeof(confirm_hash_delivered));
         memset(message.base + confirm_hash_off, 0, sizeof(confirm_hash_delivered));
-        ech_hash_backup = tls->key_schedule->hashes[0].ctx->clone_(tls->key_schedule->hashes[0].ctx);
         /* run the transcript hash, check if ECH is accepted; if not, dispose ECH state and revert to the original transcript */
-        ptls__key_schedule_update_hash(tls->key_schedule, message.base, message.len);
+        ptls__key_schedule_update_hash(tls->key_schedule, message.base, message.len, 0);
         if ((ret = ech_calc_accept_confirmation(tls->key_schedule, confirm_hash_expected, tls->client_random)) != 0)
             goto Exit;
         if (memcmp(confirm_hash_delivered, confirm_hash_expected, sizeof(confirm_hash_delivered)) != 0) {
             memcpy(message.base + confirm_hash_off, confirm_hash_delivered, sizeof(confirm_hash_delivered));
-            tls->key_schedule->hashes[0].ctx->final(tls->key_schedule->hashes[0].ctx, NULL, PTLS_HASH_FINAL_MODE_FREE);
-            tls->key_schedule->hashes[0].ctx = ech_hash_backup;
-            ech_hash_backup = NULL;
             client_free_ech(tls->client.ech);
             tls->client.ech = NULL;
+            key_schedule_select_outer(tls->key_schedule);
         }
     }
     if (tls->client.ech == NULL)
-        ptls__key_schedule_update_hash(tls->key_schedule, message.base, message.len);
+        ptls__key_schedule_update_hash(tls->key_schedule, message.base, message.len, 0);
 
     if (sh.peerkey.base != NULL) {
         if ((ret = tls->client.key_share_ctx->on_exchange(&tls->client.key_share_ctx, 1, &ecdh_secret, sh.peerkey)) != 0)
@@ -2570,8 +2595,6 @@ static int client_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
     ret = PTLS_ERROR_IN_PROGRESS;
 
 Exit:
-    if (ech_hash_backup != NULL)
-        ech_hash_backup->final(ech_hash_backup, NULL, PTLS_HASH_FINAL_MODE_FREE);
     if (ecdh_secret.base != NULL) {
         ptls_clear_memory(ecdh_secret.base, ecdh_secret.len);
         free(ecdh_secret.base);
@@ -2700,7 +2723,7 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
     if ((ret = report_unknown_extensions(tls, properties, unknown_extensions)) != 0)
         goto Exit;
 
-    ptls__key_schedule_update_hash(tls->key_schedule, message.base, message.len);
+    ptls__key_schedule_update_hash(tls->key_schedule, message.base, message.len, 0);
     tls->state =
         tls->is_psk_handshake ? PTLS_STATE_CLIENT_EXPECT_FINISHED : PTLS_STATE_CLIENT_EXPECT_CERTIFICATE_REQUEST_OR_CERTIFICATE;
     ret = PTLS_ERROR_IN_PROGRESS;
@@ -2867,7 +2890,7 @@ static int client_handle_certificate_request(ptls_t *tls, ptls_iovec_t message, 
         return PTLS_ALERT_ILLEGAL_PARAMETER;
 
     tls->state = PTLS_STATE_CLIENT_EXPECT_CERTIFICATE;
-    ptls__key_schedule_update_hash(tls->key_schedule, message.base, message.len);
+    ptls__key_schedule_update_hash(tls->key_schedule, message.base, message.len, 0);
 
     return PTLS_ERROR_IN_PROGRESS;
 }
@@ -2935,7 +2958,7 @@ static int client_handle_certificate(ptls_t *tls, ptls_iovec_t message)
     if ((ret = client_do_handle_certificate(tls, message.base + PTLS_HANDSHAKE_HEADER_SIZE, message.base + message.len)) != 0)
         return ret;
 
-    ptls__key_schedule_update_hash(tls->key_schedule, message.base, message.len);
+    ptls__key_schedule_update_hash(tls->key_schedule, message.base, message.len, 0);
 
     tls->state = PTLS_STATE_CLIENT_EXPECT_CERTIFICATE_VERIFY;
     return PTLS_ERROR_IN_PROGRESS;
@@ -2979,7 +3002,7 @@ static int client_handle_compressed_certificate(ptls_t *tls, ptls_iovec_t messag
     if ((ret = client_do_handle_certificate(tls, uncompressed, uncompressed + uncompressed_size)) != 0)
         goto Exit;
 
-    ptls__key_schedule_update_hash(tls->key_schedule, message.base, message.len);
+    ptls__key_schedule_update_hash(tls->key_schedule, message.base, message.len, 0);
     tls->state = PTLS_STATE_CLIENT_EXPECT_CERTIFICATE_VERIFY;
     ret = PTLS_ERROR_IN_PROGRESS;
 
@@ -2995,7 +3018,7 @@ static int server_handle_certificate(ptls_t *tls, ptls_iovec_t message)
     if ((ret = handle_certificate(tls, message.base + PTLS_HANDSHAKE_HEADER_SIZE, message.base + message.len, &got_certs)) != 0)
         return ret;
 
-    ptls__key_schedule_update_hash(tls->key_schedule, message.base, message.len);
+    ptls__key_schedule_update_hash(tls->key_schedule, message.base, message.len, 0);
 
     if (got_certs) {
         tls->state = PTLS_STATE_SERVER_EXPECT_CERTIFICATE_VERIFY;
@@ -3037,7 +3060,7 @@ static int handle_certificate_verify(ptls_t *tls, ptls_iovec_t message, const ch
         goto Exit;
     }
 
-    ptls__key_schedule_update_hash(tls->key_schedule, message.base, message.len);
+    ptls__key_schedule_update_hash(tls->key_schedule, message.base, message.len, 0);
 
 Exit:
     return ret;
@@ -3074,7 +3097,7 @@ static int client_handle_finished(ptls_t *tls, ptls_message_emitter_t *emitter, 
 
     if ((ret = verify_finished(tls, message)) != 0)
         goto Exit;
-    ptls__key_schedule_update_hash(tls->key_schedule, message.base, message.len);
+    ptls__key_schedule_update_hash(tls->key_schedule, message.base, message.len, 0);
 
     /* update traffic keys by using messages upto ServerFinished, but commission them after sending ClientFinished */
     if ((ret = key_schedule_extract(tls->key_schedule, ptls_iovec_init(NULL, 0))) != 0)
@@ -3760,7 +3783,7 @@ Found:
         goto Exit;
     if ((ret = derive_secret(tls->key_schedule, binder_key, "res binder")) != 0)
         goto Exit;
-    ptls__key_schedule_update_hash(tls->key_schedule, ch_trunc.base, ch_trunc.len);
+    ptls__key_schedule_update_hash(tls->key_schedule, ch_trunc.base, ch_trunc.len, 0);
     if ((ret = calc_verify_data(binder_key /* to conserve space, reuse binder_key for storing verify_data */, tls->key_schedule,
                                 binder_key)) != 0)
         goto Exit;
@@ -4004,7 +4027,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
             goto Exit;
         if (!is_second_flight) {
             tls->cipher_suite = cs;
-            tls->key_schedule = key_schedule_new(cs, NULL);
+            tls->key_schedule = key_schedule_new(cs, NULL, 0);
         } else {
             if (tls->cipher_suite != cs) {
                 ret = PTLS_ALERT_HANDSHAKE_FAILURE;
@@ -4036,7 +4059,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
             }
             /* integrity check passed; update states */
             key_schedule_update_ch1hash_prefix(tls->key_schedule);
-            ptls__key_schedule_update_hash(tls->key_schedule, ch->cookie.ch1_hash.base, ch->cookie.ch1_hash.len);
+            ptls__key_schedule_update_hash(tls->key_schedule, ch->cookie.ch1_hash.base, ch->cookie.ch1_hash.len, 0);
             key_schedule_extract(tls->key_schedule, ptls_iovec_init(NULL, 0));
             /* ... reusing sendbuf to rebuild HRR for hash calculation */
             size_t hrr_start = emitter->buf->off;
@@ -4058,7 +4081,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
             if ((ret = select_negotiated_group(&negotiated_group, tls->ctx->key_exchanges, ch->negotiated_groups.base,
                                                ch->negotiated_groups.base + ch->negotiated_groups.len)) != 0)
                 goto Exit;
-            ptls__key_schedule_update_hash(tls->key_schedule, message.base, message.len);
+            ptls__key_schedule_update_hash(tls->key_schedule, message.base, message.len, 0);
             assert(tls->key_schedule->generation == 0);
             if (properties != NULL && properties->server.retry_uses_cookie) {
                 /* emit HRR with cookie (note: we MUST omit KeyShare if the client has specified the correct one; see 46554f0)
@@ -4137,7 +4160,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
      * adjust key_schedule, determine handshake mode
      */
     if (psk_index == SIZE_MAX || tls->ctx->require_client_authentication) {
-        ptls__key_schedule_update_hash(tls->key_schedule, message.base, message.len);
+        ptls__key_schedule_update_hash(tls->key_schedule, message.base, message.len, 0);
         if (!is_second_flight) {
             assert(tls->key_schedule->generation == 0);
             key_schedule_extract(tls->key_schedule, ptls_iovec_init(NULL, 0));
@@ -4146,7 +4169,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
         if (properties != NULL)
             properties->server.selected_psk_binder.len = 0;
     } else {
-        ptls__key_schedule_update_hash(tls->key_schedule, ch->psk.hash_end, message.base + message.len - ch->psk.hash_end);
+        ptls__key_schedule_update_hash(tls->key_schedule, ch->psk.hash_end, message.base + message.len - ch->psk.hash_end, 0);
         if ((ch->psk.ke_modes & (1u << PTLS_PSK_KE_MODE_PSK)) != 0) {
             mode = HANDSHAKE_MODE_PSK;
         } else {
@@ -4352,7 +4375,7 @@ static int server_handle_end_of_early_data(ptls_t *tls, ptls_iovec_t message)
     if ((ret = commission_handshake_secret(tls)) != 0)
         goto Exit;
 
-    ptls__key_schedule_update_hash(tls->key_schedule, message.base, message.len);
+    ptls__key_schedule_update_hash(tls->key_schedule, message.base, message.len, 0);
     tls->state = PTLS_STATE_SERVER_EXPECT_FINISHED;
     ret = PTLS_ERROR_IN_PROGRESS;
 
@@ -4372,7 +4395,7 @@ static int server_handle_finished(ptls_t *tls, ptls_iovec_t message)
     if ((ret = setup_traffic_protection(tls, 0, NULL, 3, 0)) != 0)
         return ret;
 
-    ptls__key_schedule_update_hash(tls->key_schedule, message.base, message.len);
+    ptls__key_schedule_update_hash(tls->key_schedule, message.base, message.len, 0);
 
     tls->state = PTLS_STATE_SERVER_POST_HANDSHAKE;
     return 0;

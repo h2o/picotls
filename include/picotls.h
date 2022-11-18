@@ -1114,7 +1114,7 @@ static uint8_t *ptls_encode_quicint(uint8_t *p, uint64_t v);
         ptls_buffer_push(_buf, (type));                                                                                            \
         ptls_buffer_push_block(_buf, 3, block);                                                                                    \
         if (_key_sched != NULL)                                                                                                    \
-            ptls__key_schedule_update_hash(_key_sched, _buf->base + mess_start, _buf->off - mess_start);                           \
+            ptls__key_schedule_update_hash(_key_sched, _buf->base + mess_start, _buf->off - mess_start, 0);                        \
     } while (0)
 
 #define ptls_push_message(emitter, key_sched, type, block)                                                                         \
@@ -1633,7 +1633,7 @@ static void ptls_aead__do_encrypt_v(ptls_aead_context_t *ctx, void *_output, ptl
 /**
  * internal
  */
-void ptls__key_schedule_update_hash(ptls_key_schedule_t *sched, const uint8_t *msg, size_t msglen);
+void ptls__key_schedule_update_hash(ptls_key_schedule_t *sched, const uint8_t *msg, size_t msglen, int use_outer);
 /**
  * clears memory
  */
