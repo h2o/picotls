@@ -4083,53 +4083,55 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
                 goto Exit;
             ptls__key_schedule_update_hash(tls->key_schedule, message.base, message.len, 0);
             assert(tls->key_schedule->generation == 0);
-            if (properties != NULL && properties->server.retry_uses_cookie) {
-                /* emit HRR with cookie (note: we MUST omit KeyShare if the client has specified the correct one; see 46554f0)
-                 */
-                EMIT_HELLO_RETRY_REQUEST(NULL, key_share.algorithm != NULL ? NULL : negotiated_group, {
+
+            /* Either send a stateless retry (w. cookies) or a stateful one. When sending the latter, run the state machine. */
+            int retry_uses_cookie = properties != NULL && properties->server.retry_uses_cookie;
+            if (!retry_uses_cookie) {
+                key_schedule_transform_post_ch1hash(tls->key_schedule);
+                key_schedule_extract(tls->key_schedule, ptls_iovec_init(NULL, 0));
+            }
+            EMIT_HELLO_RETRY_REQUEST(
+                retry_uses_cookie ? NULL : tls->key_schedule, key_share.algorithm != NULL ? NULL : negotiated_group, {
                     ptls_buffer_t *sendbuf = emitter->buf;
-                    buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_COOKIE, {
-                        ptls_buffer_push_block(sendbuf, 2, {
-                            /* push to-be-signed data */
-                            size_t tbs_start = sendbuf->off;
+                    if (retry_uses_cookie) {
+                        buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_COOKIE, {
                             ptls_buffer_push_block(sendbuf, 2, {
-                                /* first block of the cookie data is the hash(ch1) */
+                                /* push to-be-signed data */
+                                size_t tbs_start = sendbuf->off;
+                                ptls_buffer_push_block(sendbuf, 2, {
+                                    /* first block of the cookie data is the hash(ch1) */
+                                    ptls_buffer_push_block(sendbuf, 1, {
+                                        size_t sz = tls->cipher_suite->hash->digest_size;
+                                        if ((ret = ptls_buffer_reserve(sendbuf, sz)) != 0)
+                                            goto Exit;
+                                        key_schedule_extract_ch1hash(tls->key_schedule, sendbuf->base + sendbuf->off);
+                                        sendbuf->off += sz;
+                                    });
+                                    /* second is if we have sent key_share extension */
+                                    ptls_buffer_push(sendbuf, key_share.algorithm == NULL);
+                                    /* we can add more data here */
+                                });
+                                size_t tbs_len = sendbuf->off - tbs_start;
+                                /* push the signature */
                                 ptls_buffer_push_block(sendbuf, 1, {
-                                    size_t sz = tls->cipher_suite->hash->digest_size;
+                                    size_t sz = tls->ctx->cipher_suites[0]->hash->digest_size;
                                     if ((ret = ptls_buffer_reserve(sendbuf, sz)) != 0)
                                         goto Exit;
-                                    key_schedule_extract_ch1hash(tls->key_schedule, sendbuf->base + sendbuf->off);
+                                    if ((ret = calc_cookie_signature(tls, properties, negotiated_group,
+                                                                     ptls_iovec_init(sendbuf->base + tbs_start, tbs_len),
+                                                                     sendbuf->base + sendbuf->off)) != 0)
+                                        goto Exit;
                                     sendbuf->off += sz;
                                 });
-                                /* second is if we have sent key_share extension */
-                                ptls_buffer_push(sendbuf, key_share.algorithm == NULL);
-                                /* we can add more data here */
-                            });
-                            size_t tbs_len = sendbuf->off - tbs_start;
-                            /* push the signature */
-                            ptls_buffer_push_block(sendbuf, 1, {
-                                size_t sz = tls->ctx->cipher_suites[0]->hash->digest_size;
-                                if ((ret = ptls_buffer_reserve(sendbuf, sz)) != 0)
-                                    goto Exit;
-                                if ((ret = calc_cookie_signature(tls, properties, negotiated_group,
-                                                                 ptls_iovec_init(sendbuf->base + tbs_start, tbs_len),
-                                                                 sendbuf->base + sendbuf->off)) != 0)
-                                    goto Exit;
-                                sendbuf->off += sz;
                             });
                         });
-                    });
+                    }
                 });
+            if (retry_uses_cookie) {
                 if ((ret = push_change_cipher_spec(tls, emitter)) != 0)
                     goto Exit;
                 ret = PTLS_ERROR_STATELESS_RETRY;
             } else {
-                /* invoking stateful retry; roll the key schedule and emit HRR */
-                key_schedule_transform_post_ch1hash(tls->key_schedule);
-                key_schedule_extract(tls->key_schedule, ptls_iovec_init(NULL, 0));
-                EMIT_HELLO_RETRY_REQUEST(tls->key_schedule, key_share.algorithm != NULL ? NULL : negotiated_group, {});
-                if ((ret = push_change_cipher_spec(tls, emitter)) != 0)
-                    goto Exit;
                 tls->state = PTLS_STATE_SERVER_EXPECT_SECOND_CLIENT_HELLO;
                 if (ch->psk.early_data_indication)
                     tls->server.early_data_skipped_bytes = 0;
