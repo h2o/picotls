@@ -1112,9 +1112,9 @@ Exit:
     return ech;
 }
 
-#define ECH_ACCEPT_CONFIRMATION_SERVER_HELLO "ech accept confirmation"
-#define ECH_ACCEPT_CONFIRMATION_HRR "hrr ech accept confirmation"
-static int ech_calc_accept_confirmation(ptls_key_schedule_t *sched, void *dst, const uint8_t *client_random, const char *label)
+#define ECH_CONFIRMATION_SERVER_HELLO "ech accept confirmation"
+#define ECH_CONFIRMATION_HRR "hrr ech accept confirmation"
+static int ech_calc_confirmation(ptls_key_schedule_t *sched, void *dst, const uint8_t *client_random, const char *label)
 {
     uint8_t secret[PTLS_MAX_DIGEST_SIZE], transcript_hash[PTLS_MAX_DIGEST_SIZE];
     int ret;
@@ -2556,8 +2556,8 @@ static int client_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
         memset(message.base + confirm_hash_off, 0, sizeof(confirm_hash_delivered));
         /* run the transcript hash, check if ECH is accepted; if not, dispose ECH state and revert to the original transcript */
         ptls__key_schedule_update_hash(tls->key_schedule, message.base, message.len, 0);
-        if ((ret = ech_calc_accept_confirmation(tls->key_schedule, confirm_hash_expected, tls->client_random,
-                                                ECH_ACCEPT_CONFIRMATION_SERVER_HELLO)) != 0)
+        if ((ret = ech_calc_confirmation(tls->key_schedule, confirm_hash_expected, tls->client_random,
+                                         ECH_CONFIRMATION_SERVER_HELLO)) != 0)
             goto Exit;
         if (memcmp(confirm_hash_delivered, confirm_hash_expected, sizeof(confirm_hash_delivered)) != 0) {
             memcpy(message.base + confirm_hash_off, confirm_hash_delivered, sizeof(confirm_hash_delivered));
@@ -4139,8 +4139,8 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
             });
             if (ech_confirm_off != 0) {
                 assert(accept_ech);
-                if ((ret = ech_calc_accept_confirmation(tls->key_schedule, emitter->buf->base + ech_confirm_off, tls->client_random,
-                                                        ECH_ACCEPT_CONFIRMATION_HRR)) != 0)
+                if ((ret = ech_calc_confirmation(tls->key_schedule, emitter->buf->base + ech_confirm_off, tls->client_random,
+                                                 ECH_CONFIRMATION_HRR)) != 0)
                     goto Exit;
             }
             if (retry_uses_cookie) {
@@ -4251,8 +4251,8 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
             });
         if (ech_confirm_off != 0) {
             assert(accept_ech);
-            if ((ret = ech_calc_accept_confirmation(tls->key_schedule, emitter->buf->base + ech_confirm_off, tls->client_random,
-                                                    ECH_ACCEPT_CONFIRMATION_SERVER_HELLO)) != 0)
+            if ((ret = ech_calc_confirmation(tls->key_schedule, emitter->buf->base + ech_confirm_off, tls->client_random,
+                                             ECH_CONFIRMATION_SERVER_HELLO)) != 0)
                 goto Exit;
         }
     }
