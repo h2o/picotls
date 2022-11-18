@@ -2229,7 +2229,7 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
         emitter->buf->off = mess_start;
         uint8_t outer_random[PTLS_HELLO_RANDOM_SIZE];
         tls->ctx->random_bytes(outer_random, sizeof(outer_random));
-        size_t ech_size_offset = encoded_ch_inner.off - 4 + tls->client.ech->aead->algo->tag_size;
+        size_t ech_size_offset = encoded_ch_inner.off - PTLS_HANDSHAKE_HEADER_SIZE + tls->client.ech->aead->algo->tag_size;
         if ((ret =
                  encode_client_hello(tls->ctx, emitter->buf, ENCODE_CH_MODE_OUTER, is_second_flight, properties, outer_random,
                                      tls->client.key_share_ctx, tls->client.ech->public_name, tls->client.legacy_session_id,
@@ -2237,8 +2237,10 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
                                      tls->key_schedule->hashes[0].algo->digest_size, cookie, tls->client.using_early_data)) != 0)
             goto Exit;
         /* overwrite ECH payload */
-        ptls_aead_encrypt(tls->client.ech->aead, emitter->buf->base + ech_size_offset, encoded_ch_inner.base + 4,
-                          encoded_ch_inner.off - 4, 0, emitter->buf->base + mess_start + 4, emitter->buf->off - (mess_start + 4));
+        ptls_aead_encrypt(tls->client.ech->aead, emitter->buf->base + ech_size_offset,
+                          encoded_ch_inner.base + PTLS_HANDSHAKE_HEADER_SIZE, encoded_ch_inner.off - PTLS_HANDSHAKE_HEADER_SIZE, 0,
+                          emitter->buf->base + mess_start + PTLS_HANDSHAKE_HEADER_SIZE,
+                          emitter->buf->off - (mess_start + PTLS_HANDSHAKE_HEADER_SIZE));
     }
 
     /* commit CH to the record layer */
