@@ -379,13 +379,13 @@ struct st_ptls_client_hello_t {
 struct st_ptls_server_hello_t {
     uint8_t random_[PTLS_HELLO_RANDOM_SIZE];
     ptls_iovec_t legacy_session_id;
+    ptls_iovec_t ech;
     int is_retry_request;
     union {
         ptls_iovec_t peerkey;
         struct {
             uint16_t selected_group;
             ptls_iovec_t cookie;
-            const uint8_t *ech;
         } retry_request;
     };
 };
@@ -2467,15 +2467,12 @@ static int decode_server_hello(ptls_t *tls, struct st_ptls_server_hello_t *sh, c
         case PTLS_EXTENSION_TYPE_ENCRYPTED_CLIENT_HELLO:
             if (sh->is_retry_request && tls->client.ech != NULL) {
                 if (end - src != 8) {
-                    ret = PTLS_ALERT_DECODE_ERROR;
+                    ret = PTLS_ALERT_ILLEGAL_PARAMETER;
                     goto Exit;
                 }
-                sh->retry_request.ech = src;
-                src = end;
-            } else {
-                ret = PTLS_ALERT_ILLEGAL_PARAMETER;
-                goto Exit;
             }
+            sh->ech = ptls_iovec_init(src, end - src);
+            src = end;
             break;
         default:
             src = end;
@@ -2614,7 +2611,7 @@ static int client_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
         if ((ret = key_schedule_select_one(tls->key_schedule, tls->cipher_suite, 0)) != 0)
             goto Exit;
         key_schedule_transform_post_ch1hash(tls->key_schedule);
-        if ((ret = client_ech_select_hello(tls, message, sh.retry_request.ech != NULL ? sh.retry_request.ech - message.base : 0,
+        if ((ret = client_ech_select_hello(tls, message, sh.ech.base != NULL ? sh.ech.base - message.base : 0,
                                            ECH_CONFIRMATION_HRR)) != 0)
             goto Exit;
         return handle_hello_retry_request(tls, emitter, &sh, message, properties);
@@ -2628,6 +2625,12 @@ static int client_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
     static const size_t confirm_hash_off = PTLS_HANDSHAKE_HEADER_SIZE + 2 /* legacy_version */ + PTLS_HELLO_RANDOM_SIZE - 8;
     if ((ret = client_ech_select_hello(tls, message, confirm_hash_off, ECH_CONFIRMATION_SERVER_HELLO)) != 0)
         goto Exit;
+
+    /* When ECH is accepted, ServerHello MUST NOT contain an ECH extension (draft-15 section 5). */
+    if (tls->client.ech != NULL && sh.ech.base != NULL) {
+        ret = PTLS_ALERT_UNSUPPORTED_EXTENSION;
+        goto Exit;
+    }
 
     if (sh.peerkey.base != NULL) {
         if ((ret = tls->client.key_share_ctx->on_exchange(&tls->client.key_share_ctx, 1, &ecdh_secret, sh.peerkey)) != 0)
