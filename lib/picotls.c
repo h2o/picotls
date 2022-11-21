@@ -3752,6 +3752,12 @@ static int check_client_hello_constraints(ptls_context_t *ctx, struct st_ptls_cl
             return PTLS_ALERT_ILLEGAL_PARAMETER;
     }
 
+    if (ech_is_inner_ch && ch->ech.payload.base == NULL)
+        return PTLS_ALERT_ILLEGAL_PARAMETER;
+    if (ch->ech.payload.base != NULL &&
+        ch->ech.type != (ech_is_inner_ch ? PTLS_ECH_CLIENT_HELLO_TYPE_INNER : PTLS_ECH_CLIENT_HELLO_TYPE_OUTER))
+        return PTLS_ALERT_ILLEGAL_PARAMETER;
+
     return 0;
 }
 
@@ -4047,10 +4053,6 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
                 if ((ret = decode_client_hello(tls->ctx, ch, ech.ch_inner.base + PTLS_HANDSHAKE_HEADER_SIZE,
                                                ech.ch_inner.base + ech.ch_inner.off, properties, tls)) != 0)
                     goto Exit;
-                if (ch->ech.payload.base == NULL || ch->ech.type != PTLS_ECH_CLIENT_HELLO_TYPE_INNER) {
-                    ret = PTLS_ALERT_ILLEGAL_PARAMETER;
-                    goto Exit;
-                }
                 if ((ret = check_client_hello_constraints(tls->ctx, ch, is_second_flight ? tls->client_random.inner : NULL, 1,
                                                           message, tls)) != 0)
                     goto Exit;
