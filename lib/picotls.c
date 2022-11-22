@@ -1140,7 +1140,7 @@ static int ech_calc_confirmation(ptls_key_schedule_t *sched, void *dst, const ui
 
     sched->hashes[0].ctx->final(sched->hashes[0].ctx, transcript_hash, PTLS_HASH_FINAL_MODE_SNAPSHOT);
     if ((ret = ptls_hkdf_expand_label(sched->hashes[0].algo, dst, 8, ptls_iovec_init(secret, sched->hashes[0].algo->digest_size),
-                                      label, ptls_iovec_init(transcript_hash, sched->hashes[0].algo->digest_size), "")) != 0)
+                                      label, ptls_iovec_init(transcript_hash, sched->hashes[0].algo->digest_size), NULL)) != 0)
         goto Exit;
 
 Exit:
