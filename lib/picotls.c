@@ -2043,9 +2043,10 @@ static int encode_client_hello(ptls_context_t *ctx, ptls_buffer_t *sendbuf, enum
         ptls_buffer_push_block(sendbuf, 2, {
             if (mode == ENCODE_CH_MODE_OUTER) {
                 buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_ENCRYPTED_CLIENT_HELLO, {
-                    ptls_buffer_push(sendbuf, PTLS_ECH_CLIENT_HELLO_TYPE_OUTER, ech->config_id);
+                    ptls_buffer_push(sendbuf, PTLS_ECH_CLIENT_HELLO_TYPE_OUTER);
                     ptls_buffer_push16(sendbuf, ech->cipher->id.kdf);
                     ptls_buffer_push16(sendbuf, ech->cipher->id.aead);
+                    ptls_buffer_push(sendbuf, ech->config_id);
                     ptls_buffer_push_block(sendbuf, 2, {
                         if (!is_second_flight)
                             ptls_buffer_pushv(sendbuf, ech->enc.base, ech->enc.len);
@@ -3561,12 +3562,7 @@ static int decode_client_hello(ptls_context_t *ctx, struct st_ptls_client_hello_
             }
             ch->ech.type = *src++;
             switch (ch->ech.type) {
-            case PTLS_ECH_CLIENT_HELLO_TYPE_OUTER:
-                if (src == end) {
-                    ret = PTLS_ALERT_DECODE_ERROR;
-                    goto Exit;
-                }
-                ch->ech.config_id = *src++;
+            case PTLS_ECH_CLIENT_HELLO_TYPE_OUTER: {
                 ptls_hpke_cipher_suite_id_t cipher_id;
                 if ((ret = ptls_decode16(&cipher_id.kdf, &src, end)) != 0 || (ret = ptls_decode16(&cipher_id.aead, &src, end)) != 0)
                     goto Exit;
@@ -3579,6 +3575,11 @@ static int decode_client_hello(ptls_context_t *ctx, struct st_ptls_client_hello_
                         }
                     }
                 }
+                if (src == end) {
+                    ret = PTLS_ALERT_DECODE_ERROR;
+                    goto Exit;
+                }
+                ch->ech.config_id = *src++;
                 ptls_decode_open_block(src, end, 2, {
                     ch->ech.enc = ptls_iovec_init(src, end - src);
                     src = end;
@@ -3587,7 +3588,7 @@ static int decode_client_hello(ptls_context_t *ctx, struct st_ptls_client_hello_
                     ch->ech.payload = ptls_iovec_init(src, end - src);
                     src = end;
                 });
-                break;
+            } break;
             case PTLS_ECH_CLIENT_HELLO_TYPE_INNER:
                 if (src != end) {
                     ret = PTLS_ALERT_DECODE_ERROR;
