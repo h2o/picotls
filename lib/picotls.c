@@ -3730,8 +3730,12 @@ static int check_client_hello_constraints(ptls_context_t *ctx, struct st_ptls_cl
     if (is_second_flight && !ptls_mem_equal(ch->random_bytes, prev_random, PTLS_HELLO_RANDOM_SIZE))
         return PTLS_ALERT_HANDSHAKE_FAILURE;
 
-    /* bail out if CH cannot be handled as TLS 1.3, providing the application the raw CH and SNI, to help them fallback */
+    /* bail out if CH cannot be handled as TLS 1.3 */
     if (!is_supported_version(ch->selected_version)) {
+        /* ECH: server MUST abort with an "illegal_parameter" alert if the client offers TLS 1.2 or below (draft-15 7.1) */
+        if (ech_is_inner_ch)
+            return PTLS_ALERT_ILLEGAL_PARAMETER;
+        /* fail with PROTOCOL_VERSION alert, after providing the applications the raw CH and SNI to help them fallback */
         if (!is_second_flight && ctx->on_client_hello != NULL) {
             ptls_on_client_hello_parameters_t params = {
                 .server_name = ch->server_name,
