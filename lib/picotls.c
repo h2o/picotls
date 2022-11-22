@@ -2572,7 +2572,7 @@ static int client_ech_select_hello(ptls_t *tls, ptls_iovec_t message, size_t con
             ptls__key_schedule_update_hash(tls->key_schedule, message.base, message.len, 0);
             if ((ret = ech_calc_confirmation(tls->key_schedule, confirm_hash_expected, tls->client_random.inner, label)) != 0)
                 goto Exit;
-            if (memcmp(confirm_hash_delivered, confirm_hash_expected, sizeof(confirm_hash_delivered)) == 0)
+            if (ptls_mem_equal(confirm_hash_delivered, confirm_hash_expected, sizeof(confirm_hash_delivered)))
                 goto Exit;
             memcpy(message.base + confirm_hash_off, confirm_hash_delivered, sizeof(confirm_hash_delivered));
         }
