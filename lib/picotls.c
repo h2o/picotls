@@ -4466,6 +4466,11 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
     }
 
 Exit:
+    /* acceptance of ECH is signalled as the persistence of the ech AEAD context */
+    if (!accept_ech && tls->server.ech.aead != NULL) {
+        ptls_aead_free(tls->server.ech.aead);
+        tls->server.ech.aead = NULL;
+    }
     free(pubkey.base);
     if (ecdh_secret.base != NULL) {
         ptls_clear_memory(ecdh_secret.base, ecdh_secret.len);
@@ -4804,6 +4809,7 @@ int ptls_import(ptls_context_t *ctx, ptls_t **tls, ptls_iovec_t params)
 
     *tls = NULL;
 
+    /* TODO handle flags like psk_handshake, ech_handshake as we add support for TLS/1.3 import */
     ptls_decode_block(src, end, 2, {
         /* instantiate, based on the is_server flag */
         if (end - src < 2) {
@@ -4831,7 +4837,6 @@ int ptls_import(ptls_context_t *ctx, ptls_t **tls, ptls_iovec_t params)
             goto Exit;
         }
         memcpy((*tls)->client_random.outer, src, PTLS_HELLO_RANDOM_SIZE);
-        /* FIXME inner-random? */
         src += PTLS_HELLO_RANDOM_SIZE;
         ptls_decode_open_block(src, end, 2, {
             if (src != end) {
@@ -5018,6 +5023,15 @@ int ptls_handshake_is_complete(ptls_t *tls)
 int ptls_is_psk_handshake(ptls_t *tls)
 {
     return tls->is_psk_handshake;
+}
+
+int ptls_is_ech_handshake(ptls_t *tls)
+{
+    if (tls->is_server) {
+        return tls->server.ech.aead != NULL;
+    } else {
+        return tls->client.ech != NULL;
+    }
 }
 
 void **ptls_get_data_ptr(ptls_t *tls)
