@@ -1091,39 +1091,38 @@ Exit:
     return ret;
 }
 
-static struct st_ptls_ech_client_t *client_instantiate_ech(struct decoded_ech_config_t *decoded)
+static int client_instantiate_ech(struct st_ptls_ech_client_t **ech, struct decoded_ech_config_t *decoded)
 {
-    if (decoded->kem == NULL || decoded->cipher == NULL)
-        return NULL;
-
-    struct st_ptls_ech_client_t *ech;
     ptls_buffer_t infobuf;
     uint8_t infobuf_smallbuf[256];
     int ret;
 
+    *ech = NULL;
+
     ptls_buffer_init(&infobuf, infobuf_smallbuf, sizeof(infobuf_smallbuf));
 
-    if ((ech = malloc(offsetof(struct st_ptls_ech_client_t, public_name) + decoded->public_name.len + 1)) == NULL) {
+    if ((*ech = malloc(offsetof(struct st_ptls_ech_client_t, public_name) + decoded->public_name.len + 1)) == NULL) {
         ret = PTLS_ERROR_NO_MEMORY;
         goto Exit;
     }
-    *ech = (struct st_ptls_ech_client_t){.config_id = decoded->id, .cipher = decoded->cipher, .max_name_length = decoded->max_name_length};
-    memcpy(ech->public_name, decoded->public_name.base, decoded->public_name.len);
-    ech->public_name[decoded->public_name.len] = '\0';
+    **ech = (struct st_ptls_ech_client_t){
+        .config_id = decoded->id, .cipher = decoded->cipher, .max_name_length = decoded->max_name_length};
+    memcpy((*ech)->public_name, decoded->public_name.base, decoded->public_name.len);
+    (*ech)->public_name[decoded->public_name.len] = '\0';
 
     ptls_buffer_pushv(&infobuf, ech_info_prefix.base, ech_info_prefix.len);
     ptls_buffer_pushv(&infobuf, decoded->bytes.base, decoded->bytes.len);
 
-    ret = ptls_hpke_setup_base_s(decoded->kem, decoded->cipher, &ech->enc, &ech->aead, decoded->public_key,
-                                 ptls_iovec_init(infobuf.base, infobuf.off));
+    if ((ret = ptls_hpke_setup_base_s(decoded->kem, decoded->cipher, &(*ech)->enc, &(*ech)->aead, decoded->public_key,
+                                      ptls_iovec_init(infobuf.base, infobuf.off))) != 0)
+        goto Exit;
 
 Exit:
-    if (ret != 0) {
-        if (ech != NULL)
-            client_free_ech(ech);
-        ech = NULL;
+    if (ret != 0 && *ech != NULL) {
+        client_free_ech(*ech);
+        *ech = NULL;
     }
-    return ech;
+    return ret;
 }
 
 #define ECH_CONFIRMATION_SERVER_HELLO "ech accept confirmation"
@@ -2233,8 +2232,11 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
             properties->client.ech.configs.len != 0) {
             struct decoded_ech_config_t decoded;
             decode_ech_config_list(tls->ctx, &decoded, properties->client.ech.configs);
-            if ((tls->client.ech = client_instantiate_ech(&decoded)) != NULL)
+            if (decoded.kem != NULL && decoded.cipher != NULL) {
+                if ((ret = client_instantiate_ech(&tls->client.ech, &decoded)) != 0)
+                    goto Exit;
                 tls->ctx->random_bytes(tls->client_random.inner, PTLS_HELLO_RANDOM_SIZE);
+            }
         }
         /* setup resumption-related data. If successful, resumption_secret becomes a non-zero value. */
         if (properties->client.session_ticket.base != NULL) {
