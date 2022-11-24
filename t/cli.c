@@ -710,7 +710,7 @@ int main(int argc, char **argv)
             hsprop.client.max_early_data_size = &max_early_data_size;
         }
         ctx.send_change_cipher_spec = 1;
-        hsprop.client.ech_config_list = ech.config_list;
+        hsprop.client.ech.configs = ech.config_list;
     }
     if (key_exchanges[0] == NULL)
         key_exchanges[0] = &ptls_openssl_secp256r1;

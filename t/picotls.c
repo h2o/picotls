@@ -706,7 +706,7 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int expect_ticket, int
     }
 
     if (can_ech(ctx, 0))
-        client_hs_prop.client.ech_config_list = ptls_iovec_init(ECH_CONFIG_LIST, sizeof(ECH_CONFIG_LIST) - 1);
+        client_hs_prop.client.ech.configs = ptls_iovec_init(ECH_CONFIG_LIST, sizeof(ECH_CONFIG_LIST) - 1);
 
     static ptls_on_extension_t cb = {on_extension_cb};
     ctx_peer->on_extension = &cb;

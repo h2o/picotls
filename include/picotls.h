@@ -769,6 +769,10 @@ struct st_ptls_context_t {
          * server-only: callback that does ECDH key exchange and returns the AEAD context
          */
         ptls_ech_create_opener_t *create_opener;
+        /**
+         * ECHConfigList to be sent to the client when there is mismatch (or when the client sends a grease)
+         */
+        ptls_iovec_t retry_configs;
     } ech;
     /**
      *
@@ -925,9 +929,18 @@ typedef struct st_ptls_handshake_properties_t {
              */
             unsigned negotiate_before_key_exchange : 1;
             /**
-             * ECH configuration
+             * ECH
              */
-            ptls_iovec_t ech_config_list;
+            struct {
+                /**
+                 * config offered by server e.g., by HTTPS RR
+                 */
+                ptls_iovec_t configs;
+                /**
+                 * slot to save config obtained from server upon config mismatch
+                 */
+                ptls_iovec_t *retry_configs;
+            } ech;
         } client;
         struct {
             /**

@@ -275,6 +275,7 @@ struct st_ptls_t {
                 ptls_aead_context_t *aead;
                 uint8_t config_id;
                 ptls_hpke_cipher_suite_t *cipher;
+                unsigned offered_by_client : 1;
             } ech;
             uint8_t pending_traffic_secret[PTLS_MAX_DIGEST_SIZE];
             uint32_t early_data_skipped_bytes; /* if not UINT32_MAX, the server is skipping early data */
@@ -1031,11 +1032,12 @@ static int decode_one_ech_config(ptls_hpke_kem_t **kems, ptls_hpke_cipher_suite_
             uint16_t type;
             if ((ret = ptls_decode16(&type, src, end)) != 0)
                 goto Exit;
-            if ((type & 0x8000) != 0) {
-                ret = PTLS_ERROR_NOT_AVAILABLE;
-                goto Exit;
-            }
             ptls_decode_open_block(*src, end, 2, { *src = end; });
+            /* if a critital extension is found, indicate that the config cannot be used */
+            if ((type & 0x8000) != 0) {
+                *kem = NULL;
+                *cipher = NULL;
+            }
         }
     });
 
@@ -1076,16 +1078,13 @@ Exit:
     return ech;
 }
 
-static struct st_ptls_ech_client_t *client_setup_ech(ptls_context_t *ctx, ptls_iovec_t config_list, uint8_t *inner_random)
+static int decode_ech_config_list(ptls_context_t *ctx, ptls_iovec_t config_list, struct st_ptls_ech_client_t **ech)
 {
-    /* bail out if ech support is disabled or config_list is not provided */
-    if (ctx->ech.kems == NULL || ctx->ech.ciphers == NULL || config_list.len == 0)
-        return NULL;
-
-    /* parse the config and setup ech */
     const uint8_t *src = config_list.base, *const end = src + config_list.len;
-    struct st_ptls_ech_client_t *ech = NULL;
     int ret;
+
+    if (ech != NULL)
+        *ech = NULL;
 
     ptls_decode_block(src, end, 2, {
         do {
@@ -1102,29 +1101,26 @@ static struct st_ptls_ech_client_t *client_setup_ech(ptls_context_t *ctx, ptls_i
                     ptls_hpke_cipher_suite_t *cipher;
                     uint8_t max_name_length;
                     ptls_iovec_t public_name;
-                    if (decode_one_ech_config(ctx->ech.kems, ctx->ech.ciphers, &config_id, &kem, &public_key, &cipher,
-                                              &max_name_length, &public_name, &src, end) == 0 &&
-                        src == end && kem != NULL && cipher != NULL && ech == NULL) {
-                        ech = client_setup_ech_instantiate(config_id, kem, public_key, cipher, max_name_length, public_name,
-                                                           ptls_iovec_init(config_start, end - config_start));
-                    }
+                    if ((ret = decode_one_ech_config(ctx->ech.kems, ctx->ech.ciphers, &config_id, &kem, &public_key, &cipher,
+                                                     &max_name_length, &public_name, &src, end)) != 0)
+                        goto Exit;
+                    if (kem != NULL && cipher != NULL && ech != NULL && *ech == NULL)
+                        *ech = client_setup_ech_instantiate(config_id, kem, public_key, cipher, max_name_length, public_name,
+                                                            ptls_iovec_init(config_start, end - config_start));
                 } else {
                     src = end;
                 }
             });
         } while (src != end);
     });
+    ret = 0;
 
 Exit:
-    if (ret != 0) {
-        if (ech != NULL) {
-            client_free_ech(ech);
-            ech = NULL;
-        }
+    if (ret != 0 && ech != NULL && *ech != NULL) {
+        client_free_ech(*ech);
+        *ech = NULL;
     }
-    if (ech != NULL)
-        ctx->random_bytes(inner_random, PTLS_HELLO_RANDOM_SIZE);
-    return ech;
+    return ret;
 }
 
 #define ECH_CONFIRMATION_SERVER_HELLO "ech accept confirmation"
@@ -2216,9 +2212,13 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
         sni_name = tls->server_name;
 
     if (properties != NULL) {
-        /* try to use ECH */
-        if (!is_second_flight)
-            tls->client.ech = client_setup_ech(tls->ctx, properties->client.ech_config_list, tls->client_random.inner);
+        /* try to use ECH (ignore broken ECHConfigList; it is delivered insecurely) */
+        if (!is_second_flight && tls->ctx->ech.ciphers != NULL && tls->ctx->ech.kems != NULL &&
+            properties->client.ech.configs.len != 0) {
+            decode_ech_config_list(tls->ctx, properties->client.ech.configs, &tls->client.ech);
+            if (tls->client.ech != NULL)
+                tls->ctx->random_bytes(tls->client_random.inner, PTLS_HELLO_RANDOM_SIZE);
+        }
         /* setup resumption-related data. If successful, resumption_secret becomes a non-zero value. */
         if (properties->client.session_ticket.base != NULL) {
             ptls_key_exchange_algorithm_t *key_share = NULL;
@@ -2765,6 +2765,26 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
                 goto Exit;
             }
             server_offered_cert_type = *src;
+            src = end;
+            break;
+        case PTLS_EXTENSION_TYPE_ENCRYPTED_CLIENT_HELLO:
+            if (src == end) {
+                ret = PTLS_ALERT_DECODE_ERROR;
+                goto Exit;
+            }
+            if (ptls_is_ech_handshake(tls)) {
+                ret = PTLS_ALERT_UNSUPPORTED_EXTENSION;
+                goto Exit;
+            }
+            if ((ret = decode_ech_config_list(tls->ctx, ptls_iovec_init(src, end - src), NULL)) != 0)
+                goto Exit;
+            if (properties != NULL && properties->client.ech.retry_configs != NULL) {
+                if ((properties->client.ech.retry_configs->base = malloc(end - src)) == NULL) {
+                    ret = PTLS_ERROR_NO_MEMORY;
+                    goto Exit;
+                }
+                *properties->client.ech.retry_configs = ptls_iovec_init(src, end - src);
+            }
             src = end;
             break;
         default:
@@ -4064,6 +4084,8 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
             ret = PTLS_ALERT_ILLEGAL_PARAMETER;
             goto Exit;
         }
+        if (!is_second_flight)
+            tls->server.ech.offered_by_client = 1;
         /* obtain AEAD context for opening inner CH */
         if (!is_second_flight && ch->ech.cipher != NULL && ch->ech.payload.len > ch->ech.cipher->aead->tag_size &&
             tls->ctx->ech.create_opener != NULL) {
@@ -4103,6 +4125,10 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
                     memcpy(tls->client_random.inner, ch->random_bytes, PTLS_HELLO_RANDOM_SIZE);
             }
         }
+    } else if (tls->server.ech.offered_by_client) {
+        assert(is_second_flight);
+        ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+        goto Exit;
     }
 
     if (tls->ctx->require_dhe_on_psk)
@@ -4432,6 +4458,10 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
             }
             if (tls->pending_handshake_secret != NULL)
                 buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_EARLY_DATA, {});
+            if (tls->server.ech.offered_by_client && !ptls_is_ech_handshake(tls) && tls->ctx->ech.retry_configs.len != 0)
+                buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_ENCRYPTED_CLIENT_HELLO, {
+                    ptls_buffer_pushv(sendbuf, tls->ctx->ech.retry_configs.base, tls->ctx->ech.retry_configs.len);
+                });
             if ((ret = push_additional_extensions(properties, sendbuf)) != 0)
                 goto Exit;
         });
