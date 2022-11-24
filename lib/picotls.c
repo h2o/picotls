@@ -2594,10 +2594,8 @@ static int client_ech_select_hello(ptls_t *tls, ptls_iovec_t message, size_t con
         key_schedule_select_outer(tls->key_schedule);
     }
 
-    if (tls->client.ech == NULL)
-
-    Exit:
-        ptls_clear_memory(confirm_hash_expected, sizeof(confirm_hash_expected));
+Exit:
+    ptls_clear_memory(confirm_hash_expected, sizeof(confirm_hash_expected));
     if (ret == 0)
         ptls__key_schedule_update_hash(tls->key_schedule, message.base, message.len, 0);
     return ret;
