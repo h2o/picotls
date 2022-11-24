@@ -2564,10 +2564,6 @@ Exit:
     return ret;
 }
 
-/**
- * Determines if ServerHello is a response to the outer ClientHello or the inner ClientHello (if provided both), updates the state
- * as necessary (including running the hash).
- */
 static int client_ech_select_hello(ptls_t *tls, ptls_iovec_t message, size_t confirm_hash_off, const char *label)
 {
     uint8_t confirm_hash_delivered[8], confirm_hash_expected[8];
@@ -2596,8 +2592,6 @@ static int client_ech_select_hello(ptls_t *tls, ptls_iovec_t message, size_t con
 
 Exit:
     ptls_clear_memory(confirm_hash_expected, sizeof(confirm_hash_expected));
-    if (ret == 0)
-        ptls__key_schedule_update_hash(tls->key_schedule, message.base, message.len, 0);
     return ret;
 }
 
@@ -2623,6 +2617,7 @@ static int client_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
         if ((ret = client_ech_select_hello(tls, message, sh.ech.base != NULL ? sh.ech.base - message.base : 0,
                                            ECH_CONFIRMATION_HRR)) != 0)
             goto Exit;
+        ptls__key_schedule_update_hash(tls->key_schedule, message.base, message.len, 0);
         return handle_hello_retry_request(tls, emitter, &sh, message, properties);
     }
 
@@ -2634,12 +2629,13 @@ static int client_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
     static const size_t confirm_hash_off = PTLS_HANDSHAKE_HEADER_SIZE + 2 /* legacy_version */ + PTLS_HELLO_RANDOM_SIZE - 8;
     if ((ret = client_ech_select_hello(tls, message, confirm_hash_off, ECH_CONFIRMATION_SERVER_HELLO)) != 0)
         goto Exit;
-
     /* When ECH is accepted, ServerHello MUST NOT contain an ECH extension (draft-15 section 5). */
     if (tls->client.ech != NULL && sh.ech.base != NULL) {
         ret = PTLS_ALERT_UNSUPPORTED_EXTENSION;
         goto Exit;
     }
+
+    ptls__key_schedule_update_hash(tls->key_schedule, message.base, message.len, 0);
 
     if (sh.peerkey.base != NULL) {
         if ((ret = tls->client.key_share_ctx->on_exchange(&tls->client.key_share_ctx, 1, &ecdh_secret, sh.peerkey)) != 0)
