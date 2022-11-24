@@ -776,7 +776,12 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int expect_ticket, int
     ok(sbuf.off != 0);
     if (check_ch) {
         ok(ptls_get_server_name(server) != NULL);
-        ok(strcmp(ptls_get_server_name(server), "test.example.com") == 0);
+        if (can_ech(ctx, 0) && !can_ech(ctx_peer, 1)) {
+            /* server should be using CHouter.sni that includes the public name of the ECH extension */
+            ok(strcmp(ptls_get_server_name(server), "example.com") == 0);
+        } else {
+            ok(strcmp(ptls_get_server_name(server), "test.example.com") == 0);
+        }
         ok(ptls_get_negotiated_protocol(server) != NULL);
         ok(strcmp(ptls_get_negotiated_protocol(server), "h2") == 0);
     } else {
@@ -1551,9 +1556,12 @@ static void test_all_handshakes_core(void)
     subtest("full-handshake", test_full_handshake);
     subtest("full-handshake+client-auth", test_full_handshake_with_client_authentication);
     subtest("hrr-handshake", test_hrr_handshake);
-    subtest("resumption", test_resumption);
-    subtest("resumption-different-preferred-key-share", test_resumption_different_preferred_key_share);
-    subtest("resumption-with-client-authentication", test_resumption_with_client_authentication);
+    /* resumption does not work when the client offers ECH but the server does not recognize that */
+    if (!(can_ech(ctx, 0) && !can_ech(ctx_peer, 1))) {
+        subtest("resumption", test_resumption);
+        subtest("resumption-different-preferred-key-share", test_resumption_different_preferred_key_share);
+        subtest("resumption-with-client-authentication", test_resumption_with_client_authentication);
+    }
     subtest("enforce-retry-stateful", test_enforce_retry_stateful);
     if (!(can_ech(ctx_peer, 1) && can_ech(ctx, 0))) {
         subtest("hrr-stateless-handshake", test_hrr_stateless_handshake);
@@ -1587,8 +1595,17 @@ static void test_all_handshakes(void)
     ctx_peer->ech.ciphers = orig_ech_ciphers.server;
     ctx->ech.ciphers = orig_ech_ciphers.client;
 
-    if (can_ech(ctx_peer, 1) && can_ech(ctx, 0))
+    if (can_ech(ctx_peer, 1) && can_ech(ctx, 0)) {
         subtest("ech", test_all_handshakes_core);
+        if (ctx != ctx_peer) {
+            ctx->ech.ciphers = NULL;
+            subtest("ech (server-only)", test_all_handshakes_core);
+            ctx->ech.ciphers = orig_ech_ciphers.client;
+            ctx_peer->ech.ciphers = NULL;
+            subtest("ech (client-only)", test_all_handshakes_core);
+            ctx_peer->ech.ciphers = orig_ech_ciphers.server;
+        }
+    }
 
     ctx_peer->sign_certificate = sc_orig;
 
