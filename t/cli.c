@@ -489,7 +489,7 @@ int main(int argc, char **argv)
         .get_time = &ptls_get_time,
         .key_exchanges = key_exchanges,
         .cipher_suites = cipher_suites,
-        .ech = {ptls_openssl_hpke_kems, ptls_openssl_hpke_cipher_suites, NULL /* activated by -K option */},
+        .ech = {ptls_openssl_hpke_cipher_suites, ptls_openssl_hpke_kems, NULL /* activated by -K option */},
     };
     ptls_handshake_properties_t hsprop = {{{{NULL}}}};
     const char *host, *port, *input_file = NULL;

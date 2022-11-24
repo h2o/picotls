@@ -754,11 +754,20 @@ struct st_ptls_context_t {
         size_t count;
     } certificates;
     /**
-     * list of ECH kems, cipher-suites supported; or set to NULL to disable ECH
+     * ECH
      */
     struct {
-        ptls_hpke_kem_t **kems;
+        /**
+         * list of HPKE symmetric cipher-suites (set to NULL to disable ECH altogether)
+         */
         ptls_hpke_cipher_suite_t **ciphers;
+        /**
+         * client-only: KEMs being supported
+         */
+        ptls_hpke_kem_t **kems;
+        /**
+         * server-only: callback that does ECDH key exchange and returns the AEAD context
+         */
         ptls_ech_create_opener_t *create_opener;
     } ech;
     /**

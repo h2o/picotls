@@ -669,7 +669,7 @@ static int on_extension_cb(ptls_on_extension_t *self, ptls_t *tls, uint8_t hstyp
 
 static int can_ech(ptls_context_t *ctx, int is_server)
 {
-    if (ctx->ech.kems == NULL || ctx->ech.ciphers == NULL)
+    if (ctx->ech.ciphers == NULL)
         return 0;
     if (is_server && ctx->ech.create_opener == NULL)
         return 0;
@@ -1577,15 +1577,15 @@ static void test_all_handshakes(void)
     }
 
     struct {
-        ptls_hpke_kem_t **server, **client;
-    } orig_ech_kems = {ctx_peer->ech.kems, ctx->ech.kems};
+        ptls_hpke_cipher_suite_t **server, **client;
+    } orig_ech_ciphers = {ctx_peer->ech.ciphers, ctx->ech.ciphers};
 
     /* first run tests wo. ECH */
-    ctx_peer->ech.kems = NULL;
-    ctx->ech.kems = NULL;
+    ctx_peer->ech.ciphers = NULL;
+    ctx->ech.ciphers = NULL;
     subtest("no-ech", test_all_handshakes_core);
-    ctx_peer->ech.kems = orig_ech_kems.server;
-    ctx->ech.kems = orig_ech_kems.client;
+    ctx_peer->ech.ciphers = orig_ech_ciphers.server;
+    ctx->ech.ciphers = orig_ech_ciphers.client;
 
     if (can_ech(ctx_peer, 1) && can_ech(ctx, 0))
         subtest("ech", test_all_handshakes_core);
