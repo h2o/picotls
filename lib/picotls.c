@@ -3219,7 +3219,9 @@ static int client_handle_finished(ptls_t *tls, ptls_message_emitter_t *emitter, 
         goto Exit;
 
     if (tls->client.certificate_request.context.base != NULL) {
-        /* If this is a resumed session, the server must not send the certificate request in the handshake */
+        /* The client must not send a certifiate if:
+         * - this is a resumed session, in which case the server is forbidden from sending the certificate request
+         * - ECH was offered by the client but the server rejected (FIXME) */
         if (tls->is_psk_handshake) {
             ret = PTLS_ALERT_ILLEGAL_PARAMETER;
             goto Exit;
