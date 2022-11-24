@@ -155,6 +155,16 @@ struct st_ptls_certificate_request_t {
     struct st_ptls_signature_algorithms_t signature_algorithms;
 };
 
+struct decoded_ech_config_t {
+    uint8_t id;
+    ptls_hpke_kem_t *kem;
+    ptls_iovec_t public_key;
+    ptls_hpke_cipher_suite_t *cipher;
+    uint8_t max_name_length;
+    ptls_iovec_t public_name;
+    ptls_iovec_t bytes;
+};
+
 /**
  * Variables to be used for generating ClientHello; see draft-ietf-tls-esni section 4.
  */
@@ -970,38 +980,32 @@ static void client_free_ech(struct st_ptls_ech_client_t *ech)
 }
 
 /**
- * Decodes one ECHConfigContents (tls-esni-15 section 4). `kem` and `cipher` may be NULL even when the function returns zero, if the
- * corresponding entries are not found.
+ * Decodes one ECHConfigContents (tls-esni-15 section 4). `decoded->kem` and `cipher` may be NULL even when the function returns
+ * zero, if the corresponding entries are not found.
  */
-static int decode_one_ech_config(ptls_hpke_kem_t **kems, ptls_hpke_cipher_suite_t **ciphers, uint8_t *config_id,
-                                 ptls_hpke_kem_t **kem, ptls_iovec_t *public_key, ptls_hpke_cipher_suite_t **cipher,
-                                 uint8_t *max_name_length, ptls_iovec_t *public_name, const uint8_t **src, const uint8_t *const end)
+static int decode_one_ech_config(ptls_hpke_kem_t **kems, ptls_hpke_cipher_suite_t **ciphers, struct decoded_ech_config_t *decoded,
+                                 const uint8_t **src, const uint8_t *const end)
 {
     int ret;
 
-    *config_id = 0;
-    *kem = NULL;
-    *public_key = ptls_iovec_init(NULL, 0);
-    *cipher = NULL;
-    *max_name_length = 0;
-    *public_name = ptls_iovec_init(NULL, 0);
+    *decoded = (struct decoded_ech_config_t){0};
 
     if (*src == end) {
         ret = PTLS_ALERT_DECODE_ERROR;
         goto Exit;
     }
-    *config_id = *(*src)++;
+    decoded->id = *(*src)++;
     uint16_t kem_id;
     if ((ret = ptls_decode16(&kem_id, src, end)) != 0)
         goto Exit;
     for (size_t i = 0; kems[i] != NULL; ++i) {
         if (kems[i]->id == kem_id) {
-            *kem = kems[i];
+            decoded->kem = kems[i];
             break;
         }
     }
     ptls_decode_open_block(*src, end, 2, {
-        *public_key = ptls_iovec_init(*src, end - *src);
+        decoded->public_key = ptls_iovec_init(*src, end - *src);
         *src = end;
     });
     ptls_decode_open_block(*src, end, 2, {
@@ -1012,10 +1016,10 @@ static int decode_one_ech_config(ptls_hpke_kem_t **kems, ptls_hpke_cipher_suite_
                 goto Exit;
             if ((ret = ptls_decode16(&aead_id, src, end)) != 0)
                 goto Exit;
-            if (*cipher == NULL) {
+            if (decoded->cipher == NULL) {
                 for (size_t i = 0; ciphers[i] != NULL; ++i) {
                     if (ciphers[i]->id.kdf == kdf_id && ciphers[i]->id.aead == aead_id) {
-                        *cipher = ciphers[i];
+                        decoded->cipher = ciphers[i];
                         break;
                     }
                 }
@@ -1026,9 +1030,9 @@ static int decode_one_ech_config(ptls_hpke_kem_t **kems, ptls_hpke_cipher_suite_
         ret = PTLS_ALERT_DECODE_ERROR;
         goto Exit;
     }
-    *max_name_length = *(*src)++;
+    decoded->max_name_length = *(*src)++;
     ptls_decode_open_block(*src, end, 1, {
-        *public_name = ptls_iovec_init(*src, end - *src);
+        decoded->public_name = ptls_iovec_init(*src, end - *src);
         *src = end;
     });
     ptls_decode_block(*src, end, 2, {
@@ -1039,8 +1043,8 @@ static int decode_one_ech_config(ptls_hpke_kem_t **kems, ptls_hpke_cipher_suite_
             ptls_decode_open_block(*src, end, 2, { *src = end; });
             /* if a critital extension is found, indicate that the config cannot be used */
             if ((type & 0x8000) != 0) {
-                *kem = NULL;
-                *cipher = NULL;
+                decoded->kem = NULL;
+                decoded->cipher = NULL;
             }
         }
     });
@@ -1049,46 +1053,12 @@ Exit:
     return ret;
 }
 
-static struct st_ptls_ech_client_t *client_setup_ech_instantiate(uint8_t config_id, ptls_hpke_kem_t *kem, ptls_iovec_t public_key,
-                                                                 ptls_hpke_cipher_suite_t *cipher, uint8_t max_name_length,
-                                                                 ptls_iovec_t public_name, ptls_iovec_t ech_config)
-{
-    struct st_ptls_ech_client_t *ech;
-    ptls_buffer_t infobuf;
-    uint8_t infobuf_smallbuf[256];
-    int ret;
-
-    ptls_buffer_init(&infobuf, infobuf_smallbuf, sizeof(infobuf_smallbuf));
-
-    if ((ech = malloc(offsetof(struct st_ptls_ech_client_t, public_name) + public_name.len + 1)) == NULL) {
-        ret = PTLS_ERROR_NO_MEMORY;
-        goto Exit;
-    }
-    *ech = (struct st_ptls_ech_client_t){.config_id = config_id, .cipher = cipher, .max_name_length = max_name_length};
-    memcpy(ech->public_name, public_name.base, public_name.len);
-    ech->public_name[public_name.len] = '\0';
-
-    ptls_buffer_pushv(&infobuf, ech_info_prefix.base, ech_info_prefix.len);
-    ptls_buffer_pushv(&infobuf, ech_config.base, ech_config.len);
-
-    ret = ptls_hpke_setup_base_s(kem, cipher, &ech->enc, &ech->aead, public_key, ptls_iovec_init(infobuf.base, infobuf.off));
-
-Exit:
-    if (ret != 0) {
-        if (ech != NULL)
-            client_free_ech(ech);
-        ech = NULL;
-    }
-    return ech;
-}
-
-static int decode_ech_config_list(ptls_context_t *ctx, ptls_iovec_t config_list, struct st_ptls_ech_client_t **ech)
+static int decode_ech_config_list(ptls_context_t *ctx, struct decoded_ech_config_t *decoded, ptls_iovec_t config_list)
 {
     const uint8_t *src = config_list.base, *const end = src + config_list.len;
-    int ret;
+    int match_found = 0, ret;
 
-    if (ech != NULL)
-        *ech = NULL;
+    *decoded = (struct decoded_ech_config_t){0};
 
     ptls_decode_block(src, end, 2, {
         do {
@@ -1099,18 +1069,14 @@ static int decode_ech_config_list(ptls_context_t *ctx, ptls_iovec_t config_list,
             ptls_decode_open_block(src, end, 2, {
                 /* If the block is the one that we recognize, parse it, then adopt if if possible. Otherwise, skip. */
                 if (version == PTLS_ECH_CONFIG_VERSION) {
-                    uint8_t config_id;
-                    ptls_hpke_kem_t *kem;
-                    ptls_iovec_t public_key;
-                    ptls_hpke_cipher_suite_t *cipher;
-                    uint8_t max_name_length;
-                    ptls_iovec_t public_name;
-                    if ((ret = decode_one_ech_config(ctx->ech.kems, ctx->ech.ciphers, &config_id, &kem, &public_key, &cipher,
-                                                     &max_name_length, &public_name, &src, end)) != 0)
+                    struct decoded_ech_config_t thisconf;
+                    if ((ret = decode_one_ech_config(ctx->ech.kems, ctx->ech.ciphers, &thisconf, &src, end)) != 0)
                         goto Exit;
-                    if (kem != NULL && cipher != NULL && ech != NULL && *ech == NULL)
-                        *ech = client_setup_ech_instantiate(config_id, kem, public_key, cipher, max_name_length, public_name,
-                                                            ptls_iovec_init(config_start, end - config_start));
+                    if (!match_found && thisconf.kem != NULL && thisconf.cipher != NULL) {
+                        *decoded = thisconf;
+                        decoded->bytes = ptls_iovec_init(config_start, end - config_start);
+                        match_found = 1;
+                    }
                 } else {
                     src = end;
                 }
@@ -1120,11 +1086,44 @@ static int decode_ech_config_list(ptls_context_t *ctx, ptls_iovec_t config_list,
     ret = 0;
 
 Exit:
-    if (ret != 0 && ech != NULL && *ech != NULL) {
-        client_free_ech(*ech);
-        *ech = NULL;
-    }
+    if (ret != 0)
+        *decoded = (struct decoded_ech_config_t){0};
     return ret;
+}
+
+static struct st_ptls_ech_client_t *client_instantiate_ech(struct decoded_ech_config_t *decoded)
+{
+    if (decoded->kem == NULL || decoded->cipher == NULL)
+        return NULL;
+
+    struct st_ptls_ech_client_t *ech;
+    ptls_buffer_t infobuf;
+    uint8_t infobuf_smallbuf[256];
+    int ret;
+
+    ptls_buffer_init(&infobuf, infobuf_smallbuf, sizeof(infobuf_smallbuf));
+
+    if ((ech = malloc(offsetof(struct st_ptls_ech_client_t, public_name) + decoded->public_name.len + 1)) == NULL) {
+        ret = PTLS_ERROR_NO_MEMORY;
+        goto Exit;
+    }
+    *ech = (struct st_ptls_ech_client_t){.config_id = decoded->id, .cipher = decoded->cipher, .max_name_length = decoded->max_name_length};
+    memcpy(ech->public_name, decoded->public_name.base, decoded->public_name.len);
+    ech->public_name[decoded->public_name.len] = '\0';
+
+    ptls_buffer_pushv(&infobuf, ech_info_prefix.base, ech_info_prefix.len);
+    ptls_buffer_pushv(&infobuf, decoded->bytes.base, decoded->bytes.len);
+
+    ret = ptls_hpke_setup_base_s(decoded->kem, decoded->cipher, &ech->enc, &ech->aead, decoded->public_key,
+                                 ptls_iovec_init(infobuf.base, infobuf.off));
+
+Exit:
+    if (ret != 0) {
+        if (ech != NULL)
+            client_free_ech(ech);
+        ech = NULL;
+    }
+    return ech;
 }
 
 #define ECH_CONFIRMATION_SERVER_HELLO "ech accept confirmation"
@@ -2232,8 +2231,9 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
         /* try to use ECH (ignore broken ECHConfigList; it is delivered insecurely) */
         if (!is_second_flight && tls->ctx->ech.ciphers != NULL && tls->ctx->ech.kems != NULL &&
             properties->client.ech.configs.len != 0) {
-            decode_ech_config_list(tls->ctx, properties->client.ech.configs, &tls->client.ech);
-            if (tls->client.ech != NULL)
+            struct decoded_ech_config_t decoded;
+            decode_ech_config_list(tls->ctx, &decoded, properties->client.ech.configs);
+            if ((tls->client.ech = client_instantiate_ech(&decoded)) != NULL)
                 tls->ctx->random_bytes(tls->client_random.inner, PTLS_HELLO_RANDOM_SIZE);
         }
         /* setup resumption-related data. If successful, resumption_secret becomes a non-zero value. */
@@ -2792,7 +2792,8 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
             server_offered_cert_type = *src;
             src = end;
             break;
-        case PTLS_EXTENSION_TYPE_ENCRYPTED_CLIENT_HELLO:
+        case PTLS_EXTENSION_TYPE_ENCRYPTED_CLIENT_HELLO: {
+            struct decoded_ech_config_t decoded;
             if (src == end) {
                 ret = PTLS_ALERT_DECODE_ERROR;
                 goto Exit;
@@ -2801,9 +2802,10 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
                 ret = PTLS_ALERT_UNSUPPORTED_EXTENSION;
                 goto Exit;
             }
-            if ((ret = decode_ech_config_list(tls->ctx, ptls_iovec_init(src, end - src), NULL)) != 0)
+            if ((ret = decode_ech_config_list(tls->ctx, &decoded, ptls_iovec_init(src, end - src))) != 0)
                 goto Exit;
-            if (properties != NULL && properties->client.ech.retry_configs != NULL) {
+            if (decoded.kem != NULL && decoded.cipher != NULL && properties != NULL &&
+                properties->client.ech.retry_configs != NULL) {
                 if ((properties->client.ech.retry_configs->base = malloc(end - src)) == NULL) {
                     ret = PTLS_ERROR_NO_MEMORY;
                     goto Exit;
@@ -2811,7 +2813,7 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
                 *properties->client.ech.retry_configs = ptls_iovec_init(src, end - src);
             }
             src = end;
-            break;
+        } break;
         default:
             if (should_collect_unknown_extension(tls, properties, type)) {
                 if (unknown_extensions == &no_unknown_extensions) {

@@ -502,32 +502,27 @@ static void test_ech_decode_config(void)
     static ptls_hpke_kem_t p256 = {PTLS_HPKE_KEM_P256_SHA256}, *kems[] = {&p256, NULL};
     static ptls_hpke_cipher_suite_t aes128gcmsha256 = {{PTLS_HPKE_HKDF_SHA256, PTLS_HPKE_AEAD_AES_128_GCM}},
                                     *ciphers[] = {&aes128gcmsha256, NULL};
-    uint8_t config_id, max_name_length;
-    ptls_hpke_kem_t *kem;
-    ptls_hpke_cipher_suite_t *cipher;
-    ptls_iovec_t public_key, public_name;
+    struct decoded_ech_config_t decoded;
 
     { /* broken list */
         const uint8_t *src = (const uint8_t *)"a", *end = src + 1;
-        int ret =
-            decode_one_ech_config(kems, ciphers, &config_id, &kem, &public_key, &cipher, &max_name_length, &public_name, &src, end);
+        int ret = decode_one_ech_config(kems, ciphers, &decoded, &src, end);
         ok(ret == PTLS_ALERT_DECODE_ERROR);
     }
 
     {
         ptls_iovec_t input = ptls_iovec_init(ECH_CONFIG_LIST, sizeof(ECH_CONFIG_LIST) - 1);
         const uint8_t *src = input.base + 6 /* dive into ECHConfigContents */, *const end = input.base + input.len;
-        int ret =
-            decode_one_ech_config(kems, ciphers, &config_id, &kem, &public_key, &cipher, &max_name_length, &public_name, &src, end);
+        int ret = decode_one_ech_config(kems, ciphers, &decoded, &src, end);
         ok(ret == 0);
-        ok(config_id == 0x12);
-        ok(kem == &p256);
-        ok(public_key.len == 65);
-        ok(public_key.base == input.base + 11);
-        ok(cipher == &aes128gcmsha256);
-        ok(max_name_length == 64);
-        ok(public_name.len == sizeof("example.com") - 1);
-        ok(memcmp(public_name.base, "example.com", sizeof("example.com") - 1) == 0);
+        ok(decoded.id == 0x12);
+        ok(decoded.kem == &p256);
+        ok(decoded.public_key.len == 65);
+        ok(decoded.public_key.base == input.base + 11);
+        ok(decoded.cipher == &aes128gcmsha256);
+        ok(decoded.max_name_length == 64);
+        ok(decoded.public_name.len == sizeof("example.com") - 1);
+        ok(memcmp(decoded.public_name.base, "example.com", sizeof("example.com") - 1) == 0);
     }
 }
 
