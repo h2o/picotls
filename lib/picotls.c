@@ -259,6 +259,10 @@ struct st_ptls_t {
             ptls_iovec_t legacy_session_id;
             uint8_t legacy_session_id_buf[32];
             struct st_ptls_ech_client_t *ech;
+            /**
+             * retains a copy of entire ECH extension so that it can be replayed in the 2nd CH when ECH is rejected via HRR
+             */
+            ptls_iovec_t first_ech;
             ptls_key_exchange_context_t *key_share_ctx;
             unsigned offered_psk : 1;
             /**
@@ -2013,6 +2017,14 @@ Exit:
 }
 
 /**
+ * Within the outer ECH extension, returns the number of bytes that preceeds the AEAD-encrypted payload.
+ */
+static inline size_t outer_ech_header_size(size_t enc_size)
+{
+    return 10 + enc_size;
+}
+
+/**
  * Flag to indicate which of ClientHelloInner, EncodedClientHelloInner, ClientHelloOuter is to be generated. When ECH is inactive,
  * only ClientHelloInner is used.
  */
@@ -2021,9 +2033,9 @@ enum encode_ch_mode { ENCODE_CH_MODE_INNER, ENCODE_CH_MODE_ENCODED_INNER, ENCODE
 static int encode_client_hello(ptls_context_t *ctx, ptls_buffer_t *sendbuf, enum encode_ch_mode mode, int is_second_flight,
                                ptls_handshake_properties_t *properties, const void *client_random,
                                ptls_key_exchange_context_t *key_share_ctx, const char *sni_name, ptls_iovec_t legacy_session_id,
-                               struct st_ptls_ech_client_t *ech, size_t *ech_size_offset, ptls_iovec_t resumption_secret,
-                               ptls_iovec_t resumption_ticket, uint32_t obfuscated_ticket_age, size_t psk_binder_size,
-                               ptls_iovec_t *cookie, int using_early_data)
+                               struct st_ptls_ech_client_t *ech, size_t *ech_size_offset, ptls_iovec_t ech_replay,
+                               ptls_iovec_t resumption_secret, ptls_iovec_t resumption_ticket, uint32_t obfuscated_ticket_age,
+                               size_t psk_binder_size, ptls_iovec_t *cookie, int using_early_data)
 {
     int ret;
 
@@ -2051,6 +2063,7 @@ static int encode_client_hello(ptls_context_t *ctx, ptls_buffer_t *sendbuf, enum
         ptls_buffer_push_block(sendbuf, 2, {
             if (mode == ENCODE_CH_MODE_OUTER) {
                 buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_ENCRYPTED_CLIENT_HELLO, {
+                    size_t ext_payload_from = sendbuf->off;
                     ptls_buffer_push(sendbuf, PTLS_ECH_CLIENT_HELLO_TYPE_OUTER);
                     ptls_buffer_push16(sendbuf, ech->cipher->id.kdf);
                     ptls_buffer_push16(sendbuf, ech->cipher->id.aead);
@@ -2060,6 +2073,7 @@ static int encode_client_hello(ptls_context_t *ctx, ptls_buffer_t *sendbuf, enum
                             ptls_buffer_pushv(sendbuf, ech->enc.base, ech->enc.len);
                     });
                     ptls_buffer_push_block(sendbuf, 2, {
+                        assert(sendbuf->off - ext_payload_from == outer_ech_header_size(is_second_flight ? 0 : ech->enc.len));
                         if ((ret = ptls_buffer_reserve(sendbuf, *ech_size_offset)) != 0)
                             goto Exit;
                         memset(sendbuf->base + sendbuf->off, 0, *ech_size_offset);
@@ -2070,6 +2084,9 @@ static int encode_client_hello(ptls_context_t *ctx, ptls_buffer_t *sendbuf, enum
             } else if (ech != NULL) {
                 buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_ENCRYPTED_CLIENT_HELLO,
                                       { ptls_buffer_push(sendbuf, PTLS_ECH_CLIENT_HELLO_TYPE_INNER); });
+            } else if (ech_replay.base != NULL) {
+                buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_ENCRYPTED_CLIENT_HELLO,
+                                      { ptls_buffer_pushv(sendbuf, ech_replay.base, ech_replay.len); });
             }
             if (mode == ENCODE_CH_MODE_ENCODED_INNER) {
                 buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_ECH_OUTER_EXTENSIONS, {
@@ -2275,8 +2292,9 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
     /* generate true (inner) CH */
     if ((ret = encode_client_hello(tls->ctx, emitter->buf, ENCODE_CH_MODE_INNER, is_second_flight, properties,
                                    tls->client_random.inner, tls->client.key_share_ctx, sni_name, tls->client.legacy_session_id,
-                                   tls->client.ech, NULL, resumption_secret, resumption_ticket, obfuscated_ticket_age,
-                                   tls->key_schedule->hashes[0].algo->digest_size, cookie, tls->client.using_early_data)) != 0)
+                                   tls->client.ech, NULL, tls->client.first_ech, resumption_secret, resumption_ticket,
+                                   obfuscated_ticket_age, tls->key_schedule->hashes[0].algo->digest_size, cookie,
+                                   tls->client.using_early_data)) != 0)
         goto Exit;
 
     /* update the message hash, filling in the PSK binder HMAC if necessary */
@@ -2296,8 +2314,9 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
         /* build EncodedCHInner */
         if ((ret = encode_client_hello(tls->ctx, &encoded_ch_inner, ENCODE_CH_MODE_ENCODED_INNER, is_second_flight, properties,
                                        tls->client_random.inner, tls->client.key_share_ctx, sni_name, tls->client.legacy_session_id,
-                                       tls->client.ech, NULL, resumption_secret, resumption_ticket, obfuscated_ticket_age,
-                                       tls->key_schedule->hashes[0].algo->digest_size, cookie, tls->client.using_early_data)) != 0)
+                                       tls->client.ech, NULL, ptls_iovec_init(NULL, 0), resumption_secret, resumption_ticket,
+                                       obfuscated_ticket_age, tls->key_schedule->hashes[0].algo->digest_size, cookie,
+                                       tls->client.using_early_data)) != 0)
             goto Exit;
         if (resumption_secret.base != NULL)
             memcpy(encoded_ch_inner.base + encoded_ch_inner.off - tls->key_schedule->hashes[0].algo->digest_size,
@@ -2324,18 +2343,30 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
         }
         /* flush CHInner, build CHOuterAAD */
         emitter->buf->off = mess_start;
-        size_t ech_size_offset = encoded_ch_inner.off - PTLS_HANDSHAKE_HEADER_SIZE + tls->client.ech->aead->algo->tag_size;
+        size_t ech_payload_size = encoded_ch_inner.off - PTLS_HANDSHAKE_HEADER_SIZE + tls->client.ech->aead->algo->tag_size,
+               ech_size_offset = ech_payload_size;
         if ((ret = encode_client_hello(tls->ctx, emitter->buf, ENCODE_CH_MODE_OUTER, is_second_flight, properties,
                                        tls->client_random.outer, tls->client.key_share_ctx, tls->client.ech->public_name,
-                                       tls->client.legacy_session_id, tls->client.ech, &ech_size_offset, resumption_secret,
-                                       resumption_ticket, obfuscated_ticket_age, tls->key_schedule->hashes[0].algo->digest_size,
-                                       cookie, tls->client.using_early_data)) != 0)
+                                       tls->client.legacy_session_id, tls->client.ech, &ech_size_offset, ptls_iovec_init(NULL, 0),
+                                       resumption_secret, resumption_ticket, obfuscated_ticket_age,
+                                       tls->key_schedule->hashes[0].algo->digest_size, cookie, tls->client.using_early_data)) != 0)
             goto Exit;
         /* overwrite ECH payload */
         ptls_aead_encrypt(tls->client.ech->aead, emitter->buf->base + ech_size_offset,
                           encoded_ch_inner.base + PTLS_HANDSHAKE_HEADER_SIZE, encoded_ch_inner.off - PTLS_HANDSHAKE_HEADER_SIZE,
                           is_second_flight, emitter->buf->base + mess_start + PTLS_HANDSHAKE_HEADER_SIZE,
                           emitter->buf->off - (mess_start + PTLS_HANDSHAKE_HEADER_SIZE));
+        /* keep the copy of the 1st ECH extension so that we can send it again in 2nd CH in response to rejection with HRR */
+        if (!is_second_flight) {
+            size_t len = outer_ech_header_size(tls->client.ech->enc.len) + ech_payload_size;
+            if ((tls->client.first_ech.base = malloc(len)) == NULL) {
+                ret = PTLS_ERROR_NO_MEMORY;
+                goto Exit;
+            }
+            memcpy(tls->client.first_ech.base,
+                   emitter->buf->base + ech_size_offset - outer_ech_header_size(tls->client.ech->enc.len), len);
+            tls->client.first_ech.len = len;
+        }
         /* update hash */
         ptls__key_schedule_update_hash(tls->key_schedule, emitter->buf->base + mess_start, emitter->buf->off - mess_start, 1);
     }
@@ -4963,6 +4994,7 @@ void ptls_free(ptls_t *tls)
     } else {
         if (tls->client.ech != NULL)
             client_free_ech(tls->client.ech);
+        free(tls->client.first_ech.base);
         if (tls->client.key_share_ctx != NULL)
             tls->client.key_share_ctx->on_exchange(&tls->client.key_share_ctx, 1, NULL, ptls_iovec_init(NULL, 0));
         if (tls->client.certificate_request.context.base != NULL)
