@@ -3720,6 +3720,29 @@ Exit:
 #undef COPY_BLOCK
 }
 
+/* Wrapper function for invoking the on_client_hello callback, taking an exhaustive list of parameters as arguments. The intention
+* is to not miss setting them as we add new parameters to the struct. */
+static inline int call_on_client_hello_cb(ptls_t *tls, ptls_iovec_t server_name, ptls_iovec_t raw_message, ptls_iovec_t *alpns,
+                                          size_t num_alpns, const uint16_t *sig_algos, size_t num_sig_algos,
+                                          const uint16_t *cert_comp_algos, size_t num_cert_comp_algos,
+                                          const uint16_t *cipher_suites, size_t num_cipher_suites, const uint8_t *server_cert_types,
+                                          size_t num_server_cert_types, int ech, int incompatible_version)
+{
+    if (tls->ctx->on_client_hello == NULL)
+        return 0;
+
+    ptls_on_client_hello_parameters_t params = {server_name,
+                                                raw_message,
+                                                {alpns, num_alpns},
+                                                {sig_algos, num_sig_algos},
+                                                {cert_comp_algos, num_cert_comp_algos},
+                                                {cipher_suites, num_cipher_suites},
+                                                {server_cert_types, num_server_cert_types},
+                                                ech,
+                                                incompatible_version};
+    return tls->ctx->on_client_hello->cb(tls->ctx->on_client_hello, tls, &params);
+}
+
 static int check_client_hello_constraints(ptls_context_t *ctx, struct st_ptls_client_hello_t *ch, const void *prev_random,
                                           int ech_is_inner_ch, ptls_iovec_t raw_message, ptls_t *tls_cbarg)
 {
@@ -3736,16 +3759,10 @@ static int check_client_hello_constraints(ptls_context_t *ctx, struct st_ptls_cl
         if (ech_is_inner_ch)
             return PTLS_ALERT_ILLEGAL_PARAMETER;
         /* fail with PROTOCOL_VERSION alert, after providing the applications the raw CH and SNI to help them fallback */
-        if (!is_second_flight && ctx->on_client_hello != NULL) {
-            ptls_on_client_hello_parameters_t params = {
-                .server_name = ch->server_name,
-                .raw_message = raw_message,
-                .negotiated_protocols = {ch->alpn.list, ch->alpn.count},
-                .ech_is_inner_ch = ech_is_inner_ch,
-                .incompatible_version = 1,
-            };
+        if (!is_second_flight) {
             int ret;
-            if ((ret = ctx->on_client_hello->cb(ctx->on_client_hello, tls_cbarg, &params)) != 0)
+            if ((ret = call_on_client_hello_cb(tls_cbarg, ch->server_name, raw_message, ch->alpn.list, ch->alpn.count, NULL, 0,
+                                               NULL, 0, NULL, 0, NULL, 0, 0, 1)) != 0)
                 return ret;
         }
         return PTLS_ALERT_PROTOCOL_VERSION;
@@ -4100,24 +4117,12 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
         ptls_iovec_t server_name = {NULL};
         if (ch->server_name.base != NULL)
             server_name = ch->server_name;
-        if (tls->ctx->on_client_hello != NULL) {
-            ptls_on_client_hello_parameters_t params = {
-                server_name,
-                message,
-                {ch->alpn.list, ch->alpn.count},
-                {ch->signature_algorithms.list, ch->signature_algorithms.count},
-                {ch->cert_compression_algos.list, ch->cert_compression_algos.count},
-                {ch->client_ciphers.list, ch->client_ciphers.count},
-                {ch->server_certificate_types.list, ch->server_certificate_types.count},
-            };
-            ret = tls->ctx->on_client_hello->cb(tls->ctx->on_client_hello, tls, &params);
-        } else {
-            ret = 0;
-        }
-
-        if (ret != 0)
+        if ((ret = call_on_client_hello_cb(tls, server_name, message, ch->alpn.list, ch->alpn.count, ch->signature_algorithms.list,
+                                           ch->signature_algorithms.count, ch->cert_compression_algos.list,
+                                           ch->cert_compression_algos.count, ch->client_ciphers.list, ch->client_ciphers.count,
+                                           ch->server_certificate_types.list, ch->server_certificate_types.count, accept_ech, 0)) !=
+            0)
             goto Exit;
-
         if (!certificate_type_exists(ch->server_certificate_types.list, ch->server_certificate_types.count,
                                      tls->ctx->use_raw_public_keys ? PTLS_CERTIFICATE_TYPE_RAW_PUBLIC_KEY
                                                                    : PTLS_CERTIFICATE_TYPE_X509)) {
