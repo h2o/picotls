@@ -1250,7 +1250,7 @@ static int key_schedule_extract(ptls_key_schedule_t *sched, ptls_iovec_t ikm)
     return ret;
 }
 
-static int key_schedule_select_one(ptls_key_schedule_t *sched, ptls_cipher_suite_t *cs, int reset)
+static int key_schedule_select_cipher(ptls_key_schedule_t *sched, ptls_cipher_suite_t *cs, int reset)
 {
     size_t found_slot = SIZE_MAX, i;
     int ret;
@@ -2647,7 +2647,7 @@ static int client_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
     }
 
     if (sh.is_retry_request) {
-        if ((ret = key_schedule_select_one(tls->key_schedule, tls->cipher_suite, 0)) != 0)
+        if ((ret = key_schedule_select_cipher(tls->key_schedule, tls->cipher_suite, 0)) != 0)
             goto Exit;
         key_schedule_transform_post_ch1hash(tls->key_schedule);
         if ((ret = client_ech_select_hello(tls, message, sh.ech.base != NULL ? sh.ech.base - message.base : 0,
@@ -2657,8 +2657,8 @@ static int client_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
         return handle_hello_retry_request(tls, emitter, &sh, message, properties);
     }
 
-    if ((ret = key_schedule_select_one(tls->key_schedule, tls->cipher_suite, tls->client.offered_psk && !tls->is_psk_handshake)) !=
-        0)
+    if ((ret = key_schedule_select_cipher(tls->key_schedule, tls->cipher_suite,
+                                          tls->client.offered_psk && !tls->is_psk_handshake)) != 0)
         goto Exit;
 
     /* check if ECH is accepted (at the same time rolling the hash) */
