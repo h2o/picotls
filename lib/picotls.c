@@ -268,6 +268,9 @@ struct st_ptls_t {
         struct {
             ptls_iovec_t legacy_session_id;
             uint8_t legacy_session_id_buf[32];
+            /**
+             * ECH: if used, `ech` is non-NULL
+             */
             struct st_ptls_ech_client_t *ech;
             /**
              * retains a copy of entire ECH extension so that it can be replayed in the 2nd CH when ECH is rejected via HRR
