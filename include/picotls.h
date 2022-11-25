@@ -931,7 +931,7 @@ typedef struct st_ptls_handshake_properties_t {
                  */
                 ptls_iovec_t configs;
                 /**
-                 * slot to save config obtained from server upon config mismatch
+                 * slot to save the config obtained from server on mismatch; user must free the returned blob by calling `free`
                  */
                 ptls_iovec_t *retry_configs;
             } ech;
