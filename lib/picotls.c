@@ -77,7 +77,7 @@
 #define PTLS_ECH_CLIENT_HELLO_TYPE_OUTER 0
 #define PTLS_ECH_CLIENT_HELLO_TYPE_INNER 1
 
-static const ptls_iovec_t ech_info_prefix = {(uint8_t *)"tls ech", 8};
+static const char ech_info_prefix[8] = "tls ech";
 
 #define PTLS_SERVER_CERTIFICATE_VERIFY_CONTEXT_STRING "TLS 1.3, server CertificateVerify"
 #define PTLS_CLIENT_CERTIFICATE_VERIFY_CONTEXT_STRING "TLS 1.3, client CertificateVerify"
@@ -1110,7 +1110,7 @@ static int client_instantiate_ech(struct st_ptls_ech_client_t **ech, struct deco
     memcpy((*ech)->public_name, decoded->public_name.base, decoded->public_name.len);
     (*ech)->public_name[decoded->public_name.len] = '\0';
 
-    ptls_buffer_pushv(&infobuf, ech_info_prefix.base, ech_info_prefix.len);
+    ptls_buffer_pushv(&infobuf, ech_info_prefix, sizeof(ech_info_prefix));
     ptls_buffer_pushv(&infobuf, decoded->bytes.base, decoded->bytes.len);
 
     if ((ret = ptls_hpke_setup_base_s(decoded->kem, decoded->cipher, &(*ech)->enc, &(*ech)->aead, decoded->public_key,
@@ -4127,8 +4127,9 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
         /* obtain AEAD context for opening inner CH */
         if (!is_second_flight && ch->ech.cipher != NULL && ch->ech.payload.len > ch->ech.cipher->aead->tag_size &&
             tls->ctx->ech.create_opener != NULL) {
-            if ((tls->server.ech.aead = tls->ctx->ech.create_opener->cb(tls->ctx->ech.create_opener, tls, ch->ech.config_id,
-                                                                        ch->ech.cipher, ch->ech.enc, ech_info_prefix)) != NULL) {
+            if ((tls->server.ech.aead = tls->ctx->ech.create_opener->cb(
+                     tls->ctx->ech.create_opener, tls, ch->ech.config_id, ch->ech.cipher, ch->ech.enc,
+                     ptls_iovec_init(ech_info_prefix, sizeof(ech_info_prefix)))) != NULL) {
                 tls->server.ech.config_id = ch->ech.config_id;
                 tls->server.ech.cipher = ch->ech.cipher;
             }
