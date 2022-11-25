@@ -502,7 +502,7 @@ static void test_ech_decode_config(void)
     static ptls_hpke_kem_t p256 = {PTLS_HPKE_KEM_P256_SHA256}, *kems[] = {&p256, NULL};
     static ptls_hpke_cipher_suite_t aes128gcmsha256 = {{PTLS_HPKE_HKDF_SHA256, PTLS_HPKE_AEAD_AES_128_GCM}},
                                     *ciphers[] = {&aes128gcmsha256, NULL};
-    struct decoded_ech_config_t decoded;
+    struct st_decoded_ech_config_t decoded;
 
     { /* broken list */
         const uint8_t *src = (const uint8_t *)"a", *end = src + 1;

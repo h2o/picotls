@@ -155,7 +155,7 @@ struct st_ptls_certificate_request_t {
     struct st_ptls_signature_algorithms_t signature_algorithms;
 };
 
-struct decoded_ech_config_t {
+struct st_decoded_ech_config_t {
     uint8_t id;
     ptls_hpke_kem_t *kem;
     ptls_iovec_t public_key;
@@ -983,12 +983,12 @@ static void client_free_ech(struct st_ptls_ech_client_t *ech)
  * Decodes one ECHConfigContents (tls-esni-15 section 4). `decoded->kem` and `cipher` may be NULL even when the function returns
  * zero, if the corresponding entries are not found.
  */
-static int decode_one_ech_config(ptls_hpke_kem_t **kems, ptls_hpke_cipher_suite_t **ciphers, struct decoded_ech_config_t *decoded,
-                                 const uint8_t **src, const uint8_t *const end)
+static int decode_one_ech_config(ptls_hpke_kem_t **kems, ptls_hpke_cipher_suite_t **ciphers,
+                                 struct st_decoded_ech_config_t *decoded, const uint8_t **src, const uint8_t *const end)
 {
     int ret;
 
-    *decoded = (struct decoded_ech_config_t){0};
+    *decoded = (struct st_decoded_ech_config_t){0};
 
     if (*src == end) {
         ret = PTLS_ALERT_DECODE_ERROR;
@@ -1053,12 +1053,12 @@ Exit:
     return ret;
 }
 
-static int decode_ech_config_list(ptls_context_t *ctx, struct decoded_ech_config_t *decoded, ptls_iovec_t config_list)
+static int decode_ech_config_list(ptls_context_t *ctx, struct st_decoded_ech_config_t *decoded, ptls_iovec_t config_list)
 {
     const uint8_t *src = config_list.base, *const end = src + config_list.len;
     int match_found = 0, ret;
 
-    *decoded = (struct decoded_ech_config_t){0};
+    *decoded = (struct st_decoded_ech_config_t){0};
 
     ptls_decode_block(src, end, 2, {
         do {
@@ -1069,7 +1069,7 @@ static int decode_ech_config_list(ptls_context_t *ctx, struct decoded_ech_config
             ptls_decode_open_block(src, end, 2, {
                 /* If the block is the one that we recognize, parse it, then adopt if if possible. Otherwise, skip. */
                 if (version == PTLS_ECH_CONFIG_VERSION) {
-                    struct decoded_ech_config_t thisconf;
+                    struct st_decoded_ech_config_t thisconf;
                     if ((ret = decode_one_ech_config(ctx->ech.kems, ctx->ech.ciphers, &thisconf, &src, end)) != 0)
                         goto Exit;
                     if (!match_found && thisconf.kem != NULL && thisconf.cipher != NULL) {
@@ -1087,11 +1087,11 @@ static int decode_ech_config_list(ptls_context_t *ctx, struct decoded_ech_config
 
 Exit:
     if (ret != 0)
-        *decoded = (struct decoded_ech_config_t){0};
+        *decoded = (struct st_decoded_ech_config_t){0};
     return ret;
 }
 
-static int client_instantiate_ech(struct st_ptls_ech_client_t **ech, struct decoded_ech_config_t *decoded)
+static int client_instantiate_ech(struct st_ptls_ech_client_t **ech, struct st_decoded_ech_config_t *decoded)
 {
     ptls_buffer_t infobuf;
     uint8_t infobuf_smallbuf[256];
@@ -2230,7 +2230,7 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
         /* try to use ECH (ignore broken ECHConfigList; it is delivered insecurely) */
         if (!is_second_flight && tls->ctx->ech.ciphers != NULL && tls->ctx->ech.kems != NULL &&
             properties->client.ech.configs.len != 0) {
-            struct decoded_ech_config_t decoded;
+            struct st_decoded_ech_config_t decoded;
             decode_ech_config_list(tls->ctx, &decoded, properties->client.ech.configs);
             if (decoded.kem != NULL && decoded.cipher != NULL) {
                 if ((ret = client_instantiate_ech(&tls->client.ech, &decoded)) != 0)
@@ -2795,7 +2795,7 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
             src = end;
             break;
         case PTLS_EXTENSION_TYPE_ENCRYPTED_CLIENT_HELLO: {
-            struct decoded_ech_config_t decoded;
+            struct st_decoded_ech_config_t decoded;
             if (src == end) {
                 ret = PTLS_ALERT_DECODE_ERROR;
                 goto Exit;
