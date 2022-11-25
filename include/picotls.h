@@ -717,8 +717,8 @@ typedef struct st_ptls_decompress_certificate_t {
  * corresponding private key, invokes `ptls_hpke_setup_base_r` with provided `cipher`, `enc`, and `info_prefix` (which will be
  * "tls ech" || 00).
  */
-PTLS_CALLBACK_TYPE(ptls_aead_context_t *, ech_create_opener, ptls_t *tls, uint8_t config_id, ptls_hpke_cipher_suite_t *cipher,
-                   ptls_iovec_t enc, ptls_iovec_t info_prefix);
+PTLS_CALLBACK_TYPE(ptls_aead_context_t *, ech_create_opener, ptls_hpke_kem_t **kem, ptls_t *tls, uint8_t config_id,
+                   ptls_hpke_cipher_suite_t *cipher, ptls_iovec_t enc, ptls_iovec_t info_prefix);
 
 /**
  * the configuration
@@ -1448,9 +1448,9 @@ int ptls_handshake_is_complete(ptls_t *tls);
  */
 int ptls_is_psk_handshake(ptls_t *tls);
 /**
- * return if a ECH handshake was performed
+ * return if a ECH handshake was performed, as well as optionally the kem and cipher-suite being used
  */
-int ptls_is_ech_handshake(ptls_t *tls);
+int ptls_is_ech_handshake(ptls_t *tls, ptls_hpke_kem_t **kem, ptls_hpke_cipher_suite_t **cipher);
 /**
  * returns a pointer to user data pointer (client is reponsible for freeing the associated data prior to calling ptls_free)
  */

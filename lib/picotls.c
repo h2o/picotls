@@ -171,6 +171,7 @@ struct st_decoded_ech_config_t {
 struct st_ptls_ech_client_t {
     uint8_t config_id;
     ptls_iovec_t enc;
+    ptls_hpke_kem_t *kem;
     ptls_hpke_cipher_suite_t *cipher;
     uint8_t max_name_length;
     ptls_aead_context_t *aead;
@@ -289,6 +290,7 @@ struct st_ptls_t {
                 uint8_t inner_client_random[PTLS_HELLO_RANDOM_SIZE];
                 ptls_aead_context_t *aead;
                 uint8_t config_id;
+                ptls_hpke_kem_t *kem;
                 ptls_hpke_cipher_suite_t *cipher;
                 unsigned offered_by_client : 1;
             } ech;
@@ -1109,7 +1111,7 @@ static int client_instantiate_ech(struct st_ptls_ech_client_t **ech, struct st_d
         goto Exit;
     }
     **ech = (struct st_ptls_ech_client_t){
-        .config_id = decoded->id, .cipher = decoded->cipher, .max_name_length = decoded->max_name_length};
+        .config_id = decoded->id, .kem = decoded->kem, .cipher = decoded->cipher, .max_name_length = decoded->max_name_length};
     memcpy((*ech)->public_name, decoded->public_name.base, decoded->public_name.len);
     (*ech)->public_name[decoded->public_name.len] = '\0';
 
@@ -2804,7 +2806,7 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
                 goto Exit;
             }
             /* accept retry_configs only if we offered ECH but rejected */
-            if (tls->client.first_ech.base == NULL || ptls_is_ech_handshake(tls)) {
+            if (tls->client.first_ech.base == NULL || ptls_is_ech_handshake(tls, NULL, NULL)) {
                 ret = PTLS_ALERT_UNSUPPORTED_EXTENSION;
                 goto Exit;
             }
@@ -3231,7 +3233,7 @@ static int client_handle_finished(ptls_t *tls, ptls_message_emitter_t *emitter, 
     ptls__key_schedule_update_hash(tls->key_schedule, message.base, message.len, 0);
 
     /* if ECH was rejected, close the connection with ECH_REQUIRED alert after verifying messages up to Finished */
-    if (tls->client.first_ech.base != NULL && !ptls_is_ech_handshake(tls)) {
+    if (tls->client.first_ech.base != NULL && !ptls_is_ech_handshake(tls, NULL, NULL)) {
         ret = PTLS_ALERT_ECH_REQUIRED;
         goto Exit;
     }
@@ -4131,7 +4133,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
         if (!is_second_flight && ch->ech.cipher != NULL && ch->ech.payload.len > ch->ech.cipher->aead->tag_size &&
             tls->ctx->ech.create_opener != NULL) {
             if ((tls->server.ech.aead = tls->ctx->ech.create_opener->cb(
-                     tls->ctx->ech.create_opener, tls, ch->ech.config_id, ch->ech.cipher, ch->ech.enc,
+                     tls->ctx->ech.create_opener, &tls->server.ech.kem, tls, ch->ech.config_id, ch->ech.cipher, ch->ech.enc,
                      ptls_iovec_init(ech_info_prefix, sizeof(ech_info_prefix)))) != NULL) {
                 tls->server.ech.config_id = ch->ech.config_id;
                 tls->server.ech.cipher = ch->ech.cipher;
@@ -4283,7 +4285,8 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
 
             /* Either send a stateless retry (w. cookies) or a stateful one. When sending the latter, run the state machine. At the
              * moment, stateless retry is disabled when ECH is used (do we need to support it?). */
-            int retry_uses_cookie = properties != NULL && properties->server.retry_uses_cookie && !ptls_is_ech_handshake(tls);
+            int retry_uses_cookie =
+                properties != NULL && properties->server.retry_uses_cookie && !ptls_is_ech_handshake(tls, NULL, NULL);
             if (!retry_uses_cookie) {
                 key_schedule_transform_post_ch1hash(tls->key_schedule);
                 key_schedule_extract(tls->key_schedule, ptls_iovec_init(NULL, 0));
@@ -4293,7 +4296,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
                 tls->key_schedule, key_share.algorithm != NULL ? NULL : negotiated_group,
                 {
                     ptls_buffer_t *sendbuf = emitter->buf;
-                    if (ptls_is_ech_handshake(tls)) {
+                    if (ptls_is_ech_handshake(tls, NULL, NULL)) {
                         buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_ENCRYPTED_CLIENT_HELLO, {
                             if ((ret = ptls_buffer_reserve(sendbuf, 8)) != 0)
                                 goto Exit;
@@ -4432,7 +4435,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
             {
                 tls->ctx->random_bytes(emitter->buf->base + emitter->buf->off, PTLS_HELLO_RANDOM_SIZE);
                 /* when accepting CHInner, last 8 byte of SH.random is zero for the handshake transcript */
-                if (ptls_is_ech_handshake(tls)) {
+                if (ptls_is_ech_handshake(tls, NULL, NULL)) {
                     ech_confirm_off = emitter->buf->off + PTLS_HELLO_RANDOM_SIZE - 8;
                     memset(emitter->buf->base + ech_confirm_off, 0, 8);
                 }
@@ -4505,7 +4508,8 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
             }
             if (tls->pending_handshake_secret != NULL)
                 buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_EARLY_DATA, {});
-            if (tls->server.ech.offered_by_client && !ptls_is_ech_handshake(tls) && tls->ctx->ech.retry_configs.len != 0)
+            if (tls->server.ech.offered_by_client && !ptls_is_ech_handshake(tls, NULL, NULL) &&
+                tls->ctx->ech.retry_configs.len != 0)
                 buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_ENCRYPTED_CLIENT_HELLO, {
                     ptls_buffer_pushv(sendbuf, tls->ctx->ech.retry_configs.base, tls->ctx->ech.retry_configs.len);
                 });
@@ -5131,13 +5135,26 @@ int ptls_is_psk_handshake(ptls_t *tls)
     return tls->is_psk_handshake;
 }
 
-int ptls_is_ech_handshake(ptls_t *tls)
+int ptls_is_ech_handshake(ptls_t *tls, ptls_hpke_kem_t **kem, ptls_hpke_cipher_suite_t **cipher)
 {
     if (tls->is_server) {
-        return tls->server.ech.aead != NULL;
+        if (tls->server.ech.aead != NULL) {
+            if (kem != NULL)
+                *kem = tls->server.ech.kem;
+            if (cipher != NULL)
+                *cipher = tls->server.ech.cipher;
+            return 1;
+        }
     } else {
-        return tls->client.ech != NULL;
+        if (tls->client.ech != NULL) {
+            if (kem != NULL)
+                *kem = tls->client.ech->kem;
+            if (cipher != NULL)
+                *cipher = tls->client.ech->cipher;
+            return 1;
+        }
     }
+    return 0;
 }
 
 void **ptls_get_data_ptr(ptls_t *tls)

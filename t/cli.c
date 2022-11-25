@@ -78,7 +78,7 @@ static ptls_hpke_kem_t *find_kem(ptls_key_exchange_algorithm_t *algo)
     return NULL;
 }
 
-static ptls_aead_context_t *create_ech_opener(ptls_ech_create_opener_t *self, ptls_t *tls, uint8_t config_id,
+static ptls_aead_context_t *create_ech_opener(ptls_ech_create_opener_t *self, ptls_hpke_kem_t **kem, ptls_t *tls, uint8_t config_id,
                                               ptls_hpke_cipher_suite_t *cipher, ptls_iovec_t enc, ptls_iovec_t info_prefix)
 {
     const uint8_t *src = ech.config_list.base, *const end = src + ech.config_list.len;
@@ -105,6 +105,7 @@ static ptls_aead_context_t *create_ech_opener(ptls_ech_create_opener_t *self, pt
                 ptls_hpke_setup_base_r(ech.keyex.list[index].kem, cipher, ech.keyex.list[index].ctx, &aead, enc,
                                        ptls_iovec_init(info, info_prefix.len + end - (src - 4)));
                 free(info);
+                *kem = ech.keyex.list[index].kem;
                 return aead;
             }
             ++index;

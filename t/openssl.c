@@ -328,7 +328,7 @@ static void test_all_hpke(void)
     test_hpke(ptls_openssl_hpke_kems, ptls_openssl_hpke_cipher_suites);
 }
 
-static ptls_aead_context_t *create_ech_opener(ptls_ech_create_opener_t *self, ptls_t *tls, uint8_t config_id,
+static ptls_aead_context_t *create_ech_opener(ptls_ech_create_opener_t *self, ptls_hpke_kem_t **kem, ptls_t *tls, uint8_t config_id,
                                               ptls_hpke_cipher_suite_t *cipher, ptls_iovec_t enc, ptls_iovec_t info_prefix)
 {
     static ptls_key_exchange_context_t *pem = NULL;
