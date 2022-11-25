@@ -172,8 +172,9 @@ struct st_ptls_ech_client_t {
     uint8_t config_id;
     ptls_iovec_t enc;
     ptls_hpke_cipher_suite_t *cipher;
-    ptls_aead_context_t *aead;
     uint8_t max_name_length;
+    ptls_aead_context_t *aead;
+    uint8_t inner_client_random[PTLS_HELLO_RANDOM_SIZE];
     char public_name[0];
 };
 
@@ -240,13 +241,9 @@ struct st_ptls_t {
      */
     ptls_cipher_suite_t *cipher_suite;
     /**
-     * clienthello.random. `outer` is the value that can be observed. `inner` is different from `outer` if ECH is used. Otherwise,
-     * the two are identical.
+     * ClientHello.random that appears on the wire. When ECH is used, that of inner CH is retained separately.
      */
-    struct {
-        uint8_t outer[PTLS_HELLO_RANDOM_SIZE];
-        uint8_t inner[PTLS_HELLO_RANDOM_SIZE];
-    } client_random;
+    uint8_t client_random[PTLS_HELLO_RANDOM_SIZE];
     /**
      * exporter master secret (either 0rtt or 1rtt)
      */
@@ -289,6 +286,7 @@ struct st_ptls_t {
              * ECH: if used, `aead` is non-NULL
              */
             struct {
+                uint8_t inner_client_random[PTLS_HELLO_RANDOM_SIZE];
                 ptls_aead_context_t *aead;
                 uint8_t config_id;
                 ptls_hpke_cipher_suite_t *cipher;
@@ -979,6 +977,7 @@ static void client_free_ech(struct st_ptls_ech_client_t *ech)
     free(ech->enc.base);
     if (ech->aead != NULL)
         ptls_aead_free(ech->aead);
+    ptls_clear_memory(ech->inner_client_random, PTLS_HELLO_RANDOM_SIZE);
     free(ech);
 }
 
@@ -1094,7 +1093,8 @@ Exit:
     return ret;
 }
 
-static int client_instantiate_ech(struct st_ptls_ech_client_t **ech, struct st_decoded_ech_config_t *decoded)
+static int client_instantiate_ech(struct st_ptls_ech_client_t **ech, struct st_decoded_ech_config_t *decoded,
+                                  void (*random_bytes)(void *, size_t))
 {
     ptls_buffer_t infobuf;
     uint8_t infobuf_smallbuf[256];
@@ -1119,6 +1119,7 @@ static int client_instantiate_ech(struct st_ptls_ech_client_t **ech, struct st_d
     if ((ret = ptls_hpke_setup_base_s(decoded->kem, decoded->cipher, &(*ech)->enc, &(*ech)->aead, decoded->public_key,
                                       ptls_iovec_init(infobuf.base, infobuf.off))) != 0)
         goto Exit;
+    random_bytes((*ech)->inner_client_random, PTLS_HELLO_RANDOM_SIZE);
 
 Exit:
     if (ret != 0 && *ech != NULL) {
@@ -1595,8 +1596,8 @@ static int commission_handshake_secret(ptls_t *tls)
 static void log_client_random(ptls_t *tls)
 {
     PTLS_PROBE(CLIENT_RANDOM, tls,
-               ptls_hexdump(alloca(sizeof(tls->client_random) * 2 + 1), tls->client_random.outer, PTLS_HELLO_RANDOM_SIZE));
-    PTLS_LOG_CONN(client_random, tls, { PTLS_LOG_ELEMENT_HEXDUMP(bytes, tls->client_random.outer, PTLS_HELLO_RANDOM_SIZE); });
+               ptls_hexdump(alloca(sizeof(tls->client_random) * 2 + 1), tls->client_random, sizeof(tls->client_random)));
+    PTLS_LOG_CONN(client_random, tls, { PTLS_LOG_ELEMENT_HEXDUMP(bytes, tls->client_random, sizeof(tls->client_random)); });
 }
 
 #define SESSION_IDENTIFIER_MAGIC "ptls0001" /* the number should be changed upon incompatible format change */
@@ -2236,9 +2237,8 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
             struct st_decoded_ech_config_t decoded;
             decode_ech_config_list(tls->ctx, &decoded, properties->client.ech.configs);
             if (decoded.kem != NULL && decoded.cipher != NULL) {
-                if ((ret = client_instantiate_ech(&tls->client.ech, &decoded)) != 0)
+                if ((ret = client_instantiate_ech(&tls->client.ech, &decoded, tls->ctx->random_bytes)) != 0)
                     goto Exit;
-                tls->ctx->random_bytes(tls->client_random.inner, PTLS_HELLO_RANDOM_SIZE);
             }
         }
         /* setup resumption-related data. If successful, resumption_secret becomes a non-zero value. */
@@ -2296,10 +2296,10 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
 
     /* generate true (inner) CH */
     if ((ret = encode_client_hello(tls->ctx, emitter->buf, ENCODE_CH_MODE_INNER, is_second_flight, properties,
-                                   tls->client_random.inner, tls->client.key_share_ctx, sni_name, tls->client.legacy_session_id,
-                                   tls->client.ech, NULL, tls->client.first_ech, resumption_secret, resumption_ticket,
-                                   obfuscated_ticket_age, tls->key_schedule->hashes[0].algo->digest_size, cookie,
-                                   tls->client.using_early_data)) != 0)
+                                   tls->client.ech != NULL ? tls->client.ech->inner_client_random : tls->client_random,
+                                   tls->client.key_share_ctx, sni_name, tls->client.legacy_session_id, tls->client.ech, NULL,
+                                   tls->client.first_ech, resumption_secret, resumption_ticket, obfuscated_ticket_age,
+                                   tls->key_schedule->hashes[0].algo->digest_size, cookie, tls->client.using_early_data)) != 0)
         goto Exit;
 
     /* update the message hash, filling in the PSK binder HMAC if necessary */
@@ -2318,10 +2318,10 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
     if (tls->client.ech != NULL) {
         /* build EncodedCHInner */
         if ((ret = encode_client_hello(tls->ctx, &encoded_ch_inner, ENCODE_CH_MODE_ENCODED_INNER, is_second_flight, properties,
-                                       tls->client_random.inner, tls->client.key_share_ctx, sni_name, tls->client.legacy_session_id,
-                                       tls->client.ech, NULL, ptls_iovec_init(NULL, 0), resumption_secret, resumption_ticket,
-                                       obfuscated_ticket_age, tls->key_schedule->hashes[0].algo->digest_size, cookie,
-                                       tls->client.using_early_data)) != 0)
+                                       tls->client.ech->inner_client_random, tls->client.key_share_ctx, sni_name,
+                                       tls->client.legacy_session_id, tls->client.ech, NULL, ptls_iovec_init(NULL, 0),
+                                       resumption_secret, resumption_ticket, obfuscated_ticket_age,
+                                       tls->key_schedule->hashes[0].algo->digest_size, cookie, tls->client.using_early_data)) != 0)
             goto Exit;
         if (resumption_secret.base != NULL)
             memcpy(encoded_ch_inner.base + encoded_ch_inner.off - tls->key_schedule->hashes[0].algo->digest_size,
@@ -2351,7 +2351,7 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
         size_t ech_payload_size = encoded_ch_inner.off - PTLS_HANDSHAKE_HEADER_SIZE + tls->client.ech->aead->algo->tag_size,
                ech_size_offset = ech_payload_size;
         if ((ret = encode_client_hello(tls->ctx, emitter->buf, ENCODE_CH_MODE_OUTER, is_second_flight, properties,
-                                       tls->client_random.outer, tls->client.key_share_ctx, tls->client.ech->public_name,
+                                       tls->client_random, tls->client.key_share_ctx, tls->client.ech->public_name,
                                        tls->client.legacy_session_id, tls->client.ech, &ech_size_offset, ptls_iovec_init(NULL, 0),
                                        resumption_secret, resumption_ticket, obfuscated_ticket_age,
                                        tls->key_schedule->hashes[0].algo->digest_size, cookie, tls->client.using_early_data)) != 0)
@@ -2610,7 +2610,8 @@ static int client_ech_select_hello(ptls_t *tls, ptls_iovec_t message, size_t con
     if (confirm_hash_off != 0) {
         memcpy(confirm_hash_delivered, message.base + confirm_hash_off, sizeof(confirm_hash_delivered));
         memset(message.base + confirm_hash_off, 0, sizeof(confirm_hash_delivered));
-        if ((ret = ech_calc_confirmation(tls->key_schedule, confirm_hash_expected, tls->client_random.inner, label, message)) != 0)
+        if ((ret = ech_calc_confirmation(tls->key_schedule, confirm_hash_expected, tls->client.ech->inner_client_random, label,
+                                         message)) != 0)
             goto Exit;
         int ech_accepted = ptls_mem_equal(confirm_hash_delivered, confirm_hash_expected, sizeof(confirm_hash_delivered));
         memcpy(message.base + confirm_hash_off, confirm_hash_delivered, sizeof(confirm_hash_delivered));
@@ -2621,7 +2622,6 @@ static int client_ech_select_hello(ptls_t *tls, ptls_iovec_t message, size_t con
     /* dispose ECH state, adopting outer CH for the rest of the handshake */
     client_free_ech(tls->client.ech);
     tls->client.ech = NULL;
-    memcpy(tls->client_random.inner, tls->client_random.outer, PTLS_HELLO_RANDOM_SIZE);
     key_schedule_select_outer(tls->key_schedule);
 
 Exit:
@@ -3998,7 +3998,7 @@ static int calc_cookie_signature(ptls_t *tls, ptls_handshake_properties_t *prope
         hctx->update(hctx, b, 2);                                                                                                  \
     } while (0)
 
-    UPDATE_BLOCK(tls->client_random.inner, PTLS_HELLO_RANDOM_SIZE);
+    UPDATE_BLOCK(tls->client_random, sizeof(tls->client_random));
     UPDATE_BLOCK(tls->server_name, tls->server_name != NULL ? strlen(tls->server_name) : 0);
     UPDATE16(tls->cipher_suite->id);
     UPDATE16(negotiated_group->id);
@@ -4099,12 +4099,10 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
     if ((ret = decode_client_hello(tls->ctx, ch, message.base + PTLS_HANDSHAKE_HEADER_SIZE, message.base + message.len, properties,
                                    tls)) != 0)
         goto Exit;
-    if ((ret = check_client_hello_constraints(tls->ctx, ch, is_second_flight ? tls->client_random.outer : NULL, 0, message, tls)) !=
-        0)
+    if ((ret = check_client_hello_constraints(tls->ctx, ch, is_second_flight ? tls->client_random : NULL, 0, message, tls)) != 0)
         goto Exit;
     if (!is_second_flight) {
-        memcpy(tls->client_random.outer, ch->random_bytes, PTLS_HELLO_RANDOM_SIZE);
-        memcpy(tls->client_random.inner, ch->random_bytes, PTLS_HELLO_RANDOM_SIZE);
+        memcpy(tls->client_random, ch->random_bytes, PTLS_HELLO_RANDOM_SIZE);
         log_client_random(tls);
     } else {
         /* consistency check for ECH extension in response to HRR */
@@ -4162,11 +4160,11 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
                 if ((ret = decode_client_hello(tls->ctx, ch, ech.ch_inner.base + PTLS_HANDSHAKE_HEADER_SIZE,
                                                ech.ch_inner.base + ech.ch_inner.off, properties, tls)) != 0)
                     goto Exit;
-                if ((ret = check_client_hello_constraints(tls->ctx, ch, is_second_flight ? tls->client_random.inner : NULL, 1,
-                                                          message, tls)) != 0)
+                if ((ret = check_client_hello_constraints(
+                         tls->ctx, ch, is_second_flight ? tls->server.ech.inner_client_random : NULL, 1, message, tls)) != 0)
                     goto Exit;
                 if (!is_second_flight)
-                    memcpy(tls->client_random.inner, ch->random_bytes, PTLS_HELLO_RANDOM_SIZE);
+                    memcpy(tls->server.ech.inner_client_random, ch->random_bytes, PTLS_HELLO_RANDOM_SIZE);
             } else {
                 /* decryption failure indicates key mismatch; dispose of AEAD context to indicate that outerCH is adopted */
                 ptls_aead_free(tls->server.ech.aead);
@@ -4341,7 +4339,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
                 {
                     if (ech_confirm_off != 0 &&
                         (ret = ech_calc_confirmation(
-                             tls->key_schedule, emitter->buf->base + ech_confirm_off, tls->client_random.inner,
+                             tls->key_schedule, emitter->buf->base + ech_confirm_off, tls->server.ech.inner_client_random,
                              ECH_CONFIRMATION_HRR,
                              ptls_iovec_init(emitter->buf->base + sh_start_off, emitter->buf->off - sh_start_off))) != 0)
                         goto Exit;
@@ -4453,10 +4451,11 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
                 }
             },
             {
-                if (ech_confirm_off != 0 && (ret = ech_calc_confirmation(tls->key_schedule, emitter->buf->base + ech_confirm_off,
-                                                                         tls->client_random.inner, ECH_CONFIRMATION_SERVER_HELLO,
-                                                                         ptls_iovec_init(emitter->buf->base + sh_start_off,
-                                                                                         emitter->buf->off - sh_start_off))) != 0)
+                if (ech_confirm_off != 0 &&
+                    (ret = ech_calc_confirmation(
+                         tls->key_schedule, emitter->buf->base + ech_confirm_off, tls->server.ech.inner_client_random,
+                         ECH_CONFIRMATION_SERVER_HELLO,
+                         ptls_iovec_init(emitter->buf->base + sh_start_off, emitter->buf->off - sh_start_off))) != 0)
                     goto Exit;
             });
     }
@@ -4766,8 +4765,7 @@ ptls_t *ptls_client_new(ptls_context_t *ctx)
 {
     ptls_t *tls = new_instance(ctx, 0);
     tls->state = PTLS_STATE_CLIENT_HANDSHAKE_START;
-    tls->ctx->random_bytes(tls->client_random.outer, PTLS_HELLO_RANDOM_SIZE);
-    memcpy(tls->client_random.inner, tls->client_random.outer, PTLS_HELLO_RANDOM_SIZE);
+    tls->ctx->random_bytes(tls->client_random, sizeof(tls->client_random));
     log_client_random(tls);
     if (tls->send_change_cipher_spec) {
         tls->client.legacy_session_id =
@@ -4874,7 +4872,7 @@ int ptls_export(ptls_t *tls, ptls_buffer_t *output)
 
     ptls_iovec_t negotiated_protocol =
         ptls_iovec_init(tls->negotiated_protocol, tls->negotiated_protocol != NULL ? strlen(tls->negotiated_protocol) : 0);
-    return export_tls12_params(output, tls->is_server, tls->is_psk_handshake, tls->cipher_suite, tls->client_random.outer,
+    return export_tls12_params(output, tls->is_server, tls->is_psk_handshake, tls->cipher_suite, tls->client_random,
                                tls->server_name, negotiated_protocol, tls->traffic_protection.enc.secret,
                                tls->traffic_protection.enc.secret + PTLS_MAX_SECRET_SIZE, tls->traffic_protection.enc.seq,
                                tls->traffic_protection.enc.tls12_enc_record_iv, tls->traffic_protection.dec.secret,
@@ -4943,8 +4941,7 @@ int ptls_import(ptls_context_t *ctx, ptls_t **tls, ptls_iovec_t params)
             ret = PTLS_ALERT_DECODE_ERROR;
             goto Exit;
         }
-        memcpy((*tls)->client_random.outer, src, PTLS_HELLO_RANDOM_SIZE);
-        memcpy((*tls)->client_random.inner, src, PTLS_HELLO_RANDOM_SIZE);
+        memcpy((*tls)->client_random, src, PTLS_HELLO_RANDOM_SIZE);
         src += PTLS_HELLO_RANDOM_SIZE;
         ptls_decode_open_block(src, end, 2, {
             if (src != end) {
@@ -5048,7 +5045,7 @@ void ptls_set_context(ptls_t *tls, ptls_context_t *ctx)
 
 ptls_iovec_t ptls_get_client_random(ptls_t *tls)
 {
-    return ptls_iovec_init(tls->client_random.outer, PTLS_HELLO_RANDOM_SIZE);
+    return ptls_iovec_init(tls->client_random, PTLS_HELLO_RANDOM_SIZE);
 }
 
 ptls_cipher_suite_t *ptls_get_cipher(ptls_t *tls)
