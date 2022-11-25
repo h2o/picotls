@@ -4161,6 +4161,10 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
                     goto Exit;
                 if (!is_second_flight)
                     memcpy(tls->client_random.inner, ch->random_bytes, PTLS_HELLO_RANDOM_SIZE);
+            } else {
+                /* decryption failure indicates key mismatch; dispose of AEAD context to indicate that outerCH is adopted */
+                ptls_aead_free(tls->server.ech.aead);
+                tls->server.ech.aead = NULL;
             }
         }
     } else if (tls->server.ech.offered_by_client) {
