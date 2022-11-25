@@ -2605,26 +2605,24 @@ static int client_ech_select_hello(ptls_t *tls, ptls_iovec_t message, size_t con
     uint8_t confirm_hash_delivered[8], confirm_hash_expected[8];
     int ret = 0;
 
-    if (tls->client.ech != NULL) {
-        if (confirm_hash_off != 0) {
-            /* move out ECH accept confirmation hash, create a backup of transcript hash */
-            memcpy(confirm_hash_delivered, message.base + confirm_hash_off, sizeof(confirm_hash_delivered));
-            memset(message.base + confirm_hash_off, 0, sizeof(confirm_hash_delivered));
-            if ((ret = ech_calc_confirmation(tls->key_schedule, confirm_hash_expected, tls->client_random.inner, label, message)) !=
-                0)
-                goto Exit;
-            int ech_accepted = ptls_mem_equal(confirm_hash_delivered, confirm_hash_expected, sizeof(confirm_hash_delivered));
-            memcpy(message.base + confirm_hash_off, confirm_hash_delivered, sizeof(confirm_hash_delivered));
-            if (ech_accepted)
-                goto Exit;
-        }
-
-        /* dispose ECH state, adopting outer CH for the rest of the handshake */
-        client_free_ech(tls->client.ech);
-        tls->client.ech = NULL;
-        memcpy(tls->client_random.inner, tls->client_random.outer, PTLS_HELLO_RANDOM_SIZE);
-        key_schedule_select_outer(tls->key_schedule);
+    /* Determine if ECH has been accepted by checking the confirmation hash. `confirm_hash_off` set to zero indicates that HRR was
+     * received wo. ECH extension, which is an indication that ECH was rejected. */
+    if (confirm_hash_off != 0) {
+        memcpy(confirm_hash_delivered, message.base + confirm_hash_off, sizeof(confirm_hash_delivered));
+        memset(message.base + confirm_hash_off, 0, sizeof(confirm_hash_delivered));
+        if ((ret = ech_calc_confirmation(tls->key_schedule, confirm_hash_expected, tls->client_random.inner, label, message)) != 0)
+            goto Exit;
+        int ech_accepted = ptls_mem_equal(confirm_hash_delivered, confirm_hash_expected, sizeof(confirm_hash_delivered));
+        memcpy(message.base + confirm_hash_off, confirm_hash_delivered, sizeof(confirm_hash_delivered));
+        if (ech_accepted)
+            goto Exit;
     }
+
+    /* dispose ECH state, adopting outer CH for the rest of the handshake */
+    client_free_ech(tls->client.ech);
+    tls->client.ech = NULL;
+    memcpy(tls->client_random.inner, tls->client_random.outer, PTLS_HELLO_RANDOM_SIZE);
+    key_schedule_select_outer(tls->key_schedule);
 
 Exit:
     ptls_clear_memory(confirm_hash_expected, sizeof(confirm_hash_expected));
@@ -2650,7 +2648,8 @@ static int client_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
         if ((ret = key_schedule_select_cipher(tls->key_schedule, tls->cipher_suite, 0)) != 0)
             goto Exit;
         key_schedule_transform_post_ch1hash(tls->key_schedule);
-        if ((ret = client_ech_select_hello(tls, message, sh.ech.base != NULL ? sh.ech.base - message.base : 0,
+        if (tls->client.ech != NULL &&
+            (ret = client_ech_select_hello(tls, message, sh.ech.base != NULL ? sh.ech.base - message.base : 0,
                                            ECH_CONFIRMATION_HRR)) != 0)
             goto Exit;
         ptls__key_schedule_update_hash(tls->key_schedule, message.base, message.len, 0);
@@ -2663,7 +2662,8 @@ static int client_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
 
     /* check if ECH is accepted (at the same time rolling the hash) */
     static const size_t confirm_hash_off = PTLS_HANDSHAKE_HEADER_SIZE + 2 /* legacy_version */ + PTLS_HELLO_RANDOM_SIZE - 8;
-    if ((ret = client_ech_select_hello(tls, message, confirm_hash_off, ECH_CONFIRMATION_SERVER_HELLO)) != 0)
+    if (tls->client.ech != NULL &&
+        (ret = client_ech_select_hello(tls, message, confirm_hash_off, ECH_CONFIRMATION_SERVER_HELLO)) != 0)
         goto Exit;
     /* When ECH is accepted, ServerHello MUST NOT contain an ECH extension (draft-15 section 5). */
     if (tls->client.ech != NULL && sh.ech.base != NULL) {
