@@ -1644,7 +1644,7 @@ static void test_all_handshakes(void)
             subtest("ech (server-only)", test_all_handshakes_core);
             ctx->ech.ciphers = orig_ech_ciphers.client;
         }
-        subtest("ech-config-match", test_ech_config_mismatch);
+        subtest("ech-config-mismatch", test_ech_config_mismatch);
     }
 
     ctx_peer->sign_certificate = sc_orig;
