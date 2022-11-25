@@ -4874,7 +4874,7 @@ int ptls_export(ptls_t *tls, ptls_buffer_t *output)
 
     ptls_iovec_t negotiated_protocol =
         ptls_iovec_init(tls->negotiated_protocol, tls->negotiated_protocol != NULL ? strlen(tls->negotiated_protocol) : 0);
-    return export_tls12_params(output, tls->is_server, tls->is_psk_handshake, tls->cipher_suite, tls->client_random.inner,
+    return export_tls12_params(output, tls->is_server, tls->is_psk_handshake, tls->cipher_suite, tls->client_random.outer,
                                tls->server_name, negotiated_protocol, tls->traffic_protection.enc.secret,
                                tls->traffic_protection.enc.secret + PTLS_MAX_SECRET_SIZE, tls->traffic_protection.enc.seq,
                                tls->traffic_protection.enc.tls12_enc_record_iv, tls->traffic_protection.dec.secret,
@@ -4944,6 +4944,7 @@ int ptls_import(ptls_context_t *ctx, ptls_t **tls, ptls_iovec_t params)
             goto Exit;
         }
         memcpy((*tls)->client_random.outer, src, PTLS_HELLO_RANDOM_SIZE);
+        memcpy((*tls)->client_random.inner, src, PTLS_HELLO_RANDOM_SIZE);
         src += PTLS_HELLO_RANDOM_SIZE;
         ptls_decode_open_block(src, end, 2, {
             if (src != end) {
