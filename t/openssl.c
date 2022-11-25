@@ -390,7 +390,10 @@ int main(int argc, char **argv)
                                   .cipher_suites = ptls_openssl_cipher_suites,
                                   .tls12_cipher_suites = ptls_openssl_tls12_cipher_suites,
                                   .certificates = {&cert, 1},
-                                  .ech = {ptls_openssl_hpke_cipher_suites, ptls_openssl_hpke_kems, &ech_create_opener},
+                                  .ech = {.ciphers = ptls_openssl_hpke_cipher_suites,
+                                          .kems = ptls_openssl_hpke_kems,
+                                          .create_opener = &ech_create_opener,
+                                          .retry_configs = {(uint8_t *)ECH_CONFIG_LIST, sizeof(ECH_CONFIG_LIST) - 1}},
                                   .sign_certificate = &openssl_sign_certificate.super};
     assert(openssl_ctx.cipher_suites[0]->hash->digest_size == 48); /* sha384 */
     ptls_context_t openssl_ctx_sha256only = openssl_ctx;

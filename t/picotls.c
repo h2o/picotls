@@ -1261,6 +1261,53 @@ static void test_stateless_hrr_aad_change(void)
     ptls_buffer_dispose(&sbuf);
 }
 
+static void test_ech_config_mismatch(void)
+{
+    ptls_t *client, *server;
+    ptls_buffer_t cbuf, sbuf;
+    size_t consumed;
+    int ret;
+    ptls_iovec_t retry_configs = {NULL};
+    ptls_handshake_properties_t client_hs_prop = {
+        .client.ech = {
+            .configs = ptls_iovec_init((void *)ECH_ALTERNATIVE_CONFIG_LIST, sizeof(ECH_ALTERNATIVE_CONFIG_LIST) - 1),
+            .retry_configs = &retry_configs,
+        }};
+
+    client = ptls_new(ctx, 0);
+    server = ptls_new(ctx_peer, 1);
+    ptls_buffer_init(&cbuf, "", 0);
+    ptls_buffer_init(&sbuf, "", 0);
+
+    ret = ptls_handshake(client, &cbuf, NULL, NULL, &client_hs_prop);
+    ok(ret == PTLS_ERROR_IN_PROGRESS);
+
+    consumed = cbuf.off;
+    ret = ptls_handshake(server, &sbuf, cbuf.base, &consumed, NULL);
+    ok(ret == 0);
+    ok(cbuf.off == consumed);
+    cbuf.off = 0;
+
+    consumed = sbuf.off;
+    ret = ptls_handshake(client, &cbuf, sbuf.base, &consumed, &client_hs_prop);
+    ok(ret == PTLS_ALERT_ECH_REQUIRED);
+    ok(sbuf.off == consumed);
+    ok(retry_configs.len == sizeof(ECH_CONFIG_LIST) - 1);
+    ok(memcmp(retry_configs.base, ECH_CONFIG_LIST, retry_configs.len) == 0);
+    sbuf.off = 0;
+
+    consumed = cbuf.off;
+    ret = ptls_handshake(server, &sbuf, cbuf.base, &consumed, NULL);
+    ok(ret == PTLS_ALERT_TO_PEER_ERROR(PTLS_ALERT_ECH_REQUIRED));
+    ok(cbuf.off == consumed);
+
+    ptls_free(client);
+    ptls_free(server);
+    ptls_buffer_dispose(&cbuf);
+    ptls_buffer_dispose(&sbuf);
+    free(retry_configs.base);
+}
+
 typedef uint8_t traffic_secrets_t[2 /* is_enc */][4 /* epoch */][PTLS_MAX_DIGEST_SIZE /* octets */];
 
 static int on_update_traffic_key(ptls_update_traffic_key_t *self, ptls_t *tls, int is_enc, size_t epoch, const void *secret)
@@ -1596,10 +1643,8 @@ static void test_all_handshakes(void)
             ctx->ech.ciphers = NULL;
             subtest("ech (server-only)", test_all_handshakes_core);
             ctx->ech.ciphers = orig_ech_ciphers.client;
-            ctx_peer->ech.ciphers = NULL;
-            subtest("ech (client-only)", test_all_handshakes_core);
-            ctx_peer->ech.ciphers = orig_ech_ciphers.server;
         }
+        subtest("ech-config-match", test_ech_config_mismatch);
     }
 
     ctx_peer->sign_certificate = sc_orig;

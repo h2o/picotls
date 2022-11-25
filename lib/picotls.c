@@ -2812,7 +2812,8 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
                     ret = PTLS_ERROR_NO_MEMORY;
                     goto Exit;
                 }
-                *properties->client.ech.retry_configs = ptls_iovec_init(src, end - src);
+                memcpy(properties->client.ech.retry_configs->base, src, end - src);
+                properties->client.ech.retry_configs->len = end - src;
             }
             src = end;
         } break;
@@ -3223,6 +3224,12 @@ static int client_handle_finished(ptls_t *tls, ptls_message_emitter_t *emitter, 
     if ((ret = verify_finished(tls, message)) != 0)
         goto Exit;
     ptls__key_schedule_update_hash(tls->key_schedule, message.base, message.len, 0);
+
+    /* if ECH was rejected, close the connection with ECH_REQUIRED alert after verifying messages up to Finished */
+    if (tls->client.first_ech.base != NULL && !ptls_is_ech_handshake(tls)) {
+        ret = PTLS_ALERT_ECH_REQUIRED;
+        goto Exit;
+    }
 
     /* update traffic keys by using messages upto ServerFinished, but commission them after sending ClientFinished */
     if ((ret = key_schedule_extract(tls->key_schedule, ptls_iovec_init(NULL, 0))) != 0)
