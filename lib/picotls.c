@@ -2803,10 +2803,12 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
                 ret = PTLS_ALERT_DECODE_ERROR;
                 goto Exit;
             }
-            if (ptls_is_ech_handshake(tls)) {
+            /* accept retry_configs only if we offered ECH but rejected */
+            if (tls->client.first_ech.base == NULL || ptls_is_ech_handshake(tls)) {
                 ret = PTLS_ALERT_UNSUPPORTED_EXTENSION;
                 goto Exit;
             }
+            /* parse retry_config, and if it is applicable, provide that to the application */
             if ((ret = decode_ech_config_list(tls->ctx, &decoded, ptls_iovec_init(src, end - src))) != 0)
                 goto Exit;
             if (decoded.kem != NULL && decoded.cipher != NULL && properties != NULL &&
