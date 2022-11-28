@@ -3704,6 +3704,10 @@ static int decode_client_hello(ptls_context_t *ctx, struct st_ptls_client_hello_
                     src = end;
                 });
                 ptls_decode_open_block(src, end, 2, {
+                    if (src == end) {
+                        ret = PTLS_ALERT_DECODE_ERROR;
+                        goto Exit;
+                    }
                     ch->ech.payload = ptls_iovec_init(src, end - src);
                     src = end;
                 });
