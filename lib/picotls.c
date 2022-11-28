@@ -3234,7 +3234,8 @@ static int client_handle_finished(ptls_t *tls, ptls_message_emitter_t *emitter, 
         goto Exit;
     ptls__key_schedule_update_hash(tls->key_schedule, message.base, message.len, 0);
 
-    /* if ECH was rejected, close the connection with ECH_REQUIRED alert after verifying messages up to Finished */
+    /* if ECH was rejected, close the connection with ECH_REQUIRED alert after verifying messages up to Finished (TODO send
+     * ECH_REQUIRED alert after sending (an empty Certificate) and Finished message, as draft-15 suggests?) */
     if (tls->client.first_ech.base != NULL && !ptls_is_ech_handshake(tls, NULL, NULL)) {
         ret = PTLS_ALERT_ECH_REQUIRED;
         goto Exit;
