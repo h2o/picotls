@@ -77,6 +77,8 @@
 #define PTLS_ECH_CLIENT_HELLO_TYPE_OUTER 0
 #define PTLS_ECH_CLIENT_HELLO_TYPE_INNER 1
 
+#define PTLS_ECH_CONFIRM_LENGTH 8
+
 static const char ech_info_prefix[8] = "tls ech";
 
 #define PTLS_SERVER_CERTIFICATE_VERIFY_CONTEXT_STRING "TLS 1.3, server CertificateVerify"
@@ -389,13 +391,13 @@ struct st_ptls_client_hello_t {
 struct st_ptls_server_hello_t {
     uint8_t random_[PTLS_HELLO_RANDOM_SIZE];
     ptls_iovec_t legacy_session_id;
-    ptls_iovec_t ech;
     int is_retry_request;
     union {
         ptls_iovec_t peerkey;
         struct {
             uint16_t selected_group;
             ptls_iovec_t cookie;
+            const uint8_t *ech;
         } retry_request;
     };
 };
@@ -2566,13 +2568,15 @@ static int decode_server_hello(ptls_t *tls, struct st_ptls_server_hello_t *sh, c
             }
             break;
         case PTLS_EXTENSION_TYPE_ENCRYPTED_CLIENT_HELLO:
-            if (sh->is_retry_request && tls->ech.aead != NULL) {
-                if (end - src != 8) {
-                    ret = PTLS_ALERT_ILLEGAL_PARAMETER;
-                    goto Exit;
-                }
+            if (!(tls->ech.offered && sh->is_retry_request)) {
+                ret = PTLS_ALERT_UNSUPPORTED_EXTENSION;
+                goto Exit;
             }
-            sh->ech = ptls_iovec_init(src, end - src);
+            if (end - src != PTLS_ECH_CONFIRM_LENGTH) {
+                ret = PTLS_ALERT_DECODE_ERROR;
+                goto Exit;
+            }
+            sh->retry_request.ech = src;
             src = end;
             break;
         default:
@@ -2654,7 +2658,7 @@ Exit:
 
 static int client_ech_select_hello(ptls_t *tls, ptls_iovec_t message, size_t confirm_hash_off, const char *label)
 {
-    uint8_t confirm_hash_delivered[8], confirm_hash_expected[8];
+    uint8_t confirm_hash_delivered[PTLS_ECH_CONFIRM_LENGTH], confirm_hash_expected[PTLS_ECH_CONFIRM_LENGTH];
     int ret = 0;
 
     /* Determine if ECH has been accepted by checking the confirmation hash. `confirm_hash_off` set to zero indicates that HRR was
@@ -2701,7 +2705,7 @@ static int client_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
             goto Exit;
         key_schedule_transform_post_ch1hash(tls->key_schedule);
         if (tls->ech.aead != NULL &&
-            (ret = client_ech_select_hello(tls, message, sh.ech.base != NULL ? sh.ech.base - message.base : 0,
+            (ret = client_ech_select_hello(tls, message, sh.retry_request.ech != NULL ? sh.retry_request.ech - message.base : 0,
                                            ECH_CONFIRMATION_HRR)) != 0)
             goto Exit;
         ptls__key_schedule_update_hash(tls->key_schedule, message.base, message.len, 0);
@@ -2713,15 +2717,11 @@ static int client_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
         goto Exit;
 
     /* check if ECH is accepted (at the same time rolling the hash) */
-    static const size_t confirm_hash_off = PTLS_HANDSHAKE_HEADER_SIZE + 2 /* legacy_version */ + PTLS_HELLO_RANDOM_SIZE - 8;
+    static const size_t confirm_hash_off =
+        PTLS_HANDSHAKE_HEADER_SIZE + 2 /* legacy_version */ + PTLS_HELLO_RANDOM_SIZE - PTLS_ECH_CONFIRM_LENGTH;
     if (tls->ech.aead != NULL &&
         (ret = client_ech_select_hello(tls, message, confirm_hash_off, ECH_CONFIRMATION_SERVER_HELLO)) != 0)
         goto Exit;
-    /* When ECH is accepted, ServerHello MUST NOT contain an ECH extension (draft-15 section 5). */
-    if (tls->ech.aead != NULL && sh.ech.base != NULL) {
-        ret = PTLS_ALERT_UNSUPPORTED_EXTENSION;
-        goto Exit;
-    }
 
     ptls__key_schedule_update_hash(tls->key_schedule, message.base, message.len, 0);
 
@@ -4341,11 +4341,11 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
                     ptls_buffer_t *sendbuf = emitter->buf;
                     if (ptls_is_ech_handshake(tls, NULL, NULL)) {
                         buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_ENCRYPTED_CLIENT_HELLO, {
-                            if ((ret = ptls_buffer_reserve(sendbuf, 8)) != 0)
+                            if ((ret = ptls_buffer_reserve(sendbuf, PTLS_ECH_CONFIRM_LENGTH)) != 0)
                                 goto Exit;
-                            memset(sendbuf->base + sendbuf->off, 0, 8);
+                            memset(sendbuf->base + sendbuf->off, 0, PTLS_ECH_CONFIRM_LENGTH);
                             ech_confirm_off = sendbuf->off;
-                            sendbuf->off += 8;
+                            sendbuf->off += PTLS_ECH_CONFIRM_LENGTH;
                         });
                     }
                     if (retry_uses_cookie) {
@@ -4479,8 +4479,8 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
                 tls->ctx->random_bytes(emitter->buf->base + emitter->buf->off, PTLS_HELLO_RANDOM_SIZE);
                 /* when accepting CHInner, last 8 byte of SH.random is zero for the handshake transcript */
                 if (ptls_is_ech_handshake(tls, NULL, NULL)) {
-                    ech_confirm_off = emitter->buf->off + PTLS_HELLO_RANDOM_SIZE - 8;
-                    memset(emitter->buf->base + ech_confirm_off, 0, 8);
+                    ech_confirm_off = emitter->buf->off + PTLS_HELLO_RANDOM_SIZE - PTLS_ECH_CONFIRM_LENGTH;
+                    memset(emitter->buf->base + ech_confirm_off, 0, PTLS_ECH_CONFIRM_LENGTH);
                 }
             },
             {
