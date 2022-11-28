@@ -2234,7 +2234,7 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
 
     if (properties != NULL) {
         /* try to use ECH (ignore broken ECHConfigList; it is delivered insecurely) */
-        if (!is_second_flight && tls->ctx->ech.ciphers != NULL && tls->ctx->ech.kems != NULL &&
+        if (!is_second_flight && sni_name != NULL && tls->ctx->ech.ciphers != NULL && tls->ctx->ech.kems != NULL &&
             properties->client.ech.configs.len != 0) {
             struct st_decoded_ech_config_t decoded;
             decode_ech_config_list(tls->ctx, &decoded, properties->client.ech.configs);

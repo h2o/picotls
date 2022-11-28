@@ -700,8 +700,10 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int expect_ticket, int
         ptls_set_server_name(client, "test.example.com", 0);
     }
 
-    if (can_ech(ctx, 0))
+    if (can_ech(ctx, 0)) {
+        ptls_set_server_name(client, "test.example.com", 0);
         client_hs_prop.client.ech.configs = ptls_iovec_init(ECH_CONFIG_LIST, sizeof(ECH_CONFIG_LIST) - 1);
+    }
 
     static ptls_on_extension_t cb = {on_extension_cb};
     ctx_peer->on_extension = &cb;
@@ -1275,6 +1277,7 @@ static void test_ech_config_mismatch(void)
         }};
 
     client = ptls_new(ctx, 0);
+    ptls_set_server_name(client, "test.example.com", 0);
     server = ptls_new(ctx_peer, 1);
     ptls_buffer_init(&cbuf, "", 0);
     ptls_buffer_init(&sbuf, "", 0);
