@@ -1038,6 +1038,10 @@ static int decode_one_ech_config(ptls_hpke_kem_t **kems, ptls_hpke_cipher_suite_
     }
     decoded->max_name_length = *(*src)++;
     ptls_decode_open_block(*src, end, 1, {
+        if (*src == end) {
+            ret = PTLS_ALERT_DECODE_ERROR;
+            goto Exit;
+        }
         decoded->public_name = ptls_iovec_init(*src, end - *src);
         *src = end;
     });
