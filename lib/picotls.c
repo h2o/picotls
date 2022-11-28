@@ -3015,6 +3015,8 @@ static int client_handle_certificate_request(ptls_t *tls, ptls_iovec_t message, 
     const uint8_t *src = message.base + PTLS_HANDSHAKE_HEADER_SIZE, *const end = message.base + message.len;
     int ret = 0;
 
+    assert(!tls->is_psk_handshake && "state machine asserts that this message is never delivered when PSK is used");
+
     if ((ret = decode_certificate_request(tls, &tls->client.certificate_request, src, end)) != 0)
         return ret;
 
@@ -3262,13 +3264,6 @@ static int client_handle_finished(ptls_t *tls, ptls_message_emitter_t *emitter, 
         goto Exit;
 
     if (tls->client.certificate_request.context.base != NULL) {
-        /* The client must not send a certifiate if:
-         * - this is a resumed session, in which case the server is forbidden from sending the certificate request
-         * - ECH was offered by the client but the server rejected (FIXME) */
-        if (tls->is_psk_handshake) {
-            ret = PTLS_ALERT_ILLEGAL_PARAMETER;
-            goto Exit;
-        }
         ret = send_certificate_and_certificate_verify(tls, emitter, &tls->client.certificate_request.signature_algorithms,
                                                       tls->client.certificate_request.context,
                                                       PTLS_CLIENT_CERTIFICATE_VERIFY_CONTEXT_STRING, 0, NULL, 0);
