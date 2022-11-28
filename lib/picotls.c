@@ -551,6 +551,17 @@ static void encode64(uint8_t *dst, uint64_t v)
         dst[i] = (uint8_t)(v >> (56 - 8 * i));
 }
 
+static char *duplicate_as_str(const void *src, size_t len)
+{
+    char *dst;
+
+    if ((dst = malloc(len + 1)) == NULL)
+        return NULL;
+    memcpy(dst, src, len);
+    dst[len] = '\0';
+    return dst;
+}
+
 void ptls_buffer__release_memory(ptls_buffer_t *buf)
 {
     ptls_clear_memory(buf->base, buf->off);
@@ -1117,7 +1128,7 @@ static int client_setup_ech(struct st_ptls_ech_t *ech, struct st_decoded_ech_con
         goto Exit;
 
     /* copy public_name */
-    if ((ech->client.public_name = malloc(decoded->public_name.len + 1)) == NULL) {
+    if ((ech->client.public_name = duplicate_as_str(decoded->public_name.base, decoded->public_name.len)) == NULL) {
         ret = PTLS_ERROR_NO_MEMORY;
         goto Exit;
     }
@@ -5092,14 +5103,9 @@ int ptls_set_server_name(ptls_t *tls, const char *server_name, size_t server_nam
 {
     char *duped = NULL;
 
-    if (server_name != NULL) {
-        if (server_name_len == 0)
-            server_name_len = strlen(server_name);
-        if ((duped = malloc(server_name_len + 1)) == NULL)
-            return PTLS_ERROR_NO_MEMORY;
-        memcpy(duped, server_name, server_name_len);
-        duped[server_name_len] = '\0';
-    }
+    if (server_name != NULL &&
+        (duped = duplicate_as_str(server_name, server_name_len != 0 ? server_name_len : strlen(server_name))) == NULL)
+        return PTLS_ERROR_NO_MEMORY;
 
     free(tls->server_name);
     tls->server_name = duped;
@@ -5116,14 +5122,8 @@ int ptls_set_negotiated_protocol(ptls_t *tls, const char *protocol, size_t proto
 {
     char *duped = NULL;
 
-    if (protocol != NULL) {
-        if (protocol_len == 0)
-            protocol_len = strlen(protocol);
-        if ((duped = malloc(protocol_len + 1)) == NULL)
-            return PTLS_ERROR_NO_MEMORY;
-        memcpy(duped, protocol, protocol_len);
-        duped[protocol_len] = '\0';
-    }
+    if (protocol != NULL && (duped = duplicate_as_str(protocol, protocol_len != 0 ? protocol_len : strlen(protocol))) == NULL)
+        return PTLS_ERROR_NO_MEMORY;
 
     free(tls->negotiated_protocol);
     tls->negotiated_protocol = duped;
