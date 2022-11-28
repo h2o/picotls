@@ -3124,12 +3124,10 @@ static int client_hello_decode_server_name(ptls_iovec_t *name, const uint8_t **s
     int ret = 0;
 
     ptls_decode_open_block(*src, end, 2, {
-        if (*src == end) {
-            ret = PTLS_ALERT_DECODE_ERROR;
-            goto Exit;
-        }
         do {
-            uint8_t type = *(*src)++;
+            uint8_t type;
+            if ((ret = ptls_decode8(&type, src, end)) != 0)
+                goto Exit;
             ptls_decode_open_block(*src, end, 2, {
                 switch (type) {
                 case PTLS_SERVER_NAME_TYPE_HOSTNAME:
