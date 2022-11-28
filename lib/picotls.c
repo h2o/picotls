@@ -4555,8 +4555,9 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
             }
             if (tls->pending_handshake_secret != NULL)
                 buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_EARLY_DATA, {});
-            if (tls->ech.offered && tls->ctx->ech.ciphers != NULL && tls->ctx->ech.create_opener != NULL &&
-                !ptls_is_ech_handshake(tls, NULL, NULL) && tls->ctx->ech.retry_configs.len != 0)
+            /* send ECH retry_configs, if ECH was offered by rejected, even though we (the server) could have accepted ECH */
+            if (tls->ech.offered && !ptls_is_ech_handshake(tls, NULL, NULL) && tls->ctx->ech.ciphers != NULL &&
+                tls->ctx->ech.create_opener != NULL && tls->ctx->ech.retry_configs.len != 0)
                 buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_ENCRYPTED_CLIENT_HELLO, {
                     ptls_buffer_pushv(sendbuf, tls->ctx->ech.retry_configs.base, tls->ctx->ech.retry_configs.len);
                 });
