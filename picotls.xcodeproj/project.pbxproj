@@ -743,7 +743,7 @@
 		106530AA1D9985E0005B2C60 /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
-				LastUpgradeCheck = 0830;
+				LastUpgradeCheck = 1320;
 				ORGANIZATIONNAME = "DeNA Co., Ltd.";
 				TargetAttributes = {
 					106530CB1D9B3D45005B2C60 = {

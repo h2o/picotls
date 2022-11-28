@@ -1145,6 +1145,7 @@ static uint8_t *ptls_encode_quicint(uint8_t *p, uint64_t v);
             goto Exit;                                                                                                             \
     } while (0)
 
+int ptls_decode8(uint8_t *value, const uint8_t **src, const uint8_t *end);
 int ptls_decode16(uint16_t *value, const uint8_t **src, const uint8_t *end);
 int ptls_decode24(uint32_t *value, const uint8_t **src, const uint8_t *end);
 int ptls_decode32(uint32_t *value, const uint8_t **src, const uint8_t *end);
