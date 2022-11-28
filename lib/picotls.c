@@ -3065,7 +3065,15 @@ static int handle_certificate(ptls_t *tls, const uint8_t *src, const uint8_t *en
     });
 
     if (tls->ctx->verify_certificate != NULL) {
-        if ((ret = tls->ctx->verify_certificate->cb(tls->ctx->verify_certificate, tls, &tls->certificate_verify.cb,
+        const char *server_name = NULL;
+        if (!ptls_is_server(tls)) {
+            if (tls->ech.offered && !ptls_is_ech_handshake(tls, NULL, NULL)) {
+                server_name = tls->ech.client.public_name;
+            } else {
+                server_name = tls->server_name;
+            }
+        }
+        if ((ret = tls->ctx->verify_certificate->cb(tls->ctx->verify_certificate, tls, server_name, &tls->certificate_verify.cb,
                                                     &tls->certificate_verify.verify_ctx, certs, num_certs)) != 0)
             goto Exit;
     }

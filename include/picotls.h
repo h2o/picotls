@@ -657,9 +657,11 @@ PTLS_CALLBACK_TYPE(int, sign_certificate, ptls_t *tls, uint16_t *selected_algori
  * callback to the invocation of the verify_sign callback, verify_sign is called with both data and sign set to an empty buffer.
  * The implementor of the callback should use that as the opportunity to free any temporary data allocated for the verify_sign
  * callback.
+ * The name of the server to be verified, if any, is provided explicitly as `server_name`. When ECH is offered by the client but
+ * the was rejected by the server, this value can be different from that being sent via `ptls_get_server_name`.
  */
 typedef struct st_ptls_verify_certificate_t {
-    int (*cb)(struct st_ptls_verify_certificate_t *self, ptls_t *tls,
+    int (*cb)(struct st_ptls_verify_certificate_t *self, ptls_t *tls, const char *server_name,
               int (**verify_sign)(void *verify_ctx, uint16_t algo, ptls_iovec_t data, ptls_iovec_t sign), void **verify_data,
               ptls_iovec_t *certs, size_t num_certs);
     /**
