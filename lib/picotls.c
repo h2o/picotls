@@ -1011,6 +1011,7 @@ static void clear_ech(struct st_ptls_ech_t *ech, int is_server)
 static int decode_one_ech_config(ptls_hpke_kem_t **kems, ptls_hpke_cipher_suite_t **ciphers,
                                  struct st_decoded_ech_config_t *decoded, const uint8_t **src, const uint8_t *const end)
 {
+    char *public_name_buf = NULL;
     int ret;
 
     *decoded = (struct st_decoded_ech_config_t){0};
@@ -1054,14 +1055,33 @@ static int decode_one_ech_config(ptls_hpke_kem_t **kems, ptls_hpke_cipher_suite_
     });
     if ((ret = ptls_decode8(&decoded->max_name_length, src, end)) != 0)
         goto Exit;
+
+#define SKIP_DECODED()                                                                                                             \
+    do {                                                                                                                           \
+        decoded->kem = NULL;                                                                                                       \
+        decoded->cipher = NULL;                                                                                                    \
+    } while (0)
+
+    /* Decode public_name. The specification requires clients to ignore (upon parsing ESNIConfigList) or reject (upon handshake)
+     * public names that are not DNS names or IPv4 addresses. We ignore IPv4 and v6 addresses during parsing (IPv6 addresses never
+     * looks like DNS names), and delegate the responsibility of rejecting non-DNS names to the certificate verify callback. */
     ptls_decode_open_block(*src, end, 1, {
         if (*src == end) {
             ret = PTLS_ALERT_DECODE_ERROR;
             goto Exit;
         }
-        decoded->public_name = ptls_iovec_init(*src, end - *src);
+        if ((public_name_buf = duplicate_as_str(*src, end - *src)) != NULL) {
+            ret = PTLS_ERROR_NO_MEMORY;
+            goto Exit;
+        }
+        if (ptls_server_name_is_ipaddr(public_name_buf)) {
+            SKIP_DECODED();
+        } else {
+            decoded->public_name = ptls_iovec_init(*src, end - *src);
+        }
         *src = end;
     });
+
     ptls_decode_block(*src, end, 2, {
         while (*src < end) {
             uint16_t type;
@@ -1069,14 +1089,15 @@ static int decode_one_ech_config(ptls_hpke_kem_t **kems, ptls_hpke_cipher_suite_
                 goto Exit;
             ptls_decode_open_block(*src, end, 2, { *src = end; });
             /* if a critital extension is found, indicate that the config cannot be used */
-            if ((type & 0x8000) != 0) {
-                decoded->kem = NULL;
-                decoded->cipher = NULL;
-            }
+            if ((type & 0x8000) != 0)
+                SKIP_DECODED();
         }
     });
 
+#undef SKIP_DECODED
+
 Exit:
+    free(public_name_buf);
     return ret;
 }
 
