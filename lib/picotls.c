@@ -1117,8 +1117,10 @@ static int client_setup_ech(struct st_ptls_ech_t *ech, struct st_decoded_ech_con
         goto Exit;
 
     /* copy public_name */
-    if ((ech->client.public_name = malloc(decoded->public_name.len + 1)) == NULL)
+    if ((ech->client.public_name = malloc(decoded->public_name.len + 1)) == NULL) {
+        ret = PTLS_ERROR_NO_MEMORY;
         goto Exit;
+    }
     memcpy(ech->client.public_name, decoded->public_name.base, decoded->public_name.len);
     ech->client.public_name[decoded->public_name.len] = '\0';
 
