@@ -856,6 +856,14 @@ static int commit_record_message(ptls_message_emitter_t *_self)
         ptls_decode_assert_block_close((src), end);                                                                                \
     } while (0)
 
+int ptls_decode8(uint8_t *value, const uint8_t **src, const uint8_t *end)
+{
+    if (*src == end)
+        return PTLS_ALERT_DECODE_ERROR;
+    *value = *(*src)++;
+    return 0;
+}
+
 int ptls_decode16(uint16_t *value, const uint8_t **src, const uint8_t *end)
 {
     if (end - *src < 2)
@@ -2288,10 +2296,14 @@ static int decode_server_hello(ptls_t *tls, struct st_ptls_server_hello_t *sh, c
         }
     }
 
-    /* legacy_compression_method */
-    if (src == end || *src++ != 0) {
-        ret = PTLS_ALERT_ILLEGAL_PARAMETER;
-        goto Exit;
+    { /* legacy_compression_method */
+        uint8_t method;
+        if ((ret = ptls_decode8(&method, &src, end)) != 0)
+            goto Exit;
+        if (method != 0) {
+            ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+            goto Exit;
+        }
     }
 
     if (sh->is_retry_request)
@@ -3471,11 +3483,10 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
                         ch->cookie.ch1_hash = ptls_iovec_init(src, end - src);
                         src = end;
                     });
-                    if (src == end) {
-                        ret = PTLS_ALERT_DECODE_ERROR;
+                    uint8_t sent_key_share;
+                    if ((ret = ptls_decode8(&sent_key_share, &src, end)) != 0)
                         goto Exit;
-                    }
-                    switch (*src++) {
+                    switch (sent_key_share) {
                     case 0:
                         assert(!ch->cookie.sent_key_share);
                         break;
@@ -3530,14 +3541,13 @@ static int decode_client_hello(ptls_t *tls, struct st_ptls_client_hello_t *ch, c
         } break;
         case PTLS_EXTENSION_TYPE_PSK_KEY_EXCHANGE_MODES:
             ptls_decode_block(src, end, 1, {
-                if (src == end) {
-                    ret = PTLS_ALERT_DECODE_ERROR;
-                    goto Exit;
-                }
-                for (; src != end; ++src) {
-                    if (*src < sizeof(ch->psk.ke_modes) * 8)
-                        ch->psk.ke_modes |= 1u << *src;
-                }
+                do {
+                    uint8_t mode;
+                    if ((ret = ptls_decode8(&mode, &src, end)) != 0)
+                        goto Exit;
+                    if (mode < sizeof(ch->psk.ke_modes) * 8)
+                        ch->psk.ke_modes |= 1u << mode;
+                } while (src != end);
             });
             break;
         case PTLS_EXTENSION_TYPE_EARLY_DATA:
