@@ -1070,7 +1070,7 @@ static int decode_one_ech_config(ptls_hpke_kem_t **kems, ptls_hpke_cipher_suite_
             ret = PTLS_ALERT_DECODE_ERROR;
             goto Exit;
         }
-        if ((public_name_buf = duplicate_as_str(*src, end - *src)) != NULL) {
+        if ((public_name_buf = duplicate_as_str(*src, end - *src)) == NULL) {
             ret = PTLS_ERROR_NO_MEMORY;
             goto Exit;
         }
