@@ -1015,11 +1015,8 @@ static int decode_one_ech_config(ptls_hpke_kem_t **kems, ptls_hpke_cipher_suite_
 
     *decoded = (struct st_decoded_ech_config_t){0};
 
-    if (*src == end) {
-        ret = PTLS_ALERT_DECODE_ERROR;
+    if ((ret = ptls_decode8(&decoded->id, src, end)) != 0)
         goto Exit;
-    }
-    decoded->id = *(*src)++;
     uint16_t kem_id;
     if ((ret = ptls_decode16(&kem_id, src, end)) != 0)
         goto Exit;
@@ -1055,11 +1052,8 @@ static int decode_one_ech_config(ptls_hpke_kem_t **kems, ptls_hpke_cipher_suite_
             }
         } while (*src != end);
     });
-    if (*src == end) {
-        ret = PTLS_ALERT_DECODE_ERROR;
+    if ((ret = ptls_decode8(&decoded->max_name_length, src, end)) != 0)
         goto Exit;
-    }
-    decoded->max_name_length = *(*src)++;
     ptls_decode_open_block(*src, end, 1, {
         if (*src == end) {
             ret = PTLS_ALERT_DECODE_ERROR;
@@ -3665,12 +3659,9 @@ static int decode_client_hello(ptls_context_t *ctx, struct st_ptls_client_hello_
         case PTLS_EXTENSION_TYPE_STATUS_REQUEST:
             ch->status_request = 1;
             break;
-        case PTLS_EXTENSION_TYPE_ENCRYPTED_CLIENT_HELLO: {
-            if (src == end) {
-                ret = PTLS_ALERT_DECODE_ERROR;
+        case PTLS_EXTENSION_TYPE_ENCRYPTED_CLIENT_HELLO:
+            if ((ret = ptls_decode8(&ch->ech.type, &src, end)) != 0)
                 goto Exit;
-            }
-            ch->ech.type = *src++;
             switch (ch->ech.type) {
             case PTLS_ECH_CLIENT_HELLO_TYPE_OUTER: {
                 ptls_hpke_cipher_suite_id_t cipher_id;
@@ -3685,11 +3676,8 @@ static int decode_client_hello(ptls_context_t *ctx, struct st_ptls_client_hello_
                         }
                     }
                 }
-                if (src == end) {
-                    ret = PTLS_ALERT_DECODE_ERROR;
+                if ((ret = ptls_decode8(&ch->ech.config_id, &src, end)) != 0)
                     goto Exit;
-                }
-                ch->ech.config_id = *src++;
                 ptls_decode_open_block(src, end, 2, {
                     ch->ech.enc = ptls_iovec_init(src, end - src);
                     src = end;
@@ -3711,7 +3699,7 @@ static int decode_client_hello(ptls_context_t *ctx, struct st_ptls_client_hello_
                 goto Exit;
             }
             src = end;
-        } break;
+            break;
         default:
             if (tls_cbarg != NULL && should_collect_unknown_extension(tls_cbarg, properties, exttype)) {
                 if ((ret = collect_unknown_extension(tls_cbarg, exttype, src, end, ch->unknown_extensions)) != 0)
