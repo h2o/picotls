@@ -1343,7 +1343,7 @@ uint64_t ptls_decode_quicint(const uint8_t **src, const uint8_t *end);
     do {                                                                                                                           \
         if (PTLS_UNLIKELY(!ptlslog_skip)) {                                                                                        \
             if (sizeof(v) <= sizeof(uint32_t)) {                                                                                   \
-                if (PTLS_UNLIKELY(!ptls_log__do_push_unsigned32(&ptlslogbuf, (v))))                                                \
+                if (PTLS_UNLIKELY(!ptls_log__do_push_unsigned32(&ptlslogbuf, (uint32_t)(v))))                                      \
                     ptlslog_skip = 1;                                                                                              \
             } else {                                                                                                               \
                 if (PTLS_UNLIKELY(!ptls_log__do_push_unsigned64(&ptlslogbuf, (v))))                                                \
