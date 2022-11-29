@@ -488,6 +488,8 @@ static inline void init_extension_bitmap(struct st_ptls_extension_bitmap_t *bitm
     EXT( EARLY_DATA              , CH + EE + NST );
     EXT( COOKIE                  , CH + HRR      );
     EXT( SUPPORTED_VERSIONS      , CH + SH + HRR );
+    EXT( ENCRYPTED_CLIENT_HELLO  , CH + HRR + EE );
+    EXT( ECH_OUTER_EXTENSIONS    , 0             );
     /* +-----------------------------------------+ */
     /* clang-format on */
 
@@ -2539,7 +2541,8 @@ static int decode_server_hello(ptls_t *tls, struct st_ptls_server_hello_t *sh, c
                                   goto Exit;
                               break;
                           case PTLS_EXTENSION_TYPE_ENCRYPTED_CLIENT_HELLO:
-                              if (!(tls->ech.offered && sh->is_retry_request)) {
+                              assert(sh->is_retry_request);
+                              if (!tls->ech.offered) {
                                   ret = PTLS_ALERT_UNSUPPORTED_EXTENSION;
                                   goto Exit;
                               }
