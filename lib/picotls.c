@@ -3737,6 +3737,10 @@ static int rebuild_ch_inner_extensions(ptls_buffer_t *buf, const uint8_t **src, 
                                 uint16_t outersize;
                                 if ((ret = ptls_decode16(&reftype, src, end)) != 0)
                                     goto Exit;
+                                if (reftype == PTLS_EXTENSION_TYPE_ENCRYPTED_CLIENT_HELLO) {
+                                    ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+                                    goto Exit;
+                                }
                                 while (1) {
                                     if (ptls_decode16(&outertype, &outer_ext, outer_ext_end) != 0 ||
                                         ptls_decode16(&outersize, &outer_ext, outer_ext_end) != 0) {
