@@ -968,6 +968,9 @@ static void log_secret(ptls_t *tls, const char *type, ptls_iovec_t secret)
         tls->ctx->log_event->cb(tls->ctx->log_event, tls, type, "%s", ptls_hexdump(hexbuf, secret.base, secret.len));
 }
 
+/**
+ * This function preserves the flags and  modes (e.g., `offered`, `accepted`, `cipher`), they can be used afterwards.
+ */
 static void clear_ech(struct st_ptls_ech_t *ech, int is_server)
 {
     if (ech->aead != NULL) {
@@ -2691,16 +2694,13 @@ static int client_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
                                           tls->client.offered_psk && !tls->is_psk_handshake)) != 0)
         goto Exit;
 
-    /* check if ECH is accepted, then free ECH AEAD */
+    /* check if ECH is accepted, then clear ECH context as we are done with handling sending and decoding Hellos */
     static const size_t confirm_hash_off =
         PTLS_HANDSHAKE_HEADER_SIZE + 2 /* legacy_version */ + PTLS_HELLO_RANDOM_SIZE - PTLS_ECH_CONFIRM_LENGTH;
     if (tls->ech.aead != NULL) {
         if ((ret = client_ech_select_hello(tls, message, confirm_hash_off, ECH_CONFIRMATION_SERVER_HELLO)) != 0)
             goto Exit;
-        if (tls->ech.aead != NULL) {
-            ptls_aead_free(tls->ech.aead);
-            tls->ech.aead = NULL;
-        }
+        clear_ech(&tls->ech, 0);
     }
 
     ptls__key_schedule_update_hash(tls->key_schedule, message.base, message.len, 0);
@@ -4389,12 +4389,6 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
         }
     }
 
-    /* dispose of ECH AEAD state now that processing of ECH is complete */
-    if (tls->ech.aead != NULL) {
-        ptls_aead_free(tls->ech.aead);
-        tls->ech.aead = NULL;
-    }
-
     /* handle unknown extensions */
     if ((ret = report_unknown_extensions(tls, properties, ch->unknown_extensions)) != 0)
         goto Exit;
@@ -4496,6 +4490,9 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
                     goto Exit;
             });
     }
+
+    /* processing of ECH is complete; dispose state */
+    clear_ech(&tls->ech, 1);
 
     if ((ret = push_change_cipher_spec(tls, emitter)) != 0)
         goto Exit;
