@@ -448,73 +448,51 @@ static inline void extension_bitmap_set(struct st_ptls_extension_bitmap_t *bitma
         bitmap->bits[id / 8] |= 1 << (id % 8);
 }
 
-static inline void init_extension_bitmap(struct st_ptls_extension_bitmap_t *bitmap, uint8_t hstype)
+static inline void init_extension_bitmap(struct st_ptls_extension_bitmap_t *bitmap, unsigned hstype)
 {
-    *bitmap = (struct st_ptls_extension_bitmap_t){{0}};
-
-#define EXT(extid, proc)                                                                                                           \
+#define HSTYPE_TO_BIT(hstype) ((uint64_t)1 << ((hstype) + 1)) /* min(hstype) is -1 (PSEUDO_HRR) */
+#define DEFINE_BIT(abbrev, hstype) static const uint64_t abbrev = HSTYPE_TO_BIT(PTLS_HANDSHAKE_TYPE_##hstype)
+#define EXT(extid, allowed_bits)                                                                                                   \
     do {                                                                                                                           \
-        int _found = 0;                                                                                                            \
-        do {                                                                                                                       \
-            proc                                                                                                                   \
-        } while (0);                                                                                                               \
-        if (!_found)                                                                                                               \
+        if (((allowed_bits)&HSTYPE_TO_BIT(hstype)) == 0)                                                                           \
             extension_bitmap_set(bitmap, PTLS_EXTENSION_TYPE_##extid);                                                             \
     } while (0)
-#define ALLOW(allowed_hstype) _found = _found || hstype == PTLS_HANDSHAKE_TYPE_##allowed_hstype
 
-    /* Implements the table found in section 4.2 of draft-19; "If an implementation receives an extension which it recognizes and
-     * which is not specified for the message in which it appears it MUST abort the handshake with an “illegal_parameter” alert."
-     */
-    EXT(SERVER_NAME, {
-        ALLOW(CLIENT_HELLO);
-        ALLOW(ENCRYPTED_EXTENSIONS);
-    });
-    EXT(STATUS_REQUEST, {
-        ALLOW(CLIENT_HELLO);
-        ALLOW(CERTIFICATE);
-        ALLOW(CERTIFICATE_REQUEST);
-    });
-    EXT(SUPPORTED_GROUPS, {
-        ALLOW(CLIENT_HELLO);
-        ALLOW(ENCRYPTED_EXTENSIONS);
-    });
-    EXT(SIGNATURE_ALGORITHMS, {
-        ALLOW(CLIENT_HELLO);
-        ALLOW(CERTIFICATE_REQUEST);
-    });
-    EXT(ALPN, {
-        ALLOW(CLIENT_HELLO);
-        ALLOW(ENCRYPTED_EXTENSIONS);
-    });
-    EXT(KEY_SHARE, {
-        ALLOW(CLIENT_HELLO);
-        ALLOW(SERVER_HELLO);
-    });
-    EXT(PRE_SHARED_KEY, {
-        ALLOW(CLIENT_HELLO);
-        ALLOW(SERVER_HELLO);
-    });
-    EXT(PSK_KEY_EXCHANGE_MODES, { ALLOW(CLIENT_HELLO); });
-    EXT(EARLY_DATA, {
-        ALLOW(CLIENT_HELLO);
-        ALLOW(ENCRYPTED_EXTENSIONS);
-        ALLOW(NEW_SESSION_TICKET);
-    });
-    EXT(COOKIE, {
-        ALLOW(CLIENT_HELLO);
-        ALLOW(SERVER_HELLO);
-    });
-    EXT(SUPPORTED_VERSIONS, {
-        ALLOW(CLIENT_HELLO);
-        ALLOW(SERVER_HELLO);
-    });
-    EXT(SERVER_CERTIFICATE_TYPE, {
-        ALLOW(CLIENT_HELLO);
-        ALLOW(ENCRYPTED_EXTENSIONS);
-    });
+    DEFINE_BIT(CH, CLIENT_HELLO);
+    DEFINE_BIT(SH, SERVER_HELLO);
+    DEFINE_BIT(HRR, PSEUDO_HRR);
+    DEFINE_BIT(EE, ENCRYPTED_EXTENSIONS);
+    DEFINE_BIT(CR, CERTIFICATE_REQUEST);
+    DEFINE_BIT(CT, CERTIFICATE);
+    DEFINE_BIT(NST, NEW_SESSION_TICKET);
 
-#undef ALLOW
+    *bitmap = (struct st_ptls_extension_bitmap_t){{0}};
+
+    /* clang-format off */
+    /* RFC 8446 section 4.2: "The table below indicates the messages where a given extension may appear... If an implementation
+     * receives an extension which it recognizes and which is not specified for the message in which it appears, it MUST abort the
+     * handshake with an "illegal_parameter" alert.
+     *
+     * +-------------------------+---------------+
+     * +        Extension        |    Allowed    |
+     * +-------------------------+---------------+ */
+    EXT( SERVER_NAME             , CH + EE       );
+    EXT( STATUS_REQUEST          , CH + CR + CT  );
+    EXT( SUPPORTED_GROUPS        , CH + EE       );
+    EXT( SIGNATURE_ALGORITHMS    , CH + CR       );
+    EXT( ALPN                    , CH + EE       );
+    EXT( SERVER_CERTIFICATE_TYPE , CH + EE       );
+    EXT( KEY_SHARE               , CH + SH + HRR );
+    EXT( PRE_SHARED_KEY          , CH + SH       );
+    EXT( PSK_KEY_EXCHANGE_MODES  , CH            );
+    EXT( EARLY_DATA              , CH + EE + NST );
+    EXT( COOKIE                  , CH + HRR      );
+    EXT( SUPPORTED_VERSIONS      , CH + SH + HRR );
+    /* +-----------------------------------------+ */
+    /* clang-format on */
+
+#undef HSTYPE_TO_BIT
+#undef DEFINE_ABBREV
 #undef EXT
 }
 
@@ -2515,75 +2493,68 @@ static int decode_server_hello(ptls_t *tls, struct st_ptls_server_hello_t *sh, c
         sh->retry_request.selected_group = UINT16_MAX;
 
     uint16_t exttype, found_version = UINT16_MAX, selected_psk_identity = UINT16_MAX;
-    decode_extensions(src, end, PTLS_HANDSHAKE_TYPE_SERVER_HELLO, &exttype, {
-        if (tls->ctx->on_extension != NULL &&
-            (ret = tls->ctx->on_extension->cb(tls->ctx->on_extension, tls, PTLS_HANDSHAKE_TYPE_SERVER_HELLO, exttype,
-                                              ptls_iovec_init(src, end - src)) != 0))
-            goto Exit;
-        switch (exttype) {
-        case PTLS_EXTENSION_TYPE_SUPPORTED_VERSIONS:
-            if ((ret = ptls_decode16(&found_version, &src, end)) != 0)
-                goto Exit;
-            break;
-        case PTLS_EXTENSION_TYPE_KEY_SHARE:
-            if (sh->is_retry_request) {
-                if ((ret = ptls_decode16(&sh->retry_request.selected_group, &src, end)) != 0)
-                    goto Exit;
-            } else {
-                uint16_t group;
-                if ((ret = decode_key_share_entry(&group, &sh->peerkey, &src, end)) != 0)
-                    goto Exit;
-                if (src != end) {
-                    ret = PTLS_ALERT_DECODE_ERROR;
-                    goto Exit;
-                }
-                if (tls->key_share == NULL || tls->key_share->id != group) {
-                    ret = PTLS_ALERT_ILLEGAL_PARAMETER;
-                    goto Exit;
-                }
-            }
-            break;
-        case PTLS_EXTENSION_TYPE_COOKIE:
-            if (sh->is_retry_request) {
-                ptls_decode_block(src, end, 2, {
-                    if (src == end) {
-                        ret = PTLS_ALERT_DECODE_ERROR;
-                        goto Exit;
-                    }
-                    sh->retry_request.cookie = ptls_iovec_init(src, end - src);
-                    src = end;
-                });
-            } else {
-                ret = PTLS_ALERT_ILLEGAL_PARAMETER;
-                goto Exit;
-            }
-            break;
-        case PTLS_EXTENSION_TYPE_PRE_SHARED_KEY:
-            if (sh->is_retry_request) {
-                ret = PTLS_ALERT_ILLEGAL_PARAMETER;
-                goto Exit;
-            } else {
-                if ((ret = ptls_decode16(&selected_psk_identity, &src, end)) != 0)
-                    goto Exit;
-            }
-            break;
-        case PTLS_EXTENSION_TYPE_ENCRYPTED_CLIENT_HELLO:
-            if (!(tls->ech.offered && sh->is_retry_request)) {
-                ret = PTLS_ALERT_UNSUPPORTED_EXTENSION;
-                goto Exit;
-            }
-            if (end - src != PTLS_ECH_CONFIRM_LENGTH) {
-                ret = PTLS_ALERT_DECODE_ERROR;
-                goto Exit;
-            }
-            sh->retry_request.ech = src;
-            src = end;
-            break;
-        default:
-            src = end;
-            break;
-        }
-    });
+    decode_extensions(src, end, sh->is_retry_request ? PTLS_HANDSHAKE_TYPE_PSEUDO_HRR : PTLS_HANDSHAKE_TYPE_SERVER_HELLO, &exttype,
+                      {
+                          if (tls->ctx->on_extension != NULL &&
+                              (ret = tls->ctx->on_extension->cb(tls->ctx->on_extension, tls, PTLS_HANDSHAKE_TYPE_SERVER_HELLO,
+                                                                exttype, ptls_iovec_init(src, end - src)) != 0))
+                              goto Exit;
+                          switch (exttype) {
+                          case PTLS_EXTENSION_TYPE_SUPPORTED_VERSIONS:
+                              if ((ret = ptls_decode16(&found_version, &src, end)) != 0)
+                                  goto Exit;
+                              break;
+                          case PTLS_EXTENSION_TYPE_KEY_SHARE:
+                              if (sh->is_retry_request) {
+                                  if ((ret = ptls_decode16(&sh->retry_request.selected_group, &src, end)) != 0)
+                                      goto Exit;
+                              } else {
+                                  uint16_t group;
+                                  if ((ret = decode_key_share_entry(&group, &sh->peerkey, &src, end)) != 0)
+                                      goto Exit;
+                                  if (src != end) {
+                                      ret = PTLS_ALERT_DECODE_ERROR;
+                                      goto Exit;
+                                  }
+                                  if (tls->key_share == NULL || tls->key_share->id != group) {
+                                      ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+                                      goto Exit;
+                                  }
+                              }
+                              break;
+                          case PTLS_EXTENSION_TYPE_COOKIE:
+                              assert(sh->is_retry_request);
+                              ptls_decode_block(src, end, 2, {
+                                  if (src == end) {
+                                      ret = PTLS_ALERT_DECODE_ERROR;
+                                      goto Exit;
+                                  }
+                                  sh->retry_request.cookie = ptls_iovec_init(src, end - src);
+                                  src = end;
+                              });
+                              break;
+                          case PTLS_EXTENSION_TYPE_PRE_SHARED_KEY:
+                              assert(!sh->is_retry_request);
+                              if ((ret = ptls_decode16(&selected_psk_identity, &src, end)) != 0)
+                                  goto Exit;
+                              break;
+                          case PTLS_EXTENSION_TYPE_ENCRYPTED_CLIENT_HELLO:
+                              if (!(tls->ech.offered && sh->is_retry_request)) {
+                                  ret = PTLS_ALERT_UNSUPPORTED_EXTENSION;
+                                  goto Exit;
+                              }
+                              if (end - src != PTLS_ECH_CONFIRM_LENGTH) {
+                                  ret = PTLS_ALERT_DECODE_ERROR;
+                                  goto Exit;
+                              }
+                              sh->retry_request.ech = src;
+                              src = end;
+                              break;
+                          default:
+                              src = end;
+                              break;
+                          }
+                      });
 
     if (!is_supported_version(found_version)) {
         ret = PTLS_ALERT_ILLEGAL_PARAMETER;
