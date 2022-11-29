@@ -3738,9 +3738,11 @@ static int rebuild_ch_inner_extensions(ptls_buffer_t *buf, const uint8_t **src, 
                                 if ((ret = ptls_decode16(&reftype, src, end)) != 0)
                                     goto Exit;
                                 while (1) {
-                                    if ((ret = ptls_decode16(&outertype, &outer_ext, outer_ext_end)) != 0 ||
-                                        (ret = ptls_decode16(&outersize, &outer_ext, outer_ext_end)) != 0)
+                                    if (ptls_decode16(&outertype, &outer_ext, outer_ext_end) != 0 ||
+                                        ptls_decode16(&outersize, &outer_ext, outer_ext_end) != 0) {
+                                        ret = PTLS_ALERT_ILLEGAL_PARAMETER;
                                         goto Exit;
+                                    }
                                     assert(outer_ext_end - outer_ext >= outersize);
                                     if (outertype == reftype)
                                         break;
