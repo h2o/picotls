@@ -443,6 +443,7 @@ static inline void init_extension_bitmap(struct st_ptls_extension_bitmap_t *bitm
     EXT( EARLY_DATA              , CH + EE + NST );
     EXT( COOKIE                  , CH + HRR      );
     EXT( SUPPORTED_VERSIONS      , CH + SH + HRR );
+    EXT( COMPRESS_CERTIFICATE    , CH + CR       ); /* from RFC 8879 */
     /* +-----------------------------------------+ */
     /* clang-format on */
 
