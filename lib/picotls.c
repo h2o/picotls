@@ -1139,20 +1139,16 @@ static int client_setup_ech(struct st_ptls_ech_t *ech, struct st_decoded_ech_con
                                       ptls_iovec_init(infobuf.base, infobuf.off))) != 0)
         goto Exit;
 
-    /* copy public_name */
-    if ((ech->client.public_name = duplicate_as_str(decoded->public_name.base, decoded->public_name.len)) == NULL) {
-        ret = PTLS_ERROR_NO_MEMORY;
-        goto Exit;
-    }
-    memcpy(ech->client.public_name, decoded->public_name.base, decoded->public_name.len);
-    ech->client.public_name[decoded->public_name.len] = '\0';
-
     /* setup the rest */
     ech->config_id = decoded->id;
     ech->kem = decoded->kem;
     ech->cipher = decoded->cipher;
     random_bytes(ech->inner_client_random, PTLS_HELLO_RANDOM_SIZE);
     ech->client.max_name_length = decoded->max_name_length;
+    if ((ech->client.public_name = duplicate_as_str(decoded->public_name.base, decoded->public_name.len)) == NULL) {
+        ret = PTLS_ERROR_NO_MEMORY;
+        goto Exit;
+    }
 
 Exit:
     if (ret != 0)
