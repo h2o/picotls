@@ -171,11 +171,12 @@ struct st_decoded_ech_config_t {
  * Properties for ECH. Iff ECH is used and not rejected, `aead` is non-NULL.
  */
 struct st_ptls_ech_t {
-    ptls_aead_context_t *aead;
     uint8_t offered : 1;
+    uint8_t accepted : 1;
     uint8_t config_id;
     ptls_hpke_kem_t *kem;
     ptls_hpke_cipher_suite_t *cipher;
+    ptls_aead_context_t *aead;
     uint8_t inner_client_random[PTLS_HELLO_RANDOM_SIZE];
     struct {
         ptls_iovec_t enc;
@@ -2643,9 +2644,9 @@ static int client_ech_select_hello(ptls_t *tls, ptls_iovec_t message, size_t con
         if ((ret = ech_calc_confirmation(tls->key_schedule, confirm_hash_expected, tls->ech.inner_client_random, label, message)) !=
             0)
             goto Exit;
-        int ech_accepted = ptls_mem_equal(confirm_hash_delivered, confirm_hash_expected, sizeof(confirm_hash_delivered));
+        tls->ech.accepted = ptls_mem_equal(confirm_hash_delivered, confirm_hash_expected, sizeof(confirm_hash_delivered));
         memcpy(message.base + confirm_hash_off, confirm_hash_delivered, sizeof(confirm_hash_delivered));
-        if (ech_accepted)
+        if (tls->ech.accepted)
             goto Exit;
     }
 
@@ -2690,12 +2691,17 @@ static int client_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
                                           tls->client.offered_psk && !tls->is_psk_handshake)) != 0)
         goto Exit;
 
-    /* check if ECH is accepted (at the same time rolling the hash) */
+    /* check if ECH is accepted, then free ECH AEAD */
     static const size_t confirm_hash_off =
         PTLS_HANDSHAKE_HEADER_SIZE + 2 /* legacy_version */ + PTLS_HELLO_RANDOM_SIZE - PTLS_ECH_CONFIRM_LENGTH;
-    if (tls->ech.aead != NULL &&
-        (ret = client_ech_select_hello(tls, message, confirm_hash_off, ECH_CONFIRMATION_SERVER_HELLO)) != 0)
-        goto Exit;
+    if (tls->ech.aead != NULL) {
+        if ((ret = client_ech_select_hello(tls, message, confirm_hash_off, ECH_CONFIRMATION_SERVER_HELLO)) != 0)
+            goto Exit;
+        if (tls->ech.aead != NULL) {
+            ptls_aead_free(tls->ech.aead);
+            tls->ech.aead = NULL;
+        }
+    }
 
     ptls__key_schedule_update_hash(tls->key_schedule, message.base, message.len, 0);
 
@@ -4167,6 +4173,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
             memset(ech.ch_outer_aad + (ch->ech.payload.base - (message.base + PTLS_HANDSHAKE_HEADER_SIZE)), 0, ch->ech.payload.len);
             if (ptls_aead_decrypt(tls->ech.aead, ech.encoded_ch_inner, ch->ech.payload.base, ch->ech.payload.len, is_second_flight,
                                   ech.ch_outer_aad, message.len - PTLS_HANDSHAKE_HEADER_SIZE) != SIZE_MAX) {
+                tls->ech.accepted = 1;
                 /* successfully decrypted EncodedCHInner, build CHInner */
                 if ((ret = rebuild_ch_inner(&ech.ch_inner, ech.encoded_ch_inner,
                                             ech.encoded_ch_inner + ch->ech.payload.len - tls->ech.aead->algo->tag_size, ch,
@@ -4184,8 +4191,12 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
                     goto Exit;
                 if (!is_second_flight)
                     memcpy(tls->ech.inner_client_random, ch->random_bytes, PTLS_HELLO_RANDOM_SIZE);
+            } else if (is_second_flight) {
+                /* decryption failure of inner CH in 2nd CH is fatal */
+                ret = PTLS_ALERT_DECRYPT_ERROR;
+                goto Exit;
             } else {
-                /* decryption failure indicates key mismatch; dispose of AEAD context to indicate that outerCH is adopted */
+                /* decryption failure of 1st CH indicates key mismatch; dispose of AEAD context to indicate adoption of outerCH */
                 ptls_aead_free(tls->ech.aead);
                 tls->ech.aead = NULL;
             }
@@ -4376,6 +4387,12 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
             }
             goto Exit;
         }
+    }
+
+    /* dispose of ECH AEAD state now that processing of ECH is complete */
+    if (tls->ech.aead != NULL) {
+        ptls_aead_free(tls->ech.aead);
+        tls->ech.aead = NULL;
     }
 
     /* handle unknown extensions */
@@ -5139,7 +5156,7 @@ int ptls_is_psk_handshake(ptls_t *tls)
 
 int ptls_is_ech_handshake(ptls_t *tls, ptls_hpke_kem_t **kem, ptls_hpke_cipher_suite_t **cipher)
 {
-    if (tls->ech.aead != NULL) {
+    if (tls->ech.accepted) {
         if (kem != NULL)
             *kem = tls->ech.kem;
         if (cipher != NULL)
