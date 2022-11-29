@@ -2693,7 +2693,7 @@ static int client_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
                                           tls->client.offered_psk && !tls->is_psk_handshake)) != 0)
         goto Exit;
 
-    /* check if ECH is accepted, then clear ECH context as we are done with handling sending and decoding Hellos */
+    /* check if ECH is accepted */
     static const size_t confirm_hash_off =
         PTLS_HANDSHAKE_HEADER_SIZE + 2 /* legacy_version */ + PTLS_HELLO_RANDOM_SIZE - PTLS_ECH_CONFIRM_LENGTH;
     if (tls->ech.aead != NULL) {
@@ -2701,7 +2701,12 @@ static int client_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
             goto Exit;
     }
 
+    /* clear sensitive and space-consuming ECH state, now that are done with handling sending and decoding Hellos */
     clear_ech(&tls->ech, 0);
+    if (tls->key_schedule->hashes[0].ctx_outer != NULL) {
+        tls->key_schedule->hashes[0].ctx_outer->final(tls->key_schedule->hashes[0].ctx_outer, NULL, PTLS_HASH_FINAL_MODE_FREE);
+        tls->key_schedule->hashes[0].ctx_outer = NULL;
+    }
 
     ptls__key_schedule_update_hash(tls->key_schedule, message.base, message.len, 0);
 
