@@ -2699,8 +2699,9 @@ static int client_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
     if (tls->ech.aead != NULL) {
         if ((ret = client_ech_select_hello(tls, message, confirm_hash_off, ECH_CONFIRMATION_SERVER_HELLO)) != 0)
             goto Exit;
-        clear_ech(&tls->ech, 0);
     }
+
+    clear_ech(&tls->ech, 0);
 
     ptls__key_schedule_update_hash(tls->key_schedule, message.base, message.len, 0);
 
