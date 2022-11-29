@@ -3717,6 +3717,56 @@ Exit:
     return ret;
 }
 
+static int rebuild_ch_inner_extensions(ptls_buffer_t *buf, const uint8_t **src, const uint8_t *const end, const uint8_t *outer_ext,
+                                       const uint8_t *outer_ext_end)
+{
+    int ret;
+
+    ptls_buffer_push_block(buf, 2, {
+        ptls_decode_open_block(*src, end, 2, {
+            while (*src != end) {
+                uint16_t exttype;
+                if ((ret = ptls_decode16(&exttype, src, end)) != 0)
+                    goto Exit;
+                ptls_decode_open_block(*src, end, 2, {
+                    if (exttype == PTLS_EXTENSION_TYPE_ECH_OUTER_EXTENSIONS) {
+                        ptls_decode_open_block(*src, end, 1, {
+                            do {
+                                uint16_t reftype;
+                                uint16_t outertype;
+                                uint16_t outersize;
+                                if ((ret = ptls_decode16(&reftype, src, end)) != 0)
+                                    goto Exit;
+                                while (1) {
+                                    if ((ret = ptls_decode16(&outertype, &outer_ext, outer_ext_end)) != 0 ||
+                                        (ret = ptls_decode16(&outersize, &outer_ext, outer_ext_end)) != 0)
+                                        goto Exit;
+                                    assert(outer_ext_end - outer_ext >= outersize);
+                                    if (outertype == reftype)
+                                        break;
+                                    outer_ext += outersize;
+                                }
+                                buffer_push_extension(buf, reftype, {
+                                    ptls_buffer_pushv(buf, outer_ext, outersize);
+                                    outer_ext += outersize;
+                                });
+                            } while (*src != end);
+                        });
+                    } else {
+                        buffer_push_extension(buf, exttype, {
+                            ptls_buffer_pushv(buf, *src, end - *src);
+                            *src = end;
+                        });
+                    }
+                });
+            }
+        });
+    });
+
+Exit:
+    return ret;
+}
+
 static int rebuild_ch_inner(ptls_buffer_t *buf, const uint8_t *src, const uint8_t *const end,
                             struct st_ptls_client_hello_t *outer_ch, const uint8_t *outer_ext, const uint8_t *outer_ext_end)
 {
@@ -3760,46 +3810,8 @@ static int rebuild_ch_inner(ptls_buffer_t *buf, const uint8_t *src, const uint8_
         COPY_BLOCK(1);
 
         /* extensions */
-        ptls_buffer_push_block(buf, 2, {
-            ptls_decode_open_block(src, end, 2, {
-                while (src != end) {
-                    uint16_t exttype;
-                    if ((ret = ptls_decode16(&exttype, &src, end)) != 0)
-                        goto Exit;
-                    ptls_decode_open_block(src, end, 2, {
-                        if (exttype == PTLS_EXTENSION_TYPE_ECH_OUTER_EXTENSIONS) {
-                            ptls_decode_open_block(src, end, 1, {
-                                do {
-                                    uint16_t reftype;
-                                    uint16_t outertype;
-                                    uint16_t outersize;
-                                    if ((ret = ptls_decode16(&reftype, &src, end)) != 0)
-                                        goto Exit;
-                                    while (1) {
-                                        if ((ret = ptls_decode16(&outertype, &outer_ext, outer_ext_end)) != 0 ||
-                                            (ret = ptls_decode16(&outersize, &outer_ext, outer_ext_end)) != 0)
-                                            goto Exit;
-                                        assert(outer_ext_end - outer_ext >= outersize);
-                                        if (outertype == reftype)
-                                            break;
-                                        outer_ext += outersize;
-                                    }
-                                    buffer_push_extension(buf, reftype, {
-                                        ptls_buffer_pushv(buf, outer_ext, outersize);
-                                        outer_ext += outersize;
-                                    });
-                                } while (src != end);
-                            });
-                        } else {
-                            buffer_push_extension(buf, exttype, {
-                                ptls_buffer_pushv(buf, src, end - src);
-                                src = end;
-                            });
-                        }
-                    });
-                }
-            });
-        });
+        if ((ret = rebuild_ch_inner_extensions(buf, &src, end, outer_ext, outer_ext_end)) != 0)
+            goto Exit;
     });
 
     /* padding must be all zero */

@@ -538,9 +538,65 @@ static void test_ech_decode_config(void)
     }
 }
 
+static void test_rebuild_ch_inner(void)
+{
+    ptls_buffer_t buf;
+    ptls_buffer_init(&buf, "", 0);
+
+#define TEST(_expected_err)                                                                                                        \
+    do {                                                                                                                           \
+        const uint8_t *src = encoded_inner;                                                                                        \
+        buf.off = 0;                                                                                                               \
+        ok(rebuild_ch_inner_extensions(&buf, &src, encoded_inner + sizeof(encoded_inner), outer, outer + sizeof(outer)) ==         \
+           _expected_err);                                                                                                         \
+        if (_expected_err == 0) {                                                                                                  \
+            ok(src == encoded_inner + sizeof(encoded_inner));                                                                      \
+            ok(buf.off == sizeof(expected));                                                                                       \
+            ok(memcmp(buf.base, expected, sizeof(expected)) == 0);                                                                 \
+        }                                                                                                                          \
+    } while (0)
+
+    { /* replace none */
+        static const uint8_t encoded_inner[] = {0x00, 0x09, 0x12, 0x34, 0x00, 0x05, 0x68, 0x65, 0x6c, 0x6c, 0x6f}, outer[] = {},
+                             expected[] = {0x00, 0x09, 0x12, 0x34, 0x00, 0x05, 0x68, 0x65, 0x6c, 0x6c, 0x6f};
+        TEST(0);
+    }
+
+    { /* replace one */
+        static const uint8_t encoded_inner[] = {0x00, 0x07, 0xfd, 0x00, 0x00, 0x03, 0x02, 0x00, 0x01},
+                             outer[] = {0x00, 0x01, 0x00, 0x05, 0x68, 0x65, 0x6c, 0x6c, 0x6f},
+                             expected[] = {0x00, 0x09, 0x00, 0x01, 0x00, 0x05, 0x68, 0x65, 0x6c, 0x6c, 0x6f};
+        TEST(0);
+    }
+
+    { /* replace multi */
+        static const uint8_t encoded_inner[] = {0x00, 0x13, 0x00, 0x01, 0x00, 0x01, 0x31, 0xfd, 0x00, 0x00, 0x05,
+                                                0x04, 0x00, 0x02, 0x00, 0x04, 0x00, 0x05, 0x00, 0x01, 0x35},
+                             outer[] = {0x00, 0x01, 0x00, 0x01, 0x41, 0x00, 0x02, 0x00, 0x01, 0x42, 0x00, 0x03, 0x00,
+                                        0x01, 0x43, 0x00, 0x04, 0x00, 0x01, 0x44, 0x00, 0x05, 0x00, 0x01, 0x45},
+                             expected[] = {0x00, 0x14, 0x00, 0x01, 0x00, 0x01, 0x31, 0x00, 0x02, 0x00, 0x01,
+                                           0x42, 0x00, 0x04, 0x00, 0x01, 0x44, 0x00, 0x05, 0x00, 0x01, 0x35};
+        TEST(0);
+    }
+
+    { /* outer extension not found */
+        static const uint8_t encoded_inner[] = {0x00, 0x13, 0x00, 0x01, 0x00, 0x01, 0x31, 0xfd, 0x00, 0x00, 0x05,
+                                                0x04, 0x00, 0x02, 0x00, 0x04, 0x00, 0x05, 0x00, 0x01, 0x35},
+                             outer[] = {0x00, 0x01, 0x00, 0x01, 0x41, 0x00, 0x02, 0x00, 0x01, 0x42, 0x00, 0x03, 0x00,
+                                        0x01, 0x43},
+                             expected[] = {0x00, 0x14, 0x00, 0x01, 0x00, 0x01, 0x31, 0x00, 0x02, 0x00, 0x01,
+                                           0x42, 0x00, 0x04, 0x00, 0x01, 0x44, 0x00, 0x05, 0x00, 0x01, 0x35};
+        TEST(PTLS_ALERT_ILLEGAL_PARAMETER);
+    }
+
+#undef TEST
+    ptls_buffer_dispose(&buf);
+}
+
 static void test_ech(void)
 {
     subtest("decode-config", test_ech_decode_config);
+    subtest("rebuild_ch_inner", test_rebuild_ch_inner);
 }
 
 static struct {
