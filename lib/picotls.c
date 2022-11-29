@@ -403,9 +403,9 @@ static inline void extension_bitmap_set(struct st_ptls_extension_bitmap_t *bitma
         bitmap->bits[id / 8] |= 1 << (id % 8);
 }
 
-static inline void init_extension_bitmap(struct st_ptls_extension_bitmap_t *bitmap, uint8_t hstype)
+static inline void init_extension_bitmap(struct st_ptls_extension_bitmap_t *bitmap, unsigned hstype)
 {
-#define HSTYPE_TO_BIT(hstype) ((uint64_t)1 << (hstype))
+#define HSTYPE_TO_BIT(hstype) ((uint64_t)1 << ((hstype) + 1)) /* min(hstype) is -1 (PSEUDO_HRR) */
 #define DEFINE_BIT(abbrev, hstype) static const uint64_t abbrev = HSTYPE_TO_BIT(PTLS_HANDSHAKE_TYPE_##hstype)
 #define EXT(extid, allowed_bits)                                                                                                   \
     do {                                                                                                                           \
@@ -415,6 +415,7 @@ static inline void init_extension_bitmap(struct st_ptls_extension_bitmap_t *bitm
 
     DEFINE_BIT(CH, CLIENT_HELLO);
     DEFINE_BIT(SH, SERVER_HELLO);
+    DEFINE_BIT(HRR, PSEUDO_HRR);
     DEFINE_BIT(EE, ENCRYPTED_EXTENSIONS);
     DEFINE_BIT(CR, CERTIFICATE_REQUEST);
     DEFINE_BIT(CT, CERTIFICATE);
@@ -435,13 +436,13 @@ static inline void init_extension_bitmap(struct st_ptls_extension_bitmap_t *bitm
     EXT( SUPPORTED_GROUPS        , CH + EE       );
     EXT( SIGNATURE_ALGORITHMS    , CH + CR       );
     EXT( ALPN                    , CH + EE       );
-    EXT( KEY_SHARE               , CH + SH       );
+    EXT( SERVER_CERTIFICATE_TYPE , CH + EE       );
+    EXT( KEY_SHARE               , CH + SH + HRR );
     EXT( PRE_SHARED_KEY          , CH + SH       );
     EXT( PSK_KEY_EXCHANGE_MODES  , CH            );
     EXT( EARLY_DATA              , CH + EE + NST );
-    EXT( COOKIE                  , CH + SH       );
-    EXT( SUPPORTED_VERSIONS      , CH + SH       );
-    EXT( SERVER_CERTIFICATE_TYPE , CH + EE       );
+    EXT( COOKIE                  , CH + HRR      );
+    EXT( SUPPORTED_VERSIONS      , CH + SH + HRR );
     /* +-----------------------------------------+ */
     /* clang-format on */
 
@@ -2287,63 +2288,56 @@ static int decode_server_hello(ptls_t *tls, struct st_ptls_server_hello_t *sh, c
         sh->retry_request.selected_group = UINT16_MAX;
 
     uint16_t exttype, found_version = UINT16_MAX, selected_psk_identity = UINT16_MAX;
-    decode_extensions(src, end, PTLS_HANDSHAKE_TYPE_SERVER_HELLO, &exttype, {
-        if (tls->ctx->on_extension != NULL &&
-            (ret = tls->ctx->on_extension->cb(tls->ctx->on_extension, tls, PTLS_HANDSHAKE_TYPE_SERVER_HELLO, exttype,
-                                              ptls_iovec_init(src, end - src)) != 0))
-            goto Exit;
-        switch (exttype) {
-        case PTLS_EXTENSION_TYPE_SUPPORTED_VERSIONS:
-            if ((ret = ptls_decode16(&found_version, &src, end)) != 0)
-                goto Exit;
-            break;
-        case PTLS_EXTENSION_TYPE_KEY_SHARE:
-            if (sh->is_retry_request) {
-                if ((ret = ptls_decode16(&sh->retry_request.selected_group, &src, end)) != 0)
-                    goto Exit;
-            } else {
-                uint16_t group;
-                if ((ret = decode_key_share_entry(&group, &sh->peerkey, &src, end)) != 0)
-                    goto Exit;
-                if (src != end) {
-                    ret = PTLS_ALERT_DECODE_ERROR;
-                    goto Exit;
-                }
-                if (tls->key_share == NULL || tls->key_share->id != group) {
-                    ret = PTLS_ALERT_ILLEGAL_PARAMETER;
-                    goto Exit;
-                }
-            }
-            break;
-        case PTLS_EXTENSION_TYPE_COOKIE:
-            if (sh->is_retry_request) {
-                ptls_decode_block(src, end, 2, {
-                    if (src == end) {
-                        ret = PTLS_ALERT_DECODE_ERROR;
-                        goto Exit;
-                    }
-                    sh->retry_request.cookie = ptls_iovec_init(src, end - src);
-                    src = end;
-                });
-            } else {
-                ret = PTLS_ALERT_ILLEGAL_PARAMETER;
-                goto Exit;
-            }
-            break;
-        case PTLS_EXTENSION_TYPE_PRE_SHARED_KEY:
-            if (sh->is_retry_request) {
-                ret = PTLS_ALERT_ILLEGAL_PARAMETER;
-                goto Exit;
-            } else {
-                if ((ret = ptls_decode16(&selected_psk_identity, &src, end)) != 0)
-                    goto Exit;
-            }
-            break;
-        default:
-            src = end;
-            break;
-        }
-    });
+    decode_extensions(src, end, sh->is_retry_request ? PTLS_HANDSHAKE_TYPE_PSEUDO_HRR : PTLS_HANDSHAKE_TYPE_SERVER_HELLO, &exttype,
+                      {
+                          if (tls->ctx->on_extension != NULL &&
+                              (ret = tls->ctx->on_extension->cb(tls->ctx->on_extension, tls, PTLS_HANDSHAKE_TYPE_SERVER_HELLO,
+                                                                exttype, ptls_iovec_init(src, end - src)) != 0))
+                              goto Exit;
+                          switch (exttype) {
+                          case PTLS_EXTENSION_TYPE_SUPPORTED_VERSIONS:
+                              if ((ret = ptls_decode16(&found_version, &src, end)) != 0)
+                                  goto Exit;
+                              break;
+                          case PTLS_EXTENSION_TYPE_KEY_SHARE:
+                              if (sh->is_retry_request) {
+                                  if ((ret = ptls_decode16(&sh->retry_request.selected_group, &src, end)) != 0)
+                                      goto Exit;
+                              } else {
+                                  uint16_t group;
+                                  if ((ret = decode_key_share_entry(&group, &sh->peerkey, &src, end)) != 0)
+                                      goto Exit;
+                                  if (src != end) {
+                                      ret = PTLS_ALERT_DECODE_ERROR;
+                                      goto Exit;
+                                  }
+                                  if (tls->key_share == NULL || tls->key_share->id != group) {
+                                      ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+                                      goto Exit;
+                                  }
+                              }
+                              break;
+                          case PTLS_EXTENSION_TYPE_COOKIE:
+                              assert(sh->is_retry_request);
+                              ptls_decode_block(src, end, 2, {
+                                  if (src == end) {
+                                      ret = PTLS_ALERT_DECODE_ERROR;
+                                      goto Exit;
+                                  }
+                                  sh->retry_request.cookie = ptls_iovec_init(src, end - src);
+                                  src = end;
+                              });
+                              break;
+                          case PTLS_EXTENSION_TYPE_PRE_SHARED_KEY:
+                              assert(!sh->is_retry_request);
+                              if ((ret = ptls_decode16(&selected_psk_identity, &src, end)) != 0)
+                                  goto Exit;
+                              break;
+                          default:
+                              src = end;
+                              break;
+                          }
+                      });
 
     if (!is_supported_version(found_version)) {
         ret = PTLS_ALERT_ILLEGAL_PARAMETER;
