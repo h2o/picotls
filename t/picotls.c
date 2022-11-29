@@ -44,6 +44,18 @@ static void test_is_ipaddr(void)
     ok(ptls_server_name_is_ipaddr("2001:db8::2:1"));
 }
 
+static void test_extension_bitmap(void)
+{
+    struct st_ptls_extension_bitmap_t bitmap = {0};
+
+    /* disallowed extension is rejected */
+    ok(!extension_bitmap_testandset(&bitmap, PTLS_HANDSHAKE_TYPE_SERVER_HELLO, PTLS_EXTENSION_TYPE_COOKIE));
+
+    /* allowed extension is accepted first, rejected upon repetition */
+    ok(extension_bitmap_testandset(&bitmap, PTLS_HANDSHAKE_TYPE_SERVER_HELLO, PTLS_EXTENSION_TYPE_KEY_SHARE));
+    ok(!extension_bitmap_testandset(&bitmap, PTLS_HANDSHAKE_TYPE_SERVER_HELLO, PTLS_EXTENSION_TYPE_KEY_SHARE));
+}
+
 static void test_select_cipher(void)
 {
 #define C(x) ((x) >> 8) & 0xff, (x)&0xff
@@ -1834,7 +1846,8 @@ static void test_escape_json_unsafe_string(void)
 void test_picotls(void)
 {
     subtest("is_ipaddr", test_is_ipaddr);
-    subtest("select_cypher", test_select_cipher);
+    subtest("extension_bitmap", test_extension_bitmap);
+    subtest("select_cipher", test_select_cipher);
     subtest("sha256", test_sha256);
     subtest("sha384", test_sha384);
     subtest("hmac-sha256", test_hmac_sha256);

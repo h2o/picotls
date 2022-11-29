@@ -419,7 +419,7 @@ struct st_ptls_extension_decoder_t {
 };
 
 struct st_ptls_extension_bitmap_t {
-    uint8_t bits[8]; /* only ids below 64 is tracked */
+    uint64_t bits;
 };
 
 static const uint8_t zeroes_of_max_digest_size[PTLS_MAX_DIGEST_SIZE] = {0};
@@ -436,27 +436,17 @@ static int is_supported_version(uint16_t v)
     return 0;
 }
 
-static inline int extension_bitmap_is_set(struct st_ptls_extension_bitmap_t *bitmap, uint16_t id)
-{
-    if (id < sizeof(bitmap->bits) * 8)
-        return (bitmap->bits[id / 8] & (1 << (id % 8))) != 0;
-    return 0;
-}
-
-static inline void extension_bitmap_set(struct st_ptls_extension_bitmap_t *bitmap, uint16_t id)
-{
-    if (id < sizeof(bitmap->bits) * 8)
-        bitmap->bits[id / 8] |= 1 << (id % 8);
-}
-
-static inline void init_extension_bitmap(struct st_ptls_extension_bitmap_t *bitmap, unsigned hstype)
+static int extension_bitmap_testandset(struct st_ptls_extension_bitmap_t *bitmap, int hstype, uint16_t extid)
 {
 #define HSTYPE_TO_BIT(hstype) ((uint64_t)1 << ((hstype) + 1)) /* min(hstype) is -1 (PSEUDO_HRR) */
 #define DEFINE_BIT(abbrev, hstype) static const uint64_t abbrev = HSTYPE_TO_BIT(PTLS_HANDSHAKE_TYPE_##hstype)
-#define EXT(extid, allowed_bits)                                                                                                   \
+#define EXT(candext, allowed_bits)                                                                                                 \
     do {                                                                                                                           \
-        if (((allowed_bits)&HSTYPE_TO_BIT(hstype)) == 0)                                                                           \
-            extension_bitmap_set(bitmap, PTLS_EXTENSION_TYPE_##extid);                                                             \
+        if (PTLS_UNLIKELY(extid == PTLS_EXTENSION_TYPE_##candext)) {                                                               \
+            allowed_hs_bits = allowed_bits;                                                                                        \
+            goto Found;                                                                                                            \
+        }                                                                                                                          \
+        ext_bitmap_mask <<= 1;                                                                                                     \
     } while (0)
 
     DEFINE_BIT(CH, CLIENT_HELLO);
@@ -467,7 +457,7 @@ static inline void init_extension_bitmap(struct st_ptls_extension_bitmap_t *bitm
     DEFINE_BIT(CT, CERTIFICATE);
     DEFINE_BIT(NST, NEW_SESSION_TICKET);
 
-    *bitmap = (struct st_ptls_extension_bitmap_t){{0}};
+    uint64_t allowed_hs_bits, ext_bitmap_mask = 1;
 
     /* clang-format off */
     /* RFC 8446 section 4.2: "The table below indicates the messages where a given extension may appear... If an implementation
@@ -493,6 +483,16 @@ static inline void init_extension_bitmap(struct st_ptls_extension_bitmap_t *bitm
     EXT( ECH_OUTER_EXTENSIONS    , 0             );
     /* +-----------------------------------------+ */
     /* clang-format on */
+
+    return 1;
+
+Found:
+    if ((allowed_hs_bits & HSTYPE_TO_BIT(hstype)) == 0)
+        return 0;
+    if ((bitmap->bits & ext_bitmap_mask) != 0)
+        return 0;
+    bitmap->bits |= ext_bitmap_mask;
+    return 1;
 
 #undef HSTYPE_TO_BIT
 #undef DEFINE_ABBREV
@@ -871,17 +871,15 @@ static int commit_record_message(ptls_message_emitter_t *_self)
 
 #define decode_open_extensions(src, end, hstype, exttype, block)                                                                   \
     do {                                                                                                                           \
-        struct st_ptls_extension_bitmap_t bitmap;                                                                                  \
-        init_extension_bitmap(&bitmap, (hstype));                                                                                  \
+        struct st_ptls_extension_bitmap_t bitmap = {0};                                                                            \
         ptls_decode_open_block((src), end, 2, {                                                                                    \
             while ((src) != end) {                                                                                                 \
                 if ((ret = ptls_decode16((exttype), &(src), end)) != 0)                                                            \
                     goto Exit;                                                                                                     \
-                if (extension_bitmap_is_set(&bitmap, *(exttype)) != 0) {                                                           \
+                if (!extension_bitmap_testandset(&bitmap, (hstype), *(exttype))) {                                                 \
                     ret = PTLS_ALERT_ILLEGAL_PARAMETER;                                                                            \
                     goto Exit;                                                                                                     \
                 }                                                                                                                  \
-                extension_bitmap_set(&bitmap, *(exttype));                                                                         \
                 ptls_decode_open_block((src), end, 2, block);                                                                      \
             }                                                                                                                      \
         });                                                                                                                        \
@@ -3727,7 +3725,6 @@ static int rebuild_ch_inner(ptls_buffer_t *buf, const uint8_t *src, const uint8_
         });                                                                                                                        \
     } while (0)
 
-    uint16_t exttype;
     int ret;
 
     ptls_buffer_push_message_body(buf, NULL, PTLS_HANDSHAKE_TYPE_CLIENT_HELLO, {
@@ -3761,34 +3758,41 @@ static int rebuild_ch_inner(ptls_buffer_t *buf, const uint8_t *src, const uint8_
 
         /* extensions */
         ptls_buffer_push_block(buf, 2, {
-            decode_open_extensions(src, end, PTLS_HANDSHAKE_TYPE_CLIENT_HELLO, &exttype, {
-                if (exttype == PTLS_EXTENSION_TYPE_ECH_OUTER_EXTENSIONS) {
-                    ptls_decode_open_block(src, end, 1, {
-                        do {
-                            uint16_t reftype;
-                            uint16_t outertype;
-                            uint16_t outersize;
-                            if ((ret = ptls_decode16(&reftype, &src, end)) != 0)
-                                goto Exit;
-                            while (1) {
-                                if ((ret = ptls_decode16(&outertype, &outer_ext, outer_ext_end)) != 0 ||
-                                    (ret = ptls_decode16(&outersize, &outer_ext, outer_ext_end)) != 0)
-                                    goto Exit;
-                                assert(outer_ext_end - outer_ext >= outersize);
-                                if (outertype == reftype)
-                                    break;
-                                outer_ext += outersize;
-                            }
-                            buffer_push_extension(buf, reftype, {
-                                ptls_buffer_pushv(buf, outer_ext, outersize);
-                                outer_ext += outersize;
+            ptls_decode_open_block(src, end, 2, {
+                while (src != end) {
+                    uint16_t exttype;
+                    if ((ret = ptls_decode16(&exttype, &src, end)) != 0)
+                        goto Exit;
+                    ptls_decode_open_block(src, end, 2, {
+                        if (exttype == PTLS_EXTENSION_TYPE_ECH_OUTER_EXTENSIONS) {
+                            ptls_decode_open_block(src, end, 1, {
+                                do {
+                                    uint16_t reftype;
+                                    uint16_t outertype;
+                                    uint16_t outersize;
+                                    if ((ret = ptls_decode16(&reftype, &src, end)) != 0)
+                                        goto Exit;
+                                    while (1) {
+                                        if ((ret = ptls_decode16(&outertype, &outer_ext, outer_ext_end)) != 0 ||
+                                            (ret = ptls_decode16(&outersize, &outer_ext, outer_ext_end)) != 0)
+                                            goto Exit;
+                                        assert(outer_ext_end - outer_ext >= outersize);
+                                        if (outertype == reftype)
+                                            break;
+                                        outer_ext += outersize;
+                                    }
+                                    buffer_push_extension(buf, reftype, {
+                                        ptls_buffer_pushv(buf, outer_ext, outersize);
+                                        outer_ext += outersize;
+                                    });
+                                } while (src != end);
                             });
-                        } while (src != end);
-                    });
-                } else {
-                    buffer_push_extension(buf, exttype, {
-                        ptls_buffer_pushv(buf, src, end - src);
-                        src = end;
+                        } else {
+                            buffer_push_extension(buf, exttype, {
+                                ptls_buffer_pushv(buf, src, end - src);
+                                src = end;
+                            });
+                        }
                     });
                 }
             });
