@@ -479,7 +479,8 @@ static int extension_bitmap_testandset(struct st_ptls_extension_bitmap_t *bitmap
     EXT( EARLY_DATA              , CH + EE + NST );
     EXT( COOKIE                  , CH + HRR      );
     EXT( SUPPORTED_VERSIONS      , CH + SH + HRR );
-    EXT( ENCRYPTED_CLIENT_HELLO  , CH + HRR + EE );
+    EXT( COMPRESS_CERTIFICATE    , CH + CR       ); /* from RFC 8879 */
+    EXT( ENCRYPTED_CLIENT_HELLO  , CH + HRR + EE ); /* from draft-ietf-tls-esni-15 */
     EXT( ECH_OUTER_EXTENSIONS    , 0             );
     /* +-----------------------------------------+ */
     /* clang-format on */
