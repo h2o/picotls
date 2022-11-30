@@ -6,9 +6,10 @@
 #include <Winsock2.h>
 #include <ws2tcpip.h>
 #include <malloc.h>
-#include <sys/time.h>
 
-#ifdef _MSC_VER
+#ifndef _MSC_VER
+#include <sys/time.h>
+#else
 #ifndef gettimeofday
 #define gettimeofday wintimeofday
 
