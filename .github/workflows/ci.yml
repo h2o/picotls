@@ -76,3 +76,40 @@ jobs:
         cmake .. -DOPENSSL_ROOT_DIR="$(brew --prefix ${OPENSSL})"
         make all VERBOSE=1
         make check
+  windows:
+    name: "${{ matrix.name }}"
+    runs-on: [windows-latest]
+    # We want to run on external PRs, but not on our own internal PRs as they'll be run
+    # by the push to the branch.
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: "Windows / OpenSSL 3.x"
+            openssl: openssl@3
+
+    timeout-minutes: 20
+    steps:
+    - uses: actions/checkout@v2
+      with:
+        submodules: recursive
+
+    - uses: msys2/setup-msys2@v2
+      with:
+        update: true
+        install: mingw-w64-x86_64-toolchain mingw-w64-x86_64-cmake mingw-w64-x86_64-openssl mingw-w64-x86_64-make
+        msystem: MINGW64
+        path-type: inherit
+
+    - name: Build
+      env:
+        OPENSSL: ${{ matrix.openssl }}
+      run: |
+        mkdir -p build
+        cd build
+        cmake -G "MSYS Makefiles" ..
+        mingw32-make all VERBOSE=1
+        mingw32-make check
+      shell: msys2 {0}
