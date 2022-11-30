@@ -59,7 +59,7 @@
 #define NO_SANITIZE_ADDRESS
 #endif
 
-#ifdef _WINDOWS
+#ifdef _WIN32
 #define aligned_alloc(a, s) _aligned_malloc((s), (a))
 #endif
 
@@ -2165,7 +2165,7 @@ ptls_aead_algorithm_t ptls_non_temporal_aes256gcm = {"AES256-GCM",
                                                      sizeof(struct aesgcm_context),
                                                      non_temporal_aes256gcm_setup};
 
-#ifdef _WINDOWS
+#ifdef _WIN32
 /**
  * ptls_fusion_is_supported_by_cpu:
  * Check that the CPU has extended instructions for PCMUL, AES and AVX2.

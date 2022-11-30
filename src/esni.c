@@ -24,7 +24,7 @@
 #include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
-#ifdef _WINDOWS
+#ifdef _MSC_VER
 #include "..\picotls\wincompat.h"
 #ifndef _CRT_SECURE_NO_WARNINGS
 #define _CRT_SECURE_NO_WARNINGS
@@ -203,7 +203,7 @@ int main(int argc, char **argv)
             lifetime *= 86400; /* convert to seconds */
             break;
         case 'p':
-#ifdef _WINDOWS
+#ifdef _WIN32
             if (sscanf_s(optarg, "%" SCNu16, &padded_length) != 1 || padded_length == 0) {
                 fprintf(stderr, "padded length must be a positive integer\n");
                 exit(1);

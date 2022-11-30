@@ -26,7 +26,7 @@
 extern "C" {
 #endif
 
-#ifdef _WINDOWS
+#ifdef _WIN32
 #include "wincompat.h"
 #endif
 
@@ -60,7 +60,7 @@ extern "C" {
 
 #define PTLS_ELEMENTSOF(x) (PTLS_ASSERT_IS_ARRAY_EXPR(x) * sizeof(x) / sizeof((x)[0]))
 
-#ifdef _WINDOWS
+#ifdef _WIN32
 #define PTLS_THREADLOCAL __declspec(thread)
 #else
 #define PTLS_THREADLOCAL __thread
@@ -917,7 +917,7 @@ typedef enum en_ptls_early_data_acceptance_t {
 /**
  * optional arguments to client-driven handshake
  */
-#ifdef _WINDOWS
+#ifdef _MSC_VER
 /* suppress warning C4201: nonstandard extension used: nameless struct/union */
 #pragma warning(push)
 #pragma warning(disable : 4201)
@@ -1002,10 +1002,10 @@ typedef struct st_ptls_handshake_properties_t {
      */
     int (*collected_extensions)(ptls_t *tls, struct st_ptls_handshake_properties_t *properties, ptls_raw_extension_t *extensions);
 } ptls_handshake_properties_t;
-#ifdef _WINDOWS
+#ifdef _MSC_VER
 #pragma warning(pop)
 #endif
-#ifdef _WINDOWS
+#ifdef _MSC_VER
 /* suppress warning C4293: >> shift count negative or too big */
 #pragma warning(disable : 4293)
 #endif

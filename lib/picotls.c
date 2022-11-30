@@ -19,7 +19,7 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
-#ifdef _WINDOWS
+#ifdef _WIN32
 #include "wincompat.h"
 #endif
 #include <assert.h>
@@ -27,13 +27,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#ifndef _WINDOWS
+#ifndef _WIN32
 #include <errno.h>
 #include <pthread.h>
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <sys/time.h>
 #endif
+#include <pthread.h>
 #include "picotls.h"
 #if PICOTLS_USE_DTRACE
 #include "picotls-probes.h"
@@ -491,7 +492,7 @@ void ptls_buffer__release_memory(ptls_buffer_t *buf)
 {
     ptls_clear_memory(buf->base, buf->off);
     if (buf->is_allocated) {
-#ifdef _WINDOWS
+#ifdef _WIN32
         if (buf->align_bits != 0) {
             _aligned_free(buf->base);
         } else {
@@ -523,7 +524,7 @@ int ptls_buffer_reserve_aligned(ptls_buffer_t *buf, size_t delta, uint8_t align_
             new_capacity *= 2;
         }
         if (align_bits != 0) {
-#ifdef _WINDOWS
+#ifdef _WIN32
             if ((newp = _aligned_malloc(new_capacity, (size_t)1 << align_bits)) == NULL)
                 return PTLS_ERROR_NO_MEMORY;
 #else

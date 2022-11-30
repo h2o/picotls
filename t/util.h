@@ -26,6 +26,14 @@
 #define _XOPEN_SOURCE 700 /* required for glibc to use getaddrinfo, etc. */
 #endif
 
+#ifdef _WIN32
+#include <ws2tcpip.h>
+#include <errno.h>
+#include <stdio.h>
+#include <string.h>
+#include <fcntl.h>
+#define MAXPATHLEN MAXPNAMELEN
+#else
 #include <errno.h>
 #include <netdb.h>
 #include <netinet/in.h>
@@ -36,6 +44,7 @@
 #include <sys/types.h>
 #include <arpa/nameser.h>
 #include <resolv.h>
+#endif
 #include <openssl/pem.h>
 #include "picotls/pembase64.h"
 #include "picotls/openssl.h"
@@ -368,7 +377,7 @@ Error:
 /* The ptls_repeat_while_eintr macro will repeat a function call (block) if it is interrupted (EINTR) before completion. If failing
  * for other reason, the macro executes the exit block, such as either { break; } or { goto Fail; }.
  */
-#ifdef _WINDOWS
+#ifdef _WIN32
 #define repeat_while_eintr(expr, exit_block)                                                                                       \
     while ((expr) < 0) {                                                                                                           \
         exit_block;                                                                                                                \

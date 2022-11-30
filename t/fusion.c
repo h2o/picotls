@@ -386,7 +386,7 @@ static void test_generated(void)
     ptls_cipher_context_t *rand = ptls_cipher_new(&ptls_minicrypto_aes128ctr, 1, zero);
     ptls_cipher_init(rand, zero);
     int i;
-#ifdef _WINDOWS
+#ifdef _WIN32
     const int nb_runs = 1000;
 #else
     const int nb_runs = 10000;

@@ -26,7 +26,7 @@
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
-#ifdef _WINDOWS
+#ifdef _WIN32
 #include "wincompat.h"
 #else
 #include <unistd.h>
@@ -35,7 +35,7 @@
 #include "picotls.h"
 #include "picotls/minicrypto.h"
 #include <stdio.h>
-#ifdef _WINDOWS
+#ifdef _WIN32
 #ifdef _WINDOWS_XP
 /* The modern BCrypt API is only available on Windows Vista and later versions.
  * If compiling on Windows XP, we need to use the olded "wincrypt" API */
