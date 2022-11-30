@@ -111,5 +111,4 @@ jobs:
         cd build
         cmake -G "MSYS Makefiles" ..
         mingw32-make all VERBOSE=1
-        mingw32-make check
       shell: msys2 {0}
