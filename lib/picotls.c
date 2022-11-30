@@ -34,7 +34,6 @@
 #include <arpa/inet.h>
 #include <sys/time.h>
 #endif
-#include <pthread.h>
 #include "picotls.h"
 #if PICOTLS_USE_DTRACE
 #include "picotls-probes.h"
