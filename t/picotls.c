@@ -546,8 +546,8 @@ static void test_rebuild_ch_inner(void)
 #define TEST(_expected_err)                                                                                                        \
     do {                                                                                                                           \
         const uint8_t *src = encoded_inner;                                                                                        \
-        buf.off = 0;                                                                                                               \
-        ok(rebuild_ch_inner_extensions(&buf, &src, encoded_inner + sizeof(encoded_inner), outer, outer + sizeof(outer) - 1) ==         \
+        buf.off = 0; 
+        ok(rebuild_ch_inner_extensions(&buf, &src, encoded_inner + sizeof(encoded_inner), outer, outer + sizeof(outer) - 1) ==     \
            _expected_err);                                                                                                         \
         if (_expected_err == 0) {                                                                                                  \
             ok(src == encoded_inner + sizeof(encoded_inner));                                                                      \
@@ -557,9 +557,8 @@ static void test_rebuild_ch_inner(void)
     } while (0)
 
     { /* replace none */
-        static const uint8_t encoded_inner[] = {0x00, 0x09, 0x12, 0x34, 0x00, 0x05, 0x68, 0x65, 0x6c, 0x6c, 0x6f},
-            outer[] = { 0 },
-            expected[] = {0x00, 0x09, 0x12, 0x34, 0x00, 0x05, 0x68, 0x65, 0x6c, 0x6c, 0x6f};
+        static const uint8_t encoded_inner[] = {0x00, 0x09, 0x12, 0x34, 0x00, 0x05, 0x68, 0x65, 0x6c, 0x6c, 0x6f}, outer[] = { 0 },
+                             expected[] = {0x00, 0x09, 0x12, 0x34, 0x00, 0x05, 0x68, 0x65, 0x6c, 0x6c, 0x6f};
         TEST(0);
     }
 
