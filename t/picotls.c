@@ -546,8 +546,8 @@ static void test_rebuild_ch_inner(void)
 #define TEST(_expected_err)                                                                                                        \
     do {                                                                                                                           \
         const uint8_t *src = encoded_inner;                                                                                        \
-        buf.off = 0; 
-        ok(rebuild_ch_inner_extensions(&buf, &src, encoded_inner + sizeof(encoded_inner), outer, outer + sizeof(outer) - 1) ==         \
+        buf.off = 0;                                                                                                               \
+        ok(rebuild_ch_inner_extensions(&buf, &src, encoded_inner + sizeof(encoded_inner), outer, outer + sizeof(outer) - 1) ==     \
            _expected_err);                                                                                                         \
         if (_expected_err == 0) {                                                                                                  \
             ok(src == encoded_inner + sizeof(encoded_inner));                                                                      \
