@@ -1361,7 +1361,7 @@ static void key_schedule_transform_post_ch1hash(ptls_key_schedule_t *sched)
     size_t digest_size = sched->hashes[0].algo->digest_size;
     ptls_hash_context_t *hashes[3] = {sched->hashes[0].ctx, sched->hashes[0].ctx_outer, NULL};
     uint8_t ch1hash[PTLS_MAX_DIGEST_SIZE];
-    uint8_t prefix[4] = {PTLS_HANDSHAKE_TYPE_MESSAGE_HASH, 0, 0, digest_size};
+    uint8_t prefix[4] = {PTLS_HANDSHAKE_TYPE_MESSAGE_HASH, 0, 0, (uint8_t)digest_size};
 
     for (size_t i = 0; hashes[i] != NULL; ++i) {
         hashes[i]->final(hashes[i], ch1hash, PTLS_HASH_FINAL_MODE_RESET);
