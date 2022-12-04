@@ -231,6 +231,7 @@ extern "C" {
 #define PTLS_ERROR_COMPRESSION_FAILURE (PTLS_ERROR_CLASS_INTERNAL + 8)
 #define PTLS_ERROR_REJECT_EARLY_DATA (PTLS_ERROR_CLASS_INTERNAL + 9)
 #define PTLS_ERROR_DELEGATE (PTLS_ERROR_CLASS_INTERNAL + 10)
+#define PTLS_ERROR_ASYNC_OPERATION (PTLS_ERROR_CLASS_INTERNAL + 11)
 
 #define PTLS_ERROR_INCORRECT_BASE64 (PTLS_ERROR_CLASS_INTERNAL + 50)
 #define PTLS_ERROR_PEM_LABEL_NOT_FOUND (PTLS_ERROR_CLASS_INTERNAL + 51)
@@ -648,10 +649,17 @@ PTLS_CALLBACK_TYPE(int, on_client_hello, ptls_t *tls, ptls_on_client_hello_param
 PTLS_CALLBACK_TYPE(int, emit_certificate, ptls_t *tls, ptls_message_emitter_t *emitter, ptls_key_schedule_t *key_sched,
                    ptls_iovec_t context, int push_status_request, const uint16_t *compress_algos, size_t num_compress_algos);
 /**
- * when gerenating CertificateVerify, the core calls the callback to sign the handshake context using the certificate.
+ * context object of an async operation (e.g., RSA signature generation)
  */
-PTLS_CALLBACK_TYPE(int, sign_certificate, ptls_t *tls, uint16_t *selected_algorithm, ptls_buffer_t *output, ptls_iovec_t input,
-                   const uint16_t *algorithms, size_t num_algorithms);
+typedef struct st_ptls_async_job_t {
+    void (*destroy_)(struct st_ptls_async_job_t *self);
+} ptls_async_job_t;
+/**
+ * When gerenating CertificateVerify, the core calls the callback to sign the handshake context using the certificate. This callback
+ * supports asynchronous mode; see `ptls_openssl_sign_certificate_t` for more information.
+ */
+PTLS_CALLBACK_TYPE(int, sign_certificate, ptls_t *tls, ptls_async_job_t **async, uint16_t *selected_algorithm,
+                   ptls_buffer_t *output, ptls_iovec_t input, const uint16_t *algorithms, size_t num_algorithms);
 /**
  * after receiving Certificate, the core calls the callback to verify the certificate chain and to obtain a pointer to a
  * callback that should be used for verifying CertificateVerify. If an error occurs between a successful return from this
@@ -1400,6 +1408,10 @@ ptls_context_t *ptls_get_context(ptls_t *tls);
  * updates the context of a connection. Can be called from `on_client_hello` callback.
  */
 void ptls_set_context(ptls_t *tls, ptls_context_t *ctx);
+/**
+ * get the signature context
+ */
+ptls_async_job_t *ptls_get_async_job(ptls_t *tls);
 /**
  * returns the client-random
  */
