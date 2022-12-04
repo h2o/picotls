@@ -169,7 +169,12 @@ void test_hpke(ptls_hpke_kem_t **all_kems, ptls_hpke_cipher_suite_t **all_cipher
     for (ptls_hpke_kem_t **kem = all_kems; *kem != NULL; ++kem) {
         for (ptls_hpke_cipher_suite_t **cipher = all_ciphers; *cipher != NULL; ++cipher) {
             char namebuf[64];
+#ifdef _WIN32
+            (void)sprintf_s(namebuf, sizeof(namebuf), "%s-%s/%s-%s", (*kem)->keyex->name, (*kem)->hash->name,
+                (*cipher)->hash->name, (*cipher)->aead->name);
+#else
             sprintf(namebuf, "%s-%s/%s-%s", (*kem)->keyex->name, (*kem)->hash->name, (*cipher)->hash->name, (*cipher)->aead->name);
+#endif
             test_kem = *kem;
             test_cipher = *cipher;
             subtest(namebuf, test_one_hpke);
