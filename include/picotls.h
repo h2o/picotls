@@ -1687,6 +1687,11 @@ extern int (*volatile ptls_mem_equal)(const void *x, const void *y, size_t len);
  */
 int ptls_server_name_is_ipaddr(const char *name);
 /**
+ * encodes one ECH Config
+ */
+int ptls_ech_encode_config(ptls_buffer_t *buf, uint8_t config_id, ptls_hpke_kem_t *kem, ptls_iovec_t public_key,
+                           ptls_hpke_cipher_suite_t **ciphers, uint8_t max_name_length, const char *public_name);
+/**
  * loads a certificate chain to ptls_context_t::certificates. `certificate.list` and each element of the list is allocated by
  * malloc.  It is the responsibility of the user to free them when discarding the TLS context.
  */

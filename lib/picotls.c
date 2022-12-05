@@ -6324,6 +6324,31 @@ int ptls_server_name_is_ipaddr(const char *name)
     return 0;
 }
 
+int ptls_ech_encode_config(ptls_buffer_t *buf, uint8_t config_id, ptls_hpke_kem_t *kem, ptls_iovec_t public_key,
+                           ptls_hpke_cipher_suite_t **ciphers, uint8_t max_name_length, const char *public_name)
+{
+    int ret;
+
+    ptls_buffer_push16(buf, PTLS_ECH_CONFIG_VERSION);
+    ptls_buffer_push_block(buf, 2, {
+        ptls_buffer_push(buf, config_id);
+        ptls_buffer_push16(buf, kem->id);
+        ptls_buffer_push_block(buf, 2, { ptls_buffer_pushv(buf, public_key.base, public_key.len); });
+        ptls_buffer_push_block(buf, 2, {
+            for (size_t i = 0; ciphers[i] != NULL; ++i) {
+                ptls_buffer_push16(buf, ciphers[i]->id.kdf);
+                ptls_buffer_push16(buf, ciphers[i]->id.aead);
+            }
+        });
+        ptls_buffer_push(buf, max_name_length);
+        ptls_buffer_push_block(buf, 2, { ptls_buffer_pushv(buf, public_name, strlen(public_name)); });
+        ptls_buffer_push_block(buf, 2, {/* extensions */});
+    });
+
+Exit:
+    return ret;
+}
+
 static char *byte_to_hex(char *dst, uint8_t v)
 {
     *dst++ = "0123456789abcdef"[v >> 4];
