@@ -374,7 +374,7 @@ struct st_ptls_client_hello_t {
     struct {
         uint8_t type;
         uint8_t config_id;
-        ptls_hpke_cipher_suite_t *cipher;
+        ptls_hpke_cipher_suite_id_t cipher_suite;
         ptls_iovec_t enc;
         ptls_iovec_t payload;
     } ech;
@@ -1091,7 +1091,7 @@ Exit:
     return ret;
 }
 
-static int decode_ech_config_list(ptls_context_t *ctx, struct st_decoded_ech_config_t *decoded, ptls_iovec_t config_list)
+static int client_decode_ech_config_list(ptls_context_t *ctx, struct st_decoded_ech_config_t *decoded, ptls_iovec_t config_list)
 {
     const uint8_t *src = config_list.base, *const end = src + config_list.len;
     int match_found = 0, ret;
@@ -1108,7 +1108,7 @@ static int decode_ech_config_list(ptls_context_t *ctx, struct st_decoded_ech_con
                 /* If the block is the one that we recognize, parse it, then adopt if if possible. Otherwise, skip. */
                 if (version == PTLS_ECH_CONFIG_VERSION) {
                     struct st_decoded_ech_config_t thisconf;
-                    if ((ret = decode_one_ech_config(ctx->ech.kems, ctx->ech.ciphers, &thisconf, &src, end)) != 0)
+                    if ((ret = decode_one_ech_config(ctx->ech.client.kems, ctx->ech.client.ciphers, &thisconf, &src, end)) != 0)
                         goto Exit;
                     if (!match_found && thisconf.kem != NULL && thisconf.cipher != NULL) {
                         *decoded = thisconf;
@@ -2265,10 +2265,10 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
 
     if (properties != NULL) {
         /* try to use ECH (ignore broken ECHConfigList; it is delivered insecurely) */
-        if (!is_second_flight && sni_name != NULL && tls->ctx->ech.ciphers != NULL && tls->ctx->ech.kems != NULL &&
+        if (!is_second_flight && sni_name != NULL && tls->ctx->ech.client.ciphers != NULL &&
             properties->client.ech.configs.len != 0) {
             struct st_decoded_ech_config_t decoded;
-            decode_ech_config_list(tls->ctx, &decoded, properties->client.ech.configs);
+            client_decode_ech_config_list(tls->ctx, &decoded, properties->client.ech.configs);
             if (decoded.kem != NULL && decoded.cipher != NULL) {
                 if ((ret = client_setup_ech(&tls->ech, &decoded, tls->ctx->random_bytes)) != 0)
                     goto Exit;
@@ -2843,7 +2843,7 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
             }
             /* parse retry_config, and if it is applicable, provide that to the application */
             struct st_decoded_ech_config_t decoded;
-            if ((ret = decode_ech_config_list(tls->ctx, &decoded, ptls_iovec_init(src, end - src))) != 0)
+            if ((ret = client_decode_ech_config_list(tls->ctx, &decoded, ptls_iovec_init(src, end - src))) != 0)
                 goto Exit;
             if (decoded.kem != NULL && decoded.cipher != NULL && properties != NULL &&
                 properties->client.ech.retry_configs != NULL) {
@@ -3686,19 +3686,10 @@ static int decode_client_hello(ptls_context_t *ctx, struct st_ptls_client_hello_
             if ((ret = ptls_decode8(&ch->ech.type, &src, end)) != 0)
                 goto Exit;
             switch (ch->ech.type) {
-            case PTLS_ECH_CLIENT_HELLO_TYPE_OUTER: {
-                ptls_hpke_cipher_suite_id_t cipher_id;
-                if ((ret = ptls_decode16(&cipher_id.kdf, &src, end)) != 0 || (ret = ptls_decode16(&cipher_id.aead, &src, end)) != 0)
+            case PTLS_ECH_CLIENT_HELLO_TYPE_OUTER:
+                if ((ret = ptls_decode16(&ch->ech.cipher_suite.kdf, &src, end)) != 0 ||
+                    (ret = ptls_decode16(&ch->ech.cipher_suite.aead, &src, end)) != 0)
                     goto Exit;
-                /* find corresponding cipher-suite; if not found, the field is left NULL */
-                if (ctx->ech.ciphers != NULL) {
-                    for (size_t i = 0; ctx->ech.ciphers[i] != NULL; ++i) {
-                        if (ctx->ech.ciphers[i]->id.kdf == cipher_id.kdf && ctx->ech.ciphers[i]->id.aead == cipher_id.aead) {
-                            ch->ech.cipher = ctx->ech.ciphers[i];
-                            break;
-                        }
-                    }
-                }
                 if ((ret = ptls_decode8(&ch->ech.config_id, &src, end)) != 0)
                     goto Exit;
                 ptls_decode_open_block(src, end, 2, {
@@ -3713,7 +3704,7 @@ static int decode_client_hello(ptls_context_t *ctx, struct st_ptls_client_hello_
                     ch->ech.payload = ptls_iovec_init(src, end - src);
                     src = end;
                 });
-            } break;
+                break;
             case PTLS_ECH_CLIENT_HELLO_TYPE_INNER:
                 if (src != end) {
                     ret = PTLS_ALERT_DECODE_ERROR;
@@ -4187,7 +4178,8 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
                 ret = PTLS_ALERT_MISSING_EXTENSION;
                 goto Exit;
             }
-            if (!(ch->ech.config_id == tls->ech.config_id && ch->ech.cipher == tls->ech.cipher && ch->ech.enc.len == 0)) {
+            if (!(ch->ech.config_id == tls->ech.config_id && ch->ech.cipher_suite.kdf == tls->ech.cipher->id.kdf &&
+                  ch->ech.cipher_suite.aead == tls->ech.cipher->id.aead && ch->ech.enc.len == 0)) {
                 ret = PTLS_ALERT_ILLEGAL_PARAMETER;
                 goto Exit;
             }
@@ -4203,14 +4195,11 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
         if (!is_second_flight)
             tls->ech.offered = 1;
         /* obtain AEAD context for opening inner CH */
-        if (!is_second_flight && ch->ech.cipher != NULL && ch->ech.payload.len > ch->ech.cipher->aead->tag_size &&
-            tls->ctx->ech.create_opener != NULL) {
-            if ((tls->ech.aead = tls->ctx->ech.create_opener->cb(
-                     tls->ctx->ech.create_opener, &tls->ech.kem, tls, ch->ech.config_id, ch->ech.cipher, ch->ech.enc,
-                     ptls_iovec_init(ech_info_prefix, sizeof(ech_info_prefix)))) != NULL) {
+        if (!is_second_flight && ch->ech.payload.base != NULL && tls->ctx->ech.server.create_opener != NULL) {
+            if ((tls->ech.aead = tls->ctx->ech.server.create_opener->cb(
+                     tls->ctx->ech.server.create_opener, &tls->ech.kem, &tls->ech.cipher, tls, ch->ech.config_id,
+                     ch->ech.cipher_suite, ch->ech.enc, ptls_iovec_init(ech_info_prefix, sizeof(ech_info_prefix)))) != NULL)
                 tls->ech.config_id = ch->ech.config_id;
-                tls->ech.cipher = ch->ech.cipher;
-            }
         }
         if (tls->ech.aead != NULL) {
             /* now that AEAD context is available, create AAD and decrypt inner CH */
@@ -4591,10 +4580,10 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
             if (tls->pending_handshake_secret != NULL)
                 buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_EARLY_DATA, {});
             /* send ECH retry_configs, if ECH was offered by rejected, even though we (the server) could have accepted ECH */
-            if (tls->ech.offered && !ptls_is_ech_handshake(tls, NULL, NULL) && tls->ctx->ech.ciphers != NULL &&
-                tls->ctx->ech.create_opener != NULL && tls->ctx->ech.retry_configs.len != 0)
+            if (tls->ech.offered && !ptls_is_ech_handshake(tls, NULL, NULL) && tls->ctx->ech.server.create_opener != NULL &&
+                tls->ctx->ech.server.retry_configs.len != 0)
                 buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_ENCRYPTED_CLIENT_HELLO, {
-                    ptls_buffer_pushv(sendbuf, tls->ctx->ech.retry_configs.base, tls->ctx->ech.retry_configs.len);
+                    ptls_buffer_pushv(sendbuf, tls->ctx->ech.server.retry_configs.base, tls->ctx->ech.server.retry_configs.len);
                 });
             if ((ret = push_additional_extensions(properties, sendbuf)) != 0)
                 goto Exit;

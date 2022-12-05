@@ -733,11 +733,11 @@ static int on_extension_cb(ptls_on_extension_t *self, ptls_t *tls, uint8_t hstyp
 
 static int can_ech(ptls_context_t *ctx, int is_server)
 {
-    if (ctx->ech.ciphers == NULL)
-        return 0;
-    if (is_server && ctx->ech.create_opener == NULL)
-        return 0;
-    return 1;
+    if (is_server) {
+        return ctx->ech.server.create_opener != NULL;
+    } else {
+        return ctx->ech.client.ciphers != NULL;
+    }
 }
 
 static void test_handshake(ptls_iovec_t ticket, int mode, int expect_ticket, int check_ch, int require_client_authentication)
@@ -1747,22 +1747,23 @@ static void test_all_handshakes(void)
     }
 
     struct {
-        ptls_hpke_cipher_suite_t **server, **client;
-    } orig_ech_ciphers = {ctx_peer->ech.ciphers, ctx->ech.ciphers};
+        ptls_ech_create_opener_t *create_opener;
+        ptls_hpke_cipher_suite_t **client_ciphers;
+    } orig_ech = {ctx_peer->ech.server.create_opener, ctx->ech.client.ciphers};
 
     /* first run tests wo. ECH */
-    ctx_peer->ech.ciphers = NULL;
-    ctx->ech.ciphers = NULL;
+    ctx_peer->ech.server.create_opener = NULL;
+    ctx->ech.client.ciphers = NULL;
     subtest("no-ech", test_all_handshakes_core);
-    ctx_peer->ech.ciphers = orig_ech_ciphers.server;
-    ctx->ech.ciphers = orig_ech_ciphers.client;
+    ctx_peer->ech.server.create_opener = orig_ech.create_opener;
+    ctx->ech.client.ciphers = orig_ech.client_ciphers;
 
     if (can_ech(ctx_peer, 1) && can_ech(ctx, 0)) {
         subtest("ech", test_all_handshakes_core);
         if (ctx != ctx_peer) {
-            ctx->ech.ciphers = NULL;
+            ctx->ech.client.ciphers = NULL;
             subtest("ech (server-only)", test_all_handshakes_core);
-            ctx->ech.ciphers = orig_ech_ciphers.client;
+            ctx->ech.client.ciphers = orig_ech.client_ciphers;
         }
         subtest("ech-config-mismatch", test_ech_config_mismatch);
     }

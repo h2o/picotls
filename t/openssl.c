@@ -335,14 +335,26 @@ static void test_all_hpke(void)
     test_hpke(ptls_openssl_hpke_kems, ptls_openssl_hpke_cipher_suites);
 }
 
-static ptls_aead_context_t *create_ech_opener(ptls_ech_create_opener_t *self, ptls_hpke_kem_t **kem, ptls_t *tls, uint8_t config_id,
-                                              ptls_hpke_cipher_suite_t *cipher, ptls_iovec_t enc, ptls_iovec_t info_prefix)
+static ptls_aead_context_t *create_ech_opener(ptls_ech_create_opener_t *self, ptls_hpke_kem_t **kem,
+                                              ptls_hpke_cipher_suite_t **cipher, ptls_t *tls, uint8_t config_id,
+                                              ptls_hpke_cipher_suite_id_t cipher_id, ptls_iovec_t enc, ptls_iovec_t info_prefix)
 {
     static ptls_key_exchange_context_t *pem = NULL;
     if (pem == NULL) {
         pem = key_from_pem(ECH_PRIVATE_KEY);
         assert(pem != NULL);
     }
+
+    *cipher = NULL;
+    for (size_t i = 0; ptls_openssl_hpke_cipher_suites[i] != NULL; ++i) {
+        if (ptls_openssl_hpke_cipher_suites[i]->id.kdf == cipher_id.kdf &&
+            ptls_openssl_hpke_cipher_suites[i]->id.aead == cipher_id.aead) {
+            *cipher = ptls_openssl_hpke_cipher_suites[i];
+            break;
+        }
+    }
+    if (*cipher == NULL)
+        return NULL;
 
     ptls_aead_context_t *aead = NULL;
     ptls_buffer_t infobuf;
@@ -352,7 +364,7 @@ static ptls_aead_context_t *create_ech_opener(ptls_ech_create_opener_t *self, pt
     ptls_buffer_pushv(&infobuf, info_prefix.base, info_prefix.len);
     ptls_buffer_pushv(&infobuf, (const uint8_t *)ECH_CONFIG_LIST + 2,
                       sizeof(ECH_CONFIG_LIST) - 3); /* choose the only ECHConfig from the list */
-    ret = ptls_hpke_setup_base_r(&ptls_openssl_hpke_kem_p256sha256, cipher, pem, &aead, enc,
+    ret = ptls_hpke_setup_base_r(&ptls_openssl_hpke_kem_p256sha256, *cipher, pem, &aead, enc,
                                  ptls_iovec_init(infobuf.base, infobuf.off));
 
 Exit:
@@ -544,10 +556,9 @@ int main(int argc, char **argv)
                                   .cipher_suites = ptls_openssl_cipher_suites,
                                   .tls12_cipher_suites = ptls_openssl_tls12_cipher_suites,
                                   .certificates = {&cert, 1},
-                                  .ech = {.ciphers = ptls_openssl_hpke_cipher_suites,
-                                          .kems = ptls_openssl_hpke_kems,
-                                          .create_opener = &ech_create_opener,
-                                          .retry_configs = {(uint8_t *)ECH_CONFIG_LIST, sizeof(ECH_CONFIG_LIST) - 1}},
+                                  .ech = {.client = {.ciphers = ptls_openssl_hpke_cipher_suites, .kems = ptls_openssl_hpke_kems},
+                                          .server = {.create_opener = &ech_create_opener,
+                                                     .retry_configs = {(uint8_t *)ECH_CONFIG_LIST, sizeof(ECH_CONFIG_LIST) - 1}}},
                                   .sign_certificate = &openssl_sign_certificate.super};
     assert(openssl_ctx.cipher_suites[0]->hash->digest_size == 48); /* sha384 */
     ptls_context_t openssl_ctx_sha256only = openssl_ctx;

@@ -78,38 +78,57 @@ static ptls_hpke_kem_t *find_kem(ptls_key_exchange_algorithm_t *algo)
     return NULL;
 }
 
-static ptls_aead_context_t *create_ech_opener(ptls_ech_create_opener_t *self, ptls_hpke_kem_t **kem, ptls_t *tls, uint8_t config_id,
-                                              ptls_hpke_cipher_suite_t *cipher, ptls_iovec_t enc, ptls_iovec_t info_prefix)
+static ptls_aead_context_t *create_ech_opener(ptls_ech_create_opener_t *self, ptls_hpke_kem_t **kem,
+                                              ptls_hpke_cipher_suite_t **cipher, ptls_t *tls, uint8_t config_id,
+                                              ptls_hpke_cipher_suite_id_t cipher_id, ptls_iovec_t enc, ptls_iovec_t info_prefix)
 {
     const uint8_t *src = ech.config_list.base, *const end = src + ech.config_list.len;
     size_t index = 0;
-    int ret;
+    int ret = 0;
+
+    /* look for the cipher implementation; this should better be specific to each ECHConfig (as each of them may advertise different
+     * set of values) */
+    *cipher = NULL;
+    for (size_t i = 0; ptls_openssl_hpke_cipher_suites[i] != NULL; ++i) {
+        if (ptls_openssl_hpke_cipher_suites[i]->id.kdf == cipher_id.kdf &&
+            ptls_openssl_hpke_cipher_suites[i]->id.aead == cipher_id.aead) {
+            *cipher = ptls_openssl_hpke_cipher_suites[i];
+            break;
+        }
+    }
+    if (*cipher == NULL)
+        goto Exit;
 
     ptls_decode_open_block(src, end, 2, {
         uint16_t version;
         if ((ret = ptls_decode16(&version, &src, end)) != 0)
             goto Exit;
-        ptls_decode_open_block(src, end, 2, {
-            if (src == end)
-                goto Exit;
-            if (*src == config_id) {
-                /* this is the ECHConfig that we have been looking for */
-                if (index >= ech.keyex.count) {
-                    fprintf(stderr, "ECH key missing for config %zu\n", index);
-                    return NULL;
+        do {
+            ptls_decode_open_block(src, end, 2, {
+                if (src == end) {
+                    ret = PTLS_ALERT_DECODE_ERROR;
+                    goto Exit;
                 }
-                uint8_t *info = malloc(info_prefix.len + end - (src - 4));
-                memcpy(info, info_prefix.base, info_prefix.len);
-                memcpy(info + info_prefix.len, src - 4, end - (src - 4));
-                ptls_aead_context_t *aead;
-                ptls_hpke_setup_base_r(ech.keyex.list[index].kem, cipher, ech.keyex.list[index].ctx, &aead, enc,
-                                       ptls_iovec_init(info, info_prefix.len + end - (src - 4)));
-                free(info);
-                *kem = ech.keyex.list[index].kem;
-                return aead;
-            }
-            ++index;
-        });
+                if (*src == config_id) {
+                    /* this is the ECHConfig that we have been looking for */
+                    if (index >= ech.keyex.count) {
+                        fprintf(stderr, "ECH key missing for config %zu\n", index);
+                        return NULL;
+                    }
+                    uint8_t *info = malloc(info_prefix.len + end - (src - 4));
+                    memcpy(info, info_prefix.base, info_prefix.len);
+                    memcpy(info + info_prefix.len, src - 4, end - (src - 4));
+                    ptls_aead_context_t *aead;
+                    ptls_hpke_setup_base_r(ech.keyex.list[index].kem, *cipher, ech.keyex.list[index].ctx, &aead, enc,
+                                           ptls_iovec_init(info, info_prefix.len + end - (src - 4)));
+                    free(info);
+                    *kem = ech.keyex.list[index].kem;
+                    return aead;
+                }
+                ++index;
+                src = end;
+            });
+        } while (src != end);
     });
 
 Exit:
@@ -490,7 +509,7 @@ int main(int argc, char **argv)
         .get_time = &ptls_get_time,
         .key_exchanges = key_exchanges,
         .cipher_suites = cipher_suites,
-        .ech = {ptls_openssl_hpke_cipher_suites, ptls_openssl_hpke_kems, NULL /* activated by -K option */},
+        .ech = {.client = {ptls_openssl_hpke_cipher_suites, ptls_openssl_hpke_kems}, .server = {NULL /* activated by -K option */}},
     };
     ptls_handshake_properties_t hsprop = {{{{NULL}}}};
     const char *host, *port, *input_file = NULL;
@@ -591,7 +610,7 @@ int main(int argc, char **argv)
             ++ech.keyex.count;
             EVP_PKEY_free(pkey);
             fclose(fp);
-            ctx.ech.create_opener = &ech_opener;
+            ctx.ech.server.create_opener = &ech_opener;
         } break;
         case 'l':
             setup_log_event(&ctx, optarg);

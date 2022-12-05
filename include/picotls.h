@@ -728,8 +728,8 @@ typedef struct st_ptls_decompress_certificate_t {
  * corresponding private key, invokes `ptls_hpke_setup_base_r` with provided `cipher`, `enc`, and `info_prefix` (which will be
  * "tls ech" || 00).
  */
-PTLS_CALLBACK_TYPE(ptls_aead_context_t *, ech_create_opener, ptls_hpke_kem_t **kem, ptls_t *tls, uint8_t config_id,
-                   ptls_hpke_cipher_suite_t *cipher, ptls_iovec_t enc, ptls_iovec_t info_prefix);
+PTLS_CALLBACK_TYPE(ptls_aead_context_t *, ech_create_opener, ptls_hpke_kem_t **kem, ptls_hpke_cipher_suite_t **cipher, ptls_t *tls,
+                   uint8_t config_id, ptls_hpke_cipher_suite_id_t cipher_id, ptls_iovec_t enc, ptls_iovec_t info_prefix);
 
 /**
  * the configuration
@@ -762,22 +762,26 @@ struct st_ptls_context_t {
      * ECH
      */
     struct {
-        /**
-         * list of HPKE symmetric cipher-suites (set to NULL to disable ECH altogether)
-         */
-        ptls_hpke_cipher_suite_t **ciphers;
-        /**
-         * client-only: KEMs being supported
-         */
-        ptls_hpke_kem_t **kems;
-        /**
-         * server-only: callback that does ECDH key exchange and returns the AEAD context
-         */
-        ptls_ech_create_opener_t *create_opener;
-        /**
-         * ECHConfigList to be sent to the client when there is mismatch (or when the client sends a grease)
-         */
-        ptls_iovec_t retry_configs;
+        struct {
+            /**
+             * list of HPKE symmetric cipher-suites (set to NULL to disable ECH altogether)
+             */
+            ptls_hpke_cipher_suite_t **ciphers;
+            /**
+             * KEMs being supported
+             */
+            ptls_hpke_kem_t **kems;
+        } client;
+        struct {
+            /**
+             * callback that does ECDH key exchange and returns the AEAD context
+             */
+            ptls_ech_create_opener_t *create_opener;
+            /**
+             * ECHConfigList to be sent to the client when there is mismatch (or when the client sends a grease)
+             */
+            ptls_iovec_t retry_configs;
+        } server;
     } ech;
     /**
      *
