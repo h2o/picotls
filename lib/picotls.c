@@ -3287,18 +3287,11 @@ static int server_handle_certificate_verify(ptls_t *tls, ptls_iovec_t message)
 static int client_handle_finished(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_iovec_t message)
 {
     uint8_t send_secret[PTLS_MAX_DIGEST_SIZE];
-    int ret;
+    int alert_ech_required = tls->ech.offered && !ptls_is_ech_handshake(tls, NULL, NULL), ret;
 
     if ((ret = verify_finished(tls, message)) != 0)
         goto Exit;
     ptls__key_schedule_update_hash(tls->key_schedule, message.base, message.len, 0);
-
-    /* if ECH was rejected, close the connection with ECH_REQUIRED alert after verifying messages up to Finished (TODO send
-     * ECH_REQUIRED alert after sending (an empty Certificate) and Finished message, as draft-15 suggests?) */
-    if (tls->ech.offered && !ptls_is_ech_handshake(tls, NULL, NULL)) {
-        ret = PTLS_ALERT_ECH_REQUIRED;
-        goto Exit;
-    }
 
     /* update traffic keys by using messages upto ServerFinished, but commission them after sending ClientFinished */
     if ((ret = key_schedule_extract(tls->key_schedule, ptls_iovec_init(NULL, 0))) != 0)
@@ -3323,7 +3316,7 @@ static int client_handle_finished(ptls_t *tls, ptls_message_emitter_t *emitter, 
     if ((ret = push_change_cipher_spec(tls, emitter)) != 0)
         goto Exit;
 
-    if (tls->client.certificate_request.context.base != NULL) {
+    if (!alert_ech_required && tls->client.certificate_request.context.base != NULL) {
         if ((ret = send_certificate(tls, emitter, &tls->client.certificate_request.signature_algorithms,
                                     tls->client.certificate_request.context, 0, NULL, 0)) == 0)
             ret = send_certificate_verify(tls, emitter, &tls->client.certificate_request.signature_algorithms,
@@ -3341,6 +3334,10 @@ static int client_handle_finished(ptls_t *tls, ptls_message_emitter_t *emitter, 
         goto Exit;
 
     tls->state = PTLS_STATE_CLIENT_POST_HANDSHAKE;
+
+    /* if ECH was rejected, close the connection with ECH_REQUIRED alert after verifying messages up to Finished */
+    if (alert_ech_required)
+        ret = PTLS_ALERT_ECH_REQUIRED;
 
 Exit:
     ptls_clear_memory(send_secret, sizeof(send_secret));
@@ -5706,9 +5703,12 @@ int ptls_handshake(ptls_t *tls, ptls_buffer_t *_sendbuf, const void *input, size
     case PTLS_ERROR_ASYNC_OPERATION:
         break;
     default:
-        /* flush partially written response */
-        ptls_clear_memory(emitter.super.buf->base + sendbuf_orig_off, emitter.super.buf->off - sendbuf_orig_off);
-        emitter.super.buf->off = sendbuf_orig_off;
+        /* Flush handshake messages that have been written partially. ECH_REQUIRED sticks out because it is a message sent
+         * post-handshake compared to other alerts that are generating *during* the handshake. */
+        if (ret != PTLS_ALERT_ECH_REQUIRED) {
+            ptls_clear_memory(emitter.super.buf->base + sendbuf_orig_off, emitter.super.buf->off - sendbuf_orig_off);
+            emitter.super.buf->off = sendbuf_orig_off;
+        }
         /* send alert immediately */
         if (PTLS_ERROR_GET_CLASS(ret) != PTLS_ERROR_CLASS_PEER_ALERT)
             if (ptls_send_alert(tls, emitter.super.buf, PTLS_ALERT_LEVEL_FATAL,
