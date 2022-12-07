@@ -6341,7 +6341,7 @@ int ptls_ech_encode_config(ptls_buffer_t *buf, uint8_t config_id, ptls_hpke_kem_
             }
         });
         ptls_buffer_push(buf, max_name_length);
-        ptls_buffer_push_block(buf, 2, { ptls_buffer_pushv(buf, public_name, strlen(public_name)); });
+        ptls_buffer_push_block(buf, 1, { ptls_buffer_pushv(buf, public_name, strlen(public_name)); });
         ptls_buffer_push_block(buf, 2, {/* extensions */});
     });
 
