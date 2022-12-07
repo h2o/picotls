@@ -66,6 +66,10 @@ static struct {
         } list[16];
         size_t count;
     } keyex;
+    struct {
+        ptls_iovec_t configs;
+        char *fn;
+    } retry;
 } ech;
 
 static ptls_hpke_kem_t *find_kem(ptls_key_exchange_algorithm_t *algo)
@@ -246,6 +250,17 @@ static int handle_connection(int sockfd, ptls_context_t *ctx, const char *server
                             ptls_update_key(tls, 1);
                     } else if (ret == PTLS_ERROR_IN_PROGRESS) {
                         /* ok */
+                    } else if (ret == PTLS_ALERT_ECH_REQUIRED) {
+                        assert(!ptls_is_server(tls));
+                        if (ech.retry.configs.base != NULL) {
+                            FILE *fp;
+                            if ((fp = fopen(ech.retry.fn, "wt")) == NULL) {
+                                fprintf(stderr, "failed to write to ECH config file:%s:%s\n", ech.retry.fn, strerror(errno));
+                                exit(1);
+                            }
+                            fwrite(ech.retry.configs.base, 1, ech.retry.configs.len, fp);
+                            fclose(fp);
+                        }
                     } else {
                         if (encbuf.off != 0)
                             repeat_while_eintr(write(sockfd, encbuf.base, encbuf.off), { break; });
@@ -449,7 +464,8 @@ static void usage(const char *cmd)
            "  -N named-group       named group to be used (default: secp256r1)\n"
            "  -s session-file      file to read/write the session ticket\n"
            "  -S                   require public key exchange when resuming a session\n"
-           "  -E echconfiglist     file that contains ECH configlist\n"
+           "  -E echconfiglist     file that contains ECHConfigList; overwritten when\n"
+           "                       receiving retry_configs from the server\n"
            "  -e                   when resuming a session, send first 8,192 bytes of input\n"
            "                       as early data\n"
            "  -r public-key-file   use raw public keys (RFC 7250). When set and running as a\n"
@@ -589,6 +605,7 @@ int main(int argc, char **argv)
                 return 1;
             }
             fclose(fp);
+            ech.retry.fn = optarg;
         } break;
         case 'K': {
             FILE *fp;
@@ -731,6 +748,7 @@ int main(int argc, char **argv)
         }
         ctx.send_change_cipher_spec = 1;
         hsprop.client.ech.configs = ech.config_list;
+        hsprop.client.ech.retry_configs = &ech.retry.configs;
     }
     if (key_exchanges[0] == NULL)
         key_exchanges[0] = &ptls_openssl_secp256r1;
