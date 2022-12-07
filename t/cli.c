@@ -250,18 +250,19 @@ static int handle_connection(int sockfd, ptls_context_t *ctx, const char *server
                             ptls_update_key(tls, 1);
                     } else if (ret == PTLS_ERROR_IN_PROGRESS) {
                         /* ok */
-                    } else if (ret == PTLS_ALERT_ECH_REQUIRED) {
-                        assert(!ptls_is_server(tls));
-                        if (ech.retry.configs.base != NULL) {
-                            FILE *fp;
-                            if ((fp = fopen(ech.retry.fn, "wt")) == NULL) {
-                                fprintf(stderr, "failed to write to ECH config file:%s:%s\n", ech.retry.fn, strerror(errno));
-                                exit(1);
-                            }
-                            fwrite(ech.retry.configs.base, 1, ech.retry.configs.len, fp);
-                            fclose(fp);
-                        }
                     } else {
+                        if (ret == PTLS_ALERT_ECH_REQUIRED) {
+                            assert(!ptls_is_server(tls));
+                            if (ech.retry.configs.base != NULL) {
+                                FILE *fp;
+                                if ((fp = fopen(ech.retry.fn, "wt")) == NULL) {
+                                    fprintf(stderr, "failed to write to ECH config file:%s:%s\n", ech.retry.fn, strerror(errno));
+                                    exit(1);
+                                }
+                                fwrite(ech.retry.configs.base, 1, ech.retry.configs.len, fp);
+                                fclose(fp);
+                            }
+                        }
                         if (encbuf.off != 0)
                             repeat_while_eintr(write(sockfd, encbuf.base, encbuf.off), { break; });
                         fprintf(stderr, "ptls_handshake:%d\n", ret);
