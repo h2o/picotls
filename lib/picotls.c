@@ -6293,12 +6293,11 @@ int ptls_server_handle_message(ptls_t *tls, ptls_buffer_t *sendbuf, size_t epoch
     struct st_ptls_record_t rec = {PTLS_CONTENT_TYPE_HANDSHAKE, 0, inlen, input};
 
     if (tls->state == PTLS_STATE_SERVER_GENERATING_CERTIFICATE_VERIFY) {
-        int ret;
-        if ((ret = server_finish_handshake(tls, &emitter.super, 1, NULL)) != 0)
-            return ret;
+        assert(input == NULL || inlen == 0);
+        return server_finish_handshake(tls, &emitter.super, 1, NULL);
     }
 
-    assert(input);
+    assert(input != NULL);
 
     if (ptls_get_read_epoch(tls) != in_epoch)
         return PTLS_ALERT_UNEXPECTED_MESSAGE;
