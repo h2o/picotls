@@ -1382,7 +1382,7 @@ static void test_stateless_hrr_aad_change(void)
 static void test_ech_config_mismatch(void)
 {
     ptls_t *client, *server;
-    ptls_buffer_t cbuf, sbuf;
+    ptls_buffer_t cbuf, sbuf, decryptbuf;
     size_t consumed;
     int ret;
     ptls_iovec_t retry_configs = {NULL};
@@ -1397,6 +1397,7 @@ static void test_ech_config_mismatch(void)
     server = ptls_new(ctx_peer, 1);
     ptls_buffer_init(&cbuf, "", 0);
     ptls_buffer_init(&sbuf, "", 0);
+    ptls_buffer_init(&decryptbuf, "", 0);
 
     ret = ptls_handshake(client, &cbuf, NULL, NULL, &client_hs_prop);
     ok(ret == PTLS_ERROR_IN_PROGRESS);
@@ -1417,6 +1418,13 @@ static void test_ech_config_mismatch(void)
 
     consumed = cbuf.off;
     ret = ptls_handshake(server, &sbuf, cbuf.base, &consumed, NULL);
+    ok(ret == 0);
+    ok(consumed < cbuf.off);
+    memmove(cbuf.base, cbuf.base + consumed, cbuf.off - consumed);
+    cbuf.off -= consumed;
+
+    consumed = cbuf.off;
+    ret = ptls_receive(server, &decryptbuf, cbuf.base, &consumed);
     ok(ret == PTLS_ALERT_TO_PEER_ERROR(PTLS_ALERT_ECH_REQUIRED));
     ok(cbuf.off == consumed);
 
@@ -1424,6 +1432,7 @@ static void test_ech_config_mismatch(void)
     ptls_free(server);
     ptls_buffer_dispose(&cbuf);
     ptls_buffer_dispose(&sbuf);
+    ptls_buffer_dispose(&decryptbuf);
     free(retry_configs.base);
 }
 
