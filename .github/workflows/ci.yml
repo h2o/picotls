@@ -76,3 +76,26 @@ jobs:
         cmake .. -DOPENSSL_ROOT_DIR="$(brew --prefix ${OPENSSL})"
         make all VERBOSE=1
         make check
+
+  boringssl:
+    name: "Linux / BoringSSL"
+    runs-on: [ubuntu-20.04]
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
+    timeout-minutes: 20
+
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        submodules: recursive
+    - name: Install dependencies
+      run: |
+        sudo apt-get -y install libfaketime libscope-guard-perl libtest-tcp-perl
+        git clone --depth=1 https://github.com/google/boringssl.git
+        (cd boringssl && mkdir build && cd build && cmake .. && make -j$(nproc))
+    - name: Build
+      run: |
+        mkdir build
+        cd build
+        cmake .. -DBORINGSSL_ROOT_DIR=../boringssl
+        make all VERBOSE=1
+        make check

@@ -32,6 +32,11 @@
 #define OPENSSL_API_COMPAT 0x00908000L
 #include <openssl/bn.h>
 #include <openssl/crypto.h>
+#ifdef OPENSSL_IS_BORINGSSL
+#include <openssl/curve25519.h>
+#include <openssl/chacha.h>
+#include <openssl/poly1305.h>
+#endif
 #include <openssl/ec.h>
 #include <openssl/ecdh.h>
 #include <openssl/err.h>
@@ -499,6 +504,25 @@ static int evp_keyex_on_exchange(ptls_key_exchange_context_t **_ctx, int release
         goto Exit;
     }
 
+#ifdef OPENSSL_IS_BORINGSSL
+    if (ctx->super.algo->id == PTLS_GROUP_X25519) {
+        secret->len = peerkey.len;
+        if ((secret->base = malloc(secret->len)) == NULL) {
+            ret = PTLS_ERROR_NO_MEMORY;
+            goto Exit;
+        }
+        uint8_t sk_raw[32];
+        size_t sk_raw_len = sizeof(sk_raw);
+        if (EVP_PKEY_get_raw_private_key(ctx->privkey, sk_raw, &sk_raw_len) != 1) {
+            ret = PTLS_ERROR_LIBRARY;
+            goto Exit;
+        }
+        X25519(secret->base, sk_raw, peerkey.base);
+        ret = 0;
+        goto Exit;
+    }
+#endif
+
     if ((evppeer = EVP_PKEY_new()) == NULL) {
         ret = PTLS_ERROR_NO_MEMORY;
         goto Exit;
@@ -638,7 +662,6 @@ Exit:
         free(outpubkey->base);
     return ret;
 }
-
 #endif
 
 int ptls_openssl_create_key_exchange(ptls_key_exchange_context_t **ctx, EVP_PKEY *pkey)
@@ -881,6 +904,10 @@ Exit:
 struct cipher_context_t {
     ptls_cipher_context_t super;
     EVP_CIPHER_CTX *evp;
+#ifdef OPENSSL_IS_BORINGSSL
+    uint8_t chacha20_key[32];
+    uint8_t chacha20_iv[12];
+#endif
 };
 
 static void cipher_dispose(ptls_cipher_context_t *_ctx)
@@ -893,6 +920,13 @@ static void cipher_do_init(ptls_cipher_context_t *_ctx, const void *iv)
 {
     struct cipher_context_t *ctx = (struct cipher_context_t *)_ctx;
     int ret;
+
+#ifdef OPENSSL_IS_BORINGSSL
+    if (strcmp(ctx->super.algo->name, "CHACHA20") == 0) {
+        memcpy(ctx->chacha20_iv, iv, sizeof ctx->chacha20_iv);
+        return;
+    }
+#endif
     ret = EVP_EncryptInit_ex(ctx->evp, NULL, NULL, NULL, iv);
     assert(ret);
 }
@@ -909,6 +943,12 @@ static int cipher_setup_crypto(ptls_cipher_context_t *_ctx, int is_enc, const vo
     if ((ctx->evp = EVP_CIPHER_CTX_new()) == NULL)
         return PTLS_ERROR_NO_MEMORY;
 
+#ifdef OPENSSL_IS_BORINGSSL
+    if (strcmp(ctx->super.algo->name, "CHACHA20") == 0) {
+        memcpy(ctx->chacha20_key, key, sizeof ctx->chacha20_key);
+        return 0;
+    }
+#endif
     if (is_enc) {
         if (!EVP_EncryptInit_ex(ctx->evp, cipher, NULL, key, NULL))
             goto Error;
@@ -927,6 +967,13 @@ Error:
 static void cipher_encrypt(ptls_cipher_context_t *_ctx, void *output, const void *input, size_t _len)
 {
     struct cipher_context_t *ctx = (struct cipher_context_t *)_ctx;
+
+#ifdef OPENSSL_IS_BORINGSSL
+    if (strcmp(ctx->super.algo->name, "CHACHA20") == 0) {
+        CRYPTO_chacha_20(output, input, _len, ctx->chacha20_key, ctx->chacha20_iv, 0);
+        return;
+    }
+#endif
     int len = (int)_len, ret = EVP_EncryptUpdate(ctx->evp, output, &len, input, len);
     assert(ret);
     assert(len == (int)_len);
@@ -962,6 +1009,13 @@ static int aes256ctr_setup_crypto(ptls_cipher_context_t *ctx, int is_enc, const 
 
 #if PTLS_OPENSSL_HAVE_CHACHA20_POLY1305
 
+#ifdef OPENSSL_IS_BORINGSSL
+static const EVP_CIPHER *EVP_chacha20(void)
+{
+    return NULL;
+}
+#endif
+
 static int chacha20_setup_crypto(ptls_cipher_context_t *ctx, int is_enc, const void *key)
 {
     return cipher_setup_crypto(ctx, 1, key, EVP_chacha20(), cipher_encrypt);
@@ -980,6 +1034,13 @@ static int bfecb_setup_crypto(ptls_cipher_context_t *ctx, int is_enc, const void
 
 struct aead_crypto_context_t {
     ptls_aead_context_t super;
+#ifdef OPENSSL_IS_BORINGSSL
+    poly1305_state poly1305;
+    uint8_t chachapoly_key[32];
+    uint8_t chachapoly_iv[12];
+    size_t aadlen;
+    size_t mlen;
+#endif
     EVP_CIPHER_CTX *evp_ctx;
     uint8_t static_iv[PTLS_MAX_IV_SIZE];
 };
@@ -1004,10 +1065,38 @@ static void aead_xor_iv(ptls_aead_context_t *_ctx, const void *_bytes, size_t le
 static void aead_do_encrypt_init(ptls_aead_context_t *_ctx, uint64_t seq, const void *aad, size_t aadlen)
 {
     struct aead_crypto_context_t *ctx = (struct aead_crypto_context_t *)_ctx;
+
     uint8_t iv[PTLS_MAX_IV_SIZE];
     int ret;
 
+#ifdef OPENSSL_IS_BORINGSSL
+    ctx->aadlen = 0;
+    ctx->mlen = 0;
     ptls_aead__build_iv(ctx->super.algo, iv, ctx->static_iv, seq);
+    memcpy(ctx->chachapoly_iv, iv, sizeof ctx->chachapoly_iv);
+#else
+    ptls_aead__build_iv(ctx->super.algo, iv, ctx->static_iv, seq);
+#endif
+
+#ifdef OPENSSL_IS_BORINGSSL
+    if (strcmp(ctx->super.algo->name, "CHACHA20-POLY1305") == 0) {
+        uint8_t polykey[32] = {0};
+
+        CRYPTO_chacha_20(polykey, polykey, sizeof polykey, ctx->chachapoly_key, ctx->chachapoly_iv, 0);
+        CRYPTO_poly1305_init(&ctx->poly1305, polykey);
+
+        if (aadlen != 0) {
+            CRYPTO_poly1305_update(&ctx->poly1305, aad, aadlen);
+            if (aadlen % 16 != 0) {
+                const uint8_t zero[16] = {0};
+                CRYPTO_poly1305_update(&ctx->poly1305, zero, 16 - (aadlen % 16));
+            }
+            ctx->aadlen = aadlen;
+        }
+        return;
+    }
+#endif
+
     ret = EVP_EncryptInit_ex(ctx->evp_ctx, NULL, NULL, NULL, iv);
     assert(ret);
 
@@ -1023,11 +1112,37 @@ static size_t aead_do_encrypt_update(ptls_aead_context_t *_ctx, void *output, co
     struct aead_crypto_context_t *ctx = (struct aead_crypto_context_t *)_ctx;
     int blocklen, ret;
 
+#ifdef OPENSSL_IS_BORINGSSL
+    if (strcmp(ctx->super.algo->name, "CHACHA20-POLY1305") == 0) {
+        if (ctx->mlen % 64 != 0) {
+            return SIZE_MAX;
+        }
+        CRYPTO_chacha_20(output, input, inlen, ctx->chachapoly_key, ctx->chachapoly_iv, 1);
+        CRYPTO_poly1305_update(&ctx->poly1305, output, inlen);
+        ctx->mlen += inlen;
+        return inlen;
+    }
+#endif
+
     ret = EVP_EncryptUpdate(ctx->evp_ctx, output, &blocklen, input, (int)inlen);
     assert(ret);
 
     return blocklen;
 }
+
+#ifdef OPENSSL_IS_BORINGSSL
+static void u64_to_le(uint8_t *p, uint64_t v)
+{
+    p[0] = (uint8_t)v;
+    p[1] = (uint8_t)(v >> 8);
+    p[2] = (uint8_t)(v >> 16);
+    p[3] = (uint8_t)(v >> 24);
+    p[4] = (uint8_t)(v >> 32);
+    p[5] = (uint8_t)(v >> 40);
+    p[6] = (uint8_t)(v >> 48);
+    p[7] = (uint8_t)(v >> 56);
+}
+#endif
 
 static size_t aead_do_encrypt_final(ptls_aead_context_t *_ctx, void *_output)
 {
@@ -1035,6 +1150,23 @@ static size_t aead_do_encrypt_final(ptls_aead_context_t *_ctx, void *_output)
     uint8_t *output = _output;
     size_t off = 0, tag_size = ctx->super.algo->tag_size;
     int blocklen, ret;
+
+
+#ifdef OPENSSL_IS_BORINGSSL
+    if (strcmp(ctx->super.algo->name, "CHACHA20-POLY1305") == 0) {
+        uint8_t fb_buf[16];
+
+        if (ctx->mlen % 16 != 0) {
+            const uint8_t zero[16] = {0};
+            CRYPTO_poly1305_update(&ctx->poly1305, zero, 16 - (ctx->mlen % 16));
+        }
+        u64_to_le(fb_buf, ctx->aadlen);
+        u64_to_le(fb_buf + 8, ctx->mlen);
+        CRYPTO_poly1305_update(&ctx->poly1305, fb_buf, 16);
+        CRYPTO_poly1305_finish(&ctx->poly1305, output);
+        return ctx->super.algo->tag_size;
+    }
+#endif
 
     ret = EVP_EncryptFinal_ex(ctx->evp_ctx, output + off, &blocklen);
     assert(ret);
@@ -1051,6 +1183,7 @@ static size_t aead_do_decrypt(ptls_aead_context_t *_ctx, void *_output, const vo
 {
     struct aead_crypto_context_t *ctx = (struct aead_crypto_context_t *)_ctx;
     uint8_t *output = _output, iv[PTLS_MAX_IV_SIZE];
+
     size_t off = 0, tag_size = ctx->super.algo->tag_size;
     int blocklen, ret;
 
@@ -1058,6 +1191,43 @@ static size_t aead_do_decrypt(ptls_aead_context_t *_ctx, void *_output, const vo
         return SIZE_MAX;
 
     ptls_aead__build_iv(ctx->super.algo, iv, ctx->static_iv, seq);
+
+#ifdef OPENSSL_IS_BORINGSSL
+    if (strcmp(ctx->super.algo->name, "CHACHA20-POLY1305") == 0) {
+        uint8_t polykey[32] = {0};
+
+        CRYPTO_chacha_20(polykey, polykey, sizeof polykey, ctx->chachapoly_key, iv, 0);
+        CRYPTO_poly1305_init(&ctx->poly1305, polykey);
+
+        if (aadlen != 0) {
+            CRYPTO_poly1305_update(&ctx->poly1305, aad, aadlen);
+            if (aadlen % 16 != 0) {
+                const uint8_t zero[16] = {0};
+                CRYPTO_poly1305_update(&ctx->poly1305, zero, 16 - (aadlen % 16));
+            }
+            ctx->aadlen = aadlen;
+        }
+
+        CRYPTO_poly1305_update(&ctx->poly1305, input, inlen - tag_size);
+        CRYPTO_chacha_20(output, input, inlen - tag_size, ctx->chachapoly_key, iv, 1);
+
+        if ((inlen - tag_size) % 16 != 0) {
+            const uint8_t zero[16] = {0};
+            CRYPTO_poly1305_update(&ctx->poly1305, zero, 16 - ((inlen - tag_size) % 16));
+        }
+
+        uint8_t fb_buf[16];
+        u64_to_le(fb_buf, aadlen);
+        u64_to_le(fb_buf + 8, inlen - tag_size);
+        CRYPTO_poly1305_update(&ctx->poly1305, fb_buf, 16);
+        CRYPTO_poly1305_finish(&ctx->poly1305, fb_buf);
+        if (CRYPTO_memcmp(fb_buf, (uint8_t *)input + inlen - tag_size, tag_size) != 0) {
+            return SIZE_MAX;
+        }
+        return inlen - tag_size;
+    }
+#endif
+
     ret = EVP_DecryptInit_ex(ctx->evp_ctx, NULL, NULL, NULL, iv);
     assert(ret);
     if (aadlen != 0) {
@@ -1087,6 +1257,7 @@ static int aead_setup_crypto(ptls_aead_context_t *_ctx, int is_enc, const void *
 
     ctx->super.dispose_crypto = aead_dispose_crypto;
     ctx->super.do_xor_iv = aead_xor_iv;
+
     if (is_enc) {
         ctx->super.do_encrypt_init = aead_do_encrypt_init;
         ctx->super.do_encrypt_update = aead_do_encrypt_update;
@@ -1108,6 +1279,14 @@ static int aead_setup_crypto(ptls_aead_context_t *_ctx, int is_enc, const void *
         ret = PTLS_ERROR_NO_MEMORY;
         goto Error;
     }
+
+#ifdef OPENSSL_IS_BORINGSSL
+    if (strcmp(ctx->super.algo->name, "CHACHA20-POLY1305") == 0) {
+        memcpy(ctx->chachapoly_key, key, sizeof ctx->chachapoly_key);
+        return 0;
+    }
+#endif
+
     if (is_enc) {
         if (!EVP_EncryptInit_ex(ctx->evp_ctx, cipher, NULL, key, NULL)) {
             ret = PTLS_ERROR_LIBRARY;
@@ -1140,6 +1319,13 @@ static int aead_aes256gcm_setup_crypto(ptls_aead_context_t *ctx, int is_enc, con
 {
     return aead_setup_crypto(ctx, is_enc, key, iv, EVP_aes_256_gcm());
 }
+
+#ifdef OPENSSL_IS_BORINGSSL
+static EVP_CIPHER *EVP_chacha20_poly1305(void)
+{
+    return NULL;
+}
+#endif
 
 #if PTLS_OPENSSL_HAVE_CHACHA20_POLY1305
 static int aead_chacha20poly1305_setup_crypto(ptls_aead_context_t *ctx, int is_enc, const void *key, const void *iv)

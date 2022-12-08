@@ -106,6 +106,7 @@ extern "C" {
 #define PTLS_MAX_SECRET_SIZE 32
 #define PTLS_MAX_IV_SIZE 16
 #define PTLS_MAX_DIGEST_SIZE 64
+#define PTLS_MAX_AEAD_TAG_SIZE 16
 
 /* versions */
 #define PTLS_PROTOCOL_VERSION_TLS12 0x0303
@@ -364,6 +365,7 @@ typedef const struct st_ptls_key_exchange_algorithm_t {
  */
 typedef struct st_ptls_cipher_context_t {
     const struct st_ptls_cipher_algorithm_t *algo;
+
     /* field above this line must not be altered by the crypto binding */
     void (*do_dispose)(struct st_ptls_cipher_context_t *ctx);
     void (*do_init)(struct st_ptls_cipher_context_t *ctx, const void *iv);
