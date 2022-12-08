@@ -2713,6 +2713,8 @@ static int client_ech_select_hello(ptls_t *tls, ptls_iovec_t message, size_t con
     key_schedule_select_outer(tls->key_schedule);
 
 Exit:
+    PTLS_PROBE(ECH_SELECTION, tls, tls->ech.accepted);
+    PTLS_LOG_CONN(ech_selection, tls, { PTLS_LOG_ELEMENT_BOOL(is_ech, tls->ech.accepted); });
     ptls_clear_memory(confirm_hash_expected, sizeof(confirm_hash_expected));
     return ret;
 }
@@ -4263,6 +4265,10 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
                      tls->ctx->ech.server.create_opener, &tls->ech.kem, &tls->ech.cipher, tls, ch->ech.config_id,
                      ch->ech.cipher_suite, ch->ech.enc, ptls_iovec_init(ech_info_prefix, sizeof(ech_info_prefix)))) != NULL)
                 tls->ech.config_id = ch->ech.config_id;
+        }
+        if (!is_second_flight) {
+            PTLS_PROBE(ECH_SELECTION, tls, tls->ech.aead != NULL);
+            PTLS_LOG_CONN(ech_selection, tls, { PTLS_LOG_ELEMENT_BOOL(is_ech, tls->ech.aead != NULL); });
         }
         if (tls->ech.aead != NULL) {
             /* now that AEAD context is available, create AAD and decrypt inner CH */
