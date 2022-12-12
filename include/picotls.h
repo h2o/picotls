@@ -1472,7 +1472,7 @@ int ptls_is_psk_handshake(ptls_t *tls);
 /**
  * return if a ECH handshake was performed, as well as optionally the kem and cipher-suite being used
  */
-int ptls_is_ech_handshake(ptls_t *tls, ptls_hpke_kem_t **kem, ptls_hpke_cipher_suite_t **cipher);
+int ptls_is_ech_handshake(ptls_t *tls, uint8_t *config_id, ptls_hpke_kem_t **kem, ptls_hpke_cipher_suite_t **cipher);
 /**
  * returns a pointer to user data pointer (client is reponsible for freeing the associated data prior to calling ptls_free)
  */
