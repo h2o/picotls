@@ -89,22 +89,22 @@ static int EVP_CIPHER_CTX_reset(EVP_CIPHER_CTX *ctx)
 
 #endif
 
-static const struct st_ptls_openssl_signature_scheme_t rsa_signature_schemes[] = {{PTLS_SIGNATURE_RSA_PSS_RSAE_SHA256, EVP_sha256},
+static const ptls_openssl_signature_scheme_t rsa_signature_schemes[] = {{PTLS_SIGNATURE_RSA_PSS_RSAE_SHA256, EVP_sha256},
                                                                                   {PTLS_SIGNATURE_RSA_PSS_RSAE_SHA384, EVP_sha384},
                                                                                   {PTLS_SIGNATURE_RSA_PSS_RSAE_SHA512, EVP_sha512},
                                                                                   {UINT16_MAX, NULL}};
-static const struct st_ptls_openssl_signature_scheme_t secp256r1_signature_schemes[] = {
+static const ptls_openssl_signature_scheme_t secp256r1_signature_schemes[] = {
     {PTLS_SIGNATURE_ECDSA_SECP256R1_SHA256, EVP_sha256}, {UINT16_MAX, NULL}};
 #if PTLS_OPENSSL_HAVE_SECP384R1
-static const struct st_ptls_openssl_signature_scheme_t secp384r1_signature_schemes[] = {
+static const ptls_openssl_signature_scheme_t secp384r1_signature_schemes[] = {
     {PTLS_SIGNATURE_ECDSA_SECP384R1_SHA384, EVP_sha384}, {UINT16_MAX, NULL}};
 #endif
 #if PTLS_OPENSSL_HAVE_SECP521R1
-static const struct st_ptls_openssl_signature_scheme_t secp521r1_signature_schemes[] = {
+static const ptls_openssl_signature_scheme_t secp521r1_signature_schemes[] = {
     {PTLS_SIGNATURE_ECDSA_SECP521R1_SHA512, EVP_sha512}, {UINT16_MAX, NULL}};
 #endif
 #if PTLS_OPENSSL_HAVE_ED25519
-static const struct st_ptls_openssl_signature_scheme_t ed25519_signature_schemes[] = {{PTLS_SIGNATURE_ED25519, NULL},
+static const ptls_openssl_signature_scheme_t ed25519_signature_schemes[] = {{PTLS_SIGNATURE_ED25519, NULL},
                                                                                       {UINT16_MAX, NULL}};
 #endif
 
@@ -127,9 +127,9 @@ static const uint16_t default_signature_schemes[] = {
     PTLS_SIGNATURE_RSA_PSS_RSAE_SHA256,
     UINT16_MAX};
 
-static const struct st_ptls_openssl_signature_scheme_t *lookup_signature_schemes(EVP_PKEY *key)
+const ptls_openssl_signature_scheme_t *ptls_openssl_lookup_signature_schemes(EVP_PKEY *key)
 {
-    const struct st_ptls_openssl_signature_scheme_t *schemes = NULL;
+    const ptls_openssl_signature_scheme_t *schemes = NULL;
 
     switch (EVP_PKEY_id(key)) {
     case EVP_PKEY_RSA:
@@ -698,7 +698,7 @@ int ptls_openssl_create_key_exchange(ptls_key_exchange_context_t **ctx, EVP_PKEY
 
 struct async_sign_ctx {
     ptls_async_job_t super;
-    const struct st_ptls_openssl_signature_scheme_t *scheme;
+    const ptls_openssl_signature_scheme_t *scheme;
     EVP_MD_CTX *ctx;
     ASYNC_WAIT_CTX *waitctx;
     ASYNC_JOB *job;
@@ -724,7 +724,7 @@ static void async_sign_ctx_free(ptls_async_job_t *_self)
     free(self);
 }
 
-static ptls_async_job_t *async_sign_ctx_new(const struct st_ptls_openssl_signature_scheme_t *scheme, EVP_MD_CTX *ctx, size_t siglen)
+static ptls_async_job_t *async_sign_ctx_new(const ptls_openssl_signature_scheme_t *scheme, EVP_MD_CTX *ctx, size_t siglen)
 {
     struct async_sign_ctx *self;
 
@@ -792,7 +792,7 @@ Exit:
 
 #endif
 
-static int do_sign(EVP_PKEY *key, const struct st_ptls_openssl_signature_scheme_t *scheme, ptls_buffer_t *outbuf,
+static int do_sign(EVP_PKEY *key, const ptls_openssl_signature_scheme_t *scheme, ptls_buffer_t *outbuf,
                    ptls_iovec_t input, ptls_async_job_t **async)
 {
     EVP_MD_CTX *ctx = NULL;
@@ -1161,7 +1161,7 @@ static int sign_certificate(ptls_sign_certificate_t *_self, ptls_t *tls, ptls_as
                             ptls_buffer_t *outbuf, ptls_iovec_t input, const uint16_t *algorithms, size_t num_algorithms)
 {
     ptls_openssl_sign_certificate_t *self = (ptls_openssl_sign_certificate_t *)_self;
-    const struct st_ptls_openssl_signature_scheme_t *scheme;
+    const ptls_openssl_signature_scheme_t *scheme;
 
     /* Just resume the asynchronous operation, if one is in flight. */
 #if PTLS_OPENSSL_HAVE_ASYNC
@@ -1202,7 +1202,7 @@ static X509 *to_x509(ptls_iovec_t vec)
 static int verify_sign(void *verify_ctx, uint16_t algo, ptls_iovec_t data, ptls_iovec_t signature)
 {
     EVP_PKEY *key = verify_ctx;
-    const struct st_ptls_openssl_signature_scheme_t *scheme;
+    const ptls_openssl_signature_scheme_t *scheme;
     EVP_MD_CTX *ctx = NULL;
     EVP_PKEY_CTX *pkey_ctx = NULL;
     int ret = 0;
@@ -1210,7 +1210,7 @@ static int verify_sign(void *verify_ctx, uint16_t algo, ptls_iovec_t data, ptls_
     if (data.base == NULL)
         goto Exit;
 
-    if ((scheme = lookup_signature_schemes(key)) == NULL) {
+    if ((scheme = ptls_openssl_lookup_signature_schemes(key)) == NULL) {
         ret = PTLS_ERROR_LIBRARY;
         goto Exit;
     }
@@ -1282,7 +1282,7 @@ int ptls_openssl_init_sign_certificate(ptls_openssl_sign_certificate_t *self, EV
 {
     *self = (ptls_openssl_sign_certificate_t){.super = {sign_certificate}, .async = 0 /* libssl has it off by default too */};
 
-    if ((self->schemes = lookup_signature_schemes(key)) == NULL)
+    if ((self->schemes = ptls_openssl_lookup_signature_schemes(key)) == NULL)
         return PTLS_ERROR_INCOMPATIBLE_KEY;
     EVP_PKEY_up_ref(key);
     self->key = key;

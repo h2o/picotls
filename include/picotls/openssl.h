@@ -132,15 +132,20 @@ int ptls_openssl_create_key_exchange(ptls_key_exchange_context_t **ctx, EVP_PKEY
 OSSL_ASYNC_FD ptls_openssl_get_async_fd(ptls_t *ptls);
 #endif
 
-struct st_ptls_openssl_signature_scheme_t {
+typedef struct st_ptls_openssl_signature_scheme_t {
     uint16_t scheme_id;
     const EVP_MD *(*scheme_md)(void);
-};
+} ptls_openssl_signature_scheme_t;
+
+/**
+ * Given a private key, returns a list of compatible signature schemes. This list is terminated by scheme_id of UINT16_MAX.
+ */
+const ptls_openssl_signature_scheme_t *ptls_openssl_lookup_signature_schemes(EVP_PKEY *key);
 
 typedef struct st_ptls_openssl_sign_certificate_t {
     ptls_sign_certificate_t super;
     EVP_PKEY *key;
-    const struct st_ptls_openssl_signature_scheme_t *schemes; /* terminated by .scheme_id == UINT16_MAX */
+    const ptls_openssl_signature_scheme_t *schemes; /* terminated by .scheme_id == UINT16_MAX */
     /**
      * When set to true, indicates to the backend that the signature can be generated asynchronously. When the backend decides to
      * generate the signature asynchronously, `ptls_handshake` will return PTLS_ERROR_ASYNC_OPERATION. When receiving that error

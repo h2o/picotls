@@ -143,7 +143,7 @@ static void test_key_exchanges(void)
 #endif
 }
 
-static void test_sign_verify(EVP_PKEY *key, const struct st_ptls_openssl_signature_scheme_t *schemes)
+static void test_sign_verify(EVP_PKEY *key, const ptls_openssl_signature_scheme_t *schemes)
 {
     for (size_t i = 0; schemes[i].scheme_id != UINT16_MAX; ++i) {
         note("scheme 0x%04x", schemes[i].scheme_id);
@@ -198,7 +198,7 @@ static void test_rsa_sign(void)
     test_sign_verify(sc->key, sc->schemes);
 }
 
-static void do_test_ecdsa_sign(int nid, const struct st_ptls_openssl_signature_scheme_t *schemes)
+static void do_test_ecdsa_sign(int nid, const ptls_openssl_signature_scheme_t *schemes)
 {
     EVP_PKEY *pkey;
 
