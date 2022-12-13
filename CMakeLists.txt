@@ -203,7 +203,6 @@ IF (WIN32)
     TARGET_LINK_LIBRARIES(test-openssl.t bcrypt ws2_32)
     TARGET_LINK_LIBRARIES(test-fusion.t bcrypt ws2_32)
     TARGET_LINK_LIBRARIES(ptlsbench bcrypt ws2_32)
-    TARGET_LINK_LIBRARIES(picotls-esni ws2_32)
 ENDIF ()
 
 IF (BUILD_FUZZER)
