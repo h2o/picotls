@@ -14,7 +14,7 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-#ifdef _WINDOWS
+#ifdef _WIN32
 #include "wincompat.h"
 
  /*
