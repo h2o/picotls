@@ -35,9 +35,16 @@
 #endif
 #include "picotls.h"
 #include "picotls/minicrypto.h"
+#include "picotls/openssl.h"
+#if PTLS_OPENSSL_HAVE_ASYNC && PTLS_OPENSSL_HAVE_X25519 && !defined(_WINDOWS)
+#include <sys/select.h>
+#include <sys/time.h>
+#define ASYNC_TESTS 1
+#endif
 #include "../deps/picotest/picotest.h"
 #undef OPENSSL_API_COMPAT
 #include "../lib/openssl.c"
+
 #include "test.h"
 
 #define RSA_PRIVATE_KEY                                                                                                            \
@@ -145,7 +152,7 @@ static void test_sign_verify(EVP_PKEY *key, const struct st_ptls_openssl_signatu
         uint8_t sigbuf_small[1024];
 
         ptls_buffer_init(&sigbuf, sigbuf_small, sizeof(sigbuf_small));
-        ok(do_sign(key, schemes + i, &sigbuf, ptls_iovec_init(message, strlen(message))) == 0);
+        ok(do_sign(key, schemes + i, &sigbuf, ptls_iovec_init(message, strlen(message)), NULL) == 0);
         EVP_PKEY_up_ref(key);
         ok(verify_sign(key, schemes[i].scheme_id, ptls_iovec_init(message, strlen(message)),
                        ptls_iovec_init(sigbuf.base, sigbuf.off)) == 0);
@@ -328,10 +335,195 @@ static void test_all_hpke(void)
     test_hpke(ptls_openssl_hpke_kems, ptls_openssl_hpke_cipher_suites);
 }
 
+static ptls_aead_context_t *create_ech_opener(ptls_ech_create_opener_t *self, ptls_hpke_kem_t **kem,
+                                              ptls_hpke_cipher_suite_t **cipher, ptls_t *tls, uint8_t config_id,
+                                              ptls_hpke_cipher_suite_id_t cipher_id, ptls_iovec_t enc, ptls_iovec_t info_prefix)
+{
+    static ptls_key_exchange_context_t *pem = NULL;
+    if (pem == NULL) {
+        pem = key_from_pem(ECH_PRIVATE_KEY);
+        assert(pem != NULL);
+    }
+
+    *cipher = NULL;
+    for (size_t i = 0; ptls_openssl_hpke_cipher_suites[i] != NULL; ++i) {
+        if (ptls_openssl_hpke_cipher_suites[i]->id.kdf == cipher_id.kdf &&
+            ptls_openssl_hpke_cipher_suites[i]->id.aead == cipher_id.aead) {
+            *cipher = ptls_openssl_hpke_cipher_suites[i];
+            break;
+        }
+    }
+    if (*cipher == NULL)
+        return NULL;
+
+    ptls_aead_context_t *aead = NULL;
+    ptls_buffer_t infobuf;
+    int ret;
+
+    ptls_buffer_init(&infobuf, "", 0);
+    ptls_buffer_pushv(&infobuf, info_prefix.base, info_prefix.len);
+    ptls_buffer_pushv(&infobuf, (const uint8_t *)ECH_CONFIG_LIST + 2,
+                      sizeof(ECH_CONFIG_LIST) - 3); /* choose the only ECHConfig from the list */
+    ret = ptls_hpke_setup_base_r(&ptls_openssl_hpke_kem_p256sha256, *cipher, pem, &aead, enc,
+                                 ptls_iovec_init(infobuf.base, infobuf.off));
+
+Exit:
+    ptls_buffer_dispose(&infobuf);
+    return aead;
+}
+
+#if ASYNC_TESTS
+
+static ENGINE *load_engine(const char *name)
+{
+    ENGINE *e;
+
+    if ((e = ENGINE_by_id("dynamic")) == NULL)
+        return NULL;
+    if (!ENGINE_ctrl_cmd_string(e, "SO_PATH", name, 0) || !ENGINE_ctrl_cmd_string(e, "LOAD", NULL, 0)) {
+        ENGINE_free(e);
+        return NULL;
+    }
+
+    return e;
+}
+
+static struct {
+    struct {
+        size_t next_pending;
+        ptls_t *tls;
+        int wait_fd;
+    } conns[10];
+    size_t first_pending;
+} qat;
+
+static void qat_set_pending(size_t index)
+{
+    qat.conns[index].next_pending = qat.first_pending;
+    qat.first_pending = index;
+}
+
+static void many_handshakes(void)
+{
+    ptls_t *client = ptls_new(ctx, 0), *resp_sample_conn = NULL;
+    ptls_buffer_t clientbuf, resp_sample;
+    int ret;
+
+    { /* generate ClientHello that we would be sent to all the server-side objects */
+        ptls_buffer_init(&clientbuf, "", 0);
+        ret = ptls_handshake(client, &clientbuf, NULL, NULL, NULL);
+        ok(ret == PTLS_ERROR_IN_PROGRESS);
+    }
+
+    ptls_buffer_init(&resp_sample, "", 0);
+
+    qat.first_pending = 0;
+    for (size_t i = 0; i < PTLS_ELEMENTSOF(qat.conns); ++i) {
+        qat.conns[i].next_pending = i + 1;
+        qat.conns[i].tls = NULL;
+        qat.conns[i].wait_fd = -1;
+    }
+    qat.conns[PTLS_ELEMENTSOF(qat.conns) - 1].next_pending = SIZE_MAX;
+
+    struct timeval start, end;
+    gettimeofday(&start, NULL);
+
+    static const size_t num_total = 10000;
+    size_t num_issued = 0, num_running = 0;
+    while (1) {
+        while (qat.first_pending != SIZE_MAX) {
+            size_t offending = qat.first_pending;
+            /* detach the offending entry from pending list */
+            qat.first_pending = qat.conns[offending].next_pending;
+            qat.conns[offending].next_pending = SIZE_MAX;
+            /* run the offending entry */
+            if (qat.conns[offending].tls == NULL) {
+                qat.conns[offending].tls = ptls_new(ctx_peer, 1);
+                if (resp_sample_conn == NULL)
+                    resp_sample_conn = qat.conns[offending].tls;
+                ++num_issued;
+                ++num_running;
+            }
+            ptls_buffer_t hsbuf;
+            uint8_t hsbuf_small[8192];
+            ptls_buffer_init(&hsbuf, hsbuf_small, sizeof(hsbuf_small));
+            size_t inlen = ptls_get_cipher(qat.conns[offending].tls) == NULL ? clientbuf.off : 0; /* feed CH only as first flight */
+            int hsret = ptls_handshake(qat.conns[offending].tls, &hsbuf, clientbuf.base, &inlen, NULL);
+            if (resp_sample_conn == qat.conns[offending].tls) {
+                ptls_buffer_pushv(&resp_sample, hsbuf.base, hsbuf.off);
+            }
+            ptls_buffer_dispose(&hsbuf);
+            /* advance the handshake context */
+            switch (hsret) {
+            case 0:
+                if (qat.conns[offending].tls == resp_sample_conn)
+                    resp_sample_conn = (void *)1;
+                ptls_free(qat.conns[offending].tls);
+                qat.conns[offending].tls = NULL;
+                --num_running;
+                if (num_issued < num_total)
+                    qat_set_pending(offending);
+                break;
+            case PTLS_ERROR_ASYNC_OPERATION:
+                qat.conns[offending].wait_fd = ptls_openssl_get_async_fd(qat.conns[offending].tls);
+                assert(qat.conns[offending].wait_fd != -1);
+                break;
+            default:
+                fprintf(stderr, "ptls_handshake returned %d\n", hsret);
+                abort();
+                break;
+            }
+        }
+        if (num_running == 0)
+            break;
+        /* poll for next action */
+        fd_set rfds;
+        FD_ZERO(&rfds);
+        int nfds = 0;
+        for (size_t i = 0; i < PTLS_ELEMENTSOF(qat.conns); ++i) {
+            if (qat.conns[i].wait_fd != -1) {
+                FD_SET(qat.conns[i].wait_fd, &rfds);
+                if (nfds <= qat.conns[i].wait_fd)
+                    nfds = qat.conns[i].wait_fd + 1;
+            }
+        }
+        if (select(nfds, &rfds, NULL, NULL, NULL) > 0) {
+            for (size_t i = 0; i < PTLS_ELEMENTSOF(qat.conns); ++i) {
+                if (qat.conns[i].wait_fd != -1 && FD_ISSET(qat.conns[i].wait_fd, &rfds)) {
+                    qat.conns[i].wait_fd = -1;
+                    qat_set_pending(i);
+                }
+            }
+        }
+    }
+
+    gettimeofday(&end, NULL);
+
+    note("run %zu handshakes in %f seconds", num_total,
+         (end.tv_sec + end.tv_usec / 1000000.) - (start.tv_sec + start.tv_usec / 1000000.));
+
+    clientbuf.off = 0;
+
+    /* confirm that the response looks okay */
+    size_t resplen = resp_sample.off;
+    ok(ptls_handshake(client, &clientbuf, resp_sample.base, &resplen, NULL) == 0);
+
+    ptls_buffer_dispose(&clientbuf);
+    ptls_buffer_dispose(&resp_sample);
+    ptls_free(client);
+
+    return;
+Exit:
+    assert("unreachable");
+}
+
+#endif
+
 int main(int argc, char **argv)
 {
     ptls_openssl_sign_certificate_t openssl_sign_certificate;
     ptls_openssl_verify_certificate_t openssl_verify_certificate;
+    ptls_ech_create_opener_t ech_create_opener = {.cb = create_ech_opener};
 
     ERR_load_crypto_strings();
     OpenSSL_add_all_algorithms();
@@ -364,13 +556,14 @@ int main(int argc, char **argv)
                                   .cipher_suites = ptls_openssl_cipher_suites,
                                   .tls12_cipher_suites = ptls_openssl_tls12_cipher_suites,
                                   .certificates = {&cert, 1},
+                                  .ech = {.client = {.ciphers = ptls_openssl_hpke_cipher_suites, .kems = ptls_openssl_hpke_kems},
+                                          .server = {.create_opener = &ech_create_opener,
+                                                     .retry_configs = {(uint8_t *)ECH_CONFIG_LIST, sizeof(ECH_CONFIG_LIST) - 1}}},
                                   .sign_certificate = &openssl_sign_certificate.super};
     assert(openssl_ctx.cipher_suites[0]->hash->digest_size == 48); /* sha384 */
     ptls_context_t openssl_ctx_sha256only = openssl_ctx;
     ++openssl_ctx_sha256only.cipher_suites;
     assert(openssl_ctx_sha256only.cipher_suites[0]->hash->digest_size == 32); /* sha256 */
-
-    ptls_key_exchange_context_t *esni_private_keys[2] = {key_from_pem(ESNI_SECP256R1KEY), NULL};
 
     ctx = ctx_peer = &openssl_ctx;
     verify_certificate = &openssl_verify_certificate.super;
@@ -385,7 +578,6 @@ int main(int argc, char **argv)
     subtest("ed25519-sign", test_ed25519_sign);
     subtest("cert-verify", test_cert_verify);
     subtest("picotls", test_picotls);
-    test_picotls_esni(esni_private_keys);
 
     ctx = ctx_peer = &openssl_ctx_sha256only;
     subtest("picotls", test_picotls);
@@ -407,7 +599,7 @@ int main(int argc, char **argv)
                                      ptls_minicrypto_key_exchanges,
                                      ptls_minicrypto_cipher_suites,
                                      {&minicrypto_certificate, 1},
-                                     NULL,
+                                     {{NULL}},
                                      NULL,
                                      NULL,
                                      &minicrypto_sign_certificate.super};
@@ -419,9 +611,33 @@ int main(int argc, char **argv)
     ctx_peer = &openssl_ctx;
     subtest("minicrypto vs.", test_picotls);
 
-    esni_private_keys[0]->on_exchange(esni_private_keys, 1, NULL, ptls_iovec_init(NULL, 0));
-
     subtest("hpke", test_all_hpke);
+
+#if ASYNC_TESTS
+    // switch to x25519 / aes128gcmsha256 as we run benchmarks
+    static ptls_key_exchange_algorithm_t *fast_keyex[] = {&ptls_openssl_x25519, NULL}; // use x25519 for speed
+    static ptls_cipher_suite_t *fast_cipher[] = {&ptls_openssl_aes128gcmsha256, NULL};
+    openssl_ctx.key_exchanges = fast_keyex;
+    openssl_ctx.cipher_suites = fast_cipher;
+    ctx = &openssl_ctx;
+    ctx_peer = &openssl_ctx;
+    openssl_sign_certificate.async = 0;
+    subtest("many-handshakes-non-async", many_handshakes);
+    openssl_sign_certificate.async = 0;
+    subtest("many-handshakes-async", many_handshakes);
+    { /* qatengine should be tested at last, because we do not have the code to unload or un-default it */
+        const char *engine_name = "qatengine";
+        ENGINE *qatengine;
+        if ((qatengine = ENGINE_by_id(engine_name)) != NULL || (qatengine = load_engine(engine_name)) != NULL) {
+            ENGINE_set_default_RSA(qatengine);
+            ptls_openssl_dispose_sign_certificate(&openssl_sign_certificate); // reload cert to use qatengine
+            setup_sign_certificate(&openssl_sign_certificate);
+            subtest("many-handshakes-qatengine", many_handshakes);
+        } else {
+            note("%s not found", engine_name);
+        }
+    }
+#endif
 
     int ret = done_testing();
 #if !defined(LIBRESSL_VERSION_NUMBER) && OPENSSL_VERSION_NUMBER >= 0x30000000L

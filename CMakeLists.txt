@@ -129,8 +129,6 @@ IF (OPENSSL_FOUND AND NOT (OPENSSL_VERSION VERSION_LESS "1.0.1"))
         ADD_EXECUTABLE(cli t/cli.c lib/pembase64.c)
         TARGET_LINK_LIBRARIES(cli picotls-openssl picotls-core)
     ENDIF ()
-    ADD_EXECUTABLE(picotls-esni src/esni.c)
-    TARGET_LINK_LIBRARIES(picotls-esni picotls-openssl picotls-core ${OPENSSL_CRYPTO_LIBRARIES} ${CMAKE_DL_LIBS})
 
     ADD_EXECUTABLE(test-openssl.t
         ${MINICRYPTO_LIBRARY_FILES}
