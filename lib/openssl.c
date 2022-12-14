@@ -168,6 +168,20 @@ const ptls_openssl_signature_scheme_t *ptls_openssl_lookup_signature_schemes(EVP
     return schemes;
 }
 
+const ptls_openssl_signature_scheme_t *ptls_openssl_select_signature_scheme(const ptls_openssl_signature_scheme_t *available,
+                                                                            const uint16_t *algorithms, size_t num_algorithms)
+{
+    const ptls_openssl_signature_scheme_t *scheme;
+
+    /* select the algorithm, driven by server-isde preference of `available` */
+    for (scheme = available; scheme->scheme_id != UINT16_MAX; ++scheme)
+        for (size_t i = 0; i != num_algorithms; ++i)
+            if (algorithms[i] == scheme->scheme_id)
+                return scheme;
+
+    return NULL;
+}
+
 void ptls_openssl_random_bytes(void *buf, size_t len)
 {
     int ret = RAND_bytes(buf, (int)len);
@@ -1172,17 +1186,11 @@ static int sign_certificate(ptls_sign_certificate_t *_self, ptls_t *tls, ptls_as
     }
 #endif
 
-    /* Select the algorithm (driven by server-side preference of `self->schemes`), or return failure if none found. */
-    for (scheme = self->schemes; scheme->scheme_id != UINT16_MAX; ++scheme) {
-        size_t i;
-        for (i = 0; i != num_algorithms; ++i)
-            if (algorithms[i] == scheme->scheme_id)
-                goto Found;
-    }
-    return PTLS_ALERT_HANDSHAKE_FAILURE;
-
-Found:
+    /* Select the algorithm or return failure if none found. */
+    if ((scheme = ptls_openssl_select_signature_scheme(self->schemes, algorithms, num_algorithms)) == NULL)
+        return PTLS_ALERT_HANDSHAKE_FAILURE;
     *selected_algorithm = scheme->scheme_id;
+
 #if PTLS_OPENSSL_HAVE_ASYNC
     if (!self->async && async != NULL) {
         /* indicate to `do_sign` that async mode is disabled for this operation */
