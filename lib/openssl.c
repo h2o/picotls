@@ -738,6 +738,18 @@ static void async_sign_ctx_free(ptls_async_job_t *_self)
     free(self);
 }
 
+int async_sign_ctx_get_fd(ptls_async_job_t *_self)
+{
+    struct async_sign_ctx *self = (void *)_self;
+    OSSL_ASYNC_FD fds[1];
+    size_t numfds;
+
+    ASYNC_WAIT_CTX_get_all_fds(self->waitctx, NULL, &numfds);
+    assert(numfds == 1);
+    ASYNC_WAIT_CTX_get_all_fds(self->waitctx, fds, &numfds);
+    return (int)fds[0];
+}
+
 static ptls_async_job_t *async_sign_ctx_new(const ptls_openssl_signature_scheme_t *scheme, EVP_MD_CTX *ctx, size_t siglen)
 {
     struct async_sign_ctx *self;
@@ -745,7 +757,7 @@ static ptls_async_job_t *async_sign_ctx_new(const ptls_openssl_signature_scheme_
     if ((self = malloc(offsetof(struct async_sign_ctx, sig) + siglen)) == NULL)
         return NULL;
 
-    self->super = (ptls_async_job_t){async_sign_ctx_free};
+    self->super = (ptls_async_job_t){async_sign_ctx_free, async_sign_ctx_get_fd};
     self->scheme = scheme;
     self->ctx = ctx;
     self->waitctx = ASYNC_WAIT_CTX_new();
@@ -754,18 +766,6 @@ static ptls_async_job_t *async_sign_ctx_new(const ptls_openssl_signature_scheme_
     memset(self->sig, 0, siglen);
 
     return &self->super;
-}
-
-OSSL_ASYNC_FD ptls_openssl_get_async_fd(ptls_t *ptls)
-{
-    OSSL_ASYNC_FD fds[1];
-    size_t numfds;
-    struct async_sign_ctx *async = (void *)ptls_get_async_job(ptls);
-    assert(async != NULL);
-    ASYNC_WAIT_CTX_get_all_fds(async->waitctx, NULL, &numfds);
-    assert(numfds == 1);
-    ASYNC_WAIT_CTX_get_all_fds(async->waitctx, fds, &numfds);
-    return fds[0];
 }
 
 static int do_sign_async_job(void *_async)

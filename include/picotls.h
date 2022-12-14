@@ -654,6 +654,10 @@ PTLS_CALLBACK_TYPE(int, emit_certificate, ptls_t *tls, ptls_message_emitter_t *e
  */
 typedef struct st_ptls_async_job_t {
     void (*destroy_)(struct st_ptls_async_job_t *self);
+    /**
+     * optional callback returning a file descriptor that becomes readable when the job is complete
+     */
+    int (*get_fd)(struct st_ptls_async_job_t *self);
 } ptls_async_job_t;
 /**
  * When gerenating CertificateVerify, the core calls the callback to sign the handshake context using the certificate. This callback
