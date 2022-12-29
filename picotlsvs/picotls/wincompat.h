@@ -2,7 +2,8 @@
 #define WINCOMPAT_H
 
 #include <stdint.h>
-#define ssize_t int
+#include <BaseTsd.h>
+typedef SSIZE_T ssize_t;
 #include <Winsock2.h>
 #include <ws2tcpip.h>
 #include <malloc.h>
