@@ -1636,6 +1636,8 @@ static int setup_traffic_protection(ptls_t *tls, int is_enc, const char *secret_
 
     /* special path for applications having their own record layer */
     if (tls->ctx->update_traffic_key != NULL) {
+        log_secret(tls, log_labels[ptls_is_server(tls) == is_enc][epoch],
+                   ptls_iovec_init(ctx->secret, tls->key_schedule->hashes[0].algo->digest_size));
         if (skip_notify)
             return 0;
         return tls->ctx->update_traffic_key->cb(tls->ctx->update_traffic_key, tls, is_enc, epoch, ctx->secret);
