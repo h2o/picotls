@@ -34,6 +34,9 @@
 #include <arpa/inet.h>
 #include <sys/time.h>
 #endif
+#ifdef PARTICLE
+#include <malloc.h>
+#endif
 #include "picotls.h"
 #if PICOTLS_USE_DTRACE
 #include "picotls-probes.h"
@@ -269,7 +272,11 @@ struct st_ptls_t {
      */
     struct st_ptls_ech_t ech;
     /* flags */
+#if defined(PICOTLS_CLIENT) == defined(PICOTLS_SERVER)
     unsigned is_server : 1;
+#else
+    unsigned : 1;
+#endif
     unsigned is_psk_handshake : 1;
     unsigned send_change_cipher_spec : 1;
     unsigned needs_key_update : 1;
@@ -588,8 +595,11 @@ int ptls_buffer_reserve_aligned(ptls_buffer_t *buf, size_t delta, uint8_t align_
             new_capacity *= 2;
         }
         if (align_bits != 0) {
-#ifdef _WINDOWS
+#if defined(_WINDOWS)
             if ((newp = _aligned_malloc(new_capacity, (size_t)1 << align_bits)) == NULL)
+                return PTLS_ERROR_NO_MEMORY;
+#elif defined(PARTICLE)
+            if ((newp = memalign(new_capacity, (size_t)1 << align_bits)) == NULL)
                 return PTLS_ERROR_NO_MEMORY;
 #else
             if (posix_memalign(&newp, 1 << align_bits, new_capacity) != 0)
@@ -969,7 +979,7 @@ static void log_secret(ptls_t *tls, const char *type, ptls_iovec_t secret)
     PTLS_PROBE(NEW_SECRET, tls, type, ptls_hexdump(hexbuf, secret.base, secret.len));
     PTLS_LOG_CONN(new_secret, tls, { PTLS_LOG_ELEMENT_SAFESTR(label, type); });
 
-    if (tls->ctx->log_event != NULL)
+    if (PTLS_LOG_IS_ACTIVE(ptls_log) && tls->ctx->log_event != NULL)
         tls->ctx->log_event->cb(tls->ctx->log_event, tls, type, "%s", ptls_hexdump(hexbuf, secret.base, secret.len));
 }
 
@@ -3106,11 +3116,11 @@ static int send_certificate_verify(ptls_t *tls, ptls_message_emitter_t *emitter,
             uint8_t data[PTLS_MAX_CERTIFICATE_VERIFY_SIGNDATA_SIZE];
             size_t datalen = build_certificate_verify_signdata(data, tls->key_schedule, context_string);
             if ((ret = tls->ctx->sign_certificate->cb(
-                     tls->ctx->sign_certificate, tls, tls->is_server ? &tls->server.async_job : NULL, &algo, sendbuf,
+                     tls->ctx->sign_certificate, tls, ptls_is_server(tls) ? &tls->server.async_job : NULL, &algo, sendbuf,
                      ptls_iovec_init(data, datalen), signature_algorithms != NULL ? signature_algorithms->list : NULL,
                      signature_algorithms != NULL ? signature_algorithms->count : 0)) != 0) {
                 if (ret == PTLS_ERROR_ASYNC_OPERATION) {
-                    assert(tls->is_server || !"async operation only supported on the server-side");
+                    assert(ptls_is_server(tls) || !"async operation only supported on the server-side");
                     assert(tls->server.async_job != NULL);
                     /* Reset the output to the end of the previous handshake message. CertificateVerify will be rebuilt when the
                      * async operation completes. */
@@ -4932,7 +4942,9 @@ static ptls_t *new_instance(ptls_context_t *ctx, int is_server)
 
     update_open_count(ctx, 1);
     *tls = (ptls_t){ctx};
+#if defined(PICOTLS_CLIENT) == defined(PICOTLS_SERVER)
     tls->is_server = is_server;
+#endif
     tls->send_change_cipher_spec = ctx->send_change_cipher_spec;
     tls->skip_tracing = ptls_default_skip_tracing;
     return tls;
@@ -5049,7 +5061,7 @@ int ptls_export(ptls_t *tls, ptls_buffer_t *output)
 
     ptls_iovec_t negotiated_protocol =
         ptls_iovec_init(tls->negotiated_protocol, tls->negotiated_protocol != NULL ? strlen(tls->negotiated_protocol) : 0);
-    return export_tls12_params(output, tls->is_server, tls->is_psk_handshake, tls->cipher_suite, tls->client_random,
+    return export_tls12_params(output, ptls_is_server(tls), tls->is_psk_handshake, tls->cipher_suite, tls->client_random,
                                tls->server_name, negotiated_protocol, tls->traffic_protection.enc.secret,
                                tls->traffic_protection.enc.secret + PTLS_MAX_SECRET_SIZE, tls->traffic_protection.enc.seq,
                                tls->traffic_protection.enc.tls12_enc_record_iv, tls->traffic_protection.dec.secret,
@@ -5184,8 +5196,8 @@ void ptls_free(ptls_t *tls)
         ptls_aead_free(tls->traffic_protection.enc.aead);
     free(tls->server_name);
     free(tls->negotiated_protocol);
-    clear_ech(&tls->ech, tls->is_server);
-    if (tls->is_server) {
+    clear_ech(&tls->ech, ptls_is_server(tls));
+    if (ptls_is_server(tls)) {
         if (tls->server.async_job != NULL)
             tls->server.async_job->destroy_(tls->server.async_job);
     } else {
@@ -5601,7 +5613,7 @@ static int handle_input(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_buffe
             return ret;
         if ((ret = aead_decrypt(&tls->traffic_protection.dec, decryptbuf->base + decryptbuf->off, &decrypted_length, rec.fragment,
                                 rec.length)) != 0) {
-            if (tls->is_server && tls->server.early_data_skipped_bytes != UINT32_MAX)
+            if (ptls_is_server(tls) && tls->server.early_data_skipped_bytes != UINT32_MAX)
                 goto ServerSkipEarlyData;
             return ret;
         }
@@ -5614,13 +5626,13 @@ static int handle_input(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_buffe
         if (rec.length == 0)
             return PTLS_ALERT_UNEXPECTED_MESSAGE;
         rec.type = rec.fragment[--rec.length];
-    } else if (rec.type == PTLS_CONTENT_TYPE_APPDATA && tls->is_server && tls->server.early_data_skipped_bytes != UINT32_MAX) {
+    } else if (rec.type == PTLS_CONTENT_TYPE_APPDATA && ptls_is_server(tls) && tls->server.early_data_skipped_bytes != UINT32_MAX) {
         goto ServerSkipEarlyData;
     }
 
     if (tls->recvbuf.mess.base != NULL || rec.type == PTLS_CONTENT_TYPE_HANDSHAKE) {
         /* handshake record */
-        ret = handle_handshake_record(tls, tls->is_server ? handle_server_handshake_message : handle_client_handshake_message,
+        ret = handle_handshake_record(tls, ptls_is_server(tls) ? handle_server_handshake_message : handle_client_handshake_message,
                                       emitter, &rec, properties);
     } else {
         /* handling of an alert or an application record */
@@ -6263,7 +6275,13 @@ PTLS_THREADLOCAL unsigned ptls_default_skip_tracing = 0;
 
 int ptls_is_server(ptls_t *tls)
 {
+#if defined(PICOTLS_CLIENT) && !defined(PICOTLS_SERVER)
+    return 0;
+#elif !defined(PICOTLS_CLIENT) && defined(PICOTLS_SERVER)
+    return 1;
+#else
     return tls->is_server;
+#endif
 }
 
 struct st_ptls_raw_message_emitter_t {
@@ -6333,14 +6351,14 @@ size_t ptls_get_read_epoch(ptls_t *tls)
 int ptls_handle_message(ptls_t *tls, ptls_buffer_t *sendbuf, size_t epoch_offsets[5], size_t in_epoch, const void *input,
                         size_t inlen, ptls_handshake_properties_t *properties)
 {
-    return tls->is_server ? ptls_server_handle_message(tls, sendbuf, epoch_offsets, in_epoch, input, inlen, properties)
-                          : ptls_client_handle_message(tls, sendbuf, epoch_offsets, in_epoch, input, inlen, properties);
+    return ptls_is_server(tls) ? ptls_server_handle_message(tls, sendbuf, epoch_offsets, in_epoch, input, inlen, properties)
+                               : ptls_client_handle_message(tls, sendbuf, epoch_offsets, in_epoch, input, inlen, properties);
 }
 
 int ptls_client_handle_message(ptls_t *tls, ptls_buffer_t *sendbuf, size_t epoch_offsets[5], size_t in_epoch, const void *input,
                                size_t inlen, ptls_handshake_properties_t *properties)
 {
-    assert(!tls->is_server);
+    assert(!ptls_is_server(tls));
 
     struct st_ptls_raw_message_emitter_t emitter = {
         {sendbuf, &tls->traffic_protection.enc, 0, begin_raw_message, commit_raw_message}, SIZE_MAX, epoch_offsets};
@@ -6358,7 +6376,7 @@ int ptls_client_handle_message(ptls_t *tls, ptls_buffer_t *sendbuf, size_t epoch
 int ptls_server_handle_message(ptls_t *tls, ptls_buffer_t *sendbuf, size_t epoch_offsets[5], size_t in_epoch, const void *input,
                                size_t inlen, ptls_handshake_properties_t *properties)
 {
-    assert(tls->is_server);
+    assert(ptls_is_server(tls));
 
     struct st_ptls_raw_message_emitter_t emitter = {
         {sendbuf, &tls->traffic_protection.enc, 0, begin_raw_message, commit_raw_message}, SIZE_MAX, epoch_offsets};
