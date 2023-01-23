@@ -63,6 +63,7 @@ extern "C" {
 #if defined(_WINDOWS)
 #define PTLS_THREADLOCAL __declspec(thread)
 #elif defined(PARTICLE)
+#define PTLS_THREADLOCAL
 #else
 #define PTLS_THREADLOCAL __thread
 #define PTLS_HAVE_LOG 1
@@ -70,6 +71,10 @@ extern "C" {
 
 #ifndef PTLS_FUZZ_HANDSHAKE
 #define PTLS_FUZZ_HANDSHAKE 0
+#endif
+
+#ifdef PTLS_MINIMIZE_STACK
+extern void ptls_cleanup_free(void *p);
 #endif
 
 #define PTLS_HELLO_RANDOM_SIZE 32

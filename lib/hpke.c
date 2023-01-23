@@ -172,13 +172,17 @@ static int key_schedule(ptls_hpke_kem_t *kem, ptls_hpke_cipher_suite_t *cipher, 
                         const void *shared_secret, ptls_iovec_t info)
 {
     ptls_buffer_t key_schedule_context;
-    uint8_t key_schedule_context_smallbuf[128], secret[PTLS_MAX_DIGEST_SIZE], key[PTLS_MAX_SECRET_SIZE],
-        base_nonce[PTLS_MAX_IV_SIZE];
+    uint8_t secret[PTLS_MAX_DIGEST_SIZE], key[PTLS_MAX_SECRET_SIZE], base_nonce[PTLS_MAX_IV_SIZE];
     int ret;
 
     *ctx = NULL;
 
+#ifdef PTLS_MINIMIZE_STACK
+    ptls_buffer_init(&key_schedule_context, "", 0);
+#else
+    uint8_t key_schedule_context_smallbuf[128];
     ptls_buffer_init(&key_schedule_context, key_schedule_context_smallbuf, sizeof(key_schedule_context_smallbuf));
+#endif
 
     /* key_schedule_context = concat(mode, LabeledExtract("", "psk_id_hash", psk_id), LabeledExtract("", "info_hash", info)) */
     ptls_buffer_push(&key_schedule_context, PTLS_HPKE_MODE_BASE);

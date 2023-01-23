@@ -123,6 +123,13 @@ static const char ech_info_prefix[8] = "tls ech";
 #define PTLS_PROBE(LABEL, tls, ...)
 #endif
 
+#ifdef PTLS_MINIMIZE_STACK
+void ptls_cleanup_free(void *p)
+{
+    free(*(void **)p);
+}
+#endif
+
 /**
  * list of supported versions in the preferred order
  */
@@ -1144,11 +1151,15 @@ static int client_setup_ech(struct st_ptls_ech_t *ech, struct st_decoded_ech_con
                             void (*random_bytes)(void *, size_t))
 {
     ptls_buffer_t infobuf;
-    uint8_t infobuf_smallbuf[256];
     int ret;
 
     /* setup `enc` and `aead` by running HPKE */
+#ifdef PTLS_MINIMIZE_STACK
+    ptls_buffer_init(&infobuf, "", 0);
+#else
+    uint8_t infobuf_smallbuf[256];
     ptls_buffer_init(&infobuf, infobuf_smallbuf, sizeof(infobuf_smallbuf));
+#endif
     ptls_buffer_pushv(&infobuf, ech_info_prefix, sizeof(ech_info_prefix));
     ptls_buffer_pushv(&infobuf, decoded->bytes.base, decoded->bytes.len);
     if ((ret = ptls_hpke_setup_base_s(decoded->kem, decoded->cipher, &ech->client.enc, &ech->aead, decoded->public_key,
@@ -1852,14 +1863,18 @@ static int send_session_ticket(ptls_t *tls, ptls_message_emitter_t *emitter)
 {
     ptls_hash_context_t *msghash_backup = tls->key_schedule->hashes[0].ctx->clone_(tls->key_schedule->hashes[0].ctx);
     ptls_buffer_t session_id;
-    char session_id_smallbuf[128];
     uint32_t ticket_age_add;
     int ret = 0;
 
     assert(tls->ctx->ticket_lifetime != 0);
     assert(tls->ctx->encrypt_ticket != NULL);
 
+#ifdef PTLS_MINIMIZE_STACK
+    ptls_buffer_init(&session_id, "", 0);
+#else
+    char session_id_smallbuf[128];
     ptls_buffer_init(&session_id, session_id_smallbuf, sizeof(session_id_smallbuf));
+#endif
 
     { /* calculate verify-data that will be sent by the client */
         size_t orig_off = emitter->buf->off;
@@ -3111,6 +3126,32 @@ static int send_certificate_verify(ptls_t *tls, ptls_message_emitter_t *emitter,
         ptls_buffer_t *sendbuf = emitter->buf;
         size_t algo_off = sendbuf->off;
         ptls_buffer_push16(sendbuf, 0); /* filled in later */
+#ifdef PTLS_MINIMIZE_STACK
+        ptls_buffer_push_block(sendbuf, 2, {
+            uint16_t algo;
+            uint8_t *data __attribute__((__cleanup__(ptls_cleanup_free))) = malloc(PTLS_MAX_CERTIFICATE_VERIFY_SIGNDATA_SIZE);
+            assert(data);
+            size_t datalen = build_certificate_verify_signdata(data, tls->key_schedule, context_string);
+            if ((ret = tls->ctx->sign_certificate->cb(
+                     tls->ctx->sign_certificate, tls, ptls_is_server(tls) ? &tls->server.async_job : NULL, &algo, sendbuf,
+                     ptls_iovec_init(data, datalen), signature_algorithms != NULL ? signature_algorithms->list : NULL,
+                     signature_algorithms != NULL ? signature_algorithms->count : 0)) != 0) {
+                if (ret == PTLS_ERROR_ASYNC_OPERATION) {
+                    assert(ptls_is_server(tls) || !"async operation only supported on the server-side");
+                    assert(tls->server.async_job != NULL);
+                    /* Reset the output to the end of the previous handshake message. CertificateVerify will be rebuilt when the
+                     * async operation completes. */
+                    emitter->buf->off = start_off;
+                } else {
+                    assert(tls->server.async_job == NULL);
+                }
+                goto Exit;
+            }
+            assert(tls->server.async_job == NULL);
+            sendbuf->base[algo_off] = (uint8_t)(algo >> 8);
+            sendbuf->base[algo_off + 1] = (uint8_t)algo;
+        });
+#else
         ptls_buffer_push_block(sendbuf, 2, {
             uint16_t algo;
             uint8_t data[PTLS_MAX_CERTIFICATE_VERIFY_SIGNDATA_SIZE];
@@ -3134,9 +3175,11 @@ static int send_certificate_verify(ptls_t *tls, ptls_message_emitter_t *emitter,
             sendbuf->base[algo_off] = (uint8_t)(algo >> 8);
             sendbuf->base[algo_off + 1] = (uint8_t)algo;
         });
+#endif
     });
 Exit:
     return ret;
+#undef data
 }
 
 static int client_handle_certificate_request(ptls_t *tls, ptls_iovec_t message, ptls_handshake_properties_t *properties)
@@ -6094,10 +6137,14 @@ int ptls_hkdf_expand_label(ptls_hash_algorithm_t *algo, void *output, size_t out
                            ptls_iovec_t hash_value, const char *label_prefix)
 {
     ptls_buffer_t hkdf_label;
-    uint8_t hkdf_label_buf[80];
     int ret;
 
+#ifdef PTLS_MINIMIZE_STACK
+    ptls_buffer_init(&hkdf_label, "", 0);
+#else
+    uint8_t hkdf_label_buf[80];
     ptls_buffer_init(&hkdf_label, hkdf_label_buf, sizeof(hkdf_label_buf));
+#endif
 
     ptls_buffer_push16(&hkdf_label, (uint16_t)outlen);
     ptls_buffer_push_block(&hkdf_label, 1, {
