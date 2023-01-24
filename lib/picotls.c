@@ -986,7 +986,7 @@ static void log_secret(ptls_t *tls, const char *type, ptls_iovec_t secret)
     PTLS_PROBE(NEW_SECRET, tls, type, ptls_hexdump(hexbuf, secret.base, secret.len));
     PTLS_LOG_CONN(new_secret, tls, { PTLS_LOG_ELEMENT_SAFESTR(label, type); });
 
-    if (PTLS_LOG_IS_ACTIVE(ptls_log) && tls->ctx->log_event != NULL)
+    if (tls->ctx->log_event != NULL)
         tls->ctx->log_event->cb(tls->ctx->log_event, tls, type, "%s", ptls_hexdump(hexbuf, secret.base, secret.len));
 }
 
@@ -2320,11 +2320,22 @@ Exit:
 static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_handshake_properties_t *properties,
                              ptls_iovec_t *cookie)
 {
-    ptls_iovec_t resumption_secret = {NULL}, resumption_ticket = {NULL};
     uint32_t obfuscated_ticket_age = 0;
     const char *sni_name = NULL;
     size_t mess_start, msghash_off;
+#ifdef PTLS_MINIMIZE_STACK
+    uint8_t *binder_key __attribute__((__cleanup__(ptls_cleanup_free))) = malloc(PTLS_MAX_DIGEST_SIZE);
+    if (binder_key == NULL)
+        return PTLS_ERROR_NO_MEMORY;
+    ptls_iovec_t *tmp __attribute__((__cleanup__(ptls_cleanup_free))) = calloc(2, sizeof(ptls_iovec_t));
+    if (tmp == NULL)
+        return PTLS_ERROR_NO_MEMORY;
+#define resumption_secret (tmp[0])
+#define resumption_ticket (tmp[1])
+#else
+    ptls_iovec_t resumption_secret = {NULL}, resumption_ticket = {NULL};
     uint8_t binder_key[PTLS_MAX_DIGEST_SIZE];
+#endif
     ptls_buffer_t encoded_ch_inner;
     int ret, is_second_flight = tls->key_schedule != NULL;
 
@@ -2511,6 +2522,8 @@ Exit:
     ptls_buffer_dispose(&encoded_ch_inner);
     ptls_clear_memory(binder_key, sizeof(binder_key));
     return ret;
+#undef resumption_secret
+#undef resumption_ticket
 }
 
 ptls_cipher_suite_t *ptls_find_cipher_suite(ptls_cipher_suite_t **cipher_suites, uint16_t id)
@@ -3204,7 +3217,11 @@ static int client_handle_certificate_request(ptls_t *tls, ptls_iovec_t message, 
 
 static int handle_certificate(ptls_t *tls, const uint8_t *src, const uint8_t *end, int *got_certs)
 {
+#ifdef PTLS_MINIMIZE_STACK
+    ptls_iovec_t certs[4];
+#else
     ptls_iovec_t certs[16];
+#endif
     size_t num_certs = 0;
     int ret = 0;
 
@@ -3350,7 +3367,13 @@ static int handle_certificate_verify(ptls_t *tls, ptls_iovec_t message, const ch
     const uint8_t *src = message.base + PTLS_HANDSHAKE_HEADER_SIZE, *const end = message.base + message.len;
     uint16_t algo;
     ptls_iovec_t signature;
+#ifdef PTLS_MINIMIZE_STACK
+    uint8_t *signdata __attribute__((__cleanup__(ptls_cleanup_free))) = malloc(PTLS_MAX_CERTIFICATE_VERIFY_SIGNDATA_SIZE);
+    if (signdata == NULL)
+        return PTLS_ERROR_NO_MEMORY;
+#else
     uint8_t signdata[PTLS_MAX_CERTIFICATE_VERIFY_SIGNDATA_SIZE];
+#endif
     size_t signdata_size;
     int ret;
 
@@ -5967,8 +5990,17 @@ Exit:
 int ptls_export_secret(ptls_t *tls, void *output, size_t outlen, const char *label, ptls_iovec_t context_value, int is_early)
 {
     ptls_hash_algorithm_t *algo = tls->key_schedule->hashes[0].algo;
-    uint8_t *master_secret = is_early ? tls->exporter_master_secret.early : tls->exporter_master_secret.one_rtt,
-            derived_secret[PTLS_MAX_DIGEST_SIZE], context_value_hash[PTLS_MAX_DIGEST_SIZE];
+    uint8_t *master_secret = is_early ? tls->exporter_master_secret.early : tls->exporter_master_secret.one_rtt;
+#ifdef PTLS_MINIMIZE_STACK
+    uint8_t *tmp __attribute__((__cleanup__(ptls_cleanup_free))) = malloc(2 * PTLS_MAX_DIGEST_SIZE);
+    if (tmp == NULL)
+        return PTLS_ERROR_NO_MEMORY;
+#define derived_secret (tmp)
+#define context_value_hash (tmp + PTLS_MAX_DIGEST_SIZE)
+#else
+    uint8_t derived_secret[PTLS_MAX_DIGEST_SIZE], context_value_hash[PTLS_MAX_DIGEST_SIZE];
+
+#endif
     int ret;
 
     if (master_secret == NULL) {
@@ -6001,6 +6033,8 @@ Exit:
     ptls_clear_memory(derived_secret, sizeof(derived_secret));
     ptls_clear_memory(context_value_hash, sizeof(context_value_hash));
     return ret;
+#undef derived_secret
+#undef context_value_hash
 }
 
 struct st_picotls_hmac_context_t {
@@ -6320,16 +6354,12 @@ ptls_get_time_t ptls_get_time = {get_time};
 PTLS_THREADLOCAL unsigned ptls_default_skip_tracing = 0;
 #endif
 
+#if defined(PICOTLS_CLIENT) == defined(PICOTLS_SERVER)
 int ptls_is_server(ptls_t *tls)
 {
-#if defined(PICOTLS_CLIENT) && !defined(PICOTLS_SERVER)
-    return 0;
-#elif !defined(PICOTLS_CLIENT) && defined(PICOTLS_SERVER)
-    return 1;
-#else
     return tls->is_server;
-#endif
 }
+#endif
 
 struct st_ptls_raw_message_emitter_t {
     ptls_message_emitter_t super;
