@@ -3957,7 +3957,7 @@ static int check_client_hello_constraints(ptls_context_t *ctx, struct st_ptls_cl
         if (!is_second_flight) {
             int ret;
             if ((ret = call_on_client_hello_cb(tls_cbarg, ch->server_name, raw_message, ch->alpn.list, ch->alpn.count, NULL, 0,
-                                               NULL, 0, NULL, 0, NULL, 0, 1)) != 0)
+                                               NULL, 0, ch->client_ciphers.list, ch->client_ciphers.count, NULL, 0, 1)) != 0)
                 return ret;
         }
         return PTLS_ALERT_PROTOCOL_VERSION;
