@@ -3541,6 +3541,10 @@ static int decode_client_hello(ptls_context_t *ctx, struct st_ptls_client_hello_
 
     /* decode and select from ciphersuites */
     ptls_decode_open_block(src, end, 2, {
+        if ((end - src) % 2 != 0) {
+            ret = PTLS_ALERT_DECODE_ERROR;
+            goto Exit;
+        }
         ch->cipher_suites = ptls_iovec_init(src, end - src);
         src = end;
     });
