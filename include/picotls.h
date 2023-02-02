@@ -607,6 +607,10 @@ typedef struct st_ptls_on_client_hello_parameters_t {
      */
     ptls_iovec_t raw_message;
     /**
+     * points to the cipher-suites section of the raw_message (see above)
+     */
+    ptls_iovec_t cipher_suites;
+    /**
      *
      */
     struct {
@@ -625,10 +629,6 @@ typedef struct st_ptls_on_client_hello_parameters_t {
         const uint8_t *list;
         size_t count;
     } server_certificate_types;
-    /**
-     * points to the cipher-suites section of the raw_message (see above)
-     */
-    ptls_iovec_t raw_client_ciphers;
     /**
      * set to 1 if ClientHello is too old (or too new) to be handled by picotls
      */
