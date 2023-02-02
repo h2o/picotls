@@ -626,6 +626,10 @@ typedef struct st_ptls_on_client_hello_parameters_t {
         size_t count;
     } server_certificate_types;
     /**
+     * points to the cipher-suites section of the raw_message (see above)
+     */
+    ptls_iovec_t raw_client_ciphers;
+    /**
      * set to 1 if ClientHello is too old (or too new) to be handled by picotls
      */
     unsigned incompatible_version : 1;
