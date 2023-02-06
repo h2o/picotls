@@ -141,7 +141,7 @@ extern void ptls_cleanup_free(void *p);
 
 /* negotiated_groups */
 #define PTLS_GROUP_SECP256R1 23
-#define PTLS_GROUP_NAME_SECP256R1 "scep256r1"
+#define PTLS_GROUP_NAME_SECP256R1 "secp256r1"
 #define PTLS_GROUP_SECP384R1 24
 #define PTLS_GROUP_NAME_SECP384R1 "secp384r1"
 #define PTLS_GROUP_SECP521R1 25
@@ -656,10 +656,23 @@ PTLS_CALLBACK_TYPE(int, on_client_hello, ptls_t *tls, ptls_on_client_hello_param
 PTLS_CALLBACK_TYPE(int, emit_certificate, ptls_t *tls, ptls_message_emitter_t *emitter, ptls_key_schedule_t *key_sched,
                    ptls_iovec_t context, int push_status_request, const uint16_t *compress_algos, size_t num_compress_algos);
 /**
- * context object of an async operation (e.g., RSA signature generation)
+ * An object that represents an asynchronous task (e.g., RSA signature generation).
+ * When `ptls_handshake` returns `PTLS_ERROR_ASYNC_OPERATION`, it has an associated task in flight. The user should obtain the
+ * reference to the associated task by calling `ptls_get_async_job`, then either wait for the file descriptor obtained from
+ * the `get_fd` callback to become readable, or set a completion callback via `set_completion_callback` and wait for its
+ * invocation. Once notified, the user should invoke `ptls_handshake` again.
+ * Async jobs typically provide support for only one of the two methods.
  */
 typedef struct st_ptls_async_job_t {
     void (*destroy_)(struct st_ptls_async_job_t *self);
+    /**
+     * optional callback returning a file descriptor that becomes readable when the job is complete
+     */
+    int (*get_fd)(struct st_ptls_async_job_t *self);
+    /**
+     * optional callback for setting a completion callback
+     */
+    void (*set_completion_callback)(struct st_ptls_async_job_t *self, void (*cb)(void *), void *cbdata);
 } ptls_async_job_t;
 /**
  * When gerenating CertificateVerify, the core calls the callback to sign the handshake context using the certificate. This callback
@@ -1356,6 +1369,7 @@ uint64_t ptls_decode_quicint(const uint8_t **src, const uint8_t *end);
     } while (0)
 #else
 #define PTLS_LOG_CONN(...)
+#define PTLS_LOG__DO_LOG(...)
 #endif
 
 /**
@@ -1482,7 +1496,7 @@ int ptls_is_psk_handshake(ptls_t *tls);
 /**
  * return if a ECH handshake was performed, as well as optionally the kem and cipher-suite being used
  */
-int ptls_is_ech_handshake(ptls_t *tls, ptls_hpke_kem_t **kem, ptls_hpke_cipher_suite_t **cipher);
+int ptls_is_ech_handshake(ptls_t *tls, uint8_t *config_id, ptls_hpke_kem_t **kem, ptls_hpke_cipher_suite_t **cipher);
 /**
  * returns a pointer to user data pointer (client is reponsible for freeing the associated data prior to calling ptls_free)
  */
@@ -1648,7 +1662,7 @@ static size_t ptls_aead_encrypt_final(ptls_aead_context_t *ctx, void *output);
 static size_t ptls_aead_decrypt(ptls_aead_context_t *ctx, void *output, const void *input, size_t inlen, uint64_t seq,
                                 const void *aad, size_t aadlen);
 /**
- * Return the current read epoch.
+ * Return the current read epoch (i.e., that of the message being received or to be)
  */
 size_t ptls_get_read_epoch(ptls_t *tls);
 /**
