@@ -1,5 +1,7 @@
 #include <uECC.h>
 
+extern "C" {
+
 static int RNG(uint8_t *dest, unsigned size) {
   // Use the least-significant bits from the ADC for an unconnected pin (or connected to a source of 
   // random noise). This can take a long time to generate random data if the result of analogRead(0) 
@@ -26,6 +28,8 @@ static int RNG(uint8_t *dest, unsigned size) {
   // NOTE: it would be a good idea to hash the resulting random data using SHA-256 or similar.
   return 1;
 }
+
+}  // extern "C"
 
 void setup() {
   Serial.begin(115200);
@@ -78,3 +82,4 @@ void loop() {
     Serial.print("Shared secrets are identical\n");
   }
 }
+

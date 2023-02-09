@@ -613,6 +613,10 @@ typedef struct st_ptls_on_client_hello_parameters_t {
      */
     ptls_iovec_t raw_message;
     /**
+     * points to the cipher-suites section of the raw_message (see above)
+     */
+    ptls_iovec_t cipher_suites;
+    /**
      *
      */
     struct {
@@ -627,10 +631,6 @@ typedef struct st_ptls_on_client_hello_parameters_t {
         const uint16_t *list;
         size_t count;
     } certificate_compression_algorithms;
-    struct {
-        const uint16_t *list;
-        size_t count;
-    } cipher_suites;
     struct {
         const uint8_t *list;
         size_t count;

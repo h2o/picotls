@@ -41,13 +41,6 @@
 #if PICOTLS_USE_DTRACE
 #include "picotls-probes.h"
 #endif
-#if PARTICLE
-#include <logging.h>
-#include "/Users/lars/Documents/Code/quant/lib/deps/warpcore/lib/include/warpcore/util.h"
-#else
-#define LOG_PRINTF(...)
-#define hexdump(...)
-#endif
 
 #define PTLS_MAX_PLAINTEXT_RECORD_SIZE 16384
 #define PTLS_MAX_ENCRYPTED_RECORD_SIZE (16384 + 256)
@@ -354,7 +347,6 @@ struct st_ptls_client_hello_psk_t {
 };
 
 #define MAX_UNKNOWN_EXTENSIONS 16
-#define MAX_CLIENT_CIPHERS 32
 #define MAX_CERTIFICATE_TYPES 8
 
 struct st_ptls_client_hello_t {
@@ -379,10 +371,6 @@ struct st_ptls_client_hello_t {
         uint16_t list[16];
         size_t count;
     } cert_compression_algos;
-    struct {
-        uint16_t list[MAX_CLIENT_CIPHERS];
-        size_t count;
-    } client_ciphers;
     struct {
         ptls_iovec_t all;
         ptls_iovec_t tbs;
@@ -2358,10 +2346,8 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
         sni_name = tls->server_name;
 
     if (properties != NULL) {
-        LOG_PRINTF(INFO, "properties\n");
         /* try to use ECH (ignore broken ECHConfigList; it is delivered insecurely) */
         if (!is_second_flight && sni_name != NULL && tls->ctx->ech.client.ciphers != NULL) {
-            LOG_PRINTF(INFO, "ECH\n");
             if (properties->client.ech.configs.len != 0) {
                 struct st_decoded_ech_config_t decoded;
                 client_decode_ech_config_list(tls->ctx, &decoded, properties->client.ech.configs);
@@ -2406,10 +2392,8 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
     }
 
     /* use the default key share if still not undetermined */
-    if (tls->key_share == NULL && !(properties != NULL && properties->client.negotiate_before_key_exchange)) {
-        LOG_PRINTF(INFO, "use the default key share\n");
+    if (tls->key_share == NULL && !(properties != NULL && properties->client.negotiate_before_key_exchange))
         tls->key_share = tls->ctx->key_exchanges[0];
-    }
 
     /* instantiate key share context */
     assert(tls->client.key_share_ctx == NULL);
@@ -2437,11 +2421,9 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
                                    tls->ech.client.first_ech, resumption_secret, resumption_ticket, obfuscated_ticket_age,
                                    tls->key_schedule->hashes[0].algo->digest_size, cookie, tls->client.using_early_data)) != 0)
         goto Exit;
-    hexdump(emitter->buf->base, emitter->buf->off);
 
     /* update the message hash, filling in the PSK binder HMAC if necessary */
     if (resumption_secret.base != NULL) {
-        LOG_PRINTF(INFO, "resumption_secret\n");
         size_t psk_binder_off = emitter->buf->off - (3 + tls->key_schedule->hashes[0].algo->digest_size);
         if ((ret = derive_secret_with_empty_digest(tls->key_schedule, binder_key, "res binder")) != 0)
             goto Exit;
@@ -2454,7 +2436,6 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
 
     /* ECH */
     if (tls->ech.aead != NULL) {
-        LOG_PRINTF(INFO, "ECH\n");
         /* build EncodedCHInner */
         if ((ret = encode_client_hello(tls->ctx, &encoded_ch_inner, ENCODE_CH_MODE_ENCODED_INNER, is_second_flight, properties,
                                        tls->ech.inner_client_random, tls->client.key_share_ctx, sni_name,
@@ -3641,18 +3622,12 @@ static int decode_client_hello(ptls_context_t *ctx, struct st_ptls_client_hello_
 
     /* decode and select from ciphersuites */
     ptls_decode_open_block(src, end, 2, {
+        if ((end - src) % 2 != 0) {
+            ret = PTLS_ALERT_DECODE_ERROR;
+            goto Exit;
+        }
         ch->cipher_suites = ptls_iovec_init(src, end - src);
-        uint16_t *id = ch->client_ciphers.list;
-        do {
-            if ((ret = ptls_decode16(id, &src, end)) != 0)
-                goto Exit;
-            id++;
-            ch->client_ciphers.count++;
-            if (id >= ch->client_ciphers.list + MAX_CLIENT_CIPHERS) {
-                src = end;
-                break;
-            }
-        } while (src != end);
+        src = end;
     });
 
     /* decode legacy_compression_methods */
@@ -4013,10 +3988,10 @@ Exit:
 
 /* Wrapper function for invoking the on_client_hello callback, taking an exhaustive list of parameters as arguments. The intention
  * is to not miss setting them as we add new parameters to the struct. */
-static inline int call_on_client_hello_cb(ptls_t *tls, ptls_iovec_t server_name, ptls_iovec_t raw_message, ptls_iovec_t *alpns,
-                                          size_t num_alpns, const uint16_t *sig_algos, size_t num_sig_algos,
-                                          const uint16_t *cert_comp_algos, size_t num_cert_comp_algos,
-                                          const uint16_t *cipher_suites, size_t num_cipher_suites, const uint8_t *server_cert_types,
+static inline int call_on_client_hello_cb(ptls_t *tls, ptls_iovec_t server_name, ptls_iovec_t raw_message,
+                                          ptls_iovec_t cipher_suites, ptls_iovec_t *alpns, size_t num_alpns,
+                                          const uint16_t *sig_algos, size_t num_sig_algos, const uint16_t *cert_comp_algos,
+                                          size_t num_cert_comp_algos, const uint8_t *server_cert_types,
                                           size_t num_server_cert_types, int incompatible_version)
 {
     if (tls->ctx->on_client_hello == NULL)
@@ -4024,10 +3999,10 @@ static inline int call_on_client_hello_cb(ptls_t *tls, ptls_iovec_t server_name,
 
     ptls_on_client_hello_parameters_t params = {server_name,
                                                 raw_message,
+                                                cipher_suites,
                                                 {alpns, num_alpns},
                                                 {sig_algos, num_sig_algos},
                                                 {cert_comp_algos, num_cert_comp_algos},
-                                                {cipher_suites, num_cipher_suites},
                                                 {server_cert_types, num_server_cert_types},
                                                 incompatible_version};
     return tls->ctx->on_client_hello->cb(tls->ctx->on_client_hello, tls, &params);
@@ -4051,8 +4026,8 @@ static int check_client_hello_constraints(ptls_context_t *ctx, struct st_ptls_cl
         /* fail with PROTOCOL_VERSION alert, after providing the applications the raw CH and SNI to help them fallback */
         if (!is_second_flight) {
             int ret;
-            if ((ret = call_on_client_hello_cb(tls_cbarg, ch->server_name, raw_message, ch->alpn.list, ch->alpn.count, NULL, 0,
-                                               NULL, 0, NULL, 0, NULL, 0, 1)) != 0)
+            if ((ret = call_on_client_hello_cb(tls_cbarg, ch->server_name, raw_message, ch->cipher_suites, ch->alpn.list,
+                                               ch->alpn.count, NULL, 0, NULL, 0, NULL, 0, 1)) != 0)
                 return ret;
         }
         return PTLS_ALERT_PROTOCOL_VERSION;
@@ -4421,9 +4396,9 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
         ptls_iovec_t server_name = {NULL};
         if (ch->server_name.base != NULL)
             server_name = ch->server_name;
-        if ((ret = call_on_client_hello_cb(tls, server_name, message, ch->alpn.list, ch->alpn.count, ch->signature_algorithms.list,
-                                           ch->signature_algorithms.count, ch->cert_compression_algos.list,
-                                           ch->cert_compression_algos.count, ch->client_ciphers.list, ch->client_ciphers.count,
+        if ((ret = call_on_client_hello_cb(tls, server_name, message, ch->cipher_suites, ch->alpn.list, ch->alpn.count,
+                                           ch->signature_algorithms.list, ch->signature_algorithms.count,
+                                           ch->cert_compression_algos.list, ch->cert_compression_algos.count,
                                            ch->server_certificate_types.list, ch->server_certificate_types.count, 0)) != 0)
             goto Exit;
         if (!certificate_type_exists(ch->server_certificate_types.list, ch->server_certificate_types.count,
@@ -5147,8 +5122,7 @@ int ptls_export(ptls_t *tls, ptls_buffer_t *output)
 
     ptls_iovec_t negotiated_protocol =
         ptls_iovec_init(tls->negotiated_protocol, tls->negotiated_protocol != NULL ? strlen(tls->negotiated_protocol) : 0);
-    return export_tls12_params(output, ptls_is_server(tls), tls->is_psk_handshake, tls->cipher_suite, tls->client_random,
-                               tls->server_name, negotiated_protocol, tls->traffic_protection.enc.secret,
+    return export_tls12_params(output, ptls_is_server(tls), tls->is_psk_handshake, tls->cipher_suite, tls->client_random,                               tls->server_name, negotiated_protocol, tls->traffic_protection.enc.secret,
                                tls->traffic_protection.enc.secret + PTLS_MAX_SECRET_SIZE, tls->traffic_protection.enc.seq,
                                tls->traffic_protection.enc.tls12_enc_record_iv, tls->traffic_protection.dec.secret,
                                tls->traffic_protection.dec.secret + PTLS_MAX_SECRET_SIZE, tls->traffic_protection.dec.seq);
