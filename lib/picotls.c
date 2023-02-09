@@ -41,6 +41,13 @@
 #if PICOTLS_USE_DTRACE
 #include "picotls-probes.h"
 #endif
+#if PARTICLE
+#include <logging.h>
+#include "/Users/lars/Documents/Code/quant/lib/deps/warpcore/lib/include/warpcore/util.h"
+#else
+#define LOG_PRINTF(...)
+#define hexdump(...)
+#endif
 
 #define PTLS_MAX_PLAINTEXT_RECORD_SIZE 16384
 #define PTLS_MAX_ENCRYPTED_RECORD_SIZE (16384 + 256)
@@ -2351,8 +2358,10 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
         sni_name = tls->server_name;
 
     if (properties != NULL) {
+        LOG_PRINTF(INFO, "properties\n");
         /* try to use ECH (ignore broken ECHConfigList; it is delivered insecurely) */
         if (!is_second_flight && sni_name != NULL && tls->ctx->ech.client.ciphers != NULL) {
+            LOG_PRINTF(INFO, "ECH\n");
             if (properties->client.ech.configs.len != 0) {
                 struct st_decoded_ech_config_t decoded;
                 client_decode_ech_config_list(tls->ctx, &decoded, properties->client.ech.configs);
@@ -2397,8 +2406,10 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
     }
 
     /* use the default key share if still not undetermined */
-    if (tls->key_share == NULL && !(properties != NULL && properties->client.negotiate_before_key_exchange))
+    if (tls->key_share == NULL && !(properties != NULL && properties->client.negotiate_before_key_exchange)) {
+        LOG_PRINTF(INFO, "use the default key share\n");
         tls->key_share = tls->ctx->key_exchanges[0];
+    }
 
     /* instantiate key share context */
     assert(tls->client.key_share_ctx == NULL);
@@ -2426,9 +2437,11 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
                                    tls->ech.client.first_ech, resumption_secret, resumption_ticket, obfuscated_ticket_age,
                                    tls->key_schedule->hashes[0].algo->digest_size, cookie, tls->client.using_early_data)) != 0)
         goto Exit;
+    hexdump(emitter->buf->base, emitter->buf->off);
 
     /* update the message hash, filling in the PSK binder HMAC if necessary */
     if (resumption_secret.base != NULL) {
+        LOG_PRINTF(INFO, "resumption_secret\n");
         size_t psk_binder_off = emitter->buf->off - (3 + tls->key_schedule->hashes[0].algo->digest_size);
         if ((ret = derive_secret_with_empty_digest(tls->key_schedule, binder_key, "res binder")) != 0)
             goto Exit;
@@ -2441,6 +2454,7 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
 
     /* ECH */
     if (tls->ech.aead != NULL) {
+        LOG_PRINTF(INFO, "ECH\n");
         /* build EncodedCHInner */
         if ((ret = encode_client_hello(tls->ctx, &encoded_ch_inner, ENCODE_CH_MODE_ENCODED_INNER, is_second_flight, properties,
                                        tls->ech.inner_client_random, tls->client.key_share_ctx, sni_name,
@@ -6007,7 +6021,6 @@ int ptls_export_secret(ptls_t *tls, void *output, size_t outlen, const char *lab
 #define context_value_hash (tmp + PTLS_MAX_DIGEST_SIZE)
 #else
     uint8_t derived_secret[PTLS_MAX_DIGEST_SIZE], context_value_hash[PTLS_MAX_DIGEST_SIZE];
-
 #endif
     int ret;
 

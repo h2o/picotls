@@ -192,7 +192,7 @@ static int key_schedule(ptls_hpke_kem_t *kem, ptls_hpke_cipher_suite_t *cipher, 
         return PTLS_ERROR_NO_MEMORY;
 #define secret (tmp)
 #define key (tmp + PTLS_MAX_DIGEST_SIZE)
-#define base_nonce (tmp + PTLS_MAX_DIGEST_SIZE + PTLS_MAX_SECRET_SIZE)
+#define base_nonce (key + PTLS_MAX_SECRET_SIZE)
 #else
     uint8_t secret[PTLS_MAX_DIGEST_SIZE], key[PTLS_MAX_SECRET_SIZE], base_nonce[PTLS_MAX_IV_SIZE];
 #endif

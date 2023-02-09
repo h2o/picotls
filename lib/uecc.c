@@ -33,6 +33,10 @@
 #include "uECC_vli.h"
 #include "picotls.h"
 #include "picotls/minicrypto.h"
+#include "/Users/lars/Documents/Code/quant/lib/deps/warpcore/lib/include/warpcore/util.h"
+#if PARTICLE
+#include <logging.h>
+#endif
 
 #define TYPE_UNCOMPRESSED_PUBLIC_KEY 4
 
@@ -81,6 +85,7 @@ Exit:
 
 static int secp256r1_create_key_exchange(ptls_key_exchange_algorithm_t *algo, ptls_key_exchange_context_t **_ctx)
 {
+    LOG_PRINTF(INFO, "secp256r1_create_key_exchange\n");
     struct st_secp256r1_key_exhchange_t *ctx;
 
     if ((ctx = (struct st_secp256r1_key_exhchange_t *)malloc(sizeof(*ctx))) == NULL)
@@ -88,7 +93,8 @@ static int secp256r1_create_key_exchange(ptls_key_exchange_algorithm_t *algo, pt
     ctx->super = (ptls_key_exchange_context_t){algo, ptls_iovec_init(ctx->pub, sizeof(ctx->pub)), secp256r1_on_exchange};
     ctx->pub[0] = TYPE_UNCOMPRESSED_PUBLIC_KEY;
     uECC_make_key(ctx->pub + 1, ctx->priv, uECC_secp256r1());
-
+    hexdump(ctx->pub, SECP256R1_PUBLIC_KEY_SIZE);
+    hexdump(ctx->priv, SECP256R1_PRIVATE_KEY_SIZE);
     *_ctx = &ctx->super;
     return 0;
 }
@@ -96,6 +102,7 @@ static int secp256r1_create_key_exchange(ptls_key_exchange_algorithm_t *algo, pt
 static int secp256r1_key_exchange(ptls_key_exchange_algorithm_t *algo, ptls_iovec_t *pubkey, ptls_iovec_t *secret,
                                   ptls_iovec_t peerkey)
 {
+    LOG_PRINTF(INFO, "secp256r1_key_exchange\n");
     uint8_t priv[SECP256R1_PRIVATE_KEY_SIZE], *pub = NULL, *secbytes = NULL;
     int ret;
 
@@ -119,7 +126,9 @@ static int secp256r1_key_exchange(ptls_key_exchange_algorithm_t *algo, ptls_iove
         goto Exit;
     }
     *pubkey = ptls_iovec_init(pub, SECP256R1_PUBLIC_KEY_SIZE);
+    hexdump(pub, SECP256R1_PUBLIC_KEY_SIZE);
     *secret = ptls_iovec_init(secbytes, SECP256R1_SHARED_SECRET_SIZE);
+    hexdump(secret, SECP256R1_SHARED_SECRET_SIZE);
     ret = 0;
 
 Exit:

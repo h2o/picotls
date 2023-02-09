@@ -1259,7 +1259,7 @@ uint64_t ptls_decode_quicint(const uint8_t **src, const uint8_t *end);
 
 #define PTLS_LOG(module, type, block)                                                                                              \
     do {                                                                                                                           \
-        if (!ptls_log.is_active)                                                                                                   \
+        if (!PTLS_LOG_IS_ACTIVE(ptls_log))                                                                                         \
             break;                                                                                                                 \
         PTLS_LOG__DO_LOG((module), (type), (block));                                                                               \
     } while (0)
@@ -1267,7 +1267,7 @@ uint64_t ptls_decode_quicint(const uint8_t **src, const uint8_t *end);
 #define PTLS_LOG_CONN(type, tls, block)                                                                                            \
     do {                                                                                                                           \
         ptls_t *_tls = (tls);                                                                                                      \
-        if (!ptls_log.is_active || ptls_skip_tracing(_tls))                                                                        \
+        if (!PTLS_LOG_IS_ACTIVE(ptls_log) || ptls_skip_tracing(_tls))                                                              \
             break;                                                                                                                 \
         PTLS_LOG__DO_LOG(picotls, type, {                                                                                          \
             PTLS_LOG_ELEMENT_PTR(tls, _tls);                                                                                       \
@@ -1376,9 +1376,19 @@ uint64_t ptls_decode_quicint(const uint8_t **src, const uint8_t *end);
  * User API is exposed only when logging is supported by the platform.
  */
 typedef struct st_ptls_log_t {
+#if PTLS_HAVE_LOG
     unsigned is_active : 1;
+#else
+    unsigned : 1;
+#endif
     unsigned include_appdata : 1;
 } ptls_log_t;
+
+#if PTLS_HAVE_LOG
+#define PTLS_LOG_IS_ACTIVE(log) (log.is_active)
+#else
+#define PTLS_LOG_IS_ACTIVE(log) (0)
+#endif
 
 #if PTLS_HAVE_LOG
 extern volatile ptls_log_t ptls_log;
