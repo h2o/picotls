@@ -120,6 +120,13 @@ SET(PTLSBENCH_LIBS
     picotls-minicrypto picotls-core)
 
 FIND_PACKAGE(OpenSSL)
+
+# boringssl is essentially openssl with no version number but with base.h; if found, assume 1.1.1 API
+IF (OPENSSL_FOUND AND OPENSSL_VERSION STREQUAL "" AND EXISTS "${OPENSSL_INCLUDE_DIR}/openssl/base.h")
+    MESSAGE(STATUS "  BoringSSL found; assuming OpenSSL 1.1.1 compatibility")
+    SET(OPENSSL_VERSION "1.1.1")
+ENDIF ()
+
 IF (OPENSSL_FOUND AND NOT (OPENSSL_VERSION VERSION_LESS "1.0.1"))
     MESSAGE(STATUS "  Enabling OpenSSL support")
     INCLUDE_DIRECTORIES(${OPENSSL_INCLUDE_DIR})
