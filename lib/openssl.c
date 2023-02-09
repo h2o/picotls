@@ -1570,7 +1570,7 @@ static int verify_cert_chain(X509_STORE *store, X509 *cert, STACK_OF(X509) * cha
             if (ptls_server_name_is_ipaddr(server_name)) {
                 X509_VERIFY_PARAM_set1_ip_asc(params, server_name);
             } else {
-                X509_VERIFY_PARAM_set1_host(params, server_name, 0);
+                X509_VERIFY_PARAM_set1_host(params, server_name, strlen(server_name));
                 X509_VERIFY_PARAM_set_hostflags(params, X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS);
             }
         }
