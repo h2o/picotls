@@ -676,6 +676,7 @@ Exit:
         free(outpubkey->base);
     return ret;
 }
+
 #endif
 
 int ptls_openssl_create_key_exchange(ptls_key_exchange_context_t **ctx, EVP_PKEY *pkey)
