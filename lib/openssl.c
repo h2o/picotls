@@ -1226,9 +1226,35 @@ static int aead_aes256gcm_setup_crypto(ptls_aead_context_t *ctx, int is_enc, con
 #if PTLS_OPENSSL_HAVE_CHACHA20_POLY1305
 #ifdef OPENSSL_IS_BORINGSSL
 
+#include "./chacha20poly1305.h"
+
+struct boringssl_chacha20poly1305_context_t {
+    struct chacha20poly1305_context_t super;
+    poly1305_state poly1305;
+};
+
+static void boringssl_poly1305_init(struct chacha20poly1305_context_t *_ctx, const void *key)
+{
+    struct boringssl_chacha20poly1305_context_t *ctx = (struct boringssl_chacha20poly1305_context_t *)_ctx;
+    CRYPTO_poly1305_init(&ctx->poly1305, key);
+}
+
+static void boringssl_poly1305_update(struct chacha20poly1305_context_t *_ctx, const void *input, size_t len)
+{
+    struct boringssl_chacha20poly1305_context_t *ctx = (struct boringssl_chacha20poly1305_context_t *)_ctx;
+    CRYPTO_poly1305_update(&ctx->poly1305, input, len);
+}
+
+static void boringssl_poly1305_finish(struct chacha20poly1305_context_t *_ctx, void *tag)
+{
+    struct boringssl_chacha20poly1305_context_t *ctx = (struct boringssl_chacha20poly1305_context_t *)_ctx;
+    CRYPTO_poly1305_finish(&ctx->poly1305, tag);
+}
+
 static int boringssl_chacha20poly1305_setup_crypto(ptls_aead_context_t *ctx, int is_enc, const void *key, const void *iv)
 {
-    assert(!"FIXME");
+    return chacha20poly1305_setup_crypto(ctx, is_enc, key, iv, &ptls_openssl_chacha20, boringssl_poly1305_init,
+                                         boringssl_poly1305_update, boringssl_poly1305_finish);
 }
 
 #else
@@ -2057,7 +2083,7 @@ ptls_aead_algorithm_t ptls_openssl_chacha20poly1305 = {
     .non_temporal = 0,
     .align_bits = 0,
 #ifdef OPENSSL_IS_BORINGSSL
-    .context_size = sizeof("FIXME"),
+    .context_size = sizeof(struct boringssl_chacha20poly1305_context_t),
     .setup_crypto = boringssl_chacha20poly1305_setup_crypto,
 #else
     .context_size = sizeof(struct aead_crypto_context_t),
