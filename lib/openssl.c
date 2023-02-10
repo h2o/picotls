@@ -1025,8 +1025,9 @@ static void boringssl_chacha20_init(ptls_cipher_context_t *_ctx, const void *iv)
 static void boringssl_chacha20_transform(ptls_cipher_context_t *_ctx, void *output, const void *input, size_t len)
 {
     struct boringssl_chacha20_context_t *ctx = (struct boringssl_chacha20_context_t *)_ctx;
+    uint32_t ctr = ctx->iv[0] | ((uint32_t)ctx->iv[1] << 8) | ((uint32_t)ctx->iv[2] << 16) | ((uint32_t)ctx->iv[3] << 24);
 
-    CRYPTO_chacha_20(output, input, len, ctx->key, ctx->iv, 0);
+    CRYPTO_chacha_20(output, input, len, ctx->key, ctx->iv + 4, ctr);
 }
 
 static int boringssl_chacha20_setup_crypto(ptls_cipher_context_t *_ctx, int is_enc, const void *key)
