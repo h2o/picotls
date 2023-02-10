@@ -1710,7 +1710,7 @@ static int verify_raw_cert(ptls_verify_certificate_t *_self, ptls_t *tls, const 
     *verifier = verify_sign;
     ret = 0;
 Exit:
-    free(expected_pubkey.base);
+    OPENSSL_free(expected_pubkey.base);
     return ret;
 }
 
