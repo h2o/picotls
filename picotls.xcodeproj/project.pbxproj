@@ -206,6 +206,7 @@
 		081F00CD291A358800534A86 /* pembase64.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = pembase64.h; sourceTree = "<group>"; };
 		081F00CE291A358800534A86 /* ptlsbcrypt.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ptlsbcrypt.h; sourceTree = "<group>"; };
 		08A835E12995E04100D872CE /* chacha20poly1305.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = chacha20poly1305.h; sourceTree = "<group>"; };
+		08A835EB2996971300D872CE /* boringssl-adjust.cmake */ = {isa = PBXFileReference; lastKnownFileType = text; path = "boringssl-adjust.cmake"; sourceTree = "<group>"; };
 		08B3298229419DFC009D6766 /* ech-live.t */ = {isa = PBXFileReference; lastKnownFileType = text; path = "ech-live.t"; sourceTree = "<group>"; xcLanguageSpecificationIdentifier = xcode.lang.perl; };
 		08F0FDF52910F67A00EE657D /* hpke.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = hpke.c; sourceTree = "<group>"; };
 		105900241DC8D37500FB4085 /* aes.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = aes.c; path = src/aes.c; sourceTree = "<group>"; };
@@ -524,6 +525,7 @@
 		E95EBCC9227E9FF30022C32D /* cmake */ = {
 			isa = PBXGroup;
 			children = (
+				08A835EB2996971300D872CE /* boringssl-adjust.cmake */,
 				E95EBCCA227EA0180022C32D /* dtrace-utils.cmake */,
 			);
 			path = cmake;

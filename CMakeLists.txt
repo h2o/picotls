@@ -11,6 +11,7 @@ ENDIF ()
 
 FIND_PACKAGE(PkgConfig REQUIRED)
 INCLUDE(cmake/dtrace-utils.cmake)
+INCLUDE(cmake/boringssl-adjust.cmake)
 
 CHECK_DTRACE(${PROJECT_SOURCE_DIR}/picotls-probes.d)
 IF ((CMAKE_SIZEOF_VOID_P EQUAL 8) AND
@@ -120,12 +121,7 @@ SET(PTLSBENCH_LIBS
     picotls-minicrypto picotls-core)
 
 FIND_PACKAGE(OpenSSL)
-
-# boringssl is essentially openssl with no version number but with base.h; if found, assume 1.1.1 API
-IF (OPENSSL_FOUND AND OPENSSL_VERSION STREQUAL "" AND EXISTS "${OPENSSL_INCLUDE_DIR}/openssl/base.h")
-    MESSAGE(STATUS "  BoringSSL found; assuming OpenSSL 1.1.1 compatibility")
-    SET(OPENSSL_VERSION "1.1.1")
-ENDIF ()
+BORINGSSL_ADJUST()
 
 IF (OPENSSL_FOUND AND NOT (OPENSSL_VERSION VERSION_LESS "1.0.1"))
     MESSAGE(STATUS "  Enabling OpenSSL support")
