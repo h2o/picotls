@@ -36,14 +36,14 @@ struct chacha20poly1305_context_t {
 
 static void chacha20poly1305_write_u64(uint8_t *buf, uint64_t v)
 {
-  *buf++ = v & 0xff;
-  *buf++ = (v >> 8) & 0xff;
-  *buf++ = (v >> 16) & 0xff;
-  *buf++ = (v >> 24) & 0xff;
-  *buf++ = (v >> 32) & 0xff;
-  *buf++ = (v >> 40) & 0xff;
-  *buf++ = (v >> 48) & 0xff;
-  *buf   = (v >> 56) & 0xff;
+    *buf++ = v & 0xff;
+    *buf++ = (v >> 8) & 0xff;
+    *buf++ = (v >> 16) & 0xff;
+    *buf++ = (v >> 24) & 0xff;
+    *buf++ = (v >> 32) & 0xff;
+    *buf++ = (v >> 40) & 0xff;
+    *buf++ = (v >> 48) & 0xff;
+    *buf = (v >> 56) & 0xff;
 }
 
 static void chacha20poly1305_encrypt_pad(struct chacha20poly1305_context_t *ctx, size_t n)
