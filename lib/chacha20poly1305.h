@@ -23,6 +23,8 @@
 #include <stddef.h>
 #include "picotls.h"
 
+#define CHACHA20POLY1305_BLOCKSIZE 64
+
 struct chacha20poly1305_context_t {
     ptls_aead_context_t super;
     ptls_cipher_context_t *chacha;
@@ -75,7 +77,7 @@ static void chacha20poly1305_dispose_crypto(ptls_aead_context_t *_ctx)
 static void chacha20poly1305_init(ptls_aead_context_t *_ctx, uint64_t seq, const void *aad, size_t aadlen)
 {
     struct chacha20poly1305_context_t *ctx = (struct chacha20poly1305_context_t *)_ctx;
-    uint8_t tmpbuf[64];
+    uint8_t tmpbuf[CHACHA20POLY1305_BLOCKSIZE];
 
     /* init chacha */
     memset(tmpbuf, 0, 16 - PTLS_CHACHA20POLY1305_IV_SIZE);
@@ -84,7 +86,7 @@ static void chacha20poly1305_init(ptls_aead_context_t *_ctx, uint64_t seq, const
 
     /* init poly1305 */
     memset(tmpbuf, 0, sizeof(tmpbuf));
-    ptls_cipher_encrypt(ctx->chacha, tmpbuf, tmpbuf, 64);
+    ptls_cipher_encrypt(ctx->chacha, tmpbuf, tmpbuf, CHACHA20POLY1305_BLOCKSIZE);
     ctx->poly1305_init(ctx, tmpbuf);
 
     ptls_clear_memory(tmpbuf, sizeof(tmpbuf));

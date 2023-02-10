@@ -49,6 +49,9 @@
 #include <openssl/x509_vfy.h>
 #include "picotls.h"
 #include "picotls/openssl.h"
+#ifdef OPENSSL_IS_BORINGSSL
+#include "./chacha20poly1305.h"
+#endif
 
 #ifdef _WINDOWS
 #ifndef _CRT_SECURE_NO_WARNINGS
@@ -1061,18 +1064,18 @@ static void boringssl_chacha20_transform(ptls_cipher_context_t *_ctx, void *_out
     assert(ctx->keystream.len == 0);
 
     if (len >= sizeof(ctx->keystream.bytes)) {
-        size_t apply_len = len / sizeof(ctx->keystream.bytes) * sizeof(ctx->keystream.bytes);
-        CRYPTO_chacha_20(output, input, apply_len, ctx->key, ctx->iv, ctx->keystream.ctr);
-        ctx->keystream.ctr += apply_len / sizeof(ctx->keystream.bytes);
-        output += apply_len;
-        input += apply_len;
-        len -= apply_len;
+        size_t blocks = len / CHACHA20POLY1305_BLOCKSIZE;
+        CRYPTO_chacha_20(output, input, blocks * CHACHA20POLY1305_BLOCKSIZE, ctx->key, ctx->iv, ctx->keystream.ctr);
+        ctx->keystream.ctr += blocks;
+        output += blocks * CHACHA20POLY1305_BLOCKSIZE;
+        input += blocks * CHACHA20POLY1305_BLOCKSIZE;
+        len -= blocks * CHACHA20POLY1305_BLOCKSIZE;
         if (len == 0)
             return;
     }
 
-    memset(ctx->keystream.bytes, 0, sizeof(ctx->keystream.bytes));
-    CRYPTO_chacha_20(ctx->keystream.bytes, ctx->keystream.bytes, sizeof(ctx->keystream.bytes), ctx->key, ctx->iv,
+    memset(ctx->keystream.bytes, 0, CHACHA20POLY1305_BLOCKSIZE);
+    CRYPTO_chacha_20(ctx->keystream.bytes, ctx->keystream.bytes, CHACHA20POLY1305_BLOCKSIZE, ctx->key, ctx->iv,
                      ctx->keystream.ctr++);
     ctx->keystream.len = sizeof(ctx->keystream.bytes);
 
@@ -1276,8 +1279,6 @@ static int aead_aes256gcm_setup_crypto(ptls_aead_context_t *ctx, int is_enc, con
 
 #if PTLS_OPENSSL_HAVE_CHACHA20_POLY1305
 #ifdef OPENSSL_IS_BORINGSSL
-
-#include "./chacha20poly1305.h"
 
 struct boringssl_chacha20poly1305_context_t {
     struct chacha20poly1305_context_t super;
