@@ -1018,7 +1018,7 @@ static void boringssl_chacha20_dispose(ptls_cipher_context_t *_ctx)
 
     ptls_clear_memory(ctx->key, sizeof(ctx->key));
     ptls_clear_memory(ctx->iv, sizeof(ctx->iv));
-    ptls_clear_memory(ctx->keysream.bytes, sizeof(ctx->keystream.bytes));
+    ptls_clear_memory(ctx->keystream.bytes, sizeof(ctx->keystream.bytes));
 }
 
 static void boringssl_chacha20_init(ptls_cipher_context_t *_ctx, const void *_iv)
