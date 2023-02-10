@@ -1004,7 +1004,12 @@ static int aes256ctr_setup_crypto(ptls_cipher_context_t *ctx, int is_enc, const 
 struct boringssl_chacha20_context_t {
     ptls_cipher_context_t super;
     uint8_t key[PTLS_CHACHA20_KEY_SIZE];
-    uint8_t iv[PTLS_CHACHA20_IV_SIZE];
+    uint8_t iv[12];
+    struct {
+        uint32_t ctr;
+        uint8_t bytes[64];
+        size_t len;
+    } keystream;
 };
 
 static void boringssl_chacha20_dispose(ptls_cipher_context_t *_ctx)
@@ -1013,21 +1018,66 @@ static void boringssl_chacha20_dispose(ptls_cipher_context_t *_ctx)
 
     ptls_clear_memory(ctx->key, sizeof(ctx->key));
     ptls_clear_memory(ctx->iv, sizeof(ctx->iv));
+    ptls_clear_memory(ctx->keysream.bytes, sizeof(ctx->keystream.bytes));
 }
 
-static void boringssl_chacha20_init(ptls_cipher_context_t *_ctx, const void *iv)
+static void boringssl_chacha20_init(ptls_cipher_context_t *_ctx, const void *_iv)
 {
     struct boringssl_chacha20_context_t *ctx = (struct boringssl_chacha20_context_t *)_ctx;
+    const uint8_t *iv = _iv;
 
-    memcpy(ctx->iv, iv, sizeof(ctx->iv));
+    memcpy(ctx->iv, iv + 4, sizeof(ctx->iv));
+    ctx->keystream.ctr = iv[0] | ((uint32_t)iv[1] << 8) | ((uint32_t)iv[2] << 16) | ((uint32_t)iv[3] << 24);
+    ctx->keystream.len = 0;
 }
 
-static void boringssl_chacha20_transform(ptls_cipher_context_t *_ctx, void *output, const void *input, size_t len)
+static inline void boringssl_chacha20_transform_buffered(struct boringssl_chacha20_context_t *ctx, uint8_t **output,
+                                                         const uint8_t **input, size_t *len)
+{
+    size_t apply_len = *len < ctx->keystream.len ? *len : ctx->keystream.len;
+    const uint8_t *ks = ctx->keystream.bytes + sizeof(ctx->keystream.bytes) - ctx->keystream.len;
+    ctx->keystream.len -= apply_len;
+
+    *len -= apply_len;
+    for (size_t i = 0; i < apply_len; ++i)
+        *(*output)++ = *(*input)++ ^ *ks++;
+}
+
+static void boringssl_chacha20_transform(ptls_cipher_context_t *_ctx, void *_output, const void *_input, size_t len)
 {
     struct boringssl_chacha20_context_t *ctx = (struct boringssl_chacha20_context_t *)_ctx;
-    uint32_t ctr = ctx->iv[0] | ((uint32_t)ctx->iv[1] << 8) | ((uint32_t)ctx->iv[2] << 16) | ((uint32_t)ctx->iv[3] << 24);
+    uint8_t *output = _output;
+    const uint8_t *input = _input;
 
-    CRYPTO_chacha_20(output, input, len, ctx->key, ctx->iv + 4, ctr);
+    if (len == 0)
+        return;
+
+    if (ctx->keystream.len != 0) {
+        boringssl_chacha20_transform_buffered(ctx, &output, &input, &len);
+        if (len == 0)
+            return;
+    }
+
+    assert(ctx->keystream.len == 0);
+
+    if (len >= sizeof(ctx->keystream.bytes)) {
+        size_t apply_len = len / sizeof(ctx->keystream.bytes) * sizeof(ctx->keystream.bytes);
+        CRYPTO_chacha_20(output, input, apply_len, ctx->key, ctx->iv, ctx->keystream.ctr);
+        ctx->keystream.ctr += apply_len / sizeof(ctx->keystream.bytes);
+        output += apply_len;
+        input += apply_len;
+        len -= apply_len;
+        if (len == 0)
+            return;
+    }
+
+    memset(ctx->keystream.bytes, 0, sizeof(ctx->keystream.bytes));
+    CRYPTO_chacha_20(ctx->keystream.bytes, ctx->keystream.bytes, sizeof(ctx->keystream.bytes), ctx->key, ctx->iv,
+                     ctx->keystream.ctr++);
+    ctx->keystream.len = sizeof(ctx->keystream.bytes);
+
+    boringssl_chacha20_transform_buffered(ctx, &output, &input, &len);
+    assert(len == 0);
 }
 
 static int boringssl_chacha20_setup_crypto(ptls_cipher_context_t *_ctx, int is_enc, const void *key)
