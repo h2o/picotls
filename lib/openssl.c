@@ -999,12 +999,56 @@ static int aes256ctr_setup_crypto(ptls_cipher_context_t *ctx, int is_enc, const 
 }
 
 #if PTLS_OPENSSL_HAVE_CHACHA20_POLY1305
+#ifdef OPENSSL_IS_BORINGSSL
+
+struct boringssl_chacha20_context_t {
+    ptls_cipher_context_t super;
+    uint8_t key[PTLS_CHACHA20_KEY_SIZE];
+    uint8_t iv[PTLS_CHACHA20_IV_SIZE];
+};
+
+static void boringssl_chacha20_dispose(ptls_cipher_context_t *_ctx)
+{
+    struct boringssl_chacha20_context_t *ctx = (struct boringssl_chacha20_context_t *)_ctx;
+
+    ptls_clear_memory(ctx->key, sizeof(ctx->key));
+    ptls_clear_memory(ctx->iv, sizeof(ctx->iv));
+}
+
+static void boringssl_chacha20_init(ptls_cipher_context_t *_ctx, const void *iv)
+{
+    struct boringssl_chacha20_context_t *ctx = (struct boringssl_chacha20_context_t *)_ctx;
+
+    memcpy(ctx->iv, iv, sizeof(ctx->iv));
+}
+
+static void boringssl_chacha20_transform(ptls_cipher_context_t *_ctx, void *output, const void *input, size_t len)
+{
+    struct boringssl_chacha20_context_t *ctx = (struct boringssl_chacha20_context_t *)_ctx;
+
+    CRYPTO_chacha_20(output, input, len, ctx->key, ctx->iv, 0);
+}
+
+static int boringssl_chacha20_setup_crypto(ptls_cipher_context_t *_ctx, int is_enc, const void *key)
+{
+    struct boringssl_chacha20_context_t *ctx = (struct boringssl_chacha20_context_t *)_ctx;
+
+    ctx->super.do_dispose = boringssl_chacha20_dispose;
+    ctx->super.do_init = boringssl_chacha20_init;
+    ctx->super.do_transform = boringssl_chacha20_transform;
+    memcpy(ctx->key, key, sizeof(ctx->key));
+
+    return 0;
+}
+
+#else
 
 static int chacha20_setup_crypto(ptls_cipher_context_t *ctx, int is_enc, const void *key)
 {
     return cipher_setup_crypto(ctx, 1, key, EVP_chacha20(), cipher_encrypt);
 }
 
+#endif
 #endif
 
 #if PTLS_OPENSSL_HAVE_BF
@@ -1180,10 +1224,21 @@ static int aead_aes256gcm_setup_crypto(ptls_aead_context_t *ctx, int is_enc, con
 }
 
 #if PTLS_OPENSSL_HAVE_CHACHA20_POLY1305
+#ifdef OPENSSL_IS_BORINGSSL
+
+static int boringssl_chacha20poly1305_setup_crypto(ptls_aead_context_t *ctx, int is_enc, const void *key, const void *iv)
+{
+    assert(!"FIXME");
+}
+
+#else
+
 static int aead_chacha20poly1305_setup_crypto(ptls_aead_context_t *ctx, int is_enc, const void *key, const void *iv)
 {
     return aead_setup_crypto(ctx, is_enc, key, iv, EVP_chacha20_poly1305());
 }
+
+#endif
 #endif
 
 #define _sha256_final(ctx, md) SHA256_Final((md), (ctx))
@@ -1977,21 +2032,38 @@ ptls_cipher_suite_t ptls_openssl_tls12_ecdhe_ecdsa_aes256gcmsha384 = {
     .hash = &ptls_openssl_sha384};
 #if PTLS_OPENSSL_HAVE_CHACHA20_POLY1305
 ptls_cipher_algorithm_t ptls_openssl_chacha20 = {
-    "CHACHA20",           PTLS_CHACHA20_KEY_SIZE, 1 /* block size */, PTLS_CHACHA20_IV_SIZE, sizeof(struct cipher_context_t),
-    chacha20_setup_crypto};
-ptls_aead_algorithm_t ptls_openssl_chacha20poly1305 = {"CHACHA20-POLY1305",
-                                                       PTLS_CHACHA20POLY1305_CONFIDENTIALITY_LIMIT,
-                                                       PTLS_CHACHA20POLY1305_INTEGRITY_LIMIT,
-                                                       &ptls_openssl_chacha20,
-                                                       NULL,
-                                                       PTLS_CHACHA20_KEY_SIZE,
-                                                       PTLS_CHACHA20POLY1305_IV_SIZE,
-                                                       PTLS_CHACHA20POLY1305_TAG_SIZE,
-                                                       {PTLS_TLS12_CHACHAPOLY_FIXED_IV_SIZE, PTLS_TLS12_CHACHAPOLY_RECORD_IV_SIZE},
-                                                       0,
-                                                       0,
-                                                       sizeof(struct aead_crypto_context_t),
-                                                       aead_chacha20poly1305_setup_crypto};
+    .name = "CHACHA20",
+    .key_size = PTLS_CHACHA20_KEY_SIZE,
+    .block_size = 1,
+    .iv_size = PTLS_CHACHA20_IV_SIZE,
+#ifdef OPENSSL_IS_BORINGSSL
+    .context_size = sizeof(struct boringssl_chacha20_context_t),
+    .setup_crypto = boringssl_chacha20_setup_crypto,
+#else
+    .context_size = sizeof(struct cipher_context_t),
+    .setup_crypto = chacha20_setup_crypto,
+#endif
+};
+ptls_aead_algorithm_t ptls_openssl_chacha20poly1305 = {
+    .name = "CHACHA20-POLY1305",
+    .confidentiality_limit = PTLS_CHACHA20POLY1305_CONFIDENTIALITY_LIMIT,
+    .integrity_limit = PTLS_CHACHA20POLY1305_INTEGRITY_LIMIT,
+    .ctr_cipher = &ptls_openssl_chacha20,
+    .ecb_cipher = NULL,
+    .key_size = PTLS_CHACHA20_KEY_SIZE,
+    .iv_size = PTLS_CHACHA20POLY1305_IV_SIZE,
+    .tag_size = PTLS_CHACHA20POLY1305_TAG_SIZE,
+    .tls12 = {.fixed_iv_size = PTLS_TLS12_CHACHAPOLY_FIXED_IV_SIZE, .record_iv_size = PTLS_TLS12_CHACHAPOLY_RECORD_IV_SIZE},
+    .non_temporal = 0,
+    .align_bits = 0,
+#ifdef OPENSSL_IS_BORINGSSL
+    .context_size = sizeof("FIXME"),
+    .setup_crypto = boringssl_chacha20poly1305_setup_crypto,
+#else
+    .context_size = sizeof(struct aead_crypto_context_t),
+    .setup_crypto = aead_chacha20poly1305_setup_crypto,
+#endif
+};
 ptls_cipher_suite_t ptls_openssl_chacha20poly1305sha256 = {.id = PTLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256,
                                                            .name = PTLS_CIPHER_SUITE_NAME_CHACHA20_POLY1305_SHA256,
                                                            .aead = &ptls_openssl_chacha20poly1305,
