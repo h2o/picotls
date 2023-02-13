@@ -149,14 +149,19 @@ static size_t chacha20poly1305_decrypt(ptls_aead_context_t *_ctx, void *output, 
     return ret;
 }
 
-static void chacha20poly1305_xor_iv(ptls_aead_context_t *_ctx, const void *_bytes, size_t len)
+static void chacha20poly1305_get_iv(ptls_aead_context_t *_ctx, void *iv)
 {
     struct chacha20poly1305_context_t *ctx = (struct chacha20poly1305_context_t *)_ctx;
-    const uint8_t *bytes = _bytes;
 
-    for (size_t i = 0; i < len; ++i)
-        ctx->static_iv[i] ^= bytes[i];
+    memcpy(iv, ctx->static_iv, sizeof(ctx->static_iv));
 }
+
+static void chacha20poly1305_set_iv(ptls_aead_context_t *_ctx, const void *iv)
+{
+    struct chacha20poly1305_context_t *ctx = (struct chacha20poly1305_context_t *)_ctx;
+
+    memcpy(ctx->static_iv, iv, sizeof(ctx->static_iv));
+ }
 
 static int chacha20poly1305_setup_crypto(ptls_aead_context_t *_ctx, int is_enc, const void *key, const void *iv,
                                          ptls_cipher_algorithm_t *chacha,
@@ -167,7 +172,8 @@ static int chacha20poly1305_setup_crypto(ptls_aead_context_t *_ctx, int is_enc, 
     struct chacha20poly1305_context_t *ctx = (struct chacha20poly1305_context_t *)_ctx;
 
     ctx->super.dispose_crypto = chacha20poly1305_dispose_crypto;
-    ctx->super.do_xor_iv = chacha20poly1305_xor_iv;
+    ctx->super.do_get_iv = chacha20poly1305_get_iv;
+    ctx->super.do_set_iv = chacha20poly1305_set_iv;
     if (is_enc) {
         ctx->super.do_encrypt_init = chacha20poly1305_init;
         ctx->super.do_encrypt_update = chacha20poly1305_encrypt_update;

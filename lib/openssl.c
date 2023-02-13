@@ -1128,13 +1128,18 @@ static void aead_dispose_crypto(ptls_aead_context_t *_ctx)
         EVP_CIPHER_CTX_free(ctx->evp_ctx);
 }
 
-static void aead_xor_iv(ptls_aead_context_t *_ctx, const void *_bytes, size_t len)
+static void aead_get_iv(ptls_aead_context_t *_ctx, void *iv)
 {
     struct aead_crypto_context_t *ctx = (struct aead_crypto_context_t *)_ctx;
-    const uint8_t *bytes = _bytes;
 
-    for (size_t i = 0; i < len; ++i)
-        ctx->static_iv[i] ^= bytes[i];
+    memcpy(iv, ctx->static_iv, ctx->super.algo->iv_size);
+}
+
+static void aead_set_iv(ptls_aead_context_t *_ctx, const void *iv)
+{
+    struct aead_crypto_context_t *ctx = (struct aead_crypto_context_t *)_ctx;
+
+    memcpy(ctx->static_iv, iv, ctx->super.algo->iv_size);
 }
 
 static void aead_do_encrypt_init(ptls_aead_context_t *_ctx, uint64_t seq, const void *aad, size_t aadlen)
@@ -1217,12 +1222,9 @@ static int aead_setup_crypto(ptls_aead_context_t *_ctx, int is_enc, const void *
     struct aead_crypto_context_t *ctx = (struct aead_crypto_context_t *)_ctx;
     int ret;
 
-    memcpy(ctx->static_iv, iv, ctx->super.algo->iv_size);
-    if (key == NULL)
-        return 0;
-
     ctx->super.dispose_crypto = aead_dispose_crypto;
-    ctx->super.do_xor_iv = aead_xor_iv;
+    ctx->super.do_get_iv = aead_get_iv;
+    ctx->super.do_set_iv = aead_set_iv;
     if (is_enc) {
         ctx->super.do_encrypt_init = aead_do_encrypt_init;
         ctx->super.do_encrypt_update = aead_do_encrypt_update;
@@ -1259,6 +1261,8 @@ static int aead_setup_crypto(ptls_aead_context_t *_ctx, int is_enc, const void *
         ret = PTLS_ERROR_LIBRARY;
         goto Error;
     }
+
+    memcpy(ctx->static_iv, iv, ctx->super.algo->iv_size);
 
     return 0;
 
