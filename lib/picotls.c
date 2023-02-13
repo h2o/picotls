@@ -6206,6 +6206,17 @@ void ptls_aead_free(ptls_aead_context_t *ctx)
     free(ctx);
 }
 
+void ptls_aead_xor_iv(ptls_aead_context_t *ctx, const void *_bytes, size_t len)
+{
+    const uint8_t *bytes = _bytes;
+    uint8_t iv[PTLS_MAX_IV_SIZE];
+
+    ptls_aead_get_iv(ctx, iv);
+    for (size_t i = 0; i < len; ++i)
+        iv[i] ^= bytes[i];
+    ptls_aead_set_iv(ctx, iv);
+}
+
 void ptls_aead__build_iv(ptls_aead_algorithm_t *algo, uint8_t *iv, const uint8_t *static_iv, uint64_t seq)
 {
     size_t iv_size = algo->iv_size, i;
