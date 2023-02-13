@@ -6506,7 +6506,9 @@ int ptls_log__do_push_hexdump(ptls_buffer_t *buf, const void *s, size_t l)
     if (ptls_buffer_reserve(buf, l * 2 + 1) != 0)
         return 0;
 
-    buf->off = (uint8_t *)ptls_hexdump((char *)(buf->base + buf->off), s, l) - buf->base;
+    ptls_hexdump((char *)(buf->base + buf->off), s, l);
+    buf->off += l * 2;
+
     return 1;
 }
 
