@@ -85,7 +85,7 @@ extern "C" {
 #define PTLS_AESCCM_INTEGRITY_LIMIT 0xB504F3                   /* 2^23.5 */
 
 #define PTLS_CHACHA20_KEY_SIZE 32
-#define PTLS_CHACHA20_IV_SIZE 16
+#define PTLS_CHACHA20_IV_SIZE 16 /* contrary to RFC 7539, follow OpenSSL way of using first 32 bits as ctr and latter 96 as IV */
 #define PTLS_CHACHA20POLY1305_IV_SIZE 12
 #define PTLS_CHACHA20POLY1305_TAG_SIZE 16
 #define PTLS_CHACHA20POLY1305_CONFIDENTIALITY_LIMIT UINT64_MAX       /* at least 2^64 */
