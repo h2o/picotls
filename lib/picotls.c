@@ -3561,9 +3561,14 @@ static int decode_client_hello(ptls_context_t *ctx, struct st_ptls_client_hello_
         src = end;
     });
 
-    ch->first_extension_at = src - start + 2;
+    /* CH defined in TLS versions below 1.2 do not have extensions; so bail out after parsing the main variables */
+    if (ch->legacy_version < 0x0303) {
+        ret = PTLS_ALERT_PROTOCOL_VERSION;
+        goto Exit;
+    }
 
     /* decode extensions */
+    ch->first_extension_at = src - start + 2;
     decode_extensions(src, end, PTLS_HANDSHAKE_TYPE_CLIENT_HELLO, &exttype, {
         ch->psk.is_last_extension = 0;
         if (ctx->on_extension != NULL && tls_cbarg != NULL &&
