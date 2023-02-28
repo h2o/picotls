@@ -4858,6 +4858,23 @@ static int parse_record(ptls_t *tls, struct st_ptls_record_t *rec, const uint8_t
 {
     int ret;
 
+    assert(*len != 0);
+
+    /* Check if the first byte is something that we can handle, otherwise do not bother parsing / buffering the entire record as it
+     * is obviously broken. SSL 2.0 handshakes fall into this path as well. */
+    if (tls->recvbuf.rec.base == NULL) {
+        uint8_t type = src[0];
+        switch (type) {
+        case PTLS_CONTENT_TYPE_CHANGE_CIPHER_SPEC:
+        case PTLS_CONTENT_TYPE_ALERT:
+        case PTLS_CONTENT_TYPE_HANDSHAKE:
+        case PTLS_CONTENT_TYPE_APPDATA:
+            break;
+        default:
+            return PTLS_ALERT_DECODE_ERROR;
+        }
+    }
+
     if (tls->recvbuf.rec.base == NULL && *len >= 5) {
         /* fast path */
         if ((ret = parse_record_header(rec, src)) != 0)
