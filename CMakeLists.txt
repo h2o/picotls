@@ -196,6 +196,10 @@ IF (WITH_FUSION)
 
     SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DPTLS_HAVE_FUSION=1")
     LIST(APPEND PTLSBENCH_LIBS picotls-fusion)
+    
+    INSTALL(
+        TARGETS picotls-fusion
+    )
 ENDIF ()
 
 IF (WITH_MBEDTLS)
@@ -276,7 +280,7 @@ IF (BUILD_FUZZER)
 ENDIF()
 
 INSTALL(
-    TARGETS picotls-core picotls-openssl picotls-minicrypto picotls-fusion
+    TARGETS picotls-core picotls-openssl picotls-minicrypto
     RUNTIME DESTINATION bin
     LIBRARY DESTINATION lib
     ARCHIVE DESTINATION lib
