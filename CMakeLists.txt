@@ -73,15 +73,21 @@ IF (WITH_DTRACE)
     ENDIF ()
 ENDIF ()
 
-PKG_CHECK_MODULES(BROTLI_DEC libbrotlidec)
-PKG_CHECK_MODULES(BROTLI_ENC libbrotlienc)
+IF (NOT BORINGSSL_LIBRARIES)
+    PKG_CHECK_MODULES(BROTLI_DEC libbrotlidec)
+    PKG_CHECK_MODULES(BROTLI_ENC libbrotlienc)
+ENDIF()
+
 IF (BROTLI_DEC_FOUND AND BROTLI_ENC_FOUND)
     INCLUDE_DIRECTORIES(${BROTLI_DEC_INCLUDE_DIRS} ${BROTLI_ENC_INCLUDE_DIRS})
     SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DPICOTLS_USE_BROTLI=1")
     LIST(APPEND CORE_FILES
         lib/certificate_compression.c)
     LIST(APPEND CORE_EXTRA_LIBS ${BROTLI_DEC_LIBRARIES} ${BROTLI_ENC_LIBRARIES})
-    LIST(APPEND CORE_EXTRA_LIBS_DIRS (${BROTLI_DEC_LIBRARY_DIRS} ${BROTLI_ENC_LIBRARY_DIRS}))
+
+    #LIST(APPEND CORE_EXTRA_LIBS_DIRS (${BROTLI_DEC_LIBRARY_DIRS} ${BROTLI_ENC_LIBRARY_DIRS}))
+    LIST(APPEND CORE_EXTRA_LIBS_DIRS ${BROTLI_DEC_LIBRARY_DIRS})
+    LIST(APPEND CORE_EXTRA_LIBS_DIRS ${BROTLI_ENC_LIBRARY_DIRS})
 ENDIF ()
 
 ADD_LIBRARY(picotls-core ${CORE_FILES})
@@ -101,26 +107,30 @@ ADD_LIBRARY(picotls-minicrypto
     lib/asn1.c
     lib/ffx.c)
 TARGET_LINK_LIBRARIES(picotls-minicrypto picotls-core)
-ADD_EXECUTABLE(test-minicrypto.t
-    ${MINICRYPTO_LIBRARY_FILES}
-    deps/picotest/picotest.c
-    ${CORE_TEST_FILES}
-    t/minicrypto.c
-    lib/asn1.c
-    lib/pembase64.c
-    lib/ffx.c
-    lib/cifra/x25519.c
-    lib/cifra/chacha20.c
-    lib/cifra/aes128.c
-    lib/cifra/aes256.c
-    lib/cifra/random.c)
-SET(TEST_EXES test-minicrypto.t)
 
+IF (BUILD_TESTING AND picotls_BUILD_TESTS)
+    ADD_EXECUTABLE(test-minicrypto.t
+        ${MINICRYPTO_LIBRARY_FILES}
+        deps/picotest/picotest.c
+        ${CORE_TEST_FILES}
+        t/minicrypto.c
+        lib/asn1.c
+        lib/pembase64.c
+        lib/ffx.c
+        lib/cifra/x25519.c
+        lib/cifra/chacha20.c
+        lib/cifra/aes128.c
+        lib/cifra/aes256.c
+        lib/cifra/random.c)
+    SET(TEST_EXES test-minicrypto.t)
+    SET(PTLSBENCH_LIBS
+        picotls-minicrypto picotls-core)
+ENDIF()
 
-SET(PTLSBENCH_LIBS
-    picotls-minicrypto picotls-core)
+IF (NOT BORINGSSL_LIBDIR)
+    FIND_PACKAGE(OpenSSL)
+ENDIF()
 
-FIND_PACKAGE(OpenSSL)
 BORINGSSL_ADJUST()
 
 IF (OPENSSL_FOUND AND NOT (OPENSSL_VERSION VERSION_LESS "1.0.1"))
@@ -131,27 +141,28 @@ IF (OPENSSL_FOUND AND NOT (OPENSSL_VERSION VERSION_LESS "1.0.1"))
     ADD_EXECUTABLE(cli t/cli.c lib/pembase64.c)
     TARGET_LINK_LIBRARIES(cli picotls-openssl picotls-core)
 
-    ADD_EXECUTABLE(test-openssl.t
-        ${MINICRYPTO_LIBRARY_FILES}
-        lib/cifra.c
-        lib/cifra/x25519.c
-        lib/cifra/chacha20.c
-        lib/cifra/aes128.c
-        lib/cifra/aes256.c
-        lib/cifra/random.c
-        lib/uecc.c
-        lib/asn1.c
-        lib/pembase64.c
-        lib/ffx.c
-        deps/picotest/picotest.c
-        ${CORE_TEST_FILES}
-        t/openssl.c)
-    SET_TARGET_PROPERTIES(test-openssl.t PROPERTIES COMPILE_FLAGS "-DPTLS_MEMORY_DEBUG=1")
-    TARGET_LINK_LIBRARIES(test-openssl.t ${OPENSSL_CRYPTO_LIBRARIES} ${CMAKE_DL_LIBS})
+    if(BUILD_TESTING AND picotls_BUILD_TESTS)
+        ADD_EXECUTABLE(test-openssl.t
+                ${MINICRYPTO_LIBRARY_FILES}
+                lib/cifra.c
+                lib/cifra/x25519.c
+                lib/cifra/chacha20.c
+                lib/cifra/aes128.c
+                lib/cifra/aes256.c
+                lib/cifra/random.c
+                lib/uecc.c
+                lib/asn1.c
+                lib/pembase64.c
+                lib/ffx.c
+                deps/picotest/picotest.c
+                ${CORE_TEST_FILES}
+                t/openssl.c)
+        SET_TARGET_PROPERTIES(test-openssl.t PROPERTIES COMPILE_FLAGS "-DPTLS_MEMORY_DEBUG=1")
+        TARGET_LINK_LIBRARIES(test-openssl.t ${OPENSSL_CRYPTO_LIBRARIES} ${CMAKE_DL_LIBS})
+        LIST(APPEND PTLSBENCH_LIBS picotls-openssl ${OPENSSL_CRYPTO_LIBRARIES} ${CMAKE_DL_LIBS})
 
-    LIST(APPEND PTLSBENCH_LIBS picotls-openssl ${OPENSSL_CRYPTO_LIBRARIES} ${CMAKE_DL_LIBS})
-
-    SET(TEST_EXES ${TEST_EXES} test-openssl.t)
+        SET(TEST_EXES ${TEST_EXES} test-openssl.t)
+    endif()
 ELSE ()
     MESSAGE(WARNING "Disabling OpenSSL support (requires 1.0.1 or newer)")
 ENDIF ()
@@ -160,26 +171,30 @@ IF (WITH_FUSION)
     ADD_LIBRARY(picotls-fusion lib/fusion.c)
     SET_TARGET_PROPERTIES(picotls-fusion PROPERTIES COMPILE_FLAGS "-mavx2 -maes -mpclmul -mvaes -mvpclmulqdq")
     TARGET_LINK_LIBRARIES(picotls-fusion picotls-core)
-    ADD_EXECUTABLE(test-fusion.t
-        deps/picotest/picotest.c
-        lib/picotls.c
-        t/fusion.c)
-    TARGET_LINK_LIBRARIES(test-fusion.t picotls-minicrypto)
-    SET_TARGET_PROPERTIES(test-fusion.t PROPERTIES COMPILE_FLAGS "-mavx2 -maes -mpclmul -mvaes -mvpclmulqdq")
-    IF (WITH_DTRACE)
-        ADD_DEPENDENCIES(test-fusion.t generate-picotls-probes)
+
+    if(BUILD_TESTING AND picotls_BUILD_TESTS)
+        ADD_EXECUTABLE(test-fusion.t
+                deps/picotest/picotest.c
+                lib/picotls.c
+                t/fusion.c)
+        TARGET_LINK_LIBRARIES(test-fusion.t picotls-minicrypto)
+        SET_TARGET_PROPERTIES(test-fusion.t PROPERTIES COMPILE_FLAGS "-mavx2 -maes -mpclmul -mvaes -mvpclmulqdq")
+        IF (WITH_DTRACE)
+            ADD_DEPENDENCIES(test-fusion.t generate-picotls-probes)
+        ENDIF ()
+        SET(TEST_EXES ${TEST_EXES} test-fusion.t)
+        LIST(APPEND PTLSBENCH_LIBS picotls-fusion)
+    endif()
+ENDIF ()
+
+if(BUILD_TESTING AND picotls_BUILD_TESTS)
+    ADD_EXECUTABLE(ptlsbench t/ptlsbench.c)
+    SET_TARGET_PROPERTIES(ptlsbench PROPERTIES COMPILE_FLAGS "-DPTLS_MEMORY_DEBUG=1")
+    TARGET_LINK_LIBRARIES(ptlsbench ${PTLSBENCH_LIBS})
+    IF (NOT WITH_FUSION)
+        SET_TARGET_PROPERTIES(ptlsbench PROPERTIES EXCLUDE_FROM_ALL 1)
     ENDIF ()
-    SET(TEST_EXES ${TEST_EXES} test-fusion.t)
-
-    LIST(APPEND PTLSBENCH_LIBS picotls-fusion)
-ENDIF ()
-
-ADD_EXECUTABLE(ptlsbench t/ptlsbench.c)
-SET_TARGET_PROPERTIES(ptlsbench PROPERTIES COMPILE_FLAGS "-DPTLS_MEMORY_DEBUG=1")
-TARGET_LINK_LIBRARIES(ptlsbench ${PTLSBENCH_LIBS})
-IF (NOT WITH_FUSION)
-    SET_TARGET_PROPERTIES(ptlsbench PROPERTIES EXCLUDE_FROM_ALL 1)
-ENDIF ()
+endif()
 
 ADD_CUSTOM_TARGET(check env BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR} prove --exec '' -v ${CMAKE_CURRENT_BINARY_DIR}/*.t t/*.t WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} DEPENDS ${TEST_EXES} cli)
 
