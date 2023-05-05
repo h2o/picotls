@@ -1979,16 +1979,27 @@ Exit:
 }
 
 static int select_cipher(ptls_cipher_suite_t **selected, ptls_cipher_suite_t **candidates, const uint8_t *src,
-                         const uint8_t *const end, int server_preference)
+                         const uint8_t *const end, int server_preference, int server_chacha_priority)
 {
     size_t found_index = SIZE_MAX;
     int ret;
+    int is_first_cipher = 1;
 
     while (src != end) {
         uint16_t id;
         if ((ret = ptls_decode16(&id, &src, end)) != 0)
             goto Exit;
+        if (is_first_cipher && server_chacha_priority) {
+            if (id != PTLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256)
+                server_chacha_priority = 0;
+            is_first_cipher = 0;
+        }
         for (size_t i = 0; candidates[i] != NULL; ++i) {
+            if (server_chacha_priority && candidates[i]->id == PTLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256) {
+                /* return the pointer matching chacha20 cipher found in the server list */
+                *selected = candidates[i];
+                goto Exit;
+            }
             if (candidates[i]->id == id) {
                 if (server_preference) {
                     /* preserve smallest matching index, and proceed to the next input */
@@ -2003,6 +2014,9 @@ static int select_cipher(ptls_cipher_suite_t **selected, ptls_cipher_suite_t **c
                 }
             }
         }
+        /* first position of the server list matched (server_preference) */
+        if (found_index == 0)
+            break;
     }
     if (found_index != SIZE_MAX) {
         *selected = candidates[found_index];
@@ -4353,7 +4367,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
     { /* select (or check) cipher-suite, create key_schedule */
         ptls_cipher_suite_t *cs;
         if ((ret = select_cipher(&cs, tls->ctx->cipher_suites, ch->cipher_suites.base,
-                                 ch->cipher_suites.base + ch->cipher_suites.len, tls->ctx->server_cipher_preference)) != 0)
+                                 ch->cipher_suites.base + ch->cipher_suites.len, tls->ctx->server_cipher_preference, tls->ctx->server_cipher_chacha_priority)) != 0)
             goto Exit;
         if (!is_second_flight) {
             tls->cipher_suite = cs;
