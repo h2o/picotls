@@ -1983,25 +1983,14 @@ static int select_cipher(ptls_cipher_suite_t **selected, ptls_cipher_suite_t **c
 {
     size_t found_index = SIZE_MAX;
     int ret;
-    int is_first_cipher = 1;
 
     while (src != end) {
         uint16_t id;
         if ((ret = ptls_decode16(&id, &src, end)) != 0)
             goto Exit;
-        if (is_first_cipher && server_chacha_priority) {
-            if (id != PTLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256)
-                server_chacha_priority = 0;
-            is_first_cipher = 0;
-        }
         for (size_t i = 0; candidates[i] != NULL; ++i) {
-            if (server_chacha_priority && candidates[i]->id == PTLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256) {
-                /* return the pointer matching chacha20 cipher found in the server list */
-                *selected = candidates[i];
-                goto Exit;
-            }
             if (candidates[i]->id == id) {
-                if (server_preference) {
+                if (server_preference && !(server_chacha_priority && id == PTLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256)) {
                     /* preserve smallest matching index, and proceed to the next input */
                     if (i < found_index) {
                         found_index = i;
@@ -2017,6 +2006,8 @@ static int select_cipher(ptls_cipher_suite_t **selected, ptls_cipher_suite_t **c
         /* first position of the server list matched (server_preference) */
         if (found_index == 0)
             break;
+        /* server preference is overridden only if the first entry of client-provided list is chachapoly */
+        server_chacha_priority = 0;
     }
     if (found_index != SIZE_MAX) {
         *selected = candidates[found_index];
