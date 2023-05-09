@@ -870,6 +870,11 @@ struct st_ptls_context_t {
      */
     unsigned server_cipher_preference : 1;
     /**
+     * boolean indicating if ChaCha20-Poly1305 should be reprioritized to the top of the server cipher list if a ChaCha20-Poly1305
+     * cipher is at the top of the client cipher list
+     */
+    unsigned server_cipher_chacha_priority : 1;
+    /**
      *
      */
     ptls_encrypt_ticket_t *encrypt_ticket;
