@@ -17,7 +17,7 @@
 /*
  * Manage Base64 encoding.
  */
-#ifdef _WINDOWS
+#ifdef _WIN32
 #include "wincompat.h"
 #else
 #include <sys/time.h>
@@ -301,7 +301,7 @@ int ptls_load_pem_objects(char const *pem_fname, const char *label, ptls_iovec_t
     FILE *F;
     int ret = 0;
     size_t count = 0;
-#ifdef _WINDOWS
+#ifdef _WIN32
     errno_t err = fopen_s(&F, pem_fname, "r");
     if (err != 0) {
         ret = -1;

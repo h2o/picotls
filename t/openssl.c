@@ -19,7 +19,7 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
-#ifdef _WINDOWS
+#ifdef _WIN32
 #include "wincompat.h"
 #endif
 #include <assert.h>
@@ -36,7 +36,7 @@
 #include "picotls.h"
 #include "picotls/minicrypto.h"
 #include "picotls/openssl.h"
-#if PTLS_OPENSSL_HAVE_ASYNC && PTLS_OPENSSL_HAVE_X25519 && !defined(_WINDOWS)
+#if PTLS_OPENSSL_HAVE_ASYNC && PTLS_OPENSSL_HAVE_X25519 && !defined(_WIN32)
 #include <sys/select.h>
 #include <sys/time.h>
 #define ASYNC_TESTS 1

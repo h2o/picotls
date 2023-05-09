@@ -20,7 +20,7 @@
  * IN THE SOFTWARE.
  */
 
-#ifndef _WINDOWS
+#ifndef _WIN32
 /* This module is only defined for windows.
  * It is an implementation of the main crypto algorithms
  * using windows crypto libraries */
@@ -845,4 +845,4 @@ ptls_key_exchange_algorithm_t ptls_bcrypt_x25519 = {PTLS_GROUP_X25519, evp_keyex
 ptls_key_exchange_algorithm_t *ptls_bcrypt_key_exchanges[] = {&ptls_bcrypt_secp256r1, NULL};
 #endif
 
-#endif /* _WINDOWS */
+#endif /* _WIN32 */

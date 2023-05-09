@@ -20,7 +20,7 @@
  * IN THE SOFTWARE.
  */
 
-#ifdef _WINDOWS
+#ifdef _WIN32
 #include "wincompat.h"
 #else
 #include <arpa/inet.h>
@@ -35,12 +35,12 @@
 #include "picotls/ffx.h"
 #include "picotls/minicrypto.h"
 #include "picotls/openssl.h"
-#ifndef _WINDOWS
+#ifndef _WIN32
 #include "picotls/fusion.h"
 #endif
 #include <openssl/opensslv.h>
 
-#ifdef _WINDOWS
+#ifdef _WIN32
 #include <bcrypt.h>
 #include "picotls/ptlsbcrypt.h"
 #ifdef _DEBUG
@@ -205,7 +205,7 @@ static int bench_run_aead(char *OS, char *HW, int basic_ref, uint64_t s0, const 
         int PP = (combined >> 4) & 0xFF;
         char letter = 'a' - 1 + PP;
 
-#ifdef _WINDOWS
+#ifdef _WIN32
         (void)sprintf_s(p_version, sizeof(p_version), "%d.%d.%d%c", M, NN, FF, letter);
 #else
         (void)sprintf(p_version, "%d.%d.%d%c", M, NN, FF, letter);
@@ -253,11 +253,11 @@ static ptls_bench_entry_t aead_list[] = {
     {"minicrypto", "aes128gcm", &ptls_minicrypto_aes128gcm, &ptls_minicrypto_sha256, 0},
     {"minicrypto", "aes256gcm", &ptls_minicrypto_aes256gcm, &ptls_minicrypto_sha384, 0},
     {"minicrypto", "chacha20poly1305", &ptls_minicrypto_chacha20poly1305, &ptls_minicrypto_sha256, 1},
-#ifdef _WINDOWS
+#ifdef _WIN32
     {"ptlsbcrypt", "aes128gcm", &ptls_bcrypt_aes128gcm, &ptls_bcrypt_sha256, 1},
     {"ptlsbcrypt", "aes256gcm", &ptls_bcrypt_aes256gcm, &ptls_bcrypt_sha384, 1},
 #endif
-#if !defined(_WINDOWS)
+#if !defined(_WIN32)
     {"fusion", "aes128gcm", &ptls_fusion_aes128gcm, &ptls_minicrypto_sha256, 1},
     {"fusion", "aes256gcm", &ptls_fusion_aes256gcm, &ptls_minicrypto_sha384, 1},
 #endif
@@ -299,11 +299,11 @@ int main(int argc, char **argv)
     int basic_ref = bench_basic(&x);
     char OS[128];
     char HW[128];
-#ifndef _WINDOWS
+#ifndef _WIN32
     struct utsname uts;
 #endif
 
-#ifdef _WINDOWS
+#ifdef _WIN32
     (void)strcpy_s(OS, sizeof(OS), "windows");
     (void)strcpy_s(HW, sizeof(HW), "x86_64");
 #else

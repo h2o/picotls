@@ -20,7 +20,7 @@
  * IN THE SOFTWARE.
  */
 
-#ifdef _WINDOWS
+#ifdef _WIN32
 #include "wincompat.h"
 #else
 #include <unistd.h>
@@ -53,7 +53,7 @@
 #include "./chacha20poly1305.h"
 #endif
 
-#ifdef _WINDOWS
+#ifdef _MSC_VER
 #ifndef _CRT_SECURE_NO_WARNINGS
 #define _CRT_SECURE_NO_WARNINGS
 #endif

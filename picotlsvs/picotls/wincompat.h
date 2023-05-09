@@ -7,6 +7,9 @@
 #include <ws2tcpip.h>
 #include <malloc.h>
 
+#ifndef _MSC_VER
+#include <sys/time.h>
+#else
 #ifndef gettimeofday
 #define gettimeofday wintimeofday
 
@@ -32,6 +35,7 @@ int wintimeofday(struct timeval *tv, struct timezone *tz);
 } /* extern "C" */
 #endif
 
+#endif
 #endif
 
 #endif /* WINCOMPAT_H */

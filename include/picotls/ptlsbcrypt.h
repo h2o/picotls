@@ -28,7 +28,7 @@ extern "C" {
 
 #include "../picotls.h"
 
-#ifdef _WINDOWS
+#ifdef _WIN32
 #include <bcrypt.h>
 
 extern ptls_cipher_algorithm_t ptls_bcrypt_aes128ecb;
