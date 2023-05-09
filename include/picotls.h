@@ -60,8 +60,10 @@ extern "C" {
 
 #define PTLS_ELEMENTSOF(x) (PTLS_ASSERT_IS_ARRAY_EXPR(x) * sizeof(x) / sizeof((x)[0]))
 
-#ifdef _WINDOWS
+#if defined(_WINDOWS)
 #define PTLS_THREADLOCAL __declspec(thread)
+#elif defined(PARTICLE)
+#define PTLS_THREADLOCAL
 #else
 #define PTLS_THREADLOCAL __thread
 #define PTLS_HAVE_LOG 1
@@ -69,6 +71,10 @@ extern "C" {
 
 #ifndef PTLS_FUZZ_HANDSHAKE
 #define PTLS_FUZZ_HANDSHAKE 0
+#endif
+
+#ifdef PTLS_MINIMIZE_STACK
+extern void ptls_cleanup_free(void *p);
 #endif
 
 #define PTLS_HELLO_RANDOM_SIZE 32
@@ -1240,6 +1246,7 @@ uint64_t ptls_decode_quicint(const uint8_t **src, const uint8_t *end);
         ptls_decode_assert_block_close((src), end);                                                                                \
     } while (0)
 
+#if PTLS_HAVE_LOG
 #define PTLS_LOG__DO_LOG(module, type, block)                                                                                      \
     do {                                                                                                                           \
         int ptlslog_skip = 0;                                                                                                      \
@@ -1258,7 +1265,7 @@ uint64_t ptls_decode_quicint(const uint8_t **src, const uint8_t *end);
 
 #define PTLS_LOG(module, type, block)                                                                                              \
     do {                                                                                                                           \
-        if (!ptls_log.is_active)                                                                                                   \
+        if (!PTLS_LOG_IS_ACTIVE(ptls_log))                                                                                         \
             break;                                                                                                                 \
         PTLS_LOG__DO_LOG((module), (type), (block));                                                                               \
     } while (0)
@@ -1266,7 +1273,7 @@ uint64_t ptls_decode_quicint(const uint8_t **src, const uint8_t *end);
 #define PTLS_LOG_CONN(type, tls, block)                                                                                            \
     do {                                                                                                                           \
         ptls_t *_tls = (tls);                                                                                                      \
-        if (!ptls_log.is_active || ptls_skip_tracing(_tls))                                                                        \
+        if (!PTLS_LOG_IS_ACTIVE(ptls_log) || ptls_skip_tracing(_tls))                                                              \
             break;                                                                                                                 \
         PTLS_LOG__DO_LOG(picotls, type, {                                                                                          \
             PTLS_LOG_ELEMENT_PTR(tls, _tls);                                                                                       \
@@ -1366,14 +1373,28 @@ uint64_t ptls_decode_quicint(const uint8_t **src, const uint8_t *end);
             }                                                                                                                      \
         }                                                                                                                          \
     } while (0)
+#else
+#define PTLS_LOG_CONN(...)
+#define PTLS_LOG__DO_LOG(...)
+#endif
 
 /**
  * User API is exposed only when logging is supported by the platform.
  */
 typedef struct st_ptls_log_t {
+#if PTLS_HAVE_LOG
     unsigned is_active : 1;
+#else
+    unsigned : 1;
+#endif
     unsigned include_appdata : 1;
 } ptls_log_t;
+
+#if PTLS_HAVE_LOG
+#define PTLS_LOG_IS_ACTIVE(log) (log.is_active)
+#else
+#define PTLS_LOG_IS_ACTIVE(log) (0)
+#endif
 
 #if PTLS_HAVE_LOG
 extern volatile ptls_log_t ptls_log;
@@ -1528,7 +1549,13 @@ int ptls_update_key(ptls_t *tls, int request_update);
 /**
  * Returns if the context is a server context.
  */
+#if defined(PICOTLS_CLIENT) && !defined(PICOTLS_SERVER)
+#define ptls_is_server(x) (0)
+#elif !defined(PICOTLS_CLIENT) && defined(PICOTLS_SERVER)
+#define ptls_is_server(x) (1)
+#else
 int ptls_is_server(ptls_t *tls);
+#endif
 /**
  * returns per-record overhead
  */

@@ -120,6 +120,11 @@ SET(TEST_EXES test-minicrypto.t)
 SET(PTLSBENCH_LIBS
     picotls-minicrypto picotls-core)
 
+if(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
+  # on Darwin, try and pick up openssl from homebrew
+  set(CMAKE_PREFIX_PATH /usr/local/opt/openssl@1.1 /usr/local/opt/openssl)
+endif()
+
 FIND_PACKAGE(OpenSSL)
 BORINGSSL_ADJUST()
 

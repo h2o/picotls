@@ -48,10 +48,14 @@ static int labeled_extract(ptls_hpke_kem_t *kem, ptls_hpke_cipher_suite_t *ciphe
                            const char *label, ptls_iovec_t ikm)
 {
     ptls_buffer_t labeled_ikm;
-    uint8_t labeled_ikm_smallbuf[64];
     int ret;
 
+#ifdef PTLS_MINIMIZE_STACK
+    ptls_buffer_init(&labeled_ikm, "", 0);
+#else
+    uint8_t labeled_ikm_smallbuf[64];
     ptls_buffer_init(&labeled_ikm, labeled_ikm_smallbuf, sizeof(labeled_ikm_smallbuf));
+#endif
 
     ptls_buffer_pushv(&labeled_ikm, HPKE_V1_LABEL, strlen(HPKE_V1_LABEL));
     if ((ret = build_suite_id(&labeled_ikm, kem, cipher)) != 0)
@@ -71,12 +75,16 @@ static int labeled_expand(ptls_hpke_kem_t *kem, ptls_hpke_cipher_suite_t *cipher
                           const char *label, ptls_iovec_t info)
 {
     ptls_buffer_t labeled_info;
-    uint8_t labeled_info_smallbuf[64];
     int ret;
 
     assert(outlen < UINT16_MAX);
 
+#ifdef PTLS_MINIMIZE_STACK
+    ptls_buffer_init(&labeled_info, "", 0);
+#else
+    uint8_t labeled_info_smallbuf[64];
     ptls_buffer_init(&labeled_info, labeled_info_smallbuf, sizeof(labeled_info_smallbuf));
+#endif
 
     ptls_buffer_push16(&labeled_info, (uint16_t)outlen);
     ptls_buffer_pushv(&labeled_info, HPKE_V1_LABEL, strlen(HPKE_V1_LABEL));
@@ -97,10 +105,15 @@ static int extract_and_expand(ptls_hpke_kem_t *kem, void *secret, size_t secret_
                               ptls_iovec_t dh)
 {
     ptls_buffer_t kem_context;
-    uint8_t kem_context_smallbuf[128], eae_prk[PTLS_MAX_DIGEST_SIZE];
+    uint8_t eae_prk[PTLS_MAX_DIGEST_SIZE];
     int ret;
 
+#ifdef PTLS_MINIMIZE_STACK
+    ptls_buffer_init(&kem_context, "", 0);
+#else
+    uint8_t kem_context_smallbuf[128];
     ptls_buffer_init(&kem_context, kem_context_smallbuf, sizeof(kem_context_smallbuf));
+#endif
 
     ptls_buffer_pushv(&kem_context, pk_s.base, pk_s.len);
     ptls_buffer_pushv(&kem_context, pk_r.base, pk_r.len);
@@ -172,13 +185,27 @@ static int key_schedule(ptls_hpke_kem_t *kem, ptls_hpke_cipher_suite_t *cipher, 
                         const void *shared_secret, ptls_iovec_t info)
 {
     ptls_buffer_t key_schedule_context;
-    uint8_t key_schedule_context_smallbuf[128], secret[PTLS_MAX_DIGEST_SIZE], key[PTLS_MAX_SECRET_SIZE],
-        base_nonce[PTLS_MAX_IV_SIZE];
+#ifdef PTLS_MINIMIZE_STACK
+    uint8_t *tmp __attribute__((__cleanup__(ptls_cleanup_free))) =
+        malloc(PTLS_MAX_DIGEST_SIZE + PTLS_MAX_SECRET_SIZE + PTLS_MAX_IV_SIZE);
+    if (tmp == NULL)
+        return PTLS_ERROR_NO_MEMORY;
+#define secret (tmp)
+#define key (tmp + PTLS_MAX_DIGEST_SIZE)
+#define base_nonce (key + PTLS_MAX_SECRET_SIZE)
+#else
+    uint8_t secret[PTLS_MAX_DIGEST_SIZE], key[PTLS_MAX_SECRET_SIZE], base_nonce[PTLS_MAX_IV_SIZE];
+#endif
     int ret;
 
     *ctx = NULL;
 
+#ifdef PTLS_MINIMIZE_STACK
+    ptls_buffer_init(&key_schedule_context, "", 0);
+#else
+    uint8_t key_schedule_context_smallbuf[128];
     ptls_buffer_init(&key_schedule_context, key_schedule_context_smallbuf, sizeof(key_schedule_context_smallbuf));
+#endif
 
     /* key_schedule_context = concat(mode, LabeledExtract("", "psk_id_hash", psk_id), LabeledExtract("", "info_hash", info)) */
     ptls_buffer_push(&key_schedule_context, PTLS_HPKE_MODE_BASE);
@@ -214,6 +241,9 @@ Exit:
     ptls_clear_memory(key, sizeof(key));
     ptls_clear_memory(base_nonce, sizeof(base_nonce));
     return ret;
+#undef secret
+#undef key
+#undef base_nonce
 }
 
 int ptls_hpke_setup_base_s(ptls_hpke_kem_t *kem, ptls_hpke_cipher_suite_t *cipher, ptls_iovec_t *pk_s, ptls_aead_context_t **ctx,

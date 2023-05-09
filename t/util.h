@@ -34,12 +34,23 @@
 #include <sys/param.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#ifndef PARTICLE
 #include <arpa/nameser.h>
 #include <resolv.h>
 #include <openssl/pem.h>
 #include "picotls/pembase64.h"
 #include "picotls/openssl.h"
+#else
+#include "picotls/minicrypto.h"
 
+#define ptls_openssl_aes128gcm ptls_minicrypto_aes128gcm
+#define ptls_openssl_sha256 ptls_minicrypto_sha256
+#define ptls_openssl_secp256r1 ptls_minicrypto_secp256r1
+#define ptls_openssl_cipher_suites ptls_minicrypto_cipher_suites
+
+#endif
+
+#ifndef PARTICLE
 static inline void load_certificate_chain(ptls_context_t *ctx, const char *fn)
 {
     if (ptls_load_certificates(ctx, (char *)fn) != 0) {
@@ -192,6 +203,7 @@ static inline void setup_log_event(ptls_context_t *ctx, const char *fn)
     ls.super.cb = log_event_cb;
     ctx->log_event = &ls.super;
 }
+#endif
 
 /* single-entry session cache */
 struct st_util_session_cache_t {
@@ -251,6 +263,7 @@ static inline void setup_session_cache(ptls_context_t *ctx)
     ctx->encrypt_ticket = &sc.super;
 }
 
+#ifndef PARTICLE
 static struct {
     ptls_iovec_t config_list;
     struct {
@@ -393,6 +406,7 @@ static void ech_setup_key(ptls_context_t *ctx, const char *fn)
     static ptls_ech_create_opener_t opener = {.cb = ech_create_opener};
     ctx->ech.server.create_opener = &opener;
 }
+#endif
 
 static inline int resolve_address(struct sockaddr *sa, socklen_t *salen, const char *host, const char *port, int family, int type,
                                   int proto)
@@ -406,8 +420,10 @@ static inline int resolve_address(struct sockaddr *sa, socklen_t *salen, const c
     hints.ai_protocol = proto;
     hints.ai_flags = AI_ADDRCONFIG | AI_NUMERICSERV | AI_PASSIVE;
     if ((err = getaddrinfo(host, port, &hints, &res)) != 0 || res == NULL) {
+#ifndef PARTICLE
         fprintf(stderr, "failed to resolve address:%s:%s:%s\n", host, port,
                 err != 0 ? gai_strerror(err) : "getaddrinfo returned NULL");
+#endif
         return -1;
     }
 
