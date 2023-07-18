@@ -4525,21 +4525,6 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
                                 sendbuf->off += sz;
                             });
                         });
-                        /* second is if we have sent key_share extension */
-                        ptls_buffer_push(sendbuf, key_share.algorithm == NULL);
-                        /* we can add more data here */
-                    });
-                    size_t tbs_len = sendbuf->off - tbs_start;
-                    /* push the signature */
-                    ptls_buffer_push_block(sendbuf, 1, {
-                        size_t sz = tls->ctx->cipher_suites[0]->hash->digest_size;
-                        if ((ret = ptls_buffer_reserve(sendbuf, sz)) != 0)
-                            goto Exit;
-                        if ((ret = calc_cookie_signature(tls, properties, negotiated_group,
-                                                         ptls_iovec_init(sendbuf->base + tbs_start, tbs_len),
-                                                         sendbuf->base + sendbuf->off)) != 0)
-                            goto Exit;
-                        sendbuf->off += sz;
                     });
                 }
             },
