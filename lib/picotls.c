@@ -2223,7 +2223,7 @@ static int encode_client_hello(ptls_context_t *ctx, ptls_buffer_t *sendbuf, enum
                 if ((ret = push_signature_algorithms(ctx->verify_certificate, sendbuf)) != 0)
                     goto Exit;
             });
-            if (tls->ctx->key_exchanges != NULL) {
+            if (ctx->key_exchanges != NULL) {
                 buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SUPPORTED_GROUPS, {
                     ptls_key_exchange_algorithm_t **algo = ctx->key_exchanges;
                     ptls_buffer_push_block(sendbuf, 2, {
