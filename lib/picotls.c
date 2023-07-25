@@ -2359,7 +2359,7 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
             }
         } else if (properties->pre_shared_key.identity.base != NULL) {
             tls->client.offered_psk = 1;
-            tls->cipher_suite = tls->ctx->cipher_suites[0];
+            tls->cipher_suite = ptls_find_cipher_suite(tls->ctx->cipher_suites, PTLS_CIPHER_SUITE_AES_128_GCM_SHA256);
             resumption_secret = properties->pre_shared_key.key;
             resumption_ticket = properties->pre_shared_key.identity;
             binder_key_label = "ext binder";
