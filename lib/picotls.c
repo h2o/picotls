@@ -2311,6 +2311,7 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
     uint32_t obfuscated_ticket_age = 0;
     const char *sni_name = NULL;
     size_t mess_start, msghash_off;
+    const char *binder_key_label = "res binder";
     uint8_t binder_key[PTLS_MAX_DIGEST_SIZE];
     ptls_buffer_t encoded_ch_inner;
     int ret, is_second_flight = tls->key_schedule != NULL;
@@ -2361,6 +2362,7 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
             tls->cipher_suite = tls->ctx->cipher_suites[0];
             resumption_secret = properties->pre_shared_key.key;
             resumption_ticket = properties->pre_shared_key.identity;
+            binder_key_label = "ext binder";
             if (!is_second_flight && properties->client.max_early_data_size != NULL) {
                 tls->client.using_early_data = 1;
                 *properties->client.max_early_data_size = SIZE_MAX;
@@ -2410,7 +2412,7 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
     /* update the message hash, filling in the PSK binder HMAC if necessary */
     if (resumption_secret.base != NULL) {
         size_t psk_binder_off = emitter->buf->off - (3 + tls->key_schedule->hashes[0].algo->digest_size);
-        if ((ret = derive_secret_with_empty_digest(tls->key_schedule, binder_key, "res binder")) != 0)
+        if ((ret = derive_secret_with_empty_digest(tls->key_schedule, binder_key, binder_key_label)) != 0)
             goto Exit;
         ptls__key_schedule_update_hash(tls->key_schedule, emitter->buf->base + msghash_off, psk_binder_off - msghash_off, 0);
         msghash_off = psk_binder_off;
