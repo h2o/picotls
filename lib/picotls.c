@@ -2111,6 +2111,10 @@ static inline size_t outer_ech_header_size(size_t enc_size)
  */
 enum encode_ch_mode { ENCODE_CH_MODE_INNER, ENCODE_CH_MODE_ENCODED_INNER, ENCODE_CH_MODE_OUTER };
 
+/**
+ * TODO: resumption_secret and resumption_ticket should be renamed (e.g., to psk and psk_identity)
+ * because when the PSK is an external PSK, it is not for resumption.
+ */
 static int encode_client_hello(ptls_context_t *ctx, ptls_buffer_t *sendbuf, enum encode_ch_mode mode, int is_second_flight,
                                ptls_handshake_properties_t *properties, const void *client_random,
                                ptls_key_exchange_context_t *key_share_ctx, const char *sni_name, ptls_iovec_t legacy_session_id,
@@ -2299,6 +2303,10 @@ Exit:
 static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_handshake_properties_t *properties,
                              ptls_iovec_t *cookie)
 {
+    /**
+    * TODO: resumption_secret and resumption_ticket should be renamed (e.g., to psk and psk_identity)
+    * because when the PSK is an external PSK, it is not for resumption.
+    */
     ptls_iovec_t resumption_secret = {NULL}, resumption_ticket = {NULL};
     uint32_t obfuscated_ticket_age = 0;
     const char *sni_name = NULL;
