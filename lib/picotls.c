@@ -4052,7 +4052,7 @@ static int try_psk_handshake(ptls_t *tls, size_t *psk_index, int *accept_early_d
         if (external_psk != NULL) {
             if (identity->identity.len == external_psk->identity.len &&
                 memcmp(identity->identity.base, external_psk->identity.base, identity->identity.len) == 0) {
-                *accept_early_data = 1;
+                *accept_early_data = ch->psk.early_data_indication;
                 tls->key_share = NULL;
                 ticket_psk = external_psk->key;
                 goto Found;
