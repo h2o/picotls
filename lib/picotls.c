@@ -1979,7 +1979,7 @@ Exit:
 }
 
 static int select_cipher(ptls_cipher_suite_t **selected, ptls_cipher_suite_t **candidates, const uint8_t *src,
-                         const uint8_t *const end, int server_preference, int server_chacha_priority)
+                         const uint8_t *const end, int server_preference, int server_chacha_priority, uint16_t csid_for_psk)
 {
     size_t found_index = SIZE_MAX;
     int ret;
@@ -1989,7 +1989,7 @@ static int select_cipher(ptls_cipher_suite_t **selected, ptls_cipher_suite_t **c
         if ((ret = ptls_decode16(&id, &src, end)) != 0)
             goto Exit;
         for (size_t i = 0; candidates[i] != NULL; ++i) {
-            if (candidates[i]->id == id) {
+            if (candidates[i]->id == id && (csid_for_psk == 0 || id == csid_for_psk)) {
                 if (server_preference && !(server_chacha_priority && id == PTLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256)) {
                     /* preserve smallest matching index, and proceed to the next input */
                     if (i < found_index) {
@@ -4030,6 +4030,22 @@ static int vec_is_string(ptls_iovec_t x, const char *y)
 }
 
 /**
+ * Will one of the PSKs provided by the client match our external PSK?
+ * FIXME: Find a good way to avoid duplicate code and having to match the PSK here and in try_psk_handshake.
+ */
+static int will_match_external_psk(const struct st_ptls_client_hello_t *ch, const struct st_ptls_external_psk_t *external_psk)
+{
+    for (size_t psk_index = 0; psk_index < ch->psk.identities.count; ++psk_index) {
+        struct st_ptls_client_hello_psk_t *identity = ch->psk.identities.list + psk_index;
+        if (identity->identity.len == external_psk->identity.len &&
+            memcmp(identity->identity.base, external_psk->identity.base, identity->identity.len) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/**
  * Looks for a PSK identity that can be used, and if found, updates the handshake state and returns the necessary variables. If
  * external_psk is set, only tries handshake using those keys provided. Otherwise, tries resumption.
  */
@@ -4268,6 +4284,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
     size_t psk_index = SIZE_MAX;
     ptls_iovec_t pubkey = {0}, ecdh_secret = {0};
     int accept_early_data = 0, is_second_flight = tls->state == PTLS_STATE_SERVER_EXPECT_SECOND_CLIENT_HELLO, ret;
+    int can_try_external_psk = 0;
 
     ptls_buffer_init(&ech.ch_inner, "", 0);
 
@@ -4403,10 +4420,22 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
         }
     }
 
-    { /* select (or check) cipher-suite, create key_schedule */
+    /* can we try external psk handshake below? */
+    can_try_external_psk = (!is_second_flight && ch->psk.hash_end != 0 &&
+        (ch->psk.ke_modes & ((1u << PTLS_PSK_KE_MODE_PSK) | (1u << PTLS_PSK_KE_MODE_PSK_DHE))) != 0 && properties != NULL &&
+        properties->pre_shared_key.identity.base != NULL && properties->pre_shared_key.key.base != NULL && !tls->ctx->require_client_authentication);
+
+    /* select (or check) cipher-suite, create key_schedule */
+    {
+        /* for external PSK, determine a compatible cipher suite; if none specified, it needs to default to a SHA256 one */
+        /* TODO: for resumption PSK, can we get the ticket_csid sooner so we could use that here? */
+        uint16_t csid_for_psk = 0;
+        if (can_try_external_psk && will_match_external_psk(ch, &properties->pre_shared_key))
+            csid_for_psk = properties->pre_shared_key.csid == 0 ? PTLS_CIPHER_SUITE_AES_128_GCM_SHA256 : properties->pre_shared_key.csid;
+
         ptls_cipher_suite_t *cs;
         if ((ret = select_cipher(&cs, tls->ctx->cipher_suites, ch->cipher_suites.base,
-                                 ch->cipher_suites.base + ch->cipher_suites.len, tls->ctx->server_cipher_preference, tls->ctx->server_cipher_chacha_priority)) != 0)
+                                 ch->cipher_suites.base + ch->cipher_suites.len, tls->ctx->server_cipher_preference, tls->ctx->server_cipher_chacha_priority, csid_for_psk)) != 0)
             goto Exit;
         if (!is_second_flight) {
             tls->cipher_suite = cs;
@@ -4458,9 +4487,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
     }
 
     /* try external psk handshake */
-    if (!is_second_flight && ch->psk.hash_end != 0 &&
-        (ch->psk.ke_modes & ((1u << PTLS_PSK_KE_MODE_PSK) | (1u << PTLS_PSK_KE_MODE_PSK_DHE))) != 0 && properties != NULL &&
-        properties->pre_shared_key.identity.base != NULL && !tls->ctx->require_client_authentication) {
+    if (can_try_external_psk) {
         if ((ret = try_psk_handshake(tls, &psk_index, &accept_early_data, ch,
                                      ptls_iovec_init(message.base, ch->psk.hash_end - message.base),
                                      &properties->pre_shared_key)) != 0)
