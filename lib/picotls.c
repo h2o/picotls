@@ -4036,7 +4036,7 @@ static int vec_is_string(ptls_iovec_t x, const char *y)
 static int will_match_external_psk(const struct st_ptls_client_hello_t *ch, const struct st_ptls_external_psk_t *external_psk)
 {
     for (size_t psk_index = 0; psk_index < ch->psk.identities.count; ++psk_index) {
-        struct st_ptls_client_hello_psk_t *identity = ch->psk.identities.list + psk_index;
+        const struct st_ptls_client_hello_psk_t *identity = ch->psk.identities.list + psk_index;
         if (identity->identity.len == external_psk->identity.len &&
             memcmp(identity->identity.base, external_psk->identity.base, identity->identity.len) == 0) {
             return 1;
