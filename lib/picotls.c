@@ -4068,7 +4068,7 @@ static int try_psk_handshake(ptls_t *tls, size_t *psk_index, int *accept_early_d
         if (external_psk != NULL) {
             if (identity->identity.len == external_psk->identity.len &&
                 memcmp(identity->identity.base, external_psk->identity.base, identity->identity.len) == 0) {
-                *accept_early_data = ch->psk.early_data_indication;
+                *accept_early_data = ch->psk.early_data_indication && *psk_index == 0;
                 tls->key_share = NULL;
                 ticket_psk = external_psk->key;
                 goto Found;
@@ -4078,7 +4078,7 @@ static int try_psk_handshake(ptls_t *tls, size_t *psk_index, int *accept_early_d
         /* decrypt ticket and decode */
         if (tls->ctx->encrypt_ticket == NULL || tls->ctx->key_exchanges == NULL)
             continue;
-        int can_accept_early_data = 1;
+        int can_accept_early_data = *psk_index == 0;
         decbuf.off = 0;
         switch (tls->ctx->encrypt_ticket->cb(tls->ctx->encrypt_ticket, tls, 0, &decbuf, identity->identity)) {
         case 0: /* decrypted */
