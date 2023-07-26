@@ -1022,6 +1022,7 @@ typedef struct st_ptls_handshake_properties_t {
     struct st_ptls_external_psk_t {
         ptls_iovec_t identity;
         ptls_iovec_t key;
+        uint16_t csid; /* PTLS_CIPHER_SUITE_XXX; leave 0 to default to one of the SHA256 ones */
     } pre_shared_key;
 } ptls_handshake_properties_t;
 #ifdef _WINDOWS

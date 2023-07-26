@@ -2358,8 +2358,9 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
                 resumption_secret = ptls_iovec_init(NULL, 0);
             }
         } else if (properties->pre_shared_key.identity.base != NULL) {
+            uint16_t csid = properties->pre_shared_key.csid;
             tls->client.offered_psk = 1;
-            tls->cipher_suite = ptls_find_cipher_suite(tls->ctx->cipher_suites, PTLS_CIPHER_SUITE_AES_128_GCM_SHA256);
+            tls->cipher_suite = ptls_find_cipher_suite(tls->ctx->cipher_suites, csid == 0 ? PTLS_CIPHER_SUITE_AES_128_GCM_SHA256 : csid);
             resumption_secret = properties->pre_shared_key.key;
             resumption_ticket = properties->pre_shared_key.identity;
             binder_key_label = "ext binder";
