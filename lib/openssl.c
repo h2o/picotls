@@ -52,6 +52,9 @@
 #ifdef OPENSSL_IS_BORINGSSL
 #include "./chacha20poly1305.h"
 #endif
+#ifdef PTLS_HAVE_AEGIS
+#include "./libaegis.h"
+#endif
 
 #ifdef _WINDOWS
 #ifndef _CRT_SECURE_NO_WARNINGS
@@ -2161,9 +2164,59 @@ ptls_cipher_suite_t ptls_openssl_tls12_ecdhe_ecdsa_chacha20poly1305sha256 = {
     .aead = &ptls_openssl_chacha20poly1305,
     .hash = &ptls_openssl_sha256};
 #endif
+
+
+#if PTLS_HAVE_AEGIS
+ptls_aead_algorithm_t ptls_libaegis_aegis128l = {
+    .name = "AEGIS-128L",
+    .confidentiality_limit = PTLS_AEGIS128L_CONFIDENTIALITY_LIMIT,
+    .integrity_limit = PTLS_AEGIS128L_INTEGRITY_LIMIT,
+    .ctr_cipher = NULL,
+    .ecb_cipher = NULL,
+    .key_size = PTLS_AEGIS128L_KEY_SIZE,
+    .iv_size = PTLS_AEGIS128L_IV_SIZE,
+    .tag_size = PTLS_AEGIS128L_TAG_SIZE,
+    .tls12 = { .fixed_iv_size = 0, .record_iv_size = 0 },
+    .non_temporal = 0,
+    .align_bits = 0,
+    .context_size = sizeof(struct aegis128l_context_t),
+    .setup_crypto = aegis128l_setup_crypto,
+};
+ptls_cipher_suite_t ptls_openssl_aegis128lsha256 = {.id = PTLS_CIPHER_SUITE_AEGIS128L_SHA256,
+                                                    .name = PTLS_CIPHER_SUITE_NAME_AEGIS128L_SHA256,
+                                                    .aead = &ptls_libaegis_aegis128l,
+                                                    .hash = &ptls_openssl_sha256};
+
+ptls_aead_algorithm_t ptls_libaegis_aegis256 = {
+    .name = "AEGIS-256",
+    .confidentiality_limit = PTLS_AEGIS256_CONFIDENTIALITY_LIMIT,
+    .integrity_limit = PTLS_AEGIS256_INTEGRITY_LIMIT,
+    .ctr_cipher = NULL,
+    .ecb_cipher = NULL,
+    .key_size = PTLS_AEGIS256_KEY_SIZE,
+    .iv_size = PTLS_AEGIS256_IV_SIZE,
+    .tag_size = PTLS_AEGIS256_TAG_SIZE,
+    .tls12 = { .fixed_iv_size = 0, .record_iv_size = 0 },
+    .non_temporal = 0,
+    .align_bits = 0,
+    .context_size = sizeof(struct aegis256_context_t),
+    .setup_crypto = aegis256_setup_crypto,
+};
+ptls_cipher_suite_t ptls_openssl_aegis256sha384 = {.id = PTLS_CIPHER_SUITE_AEGIS256_SHA384,
+                                                    .name = PTLS_CIPHER_SUITE_NAME_AEGIS256_SHA384,
+                                                    .aead = &ptls_libaegis_aegis256,
+                                                    .hash = &ptls_openssl_sha384};
+#endif
+
+
+
 ptls_cipher_suite_t *ptls_openssl_cipher_suites[] = {&ptls_openssl_aes256gcmsha384, &ptls_openssl_aes128gcmsha256,
 #if PTLS_OPENSSL_HAVE_CHACHA20_POLY1305
                                                      &ptls_openssl_chacha20poly1305sha256,
+#endif
+#if PTLS_HAVE_AEGIS
+                                                     &ptls_openssl_aegis128lsha256,
+                                                     &ptls_openssl_aegis256sha384,
 #endif
                                                      NULL};
 
