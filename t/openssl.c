@@ -562,9 +562,11 @@ int main(int argc, char **argv)
                                           .server = {.create_opener = &ech_create_opener,
                                                      .retry_configs = {(uint8_t *)ECH_CONFIG_LIST, sizeof(ECH_CONFIG_LIST) - 1}}},
                                   .sign_certificate = &openssl_sign_certificate.super};
-    assert(openssl_ctx.cipher_suites[0]->hash->digest_size == 48); /* sha384 */
     ptls_context_t openssl_ctx_sha256only = openssl_ctx;
-    ++openssl_ctx_sha256only.cipher_suites;
+    while (openssl_ctx_sha256only.cipher_suites[0]->hash->digest_size != 32) {
+        assert(openssl_ctx.cipher_suites[0]->hash->digest_size == 48); /* sha384 */
+        ++openssl_ctx_sha256only.cipher_suites;
+    }
     assert(openssl_ctx_sha256only.cipher_suites[0]->hash->digest_size == 32); /* sha256 */
 
     ctx = ctx_peer = &openssl_ctx;

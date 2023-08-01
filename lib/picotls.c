@@ -39,6 +39,10 @@
 #include "picotls-probes.h"
 #endif
 
+#ifdef PTLS_HAVE_AEGIS
+#include <aegis.h>
+#endif
+
 #define PTLS_MAX_PLAINTEXT_RECORD_SIZE 16384
 #define PTLS_MAX_ENCRYPTED_RECORD_SIZE (16384 + 256)
 
