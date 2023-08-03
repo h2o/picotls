@@ -196,7 +196,7 @@ ENDIF ()
 
 IF (BUILD_FUZZER)
     IF (NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-        MESSAGE(FATAL ERROR "The fuzzer needs clang as a compiler")
+        MESSAGE(FATAL_ERROR "The fuzzer needs clang as a compiler")
     ENDIF()
 
     ADD_EXECUTABLE(fuzz-asn1 fuzz/fuzz-asn1.c)
