@@ -1418,6 +1418,10 @@ int ptls_build_tls12_export_params(ptls_context_t *ctx, ptls_buffer_t *output, i
                                    ptls_cipher_suite_t *cipher, const void *master_secret, const void *hello_randoms,
                                    uint64_t next_send_record_iv, const char *server_name, ptls_iovec_t negotiated_protocol);
 /**
+ * store the parameters of a post-handshake TLS connection so that it can be reconstructed later
+ */
+int ptls_export(ptls_t *tls, ptls_buffer_t *output);
+/**
  * create a post-handshake TLS connection object using given parameters
  */
 int ptls_import(ptls_context_t *ctx, ptls_t **tls, ptls_iovec_t params);
