@@ -1539,9 +1539,9 @@ static void do_test_pre_shared_key(int clear_ke)
     if (clear_ke)
         ctx->key_exchanges = NULL;
     ctx->max_early_data_size = 16384;
-    assert(ctx->pre_shared_key.identity.len == 0 && ctx->pre_shared_key.key.len == 0);
+    assert(ctx->pre_shared_key.identity.len == 0 && ctx->pre_shared_key.secret.len == 0);
     ctx->pre_shared_key.identity = ptls_iovec_init("", 1);
-    ctx->pre_shared_key.key = ptls_iovec_init("hello world", 11);
+    ctx->pre_shared_key.secret = ptls_iovec_init("hello world", 11);
 
     ptls_t *client = ptls_new(ctx, 0), *server = ptls_new(ctx, 1);
     ptls_buffer_t cbuf, sbuf, decbuf;
@@ -1626,7 +1626,7 @@ static void do_test_pre_shared_key(int clear_ke)
     ctx->key_exchanges = backup.key_exchanges;
     ctx->max_early_data_size = backup.max_early_data_size;
     ctx->pre_shared_key.identity = ptls_iovec_init(NULL, 0);
-    ctx->pre_shared_key.key = ptls_iovec_init(NULL, 0);
+    ctx->pre_shared_key.secret = ptls_iovec_init(NULL, 0);
 }
 
 static void test_pre_shared_key(void)

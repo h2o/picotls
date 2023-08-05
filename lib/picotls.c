@@ -2362,7 +2362,7 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
         tls->client.offered_psk = 1;
         tls->cipher_suite =
             ptls_find_cipher_suite(tls->ctx->cipher_suites, csid == 0 ? PTLS_CIPHER_SUITE_AES_128_GCM_SHA256 : csid);
-        psk_secret = tls->ctx->pre_shared_key.key;
+        psk_secret = tls->ctx->pre_shared_key.secret;
         psk_identity = tls->ctx->pre_shared_key.identity;
         binder_key_label = "ext binder";
         if (!is_second_flight && properties->client.max_early_data_size != NULL) {
@@ -4055,7 +4055,7 @@ static int try_psk_handshake(ptls_t *tls, size_t *psk_index, int *accept_early_d
                              ptls_iovec_t ch_trunc, const struct st_ptls_external_psk_t *external_psk)
 {
     ptls_buffer_t decbuf;
-    ptls_iovec_t ticket_psk, ticket_server_name, ticket_negotiated_protocol;
+    ptls_iovec_t secret, ticket_server_name, ticket_negotiated_protocol;
     uint64_t issue_at, now = tls->ctx->get_time->cb(tls->ctx->get_time);
     uint32_t age_add;
     uint16_t ticket_key_exchange_id, ticket_csid;
@@ -4072,7 +4072,7 @@ static int try_psk_handshake(ptls_t *tls, size_t *psk_index, int *accept_early_d
                 memcmp(identity->identity.base, external_psk->identity.base, identity->identity.len) == 0) {
                 *accept_early_data = ch->psk.early_data_indication && *psk_index == 0;
                 tls->key_share = NULL;
-                ticket_psk = external_psk->key;
+                secret = external_psk->secret;
                 goto Found;
             }
             continue;
@@ -4091,7 +4091,7 @@ static int try_psk_handshake(ptls_t *tls, size_t *psk_index, int *accept_early_d
         default: /* decryption failure */
             continue;
         }
-        if (decode_session_identifier(&issue_at, &ticket_psk, &age_add, &ticket_server_name, &ticket_key_exchange_id, &ticket_csid,
+        if (decode_session_identifier(&issue_at, &secret, &age_add, &ticket_server_name, &ticket_key_exchange_id, &ticket_csid,
                                       &ticket_negotiated_protocol, decbuf.base, decbuf.base + decbuf.off) != 0)
             continue;
         /* check age */
@@ -4137,7 +4137,7 @@ static int try_psk_handshake(ptls_t *tls, size_t *psk_index, int *accept_early_d
                 continue;
         }
         /* check the length of the decrypted psk and the PSK binder */
-        if (ticket_psk.len != tls->key_schedule->hashes[0].algo->digest_size)
+        if (secret.len != tls->key_schedule->hashes[0].algo->digest_size)
             continue;
         if (ch->psk.identities.list[*psk_index].binder.len != tls->key_schedule->hashes[0].algo->digest_size)
             continue;
@@ -4154,7 +4154,7 @@ static int try_psk_handshake(ptls_t *tls, size_t *psk_index, int *accept_early_d
     goto Exit;
 
 Found:
-    if ((ret = key_schedule_extract(tls->key_schedule, ticket_psk)) != 0)
+    if ((ret = key_schedule_extract(tls->key_schedule, secret)) != 0)
         goto Exit;
     if ((ret = derive_secret(tls->key_schedule, binder_key, external_psk ? "ext binder" : "res binder")) != 0)
         goto Exit;
@@ -4426,7 +4426,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
     can_try_external_psk = (!is_second_flight && ch->psk.hash_end != 0 &&
                             (ch->psk.ke_modes & ((1u << PTLS_PSK_KE_MODE_PSK) | (1u << PTLS_PSK_KE_MODE_PSK_DHE))) != 0 &&
                             properties != NULL && tls->ctx->pre_shared_key.identity.base != NULL &&
-                            tls->ctx->pre_shared_key.key.base != NULL && !tls->ctx->require_client_authentication);
+                            tls->ctx->pre_shared_key.secret.base != NULL && !tls->ctx->require_client_authentication);
 
     /* select (or check) cipher-suite, create key_schedule */
     {
