@@ -383,6 +383,8 @@ static void usage(const char *cmd)
            "                       client, the argument specifies the public keys that the\n"
            "                       server is expected to use. When running as a server, the\n"
            "                       argument is ignored.\n"
+           "  -p psk-identity      name of the PSK key; if set, -c and -C specify the\n"
+           "                       pre-shared secret\n"
            "  -u                   update the traffic key when handshake is complete\n"
            "  -v                   verify peer using the default certificates\n"
            "  -V CA-root-file      verify peer using the CA Root File\n"
@@ -445,7 +447,7 @@ int main(int argc, char **argv)
     int family = 0;
     const char *raw_pub_key_file = NULL, *cert_location = NULL;
 
-    while ((ch = getopt(argc, argv, "46abBC:c:i:Ij:k:nN:es:Sr:E:K:l:y:vV:h")) != -1) {
+    while ((ch = getopt(argc, argv, "46abBC:c:i:Ij:k:nN:es:Sr:p:E:K:l:y:vV:h")) != -1) {
         switch (ch) {
         case '4':
             family = AF_INET;
@@ -496,6 +498,9 @@ int main(int argc, char **argv)
             break;
         case 'r':
             raw_pub_key_file = optarg;
+            break;
+        case 'p':
+            ctx.pre_shared_key.identity = ptls_iovec_init(optarg, strlen(optarg));
             break;
         case 's':
             setup_session_file(&ctx, &hsprop, optarg);
@@ -593,8 +598,14 @@ int main(int argc, char **argv)
             EVP_PKEY_free(pubkey);
         }
         ctx.use_raw_public_keys = 1;
+    } else if (ctx.pre_shared_key.identity.base != NULL) {
+        if (cert_location == NULL) {
+            fprintf(stderr, "-p must be used with -C or -c\n");
+            return 1;
+        }
+        ctx.pre_shared_key.secret = load_file(cert_location);
     } else {
-        if (cert_location)
+        if (cert_location != NULL)
             load_certificate_chain(&ctx, cert_location);
     }
 
@@ -604,12 +615,8 @@ int main(int argc, char **argv)
     }
 
     if (is_server) {
-        if (ctx.certificates.count == 0) {
-            fprintf(stderr, "-c and -k options must be set\n");
-            return 1;
-        }
 #if PICOTLS_USE_BROTLI
-        if (ctx.decompress_certificate != NULL) {
+        if (ctx.certificates.count != 0 && ctx.decompress_certificate != NULL) {
             static ptls_emit_compressed_certificate_t ecc;
             if (ptls_init_compressed_certificate(&ecc, ctx.certificates.list, ctx.certificates.count, ptls_iovec_init(NULL, 0)) !=
                 0) {
