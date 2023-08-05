@@ -2340,7 +2340,8 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
             }
         }
         /* setup resumption-related data. If successful, resumption_secret becomes a non-zero value. */
-        if (properties->client.session_ticket.base != NULL && tls->ctx->key_exchanges != NULL) {
+        if (properties->client.session_ticket.base != NULL && tls->ctx->key_exchanges != NULL &&
+            tls->ctx->pre_shared_key.identity.base == NULL) {
             ptls_key_exchange_algorithm_t *key_share = NULL;
             ptls_cipher_suite_t *cipher_suite = NULL;
             uint32_t max_early_data_size;
@@ -2359,25 +2360,31 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
             } else {
                 resumption_secret = ptls_iovec_init(NULL, 0);
             }
-        } else if (properties->pre_shared_key.identity.base != NULL) {
-            uint16_t csid = properties->pre_shared_key.csid;
-            tls->client.offered_psk = 1;
-            tls->cipher_suite = ptls_find_cipher_suite(tls->ctx->cipher_suites, csid == 0 ? PTLS_CIPHER_SUITE_AES_128_GCM_SHA256 : csid);
-            resumption_secret = properties->pre_shared_key.key;
-            resumption_ticket = properties->pre_shared_key.identity;
-            binder_key_label = "ext binder";
-            if (!is_second_flight && properties->client.max_early_data_size != NULL) {
-                tls->client.using_early_data = 1;
-                *properties->client.max_early_data_size = SIZE_MAX;
-            }
         }
-        if (tls->client.using_early_data) {
-            properties->client.early_data_acceptance = PTLS_EARLY_DATA_ACCEPTANCE_UNKNOWN;
-        } else {
-            if (properties->client.max_early_data_size != NULL)
-                *properties->client.max_early_data_size = 0;
-            properties->client.early_data_acceptance = PTLS_EARLY_DATA_REJECTED;
+    }
+
+    /* try PSK unless we are trying to resume */
+    if (tls->ctx->pre_shared_key.identity.base != NULL) {
+        assert(resumption_secret.base == NULL);
+        uint16_t csid = tls->ctx->pre_shared_key.csid;
+        tls->client.offered_psk = 1;
+        tls->cipher_suite = ptls_find_cipher_suite(tls->ctx->cipher_suites, csid == 0 ? PTLS_CIPHER_SUITE_AES_128_GCM_SHA256 : csid);
+        resumption_secret = tls->ctx->pre_shared_key.key;
+        resumption_ticket = tls->ctx->pre_shared_key.identity;
+        binder_key_label = "ext binder";
+        if (!is_second_flight && properties->client.max_early_data_size != NULL) {
+            tls->client.using_early_data = 1;
+            *properties->client.max_early_data_size = SIZE_MAX;
         }
+    }
+
+    /* send 0-RTT related signals back to the client */
+    if (tls->client.using_early_data) {
+        properties->client.early_data_acceptance = PTLS_EARLY_DATA_ACCEPTANCE_UNKNOWN;
+    } else {
+        if (properties->client.max_early_data_size != NULL)
+            *properties->client.max_early_data_size = 0;
+        properties->client.early_data_acceptance = PTLS_EARLY_DATA_REJECTED;
     }
 
     /* use the default key share if still not undetermined */
@@ -4052,7 +4059,7 @@ static int will_match_external_psk(const struct st_ptls_client_hello_t *ch, cons
  * external_psk is set, only tries handshake using those keys provided. Otherwise, tries resumption.
  */
 static int try_psk_handshake(ptls_t *tls, size_t *psk_index, int *accept_early_data, struct st_ptls_client_hello_t *ch,
-                             ptls_iovec_t ch_trunc, struct st_ptls_external_psk_t *external_psk)
+                             ptls_iovec_t ch_trunc, const struct st_ptls_external_psk_t *external_psk)
 {
     ptls_buffer_t decbuf;
     ptls_iovec_t ticket_psk, ticket_server_name, ticket_negotiated_protocol;
@@ -4424,16 +4431,18 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
 
     /* can we try external psk handshake below? */
     can_try_external_psk = (!is_second_flight && ch->psk.hash_end != 0 &&
-        (ch->psk.ke_modes & ((1u << PTLS_PSK_KE_MODE_PSK) | (1u << PTLS_PSK_KE_MODE_PSK_DHE))) != 0 && properties != NULL &&
-        properties->pre_shared_key.identity.base != NULL && properties->pre_shared_key.key.base != NULL && !tls->ctx->require_client_authentication);
+                            (ch->psk.ke_modes & ((1u << PTLS_PSK_KE_MODE_PSK) | (1u << PTLS_PSK_KE_MODE_PSK_DHE))) != 0 &&
+                            properties != NULL && tls->ctx->pre_shared_key.identity.base != NULL &&
+                            tls->ctx->pre_shared_key.key.base != NULL && !tls->ctx->require_client_authentication);
 
     /* select (or check) cipher-suite, create key_schedule */
     {
         /* for external PSK, determine a compatible cipher suite; if none specified, it needs to default to a SHA256 one */
         /* TODO: for resumption PSK, can we get the ticket_csid sooner so we could use that here? */
         uint16_t csid_for_psk = 0;
-        if (can_try_external_psk && will_match_external_psk(ch, &properties->pre_shared_key))
-            csid_for_psk = properties->pre_shared_key.csid == 0 ? PTLS_CIPHER_SUITE_AES_128_GCM_SHA256 : properties->pre_shared_key.csid;
+        if (can_try_external_psk && will_match_external_psk(ch, &tls->ctx->pre_shared_key))
+            csid_for_psk =
+                tls->ctx->pre_shared_key.csid == 0 ? PTLS_CIPHER_SUITE_AES_128_GCM_SHA256 : tls->ctx->pre_shared_key.csid;
 
         ptls_cipher_suite_t *cs;
         if ((ret = select_cipher(&cs, tls->ctx->cipher_suites, ch->cipher_suites.base,
@@ -4492,7 +4501,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
     if (can_try_external_psk) {
         if ((ret = try_psk_handshake(tls, &psk_index, &accept_early_data, ch,
                                      ptls_iovec_init(message.base, ch->psk.hash_end - message.base),
-                                     &properties->pre_shared_key)) != 0)
+                                     &tls->ctx->pre_shared_key)) != 0)
             goto Exit;
     }
 

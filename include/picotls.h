@@ -774,6 +774,14 @@ struct st_ptls_context_t {
         size_t count;
     } certificates;
     /**
+     * if set, the endpoints negotiate using the provided pre-shared key
+     */
+    struct st_ptls_external_psk_t {
+        ptls_iovec_t identity;
+        ptls_iovec_t key;
+        uint16_t csid; /* PTLS_CIPHER_SUITE_XXX; leave 0 to default to one of the SHA256 ones */
+    } pre_shared_key;
+    /**
      * ECH
      */
     struct {
@@ -1016,14 +1024,6 @@ typedef struct st_ptls_handshake_properties_t {
      * an optional callback that reports the extensions being collected
      */
     int (*collected_extensions)(ptls_t *tls, struct st_ptls_handshake_properties_t *properties, ptls_raw_extension_t *extensions);
-    /**
-     * [optional] if set, the endpoints negotiate using the provided pre-shared key
-     */
-    struct st_ptls_external_psk_t {
-        ptls_iovec_t identity;
-        ptls_iovec_t key;
-        uint16_t csid; /* PTLS_CIPHER_SUITE_XXX; leave 0 to default to one of the SHA256 ones */
-    } pre_shared_key;
 } ptls_handshake_properties_t;
 #ifdef _WINDOWS
 #pragma warning(pop)
