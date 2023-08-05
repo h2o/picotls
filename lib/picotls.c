@@ -2113,16 +2113,12 @@ static inline size_t outer_ech_header_size(size_t enc_size)
  */
 enum encode_ch_mode { ENCODE_CH_MODE_INNER, ENCODE_CH_MODE_ENCODED_INNER, ENCODE_CH_MODE_OUTER };
 
-/**
- * TODO: resumption_secret and resumption_ticket should be renamed (e.g., to psk and psk_identity)
- * because when the PSK is an external PSK, it is not for resumption.
- */
 static int encode_client_hello(ptls_context_t *ctx, ptls_buffer_t *sendbuf, enum encode_ch_mode mode, int is_second_flight,
                                ptls_handshake_properties_t *properties, const void *client_random,
                                ptls_key_exchange_context_t *key_share_ctx, const char *sni_name, ptls_iovec_t legacy_session_id,
-                               struct st_ptls_ech_t *ech, size_t *ech_size_offset, ptls_iovec_t ech_replay,
-                               ptls_iovec_t resumption_secret, ptls_iovec_t resumption_ticket, uint32_t obfuscated_ticket_age,
-                               size_t psk_binder_size, ptls_iovec_t *cookie, int using_early_data)
+                               struct st_ptls_ech_t *ech, size_t *ech_size_offset, ptls_iovec_t ech_replay, ptls_iovec_t psk_secret,
+                               ptls_iovec_t psk_identity, uint32_t obfuscated_ticket_age, size_t psk_binder_size,
+                               ptls_iovec_t *cookie, int using_early_data)
 {
     int ret;
 
@@ -2250,7 +2246,7 @@ static int encode_client_hello(ptls_context_t *ctx, ptls_buffer_t *sendbuf, enum
             }
             if ((ret = push_additional_extensions(properties, sendbuf)) != 0)
                 goto Exit;
-            if (ctx->save_ticket != NULL || resumption_secret.base != NULL) {
+            if (ctx->save_ticket != NULL || psk_secret.base != NULL) {
                 buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_PSK_KEY_EXCHANGE_MODES, {
                     ptls_buffer_push_block(sendbuf, 1, {
                         if (!ctx->require_dhe_on_psk)
@@ -2259,7 +2255,7 @@ static int encode_client_hello(ptls_context_t *ctx, ptls_buffer_t *sendbuf, enum
                     });
                 });
             }
-            if (resumption_secret.base != NULL) {
+            if (psk_secret.base != NULL) {
                 if (using_early_data && !is_second_flight)
                     buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_EARLY_DATA, {});
                 /* pre-shared key "MUST be the last extension in the ClientHello" (draft-17 section 4.2.6) */
@@ -2267,12 +2263,12 @@ static int encode_client_hello(ptls_context_t *ctx, ptls_buffer_t *sendbuf, enum
                     ptls_buffer_push_block(sendbuf, 2, {
                         ptls_buffer_push_block(sendbuf, 2, {
                             if (mode == ENCODE_CH_MODE_OUTER) {
-                                if ((ret = ptls_buffer_reserve(sendbuf, resumption_ticket.len)) != 0)
+                                if ((ret = ptls_buffer_reserve(sendbuf, psk_identity.len)) != 0)
                                     goto Exit;
-                                ctx->random_bytes(sendbuf->base + sendbuf->off, resumption_ticket.len);
-                                sendbuf->off += resumption_ticket.len;
+                                ctx->random_bytes(sendbuf->base + sendbuf->off, psk_identity.len);
+                                sendbuf->off += psk_identity.len;
                             } else {
-                                ptls_buffer_pushv(sendbuf, resumption_ticket.base, resumption_ticket.len);
+                                ptls_buffer_pushv(sendbuf, psk_identity.base, psk_identity.len);
                             }
                         });
                         uint32_t age;
@@ -2305,11 +2301,7 @@ Exit:
 static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_handshake_properties_t *properties,
                              ptls_iovec_t *cookie)
 {
-    /**
-    * TODO: resumption_secret and resumption_ticket should be renamed (e.g., to psk and psk_identity)
-    * because when the PSK is an external PSK, it is not for resumption.
-    */
-    ptls_iovec_t resumption_secret = {NULL}, resumption_ticket = {NULL};
+    ptls_iovec_t psk_secret = {NULL}, psk_identity = {NULL};
     uint32_t obfuscated_ticket_age = 0;
     const char *sni_name = NULL;
     size_t mess_start, msghash_off;
@@ -2345,8 +2337,8 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
             ptls_key_exchange_algorithm_t *key_share = NULL;
             ptls_cipher_suite_t *cipher_suite = NULL;
             uint32_t max_early_data_size;
-            if (decode_stored_session_ticket(tls, &key_share, &cipher_suite, &resumption_secret, &obfuscated_ticket_age,
-                                             &resumption_ticket, &max_early_data_size, properties->client.session_ticket.base,
+            if (decode_stored_session_ticket(tls, &key_share, &cipher_suite, &psk_secret, &obfuscated_ticket_age, &psk_identity,
+                                             &max_early_data_size, properties->client.session_ticket.base,
                                              properties->client.session_ticket.base + properties->client.session_ticket.len) == 0) {
                 tls->client.offered_psk = 1;
                 /* key-share selected by HRR should not be overridden */
@@ -2358,19 +2350,20 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
                     *properties->client.max_early_data_size = max_early_data_size;
                 }
             } else {
-                resumption_secret = ptls_iovec_init(NULL, 0);
+                psk_secret = ptls_iovec_init(NULL, 0);
             }
         }
     }
 
     /* try PSK unless we are trying to resume */
     if (tls->ctx->pre_shared_key.identity.base != NULL) {
-        assert(resumption_secret.base == NULL);
+        assert(psk_secret.base == NULL);
         uint16_t csid = tls->ctx->pre_shared_key.csid;
         tls->client.offered_psk = 1;
-        tls->cipher_suite = ptls_find_cipher_suite(tls->ctx->cipher_suites, csid == 0 ? PTLS_CIPHER_SUITE_AES_128_GCM_SHA256 : csid);
-        resumption_secret = tls->ctx->pre_shared_key.key;
-        resumption_ticket = tls->ctx->pre_shared_key.identity;
+        tls->cipher_suite =
+            ptls_find_cipher_suite(tls->ctx->cipher_suites, csid == 0 ? PTLS_CIPHER_SUITE_AES_128_GCM_SHA256 : csid);
+        psk_secret = tls->ctx->pre_shared_key.key;
+        psk_identity = tls->ctx->pre_shared_key.identity;
         binder_key_label = "ext binder";
         if (!is_second_flight && properties->client.max_early_data_size != NULL) {
             tls->client.using_early_data = 1;
@@ -2402,7 +2395,7 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
     /* initialize key schedule */
     if (!is_second_flight) {
         tls->key_schedule = key_schedule_new(tls->cipher_suite, tls->ctx->cipher_suites, tls->ech.aead != NULL);
-        if ((ret = key_schedule_extract(tls->key_schedule, resumption_secret)) != 0)
+        if ((ret = key_schedule_extract(tls->key_schedule, psk_secret)) != 0)
             goto Exit;
     }
 
@@ -2415,12 +2408,12 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
     if ((ret = encode_client_hello(tls->ctx, emitter->buf, ENCODE_CH_MODE_INNER, is_second_flight, properties,
                                    tls->ech.aead != NULL ? tls->ech.inner_client_random : tls->client_random,
                                    tls->client.key_share_ctx, sni_name, tls->client.legacy_session_id, &tls->ech, NULL,
-                                   tls->ech.client.first_ech, resumption_secret, resumption_ticket, obfuscated_ticket_age,
+                                   tls->ech.client.first_ech, psk_secret, psk_identity, obfuscated_ticket_age,
                                    tls->key_schedule->hashes[0].algo->digest_size, cookie, tls->client.using_early_data)) != 0)
         goto Exit;
 
     /* update the message hash, filling in the PSK binder HMAC if necessary */
-    if (resumption_secret.base != NULL) {
+    if (psk_secret.base != NULL) {
         size_t psk_binder_off = emitter->buf->off - (3 + tls->key_schedule->hashes[0].algo->digest_size);
         if ((ret = derive_secret_with_empty_digest(tls->key_schedule, binder_key, binder_key_label)) != 0)
             goto Exit;
@@ -2436,11 +2429,11 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
         /* build EncodedCHInner */
         if ((ret = encode_client_hello(tls->ctx, &encoded_ch_inner, ENCODE_CH_MODE_ENCODED_INNER, is_second_flight, properties,
                                        tls->ech.inner_client_random, tls->client.key_share_ctx, sni_name,
-                                       tls->client.legacy_session_id, &tls->ech, NULL, ptls_iovec_init(NULL, 0), resumption_secret,
-                                       resumption_ticket, obfuscated_ticket_age, tls->key_schedule->hashes[0].algo->digest_size,
-                                       cookie, tls->client.using_early_data)) != 0)
+                                       tls->client.legacy_session_id, &tls->ech, NULL, ptls_iovec_init(NULL, 0), psk_secret,
+                                       psk_identity, obfuscated_ticket_age, tls->key_schedule->hashes[0].algo->digest_size, cookie,
+                                       tls->client.using_early_data)) != 0)
             goto Exit;
-        if (resumption_secret.base != NULL)
+        if (psk_secret.base != NULL)
             memcpy(encoded_ch_inner.base + encoded_ch_inner.off - tls->key_schedule->hashes[0].algo->digest_size,
                    emitter->buf->base + emitter->buf->off - tls->key_schedule->hashes[0].algo->digest_size,
                    tls->key_schedule->hashes[0].algo->digest_size);
@@ -2470,7 +2463,7 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
         if ((ret = encode_client_hello(tls->ctx, emitter->buf, ENCODE_CH_MODE_OUTER, is_second_flight, properties,
                                        tls->client_random, tls->client.key_share_ctx, tls->ech.client.public_name,
                                        tls->client.legacy_session_id, &tls->ech, &ech_size_offset, ptls_iovec_init(NULL, 0),
-                                       resumption_secret, resumption_ticket, obfuscated_ticket_age,
+                                       psk_secret, psk_identity, obfuscated_ticket_age,
                                        tls->key_schedule->hashes[0].algo->digest_size, cookie, tls->client.using_early_data)) != 0)
             goto Exit;
         /* overwrite ECH payload */
@@ -2509,7 +2502,7 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
         if ((ret = push_change_cipher_spec(tls, emitter)) != 0)
             goto Exit;
     }
-    if (resumption_secret.base != NULL && !is_second_flight) {
+    if (psk_secret.base != NULL && !is_second_flight) {
         if ((ret = derive_exporter_secret(tls, 1)) != 0)
             goto Exit;
     }
@@ -4445,8 +4438,9 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
                 tls->ctx->pre_shared_key.csid == 0 ? PTLS_CIPHER_SUITE_AES_128_GCM_SHA256 : tls->ctx->pre_shared_key.csid;
 
         ptls_cipher_suite_t *cs;
-        if ((ret = select_cipher(&cs, tls->ctx->cipher_suites, ch->cipher_suites.base,
-                                 ch->cipher_suites.base + ch->cipher_suites.len, tls->ctx->server_cipher_preference, tls->ctx->server_cipher_chacha_priority, csid_for_psk)) != 0)
+        if ((ret =
+                 select_cipher(&cs, tls->ctx->cipher_suites, ch->cipher_suites.base, ch->cipher_suites.base + ch->cipher_suites.len,
+                               tls->ctx->server_cipher_preference, tls->ctx->server_cipher_chacha_priority, csid_for_psk)) != 0)
             goto Exit;
         if (!is_second_flight) {
             tls->cipher_suite = cs;
@@ -4500,8 +4494,8 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
     /* try external psk handshake */
     if (can_try_external_psk) {
         if ((ret = try_psk_handshake(tls, &psk_index, &accept_early_data, ch,
-                                     ptls_iovec_init(message.base, ch->psk.hash_end - message.base),
-                                     &tls->ctx->pre_shared_key)) != 0)
+                                     ptls_iovec_init(message.base, ch->psk.hash_end - message.base), &tls->ctx->pre_shared_key)) !=
+            0)
             goto Exit;
     }
 
@@ -4578,11 +4572,10 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
                 }
             },
             {
-                if (ech_confirm_off != 0 &&
-                    (ret = ech_calc_confirmation(
-                         tls->key_schedule, emitter->buf->base + ech_confirm_off, tls->ech.inner_client_random,
-                         ECH_CONFIRMATION_HRR,
-                         ptls_iovec_init(emitter->buf->base + sh_start_off, emitter->buf->off - sh_start_off))) != 0)
+                if (ech_confirm_off != 0 && (ret = ech_calc_confirmation(tls->key_schedule, emitter->buf->base + ech_confirm_off,
+                                                                         tls->ech.inner_client_random, ECH_CONFIRMATION_HRR,
+                                                                         ptls_iovec_init(emitter->buf->base + sh_start_off,
+                                                                                         emitter->buf->off - sh_start_off))) != 0)
                     goto Exit;
             });
         if (retry_uses_cookie) {
