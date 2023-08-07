@@ -2373,12 +2373,14 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
     }
 
     /* send 0-RTT related signals back to the client */
-    if (tls->client.using_early_data) {
-        properties->client.early_data_acceptance = PTLS_EARLY_DATA_ACCEPTANCE_UNKNOWN;
-    } else {
-        if (properties->client.max_early_data_size != NULL)
-            *properties->client.max_early_data_size = 0;
-        properties->client.early_data_acceptance = PTLS_EARLY_DATA_REJECTED;
+    if (properties != NULL) {
+        if (tls->client.using_early_data) {
+            properties->client.early_data_acceptance = PTLS_EARLY_DATA_ACCEPTANCE_UNKNOWN;
+        } else {
+            if (properties->client.max_early_data_size != NULL)
+                *properties->client.max_early_data_size = 0;
+            properties->client.early_data_acceptance = PTLS_EARLY_DATA_REJECTED;
+        }
     }
 
     /* use the default key share if still not undetermined */
