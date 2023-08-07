@@ -4423,10 +4423,8 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
                             tls->ctx->pre_shared_key.identity.base != NULL && tls->ctx->pre_shared_key.secret.base != NULL &&
                             !tls->ctx->require_client_authentication);
 
-    /* select (or check) cipher-suite, create key_schedule */
-    {
-        /* for external PSK, determine a compatible cipher suite; if none specified, it needs to default to a SHA256 one */
-        /* TODO: for resumption PSK, can we get the ticket_csid sooner so we could use that here? */
+
+    { /* select (or check) cipher-suite, create key_schedule */
         ptls_cipher_suite_t *cs;
         if ((ret = select_cipher(&cs, tls->ctx->cipher_suites, ch->cipher_suites.base,
                                  ch->cipher_suites.base + ch->cipher_suites.len, tls->ctx->server_cipher_preference,
