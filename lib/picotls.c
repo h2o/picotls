@@ -2604,7 +2604,7 @@ static int decode_server_hello(ptls_t *tls, struct st_ptls_server_hello_t *sh, c
                               break;
                           case PTLS_EXTENSION_TYPE_KEY_SHARE:
                               if (tls->ctx->key_exchanges == NULL) {
-                                  ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+                                  ret = PTLS_ALERT_HANDSHAKE_FAILURE;
                                   goto Exit;
                               }
                               if (sh->is_retry_request) {
