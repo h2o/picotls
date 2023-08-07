@@ -4043,22 +4043,6 @@ static int vec_is_string(ptls_iovec_t x, const char *y)
 }
 
 /**
- * Will one of the PSKs provided by the client match our external PSK?
- * FIXME: Find a good way to avoid duplicate code and having to match the PSK here and in try_psk_handshake.
- */
-static int will_match_external_psk(const struct st_ptls_client_hello_t *ch, const struct st_ptls_external_psk_t *external_psk)
-{
-    for (size_t psk_index = 0; psk_index < ch->psk.identities.count; ++psk_index) {
-        const struct st_ptls_client_hello_psk_t *identity = ch->psk.identities.list + psk_index;
-        if (identity->identity.len == external_psk->identity.len &&
-            memcmp(identity->identity.base, external_psk->identity.base, identity->identity.len) == 0) {
-            return 1;
-        }
-    }
-    return 0;
-}
-
-/**
  * Looks for a PSK identity that can be used, and if found, updates the handshake state and returns the necessary variables. If
  * external_psk is set, only tries handshake using those keys provided. Otherwise, tries resumption.
  */
