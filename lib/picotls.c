@@ -2335,7 +2335,7 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
                                         sni_name);
             }
         }
-        /* setup resumption-related data. If successful, resumption_secret becomes a non-zero value. */
+        /* setup resumption-related data. If successful, psk_secret becomes a non-zero value. */
         if (properties->client.session_ticket.base != NULL && tls->ctx->key_exchanges != NULL &&
             tls->ctx->pre_shared_key.identity.base == NULL) {
             ptls_key_exchange_algorithm_t *key_share = NULL;
@@ -2359,9 +2359,8 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
         }
     }
 
-    /* try PSK unless we are trying to resume */
-    if (tls->ctx->pre_shared_key.identity.base != NULL) {
-        assert(psk_secret.base == NULL);
+    /* use external PSK if provided and resumption is not to be used */
+    if (psk_secret.base == NULL && tls->ctx->pre_shared_key.identity.base != NULL) {
         assert(tls->ctx->pre_shared_key.hash != NULL);
         tls->client.offered_psk = 1;
         for (size_t i = 0; tls->ctx->cipher_suites[i] != NULL; ++i) {
