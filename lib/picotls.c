@@ -4281,7 +4281,6 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
     size_t psk_index = SIZE_MAX;
     ptls_iovec_t pubkey = {0}, ecdh_secret = {0};
     int accept_early_data = 0, is_second_flight = tls->state == PTLS_STATE_SERVER_EXPECT_SECOND_CLIENT_HELLO, ret;
-    int can_try_external_psk = 0;
 
     ptls_buffer_init(&ech.ch_inner, "", 0);
 
@@ -4417,13 +4416,6 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
         }
     }
 
-    /* can we try external psk handshake below? */
-    can_try_external_psk = (!is_second_flight && ch->psk.hash_end != 0 &&
-                            (ch->psk.ke_modes & ((1u << PTLS_PSK_KE_MODE_PSK) | (1u << PTLS_PSK_KE_MODE_PSK_DHE))) != 0 &&
-                            tls->ctx->pre_shared_key.identity.base != NULL && tls->ctx->pre_shared_key.secret.base != NULL &&
-                            !tls->ctx->require_client_authentication);
-
-
     { /* select (or check) cipher-suite, create key_schedule */
         ptls_cipher_suite_t *cs;
         if ((ret = select_cipher(&cs, tls->ctx->cipher_suites, ch->cipher_suites.base,
@@ -4480,7 +4472,10 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
     }
 
     /* try external psk handshake */
-    if (can_try_external_psk) {
+    if (!is_second_flight && ch->psk.hash_end != 0 &&
+        (ch->psk.ke_modes & ((1u << PTLS_PSK_KE_MODE_PSK) | (1u << PTLS_PSK_KE_MODE_PSK_DHE))) != 0 &&
+        tls->ctx->pre_shared_key.identity.base != NULL && tls->ctx->pre_shared_key.secret.base != NULL &&
+        !tls->ctx->require_client_authentication) {
         if ((ret = try_psk_handshake(tls, &psk_index, &accept_early_data, ch,
                                      ptls_iovec_init(message.base, ch->psk.hash_end - message.base), &tls->ctx->pre_shared_key)) !=
             0)
