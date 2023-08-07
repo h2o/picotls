@@ -779,7 +779,11 @@ struct st_ptls_context_t {
     struct st_ptls_external_psk_t {
         ptls_iovec_t identity;
         ptls_iovec_t secret;
-        uint16_t csid; /* PTLS_CIPHER_SUITE_XXX; leave 0 to default to one of the SHA256 ones */
+        /**
+         * (mandatory) hash algorithm associated to the PSK; cipher-suites not sharing the same `ptls_hash_algorithm_t` will be
+         * ignored
+         */
+        const ptls_hash_algorithm_t *hash;
     } pre_shared_key;
     /**
      * ECH

@@ -1981,8 +1981,11 @@ Exit:
     return ret;
 }
 
+/**
+ * @param hash optional argument for restricting the underlying hash algorithm
+ */
 static int select_cipher(ptls_cipher_suite_t **selected, ptls_cipher_suite_t **candidates, const uint8_t *src,
-                         const uint8_t *const end, int server_preference, int server_chacha_priority, uint16_t csid_for_psk)
+                         const uint8_t *const end, int server_preference, int server_chacha_priority, ptls_hash_algorithm_t *hash)
 {
     size_t found_index = SIZE_MAX;
     int ret;
@@ -1992,7 +1995,7 @@ static int select_cipher(ptls_cipher_suite_t **selected, ptls_cipher_suite_t **c
         if ((ret = ptls_decode16(&id, &src, end)) != 0)
             goto Exit;
         for (size_t i = 0; candidates[i] != NULL; ++i) {
-            if (candidates[i]->id == id && (csid_for_psk == 0 || id == csid_for_psk)) {
+            if (candidates[i]->id == id && (hash == NULL || candidates[i]->hash == hash)) {
                 if (server_preference && !(server_chacha_priority && id == PTLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256)) {
                     /* preserve smallest matching index, and proceed to the next input */
                     if (i < found_index) {
@@ -2359,10 +2362,15 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
     /* try PSK unless we are trying to resume */
     if (tls->ctx->pre_shared_key.identity.base != NULL) {
         assert(psk_secret.base == NULL);
-        uint16_t csid = tls->ctx->pre_shared_key.csid;
+        assert(tls->ctx->pre_shared_key.hash != NULL);
         tls->client.offered_psk = 1;
-        tls->cipher_suite =
-            ptls_find_cipher_suite(tls->ctx->cipher_suites, csid == 0 ? PTLS_CIPHER_SUITE_AES_128_GCM_SHA256 : csid);
+        for (size_t i = 0; tls->ctx->cipher_suites[i] != NULL; ++i) {
+            if (tls->ctx->cipher_suites[i]->hash == tls->ctx->pre_shared_key.hash) {
+                tls->cipher_suite = tls->ctx->cipher_suites[i];
+                break;
+            }
+        }
+        assert(tls->cipher_suite != NULL && "no compatible cipher-suite provided that matches psk.hash");
         psk_secret = tls->ctx->pre_shared_key.secret;
         psk_identity = tls->ctx->pre_shared_key.identity;
         binder_key_label = "ext binder";
@@ -4428,22 +4436,17 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
     /* can we try external psk handshake below? */
     can_try_external_psk = (!is_second_flight && ch->psk.hash_end != 0 &&
                             (ch->psk.ke_modes & ((1u << PTLS_PSK_KE_MODE_PSK) | (1u << PTLS_PSK_KE_MODE_PSK_DHE))) != 0 &&
-                            properties != NULL && tls->ctx->pre_shared_key.identity.base != NULL &&
-                            tls->ctx->pre_shared_key.secret.base != NULL && !tls->ctx->require_client_authentication);
+                            tls->ctx->pre_shared_key.identity.base != NULL && tls->ctx->pre_shared_key.secret.base != NULL &&
+                            !tls->ctx->require_client_authentication);
 
     /* select (or check) cipher-suite, create key_schedule */
     {
         /* for external PSK, determine a compatible cipher suite; if none specified, it needs to default to a SHA256 one */
         /* TODO: for resumption PSK, can we get the ticket_csid sooner so we could use that here? */
-        uint16_t csid_for_psk = 0;
-        if (can_try_external_psk && will_match_external_psk(ch, &tls->ctx->pre_shared_key))
-            csid_for_psk =
-                tls->ctx->pre_shared_key.csid == 0 ? PTLS_CIPHER_SUITE_AES_128_GCM_SHA256 : tls->ctx->pre_shared_key.csid;
-
         ptls_cipher_suite_t *cs;
-        if ((ret =
-                 select_cipher(&cs, tls->ctx->cipher_suites, ch->cipher_suites.base, ch->cipher_suites.base + ch->cipher_suites.len,
-                               tls->ctx->server_cipher_preference, tls->ctx->server_cipher_chacha_priority, csid_for_psk)) != 0)
+        if ((ret = select_cipher(&cs, tls->ctx->cipher_suites, ch->cipher_suites.base,
+                                 ch->cipher_suites.base + ch->cipher_suites.len, tls->ctx->server_cipher_preference,
+                                 tls->ctx->server_cipher_chacha_priority, tls->ctx->pre_shared_key.hash)) != 0)
             goto Exit;
         if (!is_second_flight) {
             tls->cipher_suite = cs;

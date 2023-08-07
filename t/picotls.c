@@ -1542,6 +1542,13 @@ static void do_test_pre_shared_key(int clear_ke)
     assert(ctx->pre_shared_key.identity.len == 0 && ctx->pre_shared_key.secret.len == 0);
     ctx->pre_shared_key.identity = ptls_iovec_init("", 1);
     ctx->pre_shared_key.secret = ptls_iovec_init("hello world", 11);
+    for (size_t i = 0; ctx->cipher_suites[i] != NULL; ++i) {
+        if (strcmp(ctx->cipher_suites[i]->hash->name, "sha256") == 0) {
+            ctx->pre_shared_key.hash = ctx->cipher_suites[i]->hash;
+            break;
+        }
+    }
+    assert(ctx->pre_shared_key.hash != NULL);
 
     ptls_t *client = ptls_new(ctx, 0), *server = ptls_new(ctx, 1);
     ptls_buffer_t cbuf, sbuf, decbuf;
@@ -1627,6 +1634,7 @@ static void do_test_pre_shared_key(int clear_ke)
     ctx->max_early_data_size = backup.max_early_data_size;
     ctx->pre_shared_key.identity = ptls_iovec_init(NULL, 0);
     ctx->pre_shared_key.secret = ptls_iovec_init(NULL, 0);
+    ctx->pre_shared_key.hash = NULL;
 }
 
 static void test_pre_shared_key(void)
