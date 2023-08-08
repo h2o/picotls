@@ -555,7 +555,7 @@ int main(int argc, char **argv)
     ptls_context_t openssl_ctx = {.random_bytes = ptls_openssl_random_bytes,
                                   .get_time = &ptls_get_time,
                                   .key_exchanges = ptls_openssl_key_exchanges,
-                                  .cipher_suites = ptls_openssl_cipher_suites,
+                                  .cipher_suites = ptls_openssl_cipher_suites_all,
                                   .tls12_cipher_suites = ptls_openssl_tls12_cipher_suites,
                                   .certificates = {&cert, 1},
                                   .ech = {.client = {.ciphers = ptls_openssl_hpke_cipher_suites, .kems = ptls_openssl_hpke_kems},

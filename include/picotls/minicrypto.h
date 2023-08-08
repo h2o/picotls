@@ -58,6 +58,7 @@ extern ptls_cipher_suite_t ptls_minicrypto_aegis128lsha256;
 extern ptls_cipher_suite_t ptls_minicrypto_aegis256sha384;
 #endif
 extern ptls_cipher_suite_t *ptls_minicrypto_cipher_suites[];
+extern ptls_cipher_suite_t *ptls_minicrypto_cipher_suites_all[];
 
 typedef struct st_ptls_asn1_pkcs8_private_key_t {
     ptls_iovec_t vec;

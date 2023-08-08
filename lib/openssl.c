@@ -2167,7 +2167,7 @@ ptls_cipher_suite_t ptls_openssl_tls12_ecdhe_ecdsa_chacha20poly1305sha256 = {
 
 
 #if PTLS_HAVE_AEGIS
-ptls_aead_algorithm_t ptls_libaegis_aegis128l = {
+ptls_aead_algorithm_t ptls_openssl_aegis128l = {
     .name = "AEGIS-128L",
     .confidentiality_limit = PTLS_AEGIS128L_CONFIDENTIALITY_LIMIT,
     .integrity_limit = PTLS_AEGIS128L_INTEGRITY_LIMIT,
@@ -2184,10 +2184,10 @@ ptls_aead_algorithm_t ptls_libaegis_aegis128l = {
 };
 ptls_cipher_suite_t ptls_openssl_aegis128lsha256 = {.id = PTLS_CIPHER_SUITE_AEGIS128L_SHA256,
                                                     .name = PTLS_CIPHER_SUITE_NAME_AEGIS128L_SHA256,
-                                                    .aead = &ptls_libaegis_aegis128l,
+                                                    .aead = &ptls_openssl_aegis128l,
                                                     .hash = &ptls_openssl_sha256};
 
-ptls_aead_algorithm_t ptls_libaegis_aegis256 = {
+ptls_aead_algorithm_t ptls_openssl_aegis256 = {
     .name = "AEGIS-256",
     .confidentiality_limit = PTLS_AEGIS256_CONFIDENTIALITY_LIMIT,
     .integrity_limit = PTLS_AEGIS256_INTEGRITY_LIMIT,
@@ -2204,27 +2204,37 @@ ptls_aead_algorithm_t ptls_libaegis_aegis256 = {
 };
 ptls_cipher_suite_t ptls_openssl_aegis256sha384 = {.id = PTLS_CIPHER_SUITE_AEGIS256_SHA384,
                                                     .name = PTLS_CIPHER_SUITE_NAME_AEGIS256_SHA384,
-                                                    .aead = &ptls_libaegis_aegis256,
+                                                    .aead = &ptls_openssl_aegis256,
                                                     .hash = &ptls_openssl_sha384};
 #endif
 
 
 
 ptls_cipher_suite_t *ptls_openssl_cipher_suites[] = {// ciphers used with sha384 (must be first)
-#if PTLS_HAVE_AEGIS
-                                                     &ptls_openssl_aegis256sha384,
-#endif
                                                      &ptls_openssl_aes256gcmsha384,
 
                                                      // ciphers used with sha256
-#if PTLS_HAVE_AEGIS
-                                                     &ptls_openssl_aegis128lsha256,
-#endif
                                                      &ptls_openssl_aes128gcmsha256,
 #if PTLS_OPENSSL_HAVE_CHACHA20_POLY1305
                                                      &ptls_openssl_chacha20poly1305sha256,
 #endif
                                                      NULL};
+
+ptls_cipher_suite_t *ptls_openssl_cipher_suites_all[] = {// ciphers used with sha384 (must be first)
+#if PTLS_HAVE_AEGIS
+                                                        &ptls_openssl_aegis256sha384,
+#endif
+                                                        &ptls_openssl_aes256gcmsha384,
+
+                                                        // ciphers used with sha256
+#if PTLS_HAVE_AEGIS
+                                                        &ptls_openssl_aegis128lsha256,
+#endif
+                                                        &ptls_openssl_aes128gcmsha256,
+#if PTLS_OPENSSL_HAVE_CHACHA20_POLY1305
+                                                        &ptls_openssl_chacha20poly1305sha256,
+#endif
+                                                        NULL};
 
 ptls_cipher_suite_t *ptls_openssl_tls12_cipher_suites[] = {&ptls_openssl_tls12_ecdhe_rsa_aes128gcmsha256,
                                                            &ptls_openssl_tls12_ecdhe_ecdsa_aes128gcmsha256,

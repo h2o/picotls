@@ -558,6 +558,10 @@ int main(int argc, char **argv)
 #if PTLS_OPENSSL_HAVE_CHACHA20_POLY1305
             MATCH(chacha20poly1305sha256);
 #endif
+#if PTLS_HAVE_AEGIS
+            MATCH(aegis128lsha256);
+            MATCH(aegis256sha384);
+#endif
 #undef MATCH
             if (cipher_suites[i] == NULL) {
                 fprintf(stderr, "unknown cipher-suite: %s\n", optarg);
@@ -635,7 +639,7 @@ int main(int argc, char **argv)
     if (cipher_suites[0] == NULL) {
         size_t i;
         for (i = 0; ptls_openssl_cipher_suites[i] != NULL; ++i)
-            cipher_suites[i] = ptls_openssl_cipher_suites[i];
+            cipher_suites[i] = ptls_openssl_cipher_suites_all[i];
     }
     if (argc != 2) {
         fprintf(stderr, "missing host and port\n");
