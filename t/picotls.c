@@ -1556,7 +1556,7 @@ static void do_test_pre_shared_key(int clear_ke)
     ptls_buffer_init(&sbuf, "", 0);
     ptls_buffer_init(&decbuf, "", 0);
 
-    ptls_handshake_properties_t client_prop = {};
+    ptls_handshake_properties_t client_prop = {{{{NULL}}}};
     size_t client_max_early_data_size = 0;
     client_prop.client.max_early_data_size = &client_max_early_data_size;
 
