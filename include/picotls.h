@@ -783,7 +783,7 @@ struct st_ptls_context_t {
          * (mandatory) hash algorithm associated to the PSK; cipher-suites not sharing the same `ptls_hash_algorithm_t` will be
          * ignored
          */
-        const ptls_hash_algorithm_t *hash;
+        ptls_hash_algorithm_t *hash;
     } pre_shared_key;
     /**
      * ECH
