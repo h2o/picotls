@@ -494,6 +494,34 @@ static void test_chacha20poly1305(void)
     }
 }
 
+#ifdef PTLS_HAVE_AEGIS
+static void test_aegis128l(void)
+{
+    ptls_cipher_suite_t *cs = find_cipher(ctx, PTLS_CIPHER_SUITE_AEGIS128L_SHA256),
+                        *cs_peer = find_cipher(ctx_peer, PTLS_CIPHER_SUITE_AEGIS128L_SHA256);
+
+    if (cs != NULL && cs_peer != NULL) {
+        test_ciphersuite(cs, cs_peer);
+        test_ciphersuite_stream(cs, cs_peer);
+        test_aad_ciphersuite(cs, cs_peer);
+        test_aad96_ciphersuite(cs, cs_peer);
+    }
+}
+
+static void test_aegis256(void)
+{
+    ptls_cipher_suite_t *cs = find_cipher(ctx, PTLS_CIPHER_SUITE_AEGIS256_SHA384),
+                        *cs_peer = find_cipher(ctx_peer, PTLS_CIPHER_SUITE_AEGIS256_SHA384);
+
+    if (cs != NULL && cs_peer != NULL) {
+        test_ciphersuite(cs, cs_peer);
+        test_ciphersuite_stream(cs, cs_peer);
+        test_aad_ciphersuite(cs, cs_peer);
+        test_aad96_ciphersuite(cs, cs_peer);
+    }
+}
+#endif
+
 static void test_ffx(void)
 {
     static uint8_t ffx_test_source[32] = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
@@ -2112,6 +2140,10 @@ void test_picotls(void)
     subtest("aes128gcm", test_aes128gcm);
     subtest("aes256gcm", test_aes256gcm);
     subtest("chacha20poly1305", test_chacha20poly1305);
+#ifdef PTLS_HAVE_AEGIS
+    subtest("aegis-128l", test_aegis128l);
+    subtest("aegis-256", test_aegis256);
+#endif
     subtest("aes128ecb", test_aes128ecb);
     subtest("aes256ecb", test_aes256ecb);
     subtest("aes128ctr", test_aes128ctr);
