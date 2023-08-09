@@ -639,7 +639,7 @@ int main(int argc, char **argv)
     if (cipher_suites[0] == NULL) {
         size_t i;
         for (i = 0; ptls_openssl_cipher_suites[i] != NULL; ++i)
-            cipher_suites[i] = ptls_openssl_cipher_suites_all[i];
+            cipher_suites[i] = ptls_openssl_cipher_suites[i];
     }
     if (argc != 2) {
         fprintf(stderr, "missing host and port\n");
