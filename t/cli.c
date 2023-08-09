@@ -547,26 +547,28 @@ int main(int argc, char **argv)
             request_key_update = 1;
             break;
         case 'y': {
-            size_t i;
-            for (i = 0; cipher_suites[i] != NULL; ++i)
-                ;
-#define MATCH(name)                                                                                                                \
-    if (cipher_suites[i] == NULL && strcasecmp(optarg, #name) == 0)                                                                \
-    cipher_suites[i] = &ptls_openssl_##name
-            MATCH(aes128gcmsha256);
-            MATCH(aes256gcmsha384);
-#if PTLS_OPENSSL_HAVE_CHACHA20_POLY1305
-            MATCH(chacha20poly1305sha256);
-#endif
-#if PTLS_HAVE_AEGIS
-            MATCH(aegis128lsha256);
-            MATCH(aegis256sha384);
-#endif
-#undef MATCH
-            if (cipher_suites[i] == NULL) {
-                fprintf(stderr, "unknown cipher-suite: %s\n", optarg);
+            /* find the cipher suite to be added from `ptls_openssl_cipher_suites_all` */
+            ptls_cipher_suite_t *added = NULL;
+            for (size_t i = 0; ptls_openssl_cipher_suites_all[i] != NULL; ++i) {
+                if (strcasecmp(ptls_openssl_cipher_suites_all[i]->name, optarg) == 0) {
+                    added = ptls_openssl_cipher_suites_all[i];
+                    break;
+                }
+            }
+            if (added == NULL) {
+                fprintf(stderr, "unknown cipher-suite: %s, use the name defined in RFC 8446, e.g., \"%s\"\n", optarg,
+                        ptls_openssl_cipher_suites[0]->name);
                 exit(1);
             }
+
+            size_t slot;
+            for (slot = 0; cipher_suites[slot] != NULL; ++slot) {
+                if (cipher_suites[slot]->id == added->id) {
+                    fprintf(stderr, "cipher-suite %s is already in list\n", added->name);
+                    exit(1);
+                }
+            }
+            cipher_suites[slot] = added;
         } break;
         case 'h':
             usage(argv[0]);
