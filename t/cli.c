@@ -386,8 +386,7 @@ static void usage(const char *cmd)
            "  -u                   update the traffic key when handshake is complete\n"
            "  -v                   verify peer using the default certificates\n"
            "  -V CA-root-file      verify peer using the CA Root File\n"
-           "  -y cipher-suite      cipher-suite to be used, e.g., aes128gcmsha256 (default:\n"
-           "                       all)\n"
+           "  -y cipher-suite      cipher-suite to be used\n"
            "  -h                   print this help\n"
            "\n"
            "Supported named groups: secp256r1"
@@ -411,8 +410,15 @@ static void usage(const char *cmd)
 #if PTLS_OPENSSL_HAVE_ED25519
            ", ed25519"
 #endif
-           "\n\n",
+           "\n",
            cmd);
+    printf("Supported cipher suites:");
+    for (size_t i = 0; ptls_openssl_cipher_suites_all[i] != NULL; ++i) {
+        if (i != 0)
+            printf(",");
+        printf(" %s", ptls_openssl_cipher_suites_all[i]->name);
+    }
+    printf("\n\n");
 }
 
 int main(int argc, char **argv)
@@ -556,8 +562,7 @@ int main(int argc, char **argv)
                 }
             }
             if (added == NULL) {
-                fprintf(stderr, "unknown cipher-suite: %s, use the name defined in RFC 8446, e.g., \"%s\"\n", optarg,
-                        ptls_openssl_cipher_suites[0]->name);
+                fprintf(stderr, "unknown cipher-suite: %s, see -h for list of cipher-suites supported\n", optarg);
                 exit(1);
             }
 
