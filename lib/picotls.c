@@ -5885,9 +5885,11 @@ int ptls_send(ptls_t *tls, ptls_buffer_t *sendbuf, const void *input, size_t inl
     assert(tls->traffic_protection.enc.aead != NULL);
 
     /* "For AES-GCM, up to 2^24.5 full-size records (about 24 million) may be encrypted on a given connection while keeping a
-     * safety margin of approximately 2^-57 for Authenticated Encryption (AE) security." (RFC 8446 section 5.5)
+     * safety margin of approximately 2^-57 for Authenticated Encryption (AE) security." (RFC 8446 section 5.5).
+     *
+     * Key updates do not happen with tls 1.2, check `key_schedule` to see if we are using tls/1.3
      */
-    if (tls->traffic_protection.enc.seq >= 16777216)
+    if (tls->traffic_protection.enc.seq >= 16777216 && tls->key_schedule != NULL)
         tls->needs_key_update = 1;
 
     if (tls->needs_key_update) {
