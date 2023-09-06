@@ -22,9 +22,10 @@ jobs:
              git clone https://github.com/Mbed-TLS/mbedtls
              cd mbedtls
              echo "cloned mbedtls"
-             ls
-             cmake --build .
+             mkdir build
              cd build
+             cmake -S .. .
+             echo "cmake done"
              make
              cd ../..
 
