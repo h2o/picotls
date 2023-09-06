@@ -12,7 +12,7 @@ ENDIF ()
 FIND_PACKAGE(PkgConfig REQUIRED)
 INCLUDE(cmake/dtrace-utils.cmake)
 INCLUDE(cmake/boringssl-adjust.cmake)
-INCLUDE(cmake/FindMbedTLS.cmake)
+set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 CHECK_DTRACE(${PROJECT_SOURCE_DIR}/picotls-probes.d)
 IF ((CMAKE_SIZEOF_VOID_P EQUAL 8) AND
