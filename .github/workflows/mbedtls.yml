@@ -19,6 +19,7 @@ jobs:
 
       - name: Installing MbedTLS
         run: |
+             cd ..
              git clone https://github.com/Mbed-TLS/mbedtls
              cd mbedtls
              echo "cloned mbedtls"
@@ -29,7 +30,7 @@ jobs:
              make
              echo "compiled MbedTLS"
              pwd
-             cd ../..
+             cd ../../picotls
 
       - name: Compile picotls
         run: |
