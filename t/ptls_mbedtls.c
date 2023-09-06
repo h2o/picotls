@@ -312,7 +312,7 @@ static void test_aes256ecb(void)
 
 static void test_aes256ctr(void)
 {
-    if (test_cipher(&ptls_mbedtls_aes256ctr, &ptls_minicrypto_aes2568ctr) != 0) {
+    if (test_cipher(&ptls_mbedtls_aes256ctr, &ptls_minicrypto_aes256ctr) != 0) {
         ok(!"fail");
     }
     ok(!!"success");
