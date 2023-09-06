@@ -288,7 +288,7 @@ static void test_label_sha256(void)
 
 static void test_aes128ecb(void)
 {
-    if (test_cipher(ptls_mbedtls_aes128ecb, ptls_minicrypto_aes128ecb) != 0) {
+    if (test_cipher(&ptls_mbedtls_aes128ecb, &ptls_minicrypto_aes128ecb) != 0) {
         ok(!"fail");
     }
     ok(!!"success");
@@ -296,7 +296,7 @@ static void test_aes128ecb(void)
 
 static void test_aes128ctr(void)
 {
-    if (test_cipher(ptls_mbedtls_aes128ctr, ptls_minicrypto_aes128ctr) != 0) {
+    if (test_cipher(&ptls_mbedtls_aes128ctr, &ptls_minicrypto_aes128ctr) != 0) {
         ok(!"fail");
     }
     ok(!!"success");
@@ -304,7 +304,7 @@ static void test_aes128ctr(void)
 
 static void test_aes256ecb(void)
 {
-    if (test_cipher(ptls_mbedtls_aes256ecb, ptls_minicrypto_aes256ecb) != 0) {
+    if (test_cipher(&ptls_mbedtls_aes256ecb, &ptls_minicrypto_aes256ecb) != 0) {
         ok(!"fail");
     }
     ok(!!"success");
@@ -312,7 +312,7 @@ static void test_aes256ecb(void)
 
 static void test_aes256ctr(void)
 {
-    if (test_cipher(ptls_mbedtls_aes256ctr, ptls_minicrypto_aes2568ctr) != 0) {
+    if (test_cipher(&ptls_mbedtls_aes256ctr, &ptls_minicrypto_aes2568ctr) != 0) {
         ok(!"fail");
     }
     ok(!!"success");
@@ -329,7 +329,7 @@ static void test_aes128gcm_sha256(void)
 int main(int argc, char **argv)
 {
     /* Initialize the PSA crypto library. */
-    if ((status = psa_crypto_init()) != PSA_SUCCESS) {
+    if (psa_crypto_init() != PSA_SUCCESS) {
         note("psa_crypto_init fails.");
         return done_testing();
     }
