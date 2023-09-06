@@ -26,6 +26,7 @@ find_package_handle_standard_args(MbedTLS REQUIRED_VARS
     MBEDTLS_X509
     MBEDTLS_INCLUDE_DIRS)
     
-if(MbedTLS_FOUND)
+if (MbedTLS_FOUND)
     set(MBEDTLS_LIBRARIES ${MBEDTLS_LIBRARY} ${MBEDTLS_CRYPTO} ${MBEDTLS_X509})
     mark_as_advanced(MBEDTLS_LIBRARIES MBEDTLS_INCLUDE_DIRS)
+endif ()
