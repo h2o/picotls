@@ -21,6 +21,8 @@ jobs:
         run: |
              git clone https://github.com/Mbed-TLS/mbedtls
              cd mbedtls
+             echo "cloned mbedtls"
+             ls
              cmake --build .
              cd build
              make
