@@ -203,7 +203,7 @@ ENDIF ()
 
 IF (WITH_MBEDTLS)
     FIND_PACKAGE(MbedTLS)
-    IF (NOT MbedTLS)
+    IF (NOT MbedTLS_FOUND)
         MESSAGE (FATAL_ERROR "MbedTLS not found")
     ELSE ()
         message(STATUS "mbedtls/include: ${MBEDTLS_INCLUDE_DIRS}")
