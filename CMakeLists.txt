@@ -203,9 +203,7 @@ ENDIF ()
 
 IF (WITH_MBEDTLS)
     FIND_PACKAGE(MbedTLS)
-    IF (NOT MbedTLS_FOUND)
-        MESSAGE (FATAL_ERROR "MbedTLS not found")
-    ELSE ()
+    IF (MbedTLS_FOUND)
         message(STATUS "mbedtls/include: ${MBEDTLS_INCLUDE_DIRS}")
         message(STATUS "mbedtls libraries: ${MBEDTLS_LIBRARIES}")
         INCLUDE_DIRECTORIES(${MBEDTLS_INCLUDE_DIRS})
@@ -217,6 +215,8 @@ IF (WITH_MBEDTLS)
         TARGET_LINK_LIBRARIES(test-mbedtls.t
             picotls-minicrypto picotls-mbedtls
             ${MBEDTLS_LIBRARIES})
+    ELSE ()
+        MESSAGE (FATAL_ERROR "MbedTLS not found")
     ENDIF()
 ENDIF ()
 
