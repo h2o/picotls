@@ -27,10 +27,14 @@ jobs:
              cmake -S .. .
              echo "cmake done"
              make
+             echo "compiled MbedTLS"
+             pwd
              cd ../..
 
       - name: Compile picotls
         run: |
+             echo "building picotls with MbedTLS"
+             pwd
              cmake "-DWITH_MBEDTLS=ON" .
              make
 
