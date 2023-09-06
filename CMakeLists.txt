@@ -32,6 +32,7 @@ IF (WITH_FUSION)
     MESSAGE(STATUS "Enabling 'fusion' AES-GCM engine")
 ENDIF ()
 OPTION(WITH_AEGIS "enable AEGIS (requires libaegis)" ${WITH_AEGIS})
+OPTION(WITH_MBEDTLS "enable MBEDTLS" ${WITH_MBEDTLS})
 
 SET(CMAKE_C_FLAGS "-std=c99 -Wall -O2 -g ${CC_WARNING_FLAGS} ${CMAKE_C_FLAGS}")
 INCLUDE_DIRECTORIES(
@@ -197,6 +198,25 @@ IF (WITH_FUSION)
     SET(TEST_EXES ${TEST_EXES} test-fusion.t)
 
     LIST(APPEND PTLSBENCH_LIBS picotls-fusion)
+ENDIF ()
+
+IF (WITH_MBEDTLS)
+    FIND_PACKAGE(MbedTLS)
+    IF (NOT MbedTLS)
+        MESSAGE (FATAL_ERROR "MbedTLS not found")
+    ELSE ()
+        message(STATUS "mbedtls/include: ${MBEDTLS_INCLUDE_DIRS}")
+        message(STATUS "mbedtls libraries: ${MBEDTLS_LIBRARIES}")
+        INCLUDE_DIRECTORIES(${MBEDTLS_INCLUDE_DIRS})
+        ADD_LIBRARY(picotls-mbedtls lib/ptls_mbedtls.c)
+        ADD_EXECUTABLE(test-mbedtls.t
+        deps/picotest/picotest.c
+        lib/picotls.c
+        t/ptls_mbedtls.c)
+        TARGET_LINK_LIBRARIES(test-mbedtls.t
+            picotls-minicrypto picotls-mbedtls
+            ${MBEDTLS_LIBRARIES})
+    ENDIF()
 ENDIF ()
 
 ADD_EXECUTABLE(ptlsbench t/ptlsbench.c)
