@@ -388,15 +388,14 @@ struct st_ptls_mbedtls_chacha20_context_t {
 
 static void ptls_mbedtls_chacha20_init(ptls_cipher_context_t *_ctx, const void *iv)
 {
-    struct st_ptls_mbedtls_chacha20_context_t *ctx = (struct st_ptls_mbedtls_aes_context_t *)_ctx;
+    struct st_ptls_mbedtls_chacha20_context_t *ctx = (struct st_ptls_mbedtls_chacha20_context_t *)_ctx;
 
-    (void)mbedtls_chacha20_starts(mbedtls_chacha20_context * ctx, (const uint8_t*)iv, 0);
+    (void)mbedtls_chacha20_starts(&ctx->mctx, (const uint8_t*)iv, 0);
 }
 
 static void ptls_mbedtls_chacha20_transform(ptls_cipher_context_t *_ctx, void *output, const void *input, size_t len)
 {
-    struct st_ptls_mbedtls_chacha20_context_t *ctx = (struct st_ptls_mbedtls_aes_context_t *)_ctx;
-    size_t nc_off = 0;
+    struct st_ptls_mbedtls_chacha20_context_t *ctx = (struct st_ptls_mbedtls_chacha20_context_t *)_ctx;
 
     if (mbedtls_chacha20_update(&ctx->mctx, len, 
         (const uint8_t*)input, (uint8_t*)output) != 0) {
@@ -406,13 +405,13 @@ static void ptls_mbedtls_chacha20_transform(ptls_cipher_context_t *_ctx, void *o
 
 static void ptls_mbedtls_chacha20_dispose(ptls_cipher_context_t *_ctx)
 {
-    struct st_ptls_mbedtls_chacha20_context_t *ctx = (struct st_ptls_mbedtls_aes_context_t *)_ctx;
+    struct st_ptls_mbedtls_chacha20_context_t *ctx = (struct st_ptls_mbedtls_chacha20_context_t *)_ctx;
     mbedtls_chacha20_free(&ctx->mctx);
 }
 
 static int ptls_mbedtls_cipher_setup_crypto_chacha20(ptls_cipher_context_t *_ctx, int is_enc, const void *key)
 {
-    struct st_ptls_mbedtls_chacha20_context_t *ctx = (struct st_ptls_mbedtls_aes_context_t *)_ctx;
+    struct st_ptls_mbedtls_chacha20_context_t *ctx = (struct st_ptls_mbedtls_chacha20_context_t *)_ctx;
     int ret = 0;
 
     mbedtls_chacha20_init(&ctx->mctx);
