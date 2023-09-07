@@ -750,7 +750,7 @@ ptls_aead_algorithm_t ptls_mbedtls_aes256gcm = {
     ptls_mbedtls_aead_setup_crypto
 };
 
-ptls_aead_algorithm_t ptls_minicrypto_chacha20poly1305 = {
+ptls_aead_algorithm_t ptls_mbedtls_chacha20poly1305 = {
     "CHACHA20-POLY1305",
     PTLS_CHACHA20POLY1305_CONFIDENTIALITY_LIMIT,
     PTLS_CHACHA20POLY1305_INTEGRITY_LIMIT,
