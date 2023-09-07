@@ -330,6 +330,14 @@ static void test_aes256ctr(void)
     ok(!!"success");
 }
 
+static void test_chacha20(void)
+{
+    if (test_cipher(&ptls_mbedtls_chacha20, &ptls_minicrypto_chacha20) != 0) {
+        ok(!"fail");
+    }
+    ok(!!"success");
+}
+
 static void test_aes128gcm_sha256(void)
 {
     if (test_aead(&ptls_mbedtls_aes128gcm, &ptls_mbedtls_sha256, &ptls_minicrypto_aes128gcm, &ptls_minicrypto_sha256) != 0) {
@@ -350,7 +358,7 @@ static void test_aes256gcm_sha384(void)
 
 static void test_chacha20poly1305_sha256(void)
 {
-    if (test_aead(&ptls_minicrypto_chacha20poly1305, &ptls_mbedtls_sha256, &ptls_minicrypto_chacha20poly1305, &ptls_minicrypto_sha256) != 0) {
+    if (test_aead(&ptls_mbedtls_chacha20poly1305, &ptls_mbedtls_sha256, &ptls_minicrypto_chacha20poly1305, &ptls_minicrypto_sha256) != 0) {
         ok(!"fail");
     }
     ok(!!"success");
