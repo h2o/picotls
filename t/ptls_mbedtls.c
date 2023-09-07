@@ -381,6 +381,7 @@ int main(int argc, char **argv)
     subtest("aes128ctr", test_aes128ctr);
     subtest("aes256ecb", test_aes256ecb);
     subtest("aes256ctr", test_aes256ctr);
+    subtest("chacha20", test_chacha20);
     subtest("aes128gcm_sha256", test_aes128gcm_sha256);
 #if defined(MBEDTLS_SHA384_C)
     subtest("aes256gcm_sha384", test_aes256gcm_sha384);
