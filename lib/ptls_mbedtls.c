@@ -754,7 +754,7 @@ ptls_aead_algorithm_t ptls_mbedtls_chacha20poly1305 = {
     "CHACHA20-POLY1305",
     PTLS_CHACHA20POLY1305_CONFIDENTIALITY_LIMIT,
     PTLS_CHACHA20POLY1305_INTEGRITY_LIMIT,
-    &ptls_minicrypto_chacha20,
+    &ptls_mbedptls_chacha20,
     NULL,
     PTLS_CHACHA20_KEY_SIZE,
     PTLS_CHACHA20POLY1305_IV_SIZE,
