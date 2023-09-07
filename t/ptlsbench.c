@@ -339,7 +339,7 @@ int main(int argc, char **argv)
 
 #ifdef PTLS_HAVE_MBEDTLS
     if (psa_crypto_init() != PSA_SUCCESS) {
-        note("psa_crypto_init fails.");
+        fprintf(stderr, "psa_crypto_init fails.\n");
         exit(-1);
     }
 #endif
