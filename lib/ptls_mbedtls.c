@@ -386,11 +386,13 @@ struct st_ptls_mbedtls_chacha20_context_t {
     mbedtls_chacha20_context mctx;
 };
 
-static void ptls_mbedtls_chacha20_init(ptls_cipher_context_t *_ctx, const void *iv)
+static void ptls_mbedtls_chacha20_init(ptls_cipher_context_t *_ctx, const void *v_iv)
 {
     struct st_ptls_mbedtls_chacha20_context_t *ctx = (struct st_ptls_mbedtls_chacha20_context_t *)_ctx;
+    const uint8_t* iv = (const uint8_t*)v_iv;
+    uint32_t ctr = iv[0] | ((uint32_t)iv[1] << 8) | ((uint32_t)iv[2] << 16) | ((uint32_t)iv[3] << 24);
 
-    (void)mbedtls_chacha20_starts(&ctx->mctx, (const uint8_t*)iv, 0);
+    (void)mbedtls_chacha20_starts(&ctx->mctx, (const uint8_t*)(iv+4), ctr);
 }
 
 static void ptls_mbedtls_chacha20_transform(ptls_cipher_context_t *_ctx, void *output, const void *input, size_t len)
