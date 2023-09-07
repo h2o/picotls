@@ -197,7 +197,8 @@ IF (WITH_FUSION)
         ADD_DEPENDENCIES(test-fusion.t generate-picotls-probes)
     ENDIF ()
     SET(TEST_EXES ${TEST_EXES} test-fusion.t)
-
+    
+    SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DPTLS_HAVE_FUSION=1")
     LIST(APPEND PTLSBENCH_LIBS picotls-fusion)
 ENDIF ()
 

@@ -36,7 +36,9 @@
 #include "picotls/minicrypto.h"
 #include "picotls/openssl.h"
 #ifndef _WINDOWS
+#ifdef PTLS_HAVE_FUSION
 #include "picotls/fusion.h"
+#endif
 #endif
 #include <openssl/opensslv.h>
 
@@ -268,8 +270,10 @@ static ptls_bench_entry_t aead_list[] = {
     {"ptlsbcrypt", "aes256gcm", &ptls_bcrypt_aes256gcm, &ptls_bcrypt_sha384, 1},
 #endif
 #if !defined(_WINDOWS)
+#ifdef PTLS_HAVE_FUSION
     {"fusion", "aes128gcm", &ptls_fusion_aes128gcm, &ptls_minicrypto_sha256, 1},
     {"fusion", "aes256gcm", &ptls_fusion_aes256gcm, &ptls_minicrypto_sha384, 1},
+#endif
 #endif
 #if PTLS_OPENSSL_HAVE_CHACHA20_POLY1305
     {"openssl", "chacha20poly1305", &ptls_openssl_chacha20poly1305, &ptls_minicrypto_sha256, 1},
