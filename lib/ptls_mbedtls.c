@@ -6,7 +6,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <picotls.h>
-#include "mbedtls/config.h"
+#include "mbedtls/mbedtls_config.h"
 #include "mbedtls/build_info.h"
 #include "psa/crypto.h"
 #include "psa/crypto_struct.h"
@@ -115,6 +115,7 @@ PTLS_ZERO_DIGEST_SHA256};
 typedef struct st_ptls_mbedtls_sha512_ctx_t {
     ptls_hash_context_t super;
     mbedtls_sha512_context mctx;
+    int is384;
 } ptls_mbedtls_sha512_ctx_t;
 
 static void ptls_mbedtls_sha512_update(struct st_ptls_hash_context_t* _ctx, const void* src, size_t len)
@@ -163,12 +164,12 @@ static void ptls_mbedtls_sha512_final(struct st_ptls_hash_context_t* _ctx, void*
         else {
             /* if mode = reset, reset the context */
             mbedtls_sha512_init(&ctx->mctx);
-            mbedtls_sha512_starts(&ctx->mctx, 0 /* is224 = 0 */);
+            mbedtls_sha512_starts(&ctx->mctx, ctx->is384);
         }
     }
 }
 
-ptls_hash_context_t* ptls_mbedtls_sha512_create(void)
+ptls_hash_context_t* ptls_mbedtls_sha512_384_create(int is384)
 {
     ptls_mbedtls_sha512_ctx_t* ctx = (ptls_mbedtls_sha512_ctx_t*)malloc(sizeof(ptls_mbedtls_sha512_ctx_t));
 
@@ -177,12 +178,19 @@ ptls_hash_context_t* ptls_mbedtls_sha512_create(void)
         ctx->super.clone_ = ptls_mbedtls_sha512_clone;
         ctx->super.update = ptls_mbedtls_sha512_update;
         ctx->super.final = ptls_mbedtls_sha512_final;
-        if (mbedtls_sha512_starts(&ctx->mctx, 0 /* is384 = 0 */) != 0) {
+        ctx->is384 = is384;
+       
+        if (mbedtls_sha512_starts(&ctx->mctx, is384) != 0) {
             free(ctx);
             ctx = NULL;
         }
     }
     return (ptls_hash_context_t*)ctx;
+}
+
+ptls_hash_context_t* ptls_mbedtls_sha512_create(void)
+{
+    return ptls_mbedtls_sha512_384_create(0);
 }
 
 ptls_hash_algorithm_t ptls_mbedtls_sha512 = {"SHA512", PTLS_SHA512_BLOCK_SIZE, PTLS_SHA512_DIGEST_SIZE, ptls_mbedtls_sha512_create,
@@ -191,22 +199,11 @@ PTLS_ZERO_DIGEST_SHA512};
 #if defined(MBEDTLS_SHA384_C)
 ptls_hash_context_t* ptls_mbedtls_sha384_create(void)
 {
-    ptls_mbedtls_sha512_ctx_t* ctx = (ptls_mbedtls_sha512_ctx_t*)malloc(sizeof(ptls_mbedtls_sha512_ctx_t));
-
-    if (ctx != NULL) {
-        memset(&ctx->mctx, 0, sizeof(mbedtls_sha512_context));
-        ctx->super.clone_ = ptls_mbedtls_sha512_clone;
-        ctx->super.update = ptls_mbedtls_sha512_update;
-        ctx->super.final = ptls_mbedtls_sha512_final;
-        if (mbedtls_sha512_starts(&ctx->mctx, 1 /* is384 = 1 */) != 0) {
-            free(ctx);
-            ctx = NULL;
-        }
-    }
-    return (ptls_hash_context_t*)ctx;
+    return ptls_mbedtls_sha512_384_create(1);
 }
 
-ptls_hash_algorithm_t ptls_mbedtls_sha512 = {"SHA384", PTLS_SHA384_BLOCK_SIZE, PTLS_SHA384_DIGEST_SIZE, ptls_mbedtls_sha384_create,
+ptls_hash_algorithm_t ptls_mbedtls_sha384 = {"SHA384", PTLS_SHA384_BLOCK_SIZE, 
+PTLS_SHA384_DIGEST_SIZE, ptls_mbedtls_sha384_create,
 PTLS_ZERO_DIGEST_SHA384};
 #endif /* MBEDTLS_SHA384_C */
 
@@ -332,7 +329,6 @@ static int ptls_mbedtls_cipher_setup_crypto_aes128_ctr(ptls_cipher_context_t *_c
     return ret;
 }
 
-
 static int ptls_mbedtls_cipher_setup_crypto_aes256_ecb(ptls_cipher_context_t *_ctx, int is_enc, const void *key)
 {
     struct st_ptls_mbedtls_aes_context_t *ctx = (struct st_ptls_mbedtls_aes_context_t *)_ctx;
@@ -420,7 +416,7 @@ ptls_mbedtls_cipher_setup_crypto_aes256_ctr};
 * The aead context also documents the underlying "ECB" and "CTR" modes.
 * In QUIC, these are used for PN encryption.
 * 
-* TODO: declare other lagorithms besides AES128_GCM
+* TODO: declare other algorithms besides AES128_GCM
 */
 
 struct ptls_mbedtls_aead_param_t {

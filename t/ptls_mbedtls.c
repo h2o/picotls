@@ -29,7 +29,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <picotls.h>
-#include "mbedtls/config.h"
+#include "mbedtls/mbedtls_config.h"
 #include "mbedtls/build_info.h"
 #include "psa/crypto.h"
 #include "psa/crypto_struct.h"
@@ -278,16 +278,6 @@ static void test_sha256(void)
     ok(!!"success");
 }
 
-static void test_sha512(void)
-{
-    if (test_hash(&ptls_mbedtls_sha512, &ptls_minicrypto_sha512) != 0) {
-        ok(!"fail");
-        return;
-    }
-    ok(!!"success");
-}
-
-
 #if defined(MBEDTLS_SHA384_C)
 static void test_sha384(void)
 {
@@ -357,9 +347,8 @@ int main(int argc, char **argv)
     }
     /* Series of test to check consistency between wrapped mbedtls and minicrypto */
     subtest("sha256", test_sha256);
-    subtest("sha512", test_sha256);
 #if defined(MBEDTLS_SHA384_C)
-    subtest("sha384", test_sha256);
+    subtest("sha384", test_sha384);
 #endif
     subtest("label_sha256", test_label_sha256);
     subtest("aes128ecb", test_aes128ecb);
