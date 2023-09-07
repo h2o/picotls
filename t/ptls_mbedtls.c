@@ -29,6 +29,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <picotls.h>
+#include "mbedtls/config.h"
 #include "mbedtls/build_info.h"
 #include "psa/crypto.h"
 #include "psa/crypto_struct.h"
@@ -68,9 +69,9 @@ static int test_hash(ptls_hash_algorithm_t* algo, ptls_hash_algorithm_t* ref)
 {
     int ret = 0;
     uint8_t input[1234];
-    uint8_t final_hash[32];
-    uint8_t final_ref[32];
-    uint8_t hash1[32], hash2[32], href1[32], href2[32];
+    uint8_t final_hash[64];
+    uint8_t final_ref[64];
+    uint8_t hash1[64], hash2[64], href1[64], href2[64];
 
     memset(input, 0xba, sizeof(input));
 
@@ -277,6 +278,27 @@ static void test_sha256(void)
     ok(!!"success");
 }
 
+static void test_sha512(void)
+{
+    if (test_hash(&ptls_mbedtls_sha512, &ptls_minicrypto_sha512) != 0) {
+        ok(!"fail");
+        return;
+    }
+    ok(!!"success");
+}
+
+
+#if defined(MBEDTLS_SHA384_C)
+static void test_sha384(void)
+{
+    if (test_hash(&ptls_mbedtls_sha384, &ptls_minicrypto_sha384) != 0) {
+        ok(!"fail");
+        return;
+    }
+    ok(!!"success");
+}
+#endif
+
 static void test_label_sha256(void)
 {
     if (test_label(&ptls_mbedtls_sha256, &ptls_minicrypto_sha256) != 0) {
@@ -335,6 +357,10 @@ int main(int argc, char **argv)
     }
     /* Series of test to check consistency between wrapped mbedtls and minicrypto */
     subtest("sha256", test_sha256);
+    subtest("sha512", test_sha256);
+#if defined(MBEDTLS_SHA384_C)
+    subtest("sha384", test_sha256);
+#endif
     subtest("label_sha256", test_label_sha256);
     subtest("aes128ecb", test_aes128ecb);
     subtest("aes128ctr", test_aes128ctr);

@@ -6,10 +6,12 @@
 #include <stdio.h>
 #include <string.h>
 #include <picotls.h>
+#include "mbedtls/config.h"
 #include "mbedtls/build_info.h"
 #include "psa/crypto.h"
 #include "psa/crypto_struct.h"
 #include "mbedtls/sha256.h"
+#include "mbedtls/sha512.h"
 #include "mbedtls/aes.h"
 
 /* Definitions for hash algorithms.
@@ -25,7 +27,6 @@
 * void (*final)(struct st_ptls_hash_context_t *ctx, void *md, ptls_hash_final_mode_t mode);
 * struct st_ptls_hash_context_t *(*clone_)(struct st_ptls_hash_context_t *src);
 * 
-* TODO: develop shim for other hash methods besides SHA256
 */
 
 typedef struct st_ptls_mbedtls_sha256_ctx_t {
@@ -104,6 +105,110 @@ ptls_hash_context_t* ptls_mbedtls_sha256_create(void)
 ptls_hash_algorithm_t ptls_mbedtls_sha256 = {"sha256", PTLS_SHA256_BLOCK_SIZE, PTLS_SHA256_DIGEST_SIZE, ptls_mbedtls_sha256_create,
 PTLS_ZERO_DIGEST_SHA256};
 
+
+/* SHA 512 follows the same general architecture as SHA 256.
+ * The SHA 384 module is using the same code, with an option to
+ * deliver a shorter hash.
+ */
+
+
+typedef struct st_ptls_mbedtls_sha512_ctx_t {
+    ptls_hash_context_t super;
+    mbedtls_sha512_context mctx;
+} ptls_mbedtls_sha512_ctx_t;
+
+static void ptls_mbedtls_sha512_update(struct st_ptls_hash_context_t* _ctx, const void* src, size_t len)
+{
+    ptls_mbedtls_sha512_ctx_t* ctx = (ptls_mbedtls_sha512_ctx_t*)_ctx;
+
+    (void)mbedtls_sha512_update(&ctx->mctx, (const uint8_t*)src, len);
+}
+
+static void ptls_mbedtls_sha512_final(struct st_ptls_hash_context_t* _ctx, void* md, ptls_hash_final_mode_t mode);
+
+static struct st_ptls_hash_context_t* ptls_mbedtls_sha512_clone(struct st_ptls_hash_context_t* _src)
+{
+    ptls_mbedtls_sha512_ctx_t* ctx = (ptls_mbedtls_sha512_ctx_t*)malloc(sizeof(ptls_mbedtls_sha512_ctx_t));
+
+    if (ctx != NULL) {
+        ptls_mbedtls_sha512_ctx_t* src = (ptls_mbedtls_sha512_ctx_t*)_src;
+        memset(&ctx->mctx, 0, sizeof(mbedtls_sha512_context));
+        ctx->super.clone_ = ptls_mbedtls_sha512_clone;
+        ctx->super.update = ptls_mbedtls_sha512_update;
+        ctx->super.final = ptls_mbedtls_sha512_final;
+        mbedtls_sha512_clone(&ctx->mctx, &src->mctx);
+    }
+    return (ptls_hash_context_t*)ctx;
+}
+
+static void ptls_mbedtls_sha512_final(struct st_ptls_hash_context_t* _ctx, void* md, ptls_hash_final_mode_t mode)
+{
+    ptls_mbedtls_sha512_ctx_t* ctx = (ptls_mbedtls_sha512_ctx_t*)_ctx;
+
+    if (mode == PTLS_HASH_FINAL_MODE_SNAPSHOT) {
+        struct st_ptls_hash_context_t* cloned = ptls_mbedtls_sha512_clone(_ctx);
+
+        if (cloned != NULL) {
+            ptls_mbedtls_sha512_final(cloned, md, PTLS_HASH_FINAL_MODE_FREE);
+        }
+    } else {
+        if (md != NULL) {
+            (void)mbedtls_sha512_finish(&ctx->mctx, (uint8_t*)md);
+        }
+
+        if (mode == PTLS_HASH_FINAL_MODE_FREE) {
+            mbedtls_sha512_free(&ctx->mctx);
+            free(ctx);
+        }
+        else {
+            /* if mode = reset, reset the context */
+            mbedtls_sha512_init(&ctx->mctx);
+            mbedtls_sha512_starts(&ctx->mctx, 0 /* is224 = 0 */);
+        }
+    }
+}
+
+ptls_hash_context_t* ptls_mbedtls_sha512_create(void)
+{
+    ptls_mbedtls_sha512_ctx_t* ctx = (ptls_mbedtls_sha512_ctx_t*)malloc(sizeof(ptls_mbedtls_sha512_ctx_t));
+
+    if (ctx != NULL) {
+        memset(&ctx->mctx, 0, sizeof(mbedtls_sha512_context));
+        ctx->super.clone_ = ptls_mbedtls_sha512_clone;
+        ctx->super.update = ptls_mbedtls_sha512_update;
+        ctx->super.final = ptls_mbedtls_sha512_final;
+        if (mbedtls_sha512_starts(&ctx->mctx, 0 /* is384 = 0 */) != 0) {
+            free(ctx);
+            ctx = NULL;
+        }
+    }
+    return (ptls_hash_context_t*)ctx;
+}
+
+ptls_hash_algorithm_t ptls_mbedtls_sha512 = {"SHA512", PTLS_SHA512_BLOCK_SIZE, PTLS_SHA512_DIGEST_SIZE, ptls_mbedtls_sha512_create,
+PTLS_ZERO_DIGEST_SHA512};
+
+#if defined(MBEDTLS_SHA384_C)
+ptls_hash_context_t* ptls_mbedtls_sha384_create(void)
+{
+    ptls_mbedtls_sha512_ctx_t* ctx = (ptls_mbedtls_sha512_ctx_t*)malloc(sizeof(ptls_mbedtls_sha512_ctx_t));
+
+    if (ctx != NULL) {
+        memset(&ctx->mctx, 0, sizeof(mbedtls_sha512_context));
+        ctx->super.clone_ = ptls_mbedtls_sha512_clone;
+        ctx->super.update = ptls_mbedtls_sha512_update;
+        ctx->super.final = ptls_mbedtls_sha512_final;
+        if (mbedtls_sha512_starts(&ctx->mctx, 1 /* is384 = 1 */) != 0) {
+            free(ctx);
+            ctx = NULL;
+        }
+    }
+    return (ptls_hash_context_t*)ctx;
+}
+
+ptls_hash_algorithm_t ptls_mbedtls_sha512 = {"SHA384", PTLS_SHA384_BLOCK_SIZE, PTLS_SHA384_DIGEST_SIZE, ptls_mbedtls_sha384_create,
+PTLS_ZERO_DIGEST_SHA384};
+#endif /* MBEDTLS_SHA384_C */
 
 /* definitions for symmetric crypto algorithms. 
 * Each algorithm (ECB or CTR) is represented by an "algorithm"
