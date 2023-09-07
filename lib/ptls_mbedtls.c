@@ -685,3 +685,19 @@ ptls_aead_algorithm_t ptls_mbedtls_aes128gcm = {
     sizeof(struct ptls_mbedtls_aead_context_t),
     ptls_mbedtls_aead_setup_crypto
 };
+
+ptls_aead_algorithm_t ptls_mbedtls_aes256gcm = {
+    "AES256-GCM",
+    PTLS_AESGCM_CONFIDENTIALITY_LIMIT,
+    PTLS_AESGCM_INTEGRITY_LIMIT,
+    &ptls_mbedtls_aes256ecb,
+    &ptls_mbedtls_aes256ctr,
+    PTLS_AES256_KEY_SIZE,
+    PTLS_AESGCM_IV_SIZE,
+    PTLS_AESGCM_TAG_SIZE,
+    {PTLS_TLS12_AESGCM_FIXED_IV_SIZE, PTLS_TLS12_AESGCM_RECORD_IV_SIZE},
+    0,
+    0,
+    sizeof(struct ptls_mbedtls_aead_context_t),
+    ptls_mbedtls_aead_setup_crypto
+};

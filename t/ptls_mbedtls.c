@@ -241,7 +241,7 @@ static int aead_trial(ptls_aead_algorithm_t * algo, ptls_hash_algorithm_t * hash
 
 static int test_aead(ptls_aead_algorithm_t* algo, ptls_hash_algorithm_t* hash, ptls_aead_algorithm_t* ref, ptls_hash_algorithm_t* hash_ref)
 {
-    uint8_t secret[32];
+    uint8_t secret[64];
     uint8_t v_in[1234];
     uint8_t aad[17];
     uint8_t v_out_a[1250], v_out_b[1250], v_out_r[1250];
@@ -338,6 +338,16 @@ static void test_aes128gcm_sha256(void)
     ok(!!"success");
 }
 
+#if defined(MBEDTLS_SHA384_C)
+static void test_aes256gcm_sha384(void)
+{
+    if (test_aead(&ptls_mbedtls_aes256gcm, &ptls_mbedtls_sha384, &ptls_minicrypto_aes256gcm, &ptls_minicrypto_sha384) != 0) {
+        ok(!"fail");
+    }
+    ok(!!"success");
+}
+#endif
+
 int main(int argc, char **argv)
 {
     /* Initialize the PSA crypto library. */
@@ -356,7 +366,9 @@ int main(int argc, char **argv)
     subtest("aes256ecb", test_aes256ecb);
     subtest("aes256ctr", test_aes256ctr);
     subtest("aes128gcm_sha256", test_aes128gcm_sha256);
-
+#if defined(MBEDTLS_SHA384_C)
+    subtest("aes256gcm_sha384", test_aes256gcm_sha384);
+#endif
     /* Deinitialize the PSA crypto library. */
     mbedtls_psa_crypto_free();
 

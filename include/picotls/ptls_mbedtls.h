@@ -39,6 +39,7 @@ extern ptls_cipher_algorithm_t ptls_mbedtls_aes128ctr;
 extern ptls_cipher_algorithm_t ptls_mbedtls_aes256ctr;
 
 extern ptls_aead_algorithm_t ptls_mbedtls_aes128gcm;
+extern ptls_aead_algorithm_t ptls_mbedtls_aes256gcm;
 
 #ifdef __cplusplus
 }
