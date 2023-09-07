@@ -215,6 +215,8 @@ IF (WITH_MBEDTLS)
         TARGET_LINK_LIBRARIES(test-mbedtls.t
             picotls-minicrypto picotls-mbedtls
             ${MBEDTLS_LIBRARIES})
+        SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DPTLS_HAVE_MBEDTLS=1")
+        LIST(APPEND PTLSBENCH_LIBS picotls-mbedtls ${MBEDTLS_LIBRARIES})
     #ELSE ()
     #    MESSAGE (FATAL_ERROR "MbedTLS not found")
     #ENDIF()
