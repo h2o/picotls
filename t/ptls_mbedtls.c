@@ -377,6 +377,7 @@ int main(int argc, char **argv)
 #if defined(MBEDTLS_SHA384_C)
     subtest("aes256gcm_sha384", test_aes256gcm_sha384);
 #endif
+    subtest("chacha20poly1305_sha256", test_chacha20poly1305_sha256);
     /* Deinitialize the PSA crypto library. */
     mbedtls_psa_crypto_free();
 
