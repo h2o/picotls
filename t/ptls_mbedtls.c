@@ -348,6 +348,14 @@ static void test_aes256gcm_sha384(void)
 }
 #endif
 
+static void test_chacha20poly1305_sha256(void)
+{
+    if (test_aead(&ptls_minicrypto_chacha20poly1305, &ptls_mbedtls_sha256, &ptls_minicrypto_chacha20poly1305, &ptls_minicrypto_sha256) != 0) {
+        ok(!"fail");
+    }
+    ok(!!"success");
+}
+
 int main(int argc, char **argv)
 {
     /* Initialize the PSA crypto library. */

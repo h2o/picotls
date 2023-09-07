@@ -13,6 +13,7 @@
 #include "mbedtls/sha256.h"
 #include "mbedtls/sha512.h"
 #include "mbedtls/aes.h"
+#include "mbedtls/chacha20.h"
 
 /* Definitions for hash algorithms.
 * In Picotls, these are described by the stucture
@@ -222,11 +223,6 @@ PTLS_ZERO_DIGEST_SHA384};
 * "stream block".
 * 
  */
-struct ptls_mbedtls_symmetric_param_t {
-    uint8_t iv[PTLS_MAX_IV_SIZE];
-    uint8_t *key_object;
-    int is_enc;
-};
 
 struct st_ptls_mbedtls_aes_context_t {
     ptls_cipher_context_t super;
@@ -384,6 +380,59 @@ PTLS_AES_BLOCK_SIZE,
 0 /* iv size */,
 sizeof(struct st_ptls_mbedtls_aes_context_t),
 ptls_mbedtls_cipher_setup_crypto_aes256_ctr};
+
+struct st_ptls_mbedtls_chacha20_context_t {
+    ptls_cipher_context_t super;
+    mbedtls_chacha20_context mctx;
+};
+
+static void ptls_mbedtls_chacha20_init(ptls_cipher_context_t *_ctx, const void *iv)
+{
+    struct st_ptls_mbedtls_chacha20_context_t *ctx = (struct st_ptls_mbedtls_aes_context_t *)_ctx;
+
+    (void)mbedtls_chacha20_starts(mbedtls_chacha20_context * ctx, (const uint8_t*)iv, 0);
+}
+
+static void ptls_mbedtls_chacha20_transform(ptls_cipher_context_t *_ctx, void *output, const void *input, size_t len)
+{
+    struct st_ptls_mbedtls_chacha20_context_t *ctx = (struct st_ptls_mbedtls_aes_context_t *)_ctx;
+    size_t nc_off = 0;
+
+    if (mbedtls_chacha20_update(&ctx->mctx, len, 
+        (const uint8_t*)input, (uint8_t*)output) != 0) {
+        memset(output, 0, len);
+    }
+}
+
+static void ptls_mbedtls_chacha20_dispose(ptls_cipher_context_t *_ctx)
+{
+    struct st_ptls_mbedtls_chacha20_context_t *ctx = (struct st_ptls_mbedtls_aes_context_t *)_ctx;
+    mbedtls_chacha20_free(&ctx->mctx);
+}
+
+static int ptls_mbedtls_cipher_setup_crypto_chacha20(ptls_cipher_context_t *_ctx, int is_enc, const void *key)
+{
+    struct st_ptls_mbedtls_chacha20_context_t *ctx = (struct st_ptls_mbedtls_aes_context_t *)_ctx;
+    int ret = 0;
+
+    mbedtls_chacha20_init(&ctx->mctx);
+    ret = mbedtls_chacha20_setkey(&ctx->mctx, (const uint8_t*)key);
+
+    ctx->super.do_dispose = ptls_mbedtls_chacha20_dispose;
+    ctx->super.do_init = ptls_mbedtls_chacha20_init;
+    ctx->super.do_transform = NULL;
+
+    if (ret == 0) {
+        ctx->super.do_transform = ptls_mbedtls_chacha20_transform;
+    }
+
+    return ret;
+}
+
+ptls_cipher_algorithm_t ptls_minicrypto_chacha20 = {
+    "CHACHA20", PTLS_CHACHA20_KEY_SIZE, 1 /* block size */, PTLS_CHACHA20_IV_SIZE, sizeof(struct st_ptls_mbedtls_chacha20_context_t),
+    ptls_mbedtls_cipher_setup_crypto_chacha20};
+
 
 /* Definitions of AEAD algorithms.
 * 
@@ -674,8 +723,8 @@ ptls_aead_algorithm_t ptls_mbedtls_aes128gcm = {
     "AES128-GCM",
     PTLS_AESGCM_CONFIDENTIALITY_LIMIT,
     PTLS_AESGCM_INTEGRITY_LIMIT,
-    &ptls_mbedtls_aes128ecb,
     &ptls_mbedtls_aes128ctr,
+    &ptls_mbedtls_aes128ecb,
     PTLS_AES128_KEY_SIZE,
     PTLS_AESGCM_IV_SIZE,
     PTLS_AESGCM_TAG_SIZE,
@@ -690,12 +739,28 @@ ptls_aead_algorithm_t ptls_mbedtls_aes256gcm = {
     "AES256-GCM",
     PTLS_AESGCM_CONFIDENTIALITY_LIMIT,
     PTLS_AESGCM_INTEGRITY_LIMIT,
-    &ptls_mbedtls_aes256ecb,
     &ptls_mbedtls_aes256ctr,
+    &ptls_mbedtls_aes256ecb,
     PTLS_AES256_KEY_SIZE,
     PTLS_AESGCM_IV_SIZE,
     PTLS_AESGCM_TAG_SIZE,
     {PTLS_TLS12_AESGCM_FIXED_IV_SIZE, PTLS_TLS12_AESGCM_RECORD_IV_SIZE},
+    0,
+    0,
+    sizeof(struct ptls_mbedtls_aead_context_t),
+    ptls_mbedtls_aead_setup_crypto
+};
+
+ptls_aead_algorithm_t ptls_minicrypto_chacha20poly1305 = {
+    "CHACHA20-POLY1305",
+    PTLS_CHACHA20POLY1305_CONFIDENTIALITY_LIMIT,
+    PTLS_CHACHA20POLY1305_INTEGRITY_LIMIT,
+    &ptls_minicrypto_chacha20,
+    NULL,
+    PTLS_CHACHA20_KEY_SIZE,
+    PTLS_CHACHA20POLY1305_IV_SIZE,
+    PTLS_CHACHA20POLY1305_TAG_SIZE,
+    {PTLS_TLS12_CHACHAPOLY_FIXED_IV_SIZE, PTLS_TLS12_CHACHAPOLY_RECORD_IV_SIZE},
     0,
     0,
     sizeof(struct ptls_mbedtls_aead_context_t),
