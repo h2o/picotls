@@ -767,3 +767,20 @@ ptls_aead_algorithm_t ptls_mbedtls_chacha20poly1305 = {
     sizeof(struct ptls_mbedtls_aead_context_t),
     ptls_mbedtls_aead_setup_crypto
 };
+
+ptls_cipher_suite_t ptls_mbedtls_aes128gcmsha256 = {.id = PTLS_CIPHER_SUITE_AES_128_GCM_SHA256,
+.name = PTLS_CIPHER_SUITE_NAME_AES_128_GCM_SHA256,
+.aead = &ptls_mbedtls_aes128gcm,
+.hash = &ptls_mbedtls_sha256};
+
+#if defined(MBEDTLS_SHA384_C)
+ptls_cipher_suite_t ptls_mbedtls_aes256gcmsha384 = {.id = PTLS_CIPHER_SUITE_AES_256_GCM_SHA384,
+.name = PTLS_CIPHER_SUITE_NAME_AES_256_GCM_SHA384,
+.aead = &ptls_mbedtls_aes256gcm,
+.hash = &ptls_mbedtls_sha384};
+#endif
+
+ptls_cipher_suite_t ptls_mbedtls_chacha20poly1305sha256 = {.id = PTLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256,
+.name = PTLS_CIPHER_SUITE_NAME_CHACHA20_POLY1305_SHA256,
+.aead = &ptls_mbedtls_chacha20poly1305,
+.hash = &ptls_mbedtls_sha256};
