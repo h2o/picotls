@@ -15,6 +15,18 @@
 #include "mbedtls/aes.h"
 #include "mbedtls/chacha20.h"
 
+/* Random number generator.
+* This is a call to the PSA random number generator, which according
+* to the documentation meets cryptographic requirements.
+*/
+
+void ptls_mbedtls_random_bytes(void* buf, size_t len)
+{
+    if (psa_generate_random((uint8_t*)buf, len) != 0) {
+        memset(buf, 0, len);
+    }
+}
+
 /* Definitions for hash algorithms.
 * In Picotls, these are described by the stucture
 * ptls_hash_algorithm_t, which include the function

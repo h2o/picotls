@@ -50,6 +50,8 @@ extern ptls_cipher_suite_t ptls_mbedtls_aes256gcmsha384;
 #endif
 extern ptls_cipher_suite_t ptls_mbedtls_chacha20poly1305sha256;
 
+void ptls_mbedtls_random_bytes(void* buf, size_t len);
+
 #ifdef __cplusplus
 }
 #endif

@@ -37,6 +37,34 @@
 #include "picotls/minicrypto.h"
 #include "../deps/picotest/picotest.h"
 
+static int test_random()
+{
+    /* The random test is just trying to check that we call the API properly. 
+    * This is done by getting a vector of 1021 bytes, computing the sum of
+    * all values, and comparing to theoretical min and max,
+    * computed as average +- 8*standard deviation for sum of 1021 terms.
+    * 8 random deviations results in an extremely low probability of random
+    * failure.
+    * Note that this does not actually test the random generator.
+    */
+
+    uint8_t buf[PTLS_MBEDTLS_RANDOM_TEST_LENGTH];
+    uint64_t sum = 0;
+    const uint64_t max_sum_1021 = 149505;
+    const uint64_t min_sum_1021 = 110849;
+    int ret = 0;
+
+    ptls_mbedtls_random_bytes(buf, PTLS_MBEDTLS_RANDOM_TEST_LENGTH);
+    for (size_t i = 0; i < PTLS_MBEDTLS_RANDOM_TEST_LENGTH; i++) {
+        sum += buf[i];
+    }
+    if (sum > max_sum_1021 || sum < min_sum_1021) {
+        ret = -1;
+    }
+
+    return ret;
+}
+
 static int hash_trial(ptls_hash_algorithm_t* algo, const uint8_t* input, size_t len1, size_t len2, uint8_t* final_hash)
 {
     int ret = 0;
@@ -371,6 +399,8 @@ int main(int argc, char **argv)
         note("psa_crypto_init fails.");
         return done_testing();
     }
+    /* Test of the port of the mbedtls random generator */
+    subtest("random", test_random);
     /* Series of test to check consistency between wrapped mbedtls and minicrypto */
     subtest("sha256", test_sha256);
 #if defined(MBEDTLS_SHA384_C)
