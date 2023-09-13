@@ -37,7 +37,9 @@
 #include "picotls/minicrypto.h"
 #include "../deps/picotest/picotest.h"
 
-static int test_random()
+#define PTLS_MBEDTLS_RANDOM_TEST_LENGTH 1021;
+
+static int random_trial()
 {
     /* The random test is just trying to check that we call the API properly. 
     * This is done by getting a vector of 1021 bytes, computing the sum of
@@ -63,6 +65,15 @@ static int test_random()
     }
 
     return ret;
+}
+
+static void test_random(void)
+{
+    if (random_trial() != 0) {
+        ok(!"fail");
+        return;
+    }
+    ok(!!"success");
 }
 
 static int hash_trial(ptls_hash_algorithm_t* algo, const uint8_t* input, size_t len1, size_t len2, uint8_t* final_hash)
