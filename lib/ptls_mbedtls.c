@@ -10,21 +10,37 @@
 #include "mbedtls/build_info.h"
 #include "psa/crypto.h"
 #include "psa/crypto_struct.h"
-#include "mbedtls/sha256.h"
-#include "mbedtls/sha512.h"
-#include "mbedtls/aes.h"
+
 #include "mbedtls/chacha20.h"
+#include "mbedtls/ecdh.h"
+
+/* Init and free functions. Init should be used before starting using
+* library functions. Free should be used before leaving the program.
+*/
+
+void ptls_mbedtls_free()
+{
+    mbedtls_psa_crypto_free();
+}
+
+int ptls_mbedtls_init()
+{
+    int ret = 0;
+    psa_status_t status;
+    if ((status = psa_crypto_init()) != PSA_SUCCESS) {
+        ret = -1;
+    }
+
+    return ret;
+}
 
 /* Random number generator.
 * This is a call to the PSA random number generator, which according
 * to the documentation meets cryptographic requirements.
 */
-
 void ptls_mbedtls_random_bytes(void* buf, size_t len)
 {
-    if (psa_generate_random((uint8_t*)buf, len) != 0) {
-        memset(buf, 0, len);
-    }
+    psa_generate_random((uint8_t*)buf, len);
 }
 
 /* Definitions for hash algorithms.
@@ -42,169 +58,105 @@ void ptls_mbedtls_random_bytes(void* buf, size_t len)
 * 
 */
 
-typedef struct st_ptls_mbedtls_sha256_ctx_t {
+typedef struct st_ptls_mbedtls_hash_ctx_t {
     ptls_hash_context_t super;
-    mbedtls_sha256_context mctx;
-} ptls_mbedtls_sha256_ctx_t;
+    psa_algorithm_t alg;
+    size_t hash_size;
+    psa_hash_operation_t operation;
+} ptls_mbedtls_hash_ctx_t;
 
-static void ptls_mbedtls_sha256_update(struct st_ptls_hash_context_t* _ctx, const void* src, size_t len)
+static void ptls_mbedtls_hash_update(struct st_ptls_hash_context_t* _ctx, const void* src, size_t len)
 {
-    ptls_mbedtls_sha256_ctx_t* ctx = (ptls_mbedtls_sha256_ctx_t*)_ctx;
+    ptls_mbedtls_hash_ctx_t* ctx = (ptls_mbedtls_hash_ctx_t*)_ctx;
 
-    (void)mbedtls_sha256_update(&ctx->mctx, (const uint8_t*)src, len);
+    (void) psa_hash_update(&ctx->operation, (const uint8_t *) src, len);
 }
 
-static void ptls_mbedtls_sha256_final(struct st_ptls_hash_context_t* _ctx, void* md, ptls_hash_final_mode_t mode);
+static void ptls_mbedtls_hash_final(struct st_ptls_hash_context_t* _ctx, void* md, ptls_hash_final_mode_t mode);
 
-static struct st_ptls_hash_context_t* ptls_mbedtls_sha256_clone(struct st_ptls_hash_context_t* _src)
+static struct st_ptls_hash_context_t* ptls_mbedtls_hash_clone(struct st_ptls_hash_context_t* _src)
 {
-    ptls_mbedtls_sha256_ctx_t* ctx = (ptls_mbedtls_sha256_ctx_t*)malloc(sizeof(ptls_mbedtls_sha256_ctx_t));
+    ptls_mbedtls_hash_ctx_t* ctx = (ptls_mbedtls_hash_ctx_t*)malloc(sizeof(ptls_mbedtls_hash_ctx_t));
+    const ptls_mbedtls_hash_ctx_t* src = (const ptls_mbedtls_hash_ctx_t*)_src;
 
     if (ctx != NULL) {
-        ptls_mbedtls_sha256_ctx_t* src = (ptls_mbedtls_sha256_ctx_t*)_src;
-        memset(&ctx->mctx, 0, sizeof(mbedtls_sha256_context));
-        ctx->super.clone_ = ptls_mbedtls_sha256_clone;
-        ctx->super.update = ptls_mbedtls_sha256_update;
-        ctx->super.final = ptls_mbedtls_sha256_final;
-        mbedtls_sha256_clone(&ctx->mctx, &src->mctx);
+        ptls_mbedtls_hash_ctx_t* src = (ptls_mbedtls_hash_ctx_t*)_src;
+        memset(&ctx->operation, 0, sizeof(mbedtls_sha256_context));
+        ctx->super.clone_ = ptls_mbedtls_hash_clone;
+        ctx->super.update = ptls_mbedtls_hash_update;
+        ctx->super.final = ptls_mbedtls_hash_final;
+        ctx->alg = src->alg;
+        ctx->hash_size = src->hash_size;
+        if (psa_hash_clone(&src->operation, &ctx->operation) != 0) {
+            free(ctx);
+            ctx = NULL;
+        }
     }
     return (ptls_hash_context_t*)ctx;
 }
 
-static void ptls_mbedtls_sha256_final(struct st_ptls_hash_context_t* _ctx, void* md, ptls_hash_final_mode_t mode)
+static void ptls_mbedtls_hash_final(struct st_ptls_hash_context_t* _ctx, void* md, ptls_hash_final_mode_t mode)
 {
-    ptls_mbedtls_sha256_ctx_t* ctx = (ptls_mbedtls_sha256_ctx_t*)_ctx;
+    ptls_mbedtls_hash_ctx_t* ctx = (ptls_mbedtls_hash_ctx_t*)_ctx;
 
     if (mode == PTLS_HASH_FINAL_MODE_SNAPSHOT) {
-        struct st_ptls_hash_context_t* cloned = ptls_mbedtls_sha256_clone(_ctx);
+        struct st_ptls_hash_context_t* cloned = ptls_mbedtls_hash_clone(_ctx);
 
         if (cloned != NULL) {
-            ptls_mbedtls_sha256_final(cloned, md, PTLS_HASH_FINAL_MODE_FREE);
+            ptls_mbedtls_hash_final(cloned, md, PTLS_HASH_FINAL_MODE_FREE);
         }
     } else {
         if (md != NULL) {
-            (void)mbedtls_sha256_finish(&ctx->mctx, (uint8_t*)md);
+            size_t hash_length = 0;
+            if (psa_hash_finish(&ctx->operation, md, ctx->hash_size, &hash_length) != 0) {
+                memset(md, 0, ctx->hash_size);
+            }
         }
 
         if (mode == PTLS_HASH_FINAL_MODE_FREE) {
-            mbedtls_sha256_free(&ctx->mctx);
+            (void)psa_hash_abort(&ctx->operation);
             free(ctx);
         }
         else {
             /* if mode = reset, reset the context */
-            mbedtls_sha256_init(&ctx->mctx);
-            mbedtls_sha256_starts(&ctx->mctx, 0 /* is224 = 0 */);
+            memset(&ctx->operation, 0, sizeof(ctx->operation));
+            (void)psa_hash_setup(&ctx->operation, ctx->alg);
         }
     }
+}
+
+ptls_hash_context_t* ptls_mbedtls_hash_create(psa_algorithm_t alg, size_t hash_size)
+{
+    ptls_mbedtls_hash_ctx_t* ctx = (ptls_mbedtls_hash_ctx_t*)malloc(sizeof(ptls_mbedtls_hash_ctx_t));
+
+    if (ctx != NULL) {
+        memset(&ctx->operation, 0, sizeof(ctx->operation));
+        ctx->alg = alg;
+        ctx->hash_size = hash_size;
+        ctx->super.clone_ = ptls_mbedtls_hash_clone;
+        ctx->super.update = ptls_mbedtls_hash_update;
+        ctx->super.final = ptls_mbedtls_hash_final;
+        if (psa_hash_setup(&ctx->operation, alg) != 0){
+            free(ctx);
+            ctx = NULL;
+        }
+    }
+    return (ptls_hash_context_t*)ctx;
 }
 
 ptls_hash_context_t* ptls_mbedtls_sha256_create(void)
 {
-    ptls_mbedtls_sha256_ctx_t* ctx = (ptls_mbedtls_sha256_ctx_t*)malloc(sizeof(ptls_mbedtls_sha256_ctx_t));
-
-    if (ctx != NULL) {
-        memset(&ctx->mctx, 0, sizeof(mbedtls_sha256_context));
-        ctx->super.clone_ = ptls_mbedtls_sha256_clone;
-        ctx->super.update = ptls_mbedtls_sha256_update;
-        ctx->super.final = ptls_mbedtls_sha256_final;
-        if (mbedtls_sha256_starts(&ctx->mctx, 0 /* is224 = 0 */) != 0) {
-            free(ctx);
-            ctx = NULL;
-        }
-    }
-    return (ptls_hash_context_t*)ctx;
-}
-
-ptls_hash_algorithm_t ptls_mbedtls_sha256 = {"sha256", PTLS_SHA256_BLOCK_SIZE, PTLS_SHA256_DIGEST_SIZE, ptls_mbedtls_sha256_create,
-PTLS_ZERO_DIGEST_SHA256};
-
-
-/* SHA 512 follows the same general architecture as SHA 256.
- * The SHA 384 module is using the same code, with an option to
- * deliver a shorter hash.
- */
-
-
-typedef struct st_ptls_mbedtls_sha512_ctx_t {
-    ptls_hash_context_t super;
-    mbedtls_sha512_context mctx;
-    int is384;
-} ptls_mbedtls_sha512_ctx_t;
-
-static void ptls_mbedtls_sha512_update(struct st_ptls_hash_context_t* _ctx, const void* src, size_t len)
-{
-    ptls_mbedtls_sha512_ctx_t* ctx = (ptls_mbedtls_sha512_ctx_t*)_ctx;
-
-    (void)mbedtls_sha512_update(&ctx->mctx, (const uint8_t*)src, len);
-}
-
-static void ptls_mbedtls_sha512_final(struct st_ptls_hash_context_t* _ctx, void* md, ptls_hash_final_mode_t mode);
-
-static struct st_ptls_hash_context_t* ptls_mbedtls_sha512_clone(struct st_ptls_hash_context_t* _src)
-{
-    ptls_mbedtls_sha512_ctx_t* ctx = (ptls_mbedtls_sha512_ctx_t*)malloc(sizeof(ptls_mbedtls_sha512_ctx_t));
-
-    if (ctx != NULL) {
-        ptls_mbedtls_sha512_ctx_t* src = (ptls_mbedtls_sha512_ctx_t*)_src;
-        memset(&ctx->mctx, 0, sizeof(mbedtls_sha512_context));
-        ctx->super.clone_ = ptls_mbedtls_sha512_clone;
-        ctx->super.update = ptls_mbedtls_sha512_update;
-        ctx->super.final = ptls_mbedtls_sha512_final;
-        mbedtls_sha512_clone(&ctx->mctx, &src->mctx);
-    }
-    return (ptls_hash_context_t*)ctx;
-}
-
-static void ptls_mbedtls_sha512_final(struct st_ptls_hash_context_t* _ctx, void* md, ptls_hash_final_mode_t mode)
-{
-    ptls_mbedtls_sha512_ctx_t* ctx = (ptls_mbedtls_sha512_ctx_t*)_ctx;
-
-    if (mode == PTLS_HASH_FINAL_MODE_SNAPSHOT) {
-        struct st_ptls_hash_context_t* cloned = ptls_mbedtls_sha512_clone(_ctx);
-
-        if (cloned != NULL) {
-            ptls_mbedtls_sha512_final(cloned, md, PTLS_HASH_FINAL_MODE_FREE);
-        }
-    } else {
-        if (md != NULL) {
-            (void)mbedtls_sha512_finish(&ctx->mctx, (uint8_t*)md);
-        }
-
-        if (mode == PTLS_HASH_FINAL_MODE_FREE) {
-            mbedtls_sha512_free(&ctx->mctx);
-            free(ctx);
-        }
-        else {
-            /* if mode = reset, reset the context */
-            mbedtls_sha512_init(&ctx->mctx);
-            mbedtls_sha512_starts(&ctx->mctx, ctx->is384);
-        }
-    }
-}
-
-ptls_hash_context_t* ptls_mbedtls_sha512_384_create(int is384)
-{
-    ptls_mbedtls_sha512_ctx_t* ctx = (ptls_mbedtls_sha512_ctx_t*)malloc(sizeof(ptls_mbedtls_sha512_ctx_t));
-
-    if (ctx != NULL) {
-        memset(&ctx->mctx, 0, sizeof(mbedtls_sha512_context));
-        ctx->super.clone_ = ptls_mbedtls_sha512_clone;
-        ctx->super.update = ptls_mbedtls_sha512_update;
-        ctx->super.final = ptls_mbedtls_sha512_final;
-        ctx->is384 = is384;
-       
-        if (mbedtls_sha512_starts(&ctx->mctx, is384) != 0) {
-            free(ctx);
-            ctx = NULL;
-        }
-    }
-    return (ptls_hash_context_t*)ctx;
+    return ptls_mbedtls_hash_create(PSA_ALG_SHA_256, PTLS_SHA256_DIGEST_SIZE);
 }
 
 ptls_hash_context_t* ptls_mbedtls_sha512_create(void)
 {
-    return ptls_mbedtls_sha512_384_create(0);
+    return ptls_mbedtls_hash_create(PSA_ALG_SHA_512, PTLS_SHA512_DIGEST_SIZE);
 }
+
+
+ptls_hash_algorithm_t ptls_mbedtls_sha256 = {"sha256", PTLS_SHA256_BLOCK_SIZE, PTLS_SHA256_DIGEST_SIZE, ptls_mbedtls_sha256_create,
+PTLS_ZERO_DIGEST_SHA256};
 
 ptls_hash_algorithm_t ptls_mbedtls_sha512 = {"SHA512", PTLS_SHA512_BLOCK_SIZE, PTLS_SHA512_DIGEST_SIZE, ptls_mbedtls_sha512_create,
 PTLS_ZERO_DIGEST_SHA512};
@@ -212,7 +164,7 @@ PTLS_ZERO_DIGEST_SHA512};
 #if defined(MBEDTLS_SHA384_C)
 ptls_hash_context_t* ptls_mbedtls_sha384_create(void)
 {
-    return ptls_mbedtls_sha512_384_create(1);
+    return ptls_mbedtls_hash_create(PSA_ALG_SHA_384, PTLS_SHA384_DIGEST_SIZE);
 }
 
 ptls_hash_algorithm_t ptls_mbedtls_sha384 = {"SHA384", PTLS_SHA384_BLOCK_SIZE, 
@@ -220,148 +172,112 @@ PTLS_SHA384_DIGEST_SIZE, ptls_mbedtls_sha384_create,
 PTLS_ZERO_DIGEST_SHA384};
 #endif /* MBEDTLS_SHA384_C */
 
-/* definitions for symmetric crypto algorithms. 
-* Each algorithm (ECB or CTR) is represented by an "algorithm"
-* entry in which the 'setup" function is used to initialize
-* The "setup" function creates an object of type
-* ptls_cipher_context_t, with three function pointers:
-* 
-*   void (*do_dispose)(struct st_ptls_cipher_context_t *ctx);
-*   void (*do_init)(struct st_ptls_cipher_context_t *ctx, const void *iv);
-*   void (*do_transform)(struct st_ptls_cipher_context_t *ctx, void *output, const void *input, size_t len);
-* 
-* "do_init" sets the IV value. In CTR mode, this is the nonce value, which
-* will be incremented after each block. In CTR mode, this also sets the 
-* "stream block".
-* 
- */
-
-struct st_ptls_mbedtls_aes_context_t {
+/*
+* Generic implementation of a cipher using the PSA API
+*/
+struct st_ptls_mbedtls_cipher_context_t {
     ptls_cipher_context_t super;
-    mbedtls_aes_context aes_ctx;
-    uint8_t nonce_counter[16];
-    uint8_t stream_block[16];
-    int is_enc; /* MBEDTLS_AES_ENCRYPT or MBEDTLS_AES_DECRYPT */
+    psa_algorithm_t alg;
+    size_t iv_length;
+    int is_enc;
+    int is_op_in_progress;
+    mbedtls_svc_key_id_t key;
+    psa_cipher_operation_t operation;
 };
 
-static void ptls_mbedtls_aes_ctr_init(ptls_cipher_context_t *_ctx, const void *iv)
-{
-    struct st_ptls_mbedtls_aes_context_t *ctx = (struct st_ptls_mbedtls_aes_context_t *)_ctx;
 
-    if (iv == NULL) {
-        memset(ctx->nonce_counter, 0, 16);
+static void ptls_mbedtls_cipher_init(ptls_cipher_context_t *_ctx, const void *iv)
+{
+    struct st_ptls_mbedtls_cipher_context_t *ctx = (struct st_ptls_mbedtls_cipher_context_t *)_ctx;
+
+    if (ctx->is_op_in_progress) {
+        psa_cipher_abort(&ctx->operation);
+        ctx->is_op_in_progress = 0;
+    }
+
+    memset(&ctx->operation, 0, sizeof(ctx->operation));
+    if (ctx->is_enc) {
+        (void)psa_cipher_encrypt_setup(&ctx->operation, ctx->key, ctx->alg);
     }
     else {
-        memcpy(ctx->nonce_counter, iv, 16);
+        (void)psa_cipher_decrypt_setup(&ctx->operation, ctx->key, ctx->alg);
     }
-    memset(ctx->stream_block, 0, 16);
-}
-
-static void ptls_mbedtls_aes_ecb_transform(ptls_cipher_context_t *_ctx, void *output, const void *input, size_t len)
-{
-    struct st_ptls_mbedtls_aes_context_t *ctx = (struct st_ptls_mbedtls_aes_context_t *)_ctx;
-
-    /* Call the encryption */
-    if (mbedtls_aes_crypt_ecb(&ctx->aes_ctx, ctx->is_enc, (const uint8_t*)input, (uint8_t*)output) != 0) {
-        memset(output, 0, len);
+    if (ctx->iv_length > 0) {
+        (void)psa_cipher_set_iv(&ctx->operation, (const uint8_t*)iv, ctx->iv_length);
     }
+    ctx->is_op_in_progress = 1;
 }
 
-static void ptls_mbedtls_aes_ctr_transform(ptls_cipher_context_t *_ctx, void *output, const void *input, size_t len)
+static void ptls_mbedtls_cipher_transform(ptls_cipher_context_t *_ctx, void *output, const void *input, size_t len)
 {
-    struct st_ptls_mbedtls_aes_context_t *ctx = (struct st_ptls_mbedtls_aes_context_t *)_ctx;
-    size_t nc_off = 0;
+    struct st_ptls_mbedtls_cipher_context_t *ctx = (struct st_ptls_mbedtls_cipher_context_t *)_ctx;
+    size_t outlen = 0;
 
-    if (mbedtls_aes_crypt_ctr(&ctx->aes_ctx, len, &nc_off, ctx->nonce_counter, ctx->stream_block,
-        (const uint8_t*)input, (uint8_t*)output) != 0) {
-        memset(output, 0, len);
+    (void) psa_cipher_update(&ctx->operation, (const uint8_t*)input, len, (uint8_t*)output, len, &outlen);
+}
+
+static void ptls_mbedtls_cipher_dispose(ptls_cipher_context_t *_ctx)
+{
+    struct st_ptls_mbedtls_cipher_context_t *ctx = (struct st_ptls_mbedtls_cipher_context_t *)_ctx;
+    if (ctx->is_op_in_progress) {
+        psa_cipher_abort(&ctx->operation);
+        ctx->is_op_in_progress = 0;
     }
+    psa_destroy_key(ctx->key);
 }
 
-static void ptls_mbedtls_aes_ctr_dispose(ptls_cipher_context_t *_ctx)
+static int ptls_mbedtls_cipher_setup_key(mbedtls_svc_key_id_t* key_id, int is_enc, psa_algorithm_t alg, psa_key_type_t key_type,
+    size_t key_bits, uint8_t * key_bytes)
 {
-    struct st_ptls_mbedtls_aes_context_t *ctx = (struct st_ptls_mbedtls_aes_context_t *)_ctx;
-    mbedtls_aes_free(&ctx->aes_ctx);
-}
-
-static int ptls_mbedtls_cipher_setup_crypto_aes(ptls_cipher_context_t* _ctx, int is_enc, const void* key, unsigned int keybits)
-{
-    struct st_ptls_mbedtls_aes_context_t *ctx = (struct st_ptls_mbedtls_aes_context_t *)_ctx;
+    psa_key_attributes_t attributes = PSA_KEY_ATTRIBUTES_INIT;
     int ret = 0;
 
-    memset(ctx->nonce_counter, 0, 16);
-    memset(ctx->stream_block, 0, 16);
+    psa_set_key_usage_flags(&attributes,
+        (is_enc)?PSA_KEY_USAGE_ENCRYPT:PSA_KEY_USAGE_DECRYPT);
+    psa_set_key_algorithm(&attributes, alg);
+    psa_set_key_type(&attributes, key_type);
+    psa_set_key_bits(&attributes, key_bits);
+    /* Import key */
+    if (psa_import_key(&attributes, key_bytes, key_bits / 8,
+        key_id) != PSA_SUCCESS) {
+        ret = PTLS_ERROR_LIBRARY;
+    }
 
-    ctx->super.do_dispose = ptls_mbedtls_aes_ctr_dispose;
-    ctx->super.do_init = ptls_mbedtls_aes_ctr_init;
+    return ret;
+}
+
+static int ptls_mbedtls_cipher_setup_crypto(ptls_cipher_context_t* _ctx, int is_enc, const void* key_bytes,
+    psa_algorithm_t alg, size_t iv_length, psa_key_type_t key_type, size_t key_bits)
+{
+    struct st_ptls_mbedtls_cipher_context_t *ctx = (struct st_ptls_mbedtls_cipher_context_t *)_ctx;
+    int ret = 0;
+
+    ctx->alg = alg;
+    ctx->is_enc = is_enc;
+    ctx->iv_length = iv_length;
+
+    /* Initialize the key attributes */
+    ret = ptls_mbedtls_cipher_setup_key(&ctx->key, is_enc, alg, key_type, key_bits, key_bytes);
+    /* Finish initializing the context */
+    ctx->super.do_dispose = ptls_mbedtls_cipher_dispose;
+    ctx->super.do_init = ptls_mbedtls_cipher_init;
     ctx->super.do_transform = NULL;
 
-    mbedtls_aes_init(&ctx->aes_ctx);
-    if (is_enc) {
-        ret = mbedtls_aes_setkey_enc(&ctx->aes_ctx, key, keybits);
-        ctx->is_enc = MBEDTLS_AES_ENCRYPT;
-    }
-    else {
-        ret = mbedtls_aes_setkey_dec(&ctx->aes_ctx, key, keybits);
-        ctx->is_enc = MBEDTLS_AES_DECRYPT;
-    }
-
-    return ret;
-
-}
-
-static int ptls_mbedtls_cipher_setup_crypto_aes128_ecb(ptls_cipher_context_t *_ctx, int is_enc, const void *key)
-{
-    struct st_ptls_mbedtls_aes_context_t *ctx = (struct st_ptls_mbedtls_aes_context_t *)_ctx;
-    int ret = ptls_mbedtls_cipher_setup_crypto_aes(_ctx, is_enc, key, 128);
 
     if (ret == 0) {
-        ctx->super.do_transform = ptls_mbedtls_aes_ecb_transform;
+        ctx->super.do_transform = ptls_mbedtls_cipher_transform;
     }
 
     return ret;
 }
 
-static int ptls_mbedtls_cipher_setup_crypto_aes128_ctr(ptls_cipher_context_t *_ctx, int is_enc, const void *key)
+/*
+* Implementation of AES128_ECB using the PSA API:
+*/
+static int ptls_mbedtls_cipher_setup_aes128_ecb(ptls_cipher_context_t *_ctx, int is_enc, const void *key_bytes)
 {
-#ifdef _WINDOWS
-    UNREFERENCED_PARAMETER(is_enc);
-#endif
-    struct st_ptls_mbedtls_aes_context_t *ctx = (struct st_ptls_mbedtls_aes_context_t *)_ctx;
-    int ret = ptls_mbedtls_cipher_setup_crypto_aes(_ctx, 1, key, 128); /* No difference between CTR encrypt and decrypt */
-
-    if (ret == 0) {
-        ctx->super.do_transform = ptls_mbedtls_aes_ctr_transform;
-    }
-
-    return ret;
-}
-
-static int ptls_mbedtls_cipher_setup_crypto_aes256_ecb(ptls_cipher_context_t *_ctx, int is_enc, const void *key)
-{
-    struct st_ptls_mbedtls_aes_context_t *ctx = (struct st_ptls_mbedtls_aes_context_t *)_ctx;
-    int ret = ptls_mbedtls_cipher_setup_crypto_aes(_ctx, is_enc, key, 256);
-
-    if (ret == 0) {
-        ctx->super.do_transform = ptls_mbedtls_aes_ecb_transform;
-    }
-
-    return ret;
-}
-
-static int ptls_mbedtls_cipher_setup_crypto_aes256_ctr(ptls_cipher_context_t *_ctx, int is_enc, const void *key)
-{
-#ifdef _WINDOWS
-    UNREFERENCED_PARAMETER(is_enc);
-#endif
-    struct st_ptls_mbedtls_aes_context_t *ctx = (struct st_ptls_mbedtls_aes_context_t *)_ctx;
-    int ret = ptls_mbedtls_cipher_setup_crypto_aes(_ctx, 1, key, 256); /* No difference between CTR encrypt and decrypt */
-
-    if (ret == 0) {
-        ctx->super.do_transform = ptls_mbedtls_aes_ctr_transform;
-    }
-
-    return ret;
+    return ptls_mbedtls_cipher_setup_crypto(_ctx, is_enc, key_bytes,
+        PSA_ALG_ECB_NO_PADDING, 0, PSA_KEY_TYPE_AES, 128);
 }
 
 ptls_cipher_algorithm_t ptls_mbedtls_aes128ecb = {
@@ -369,30 +285,83 @@ ptls_cipher_algorithm_t ptls_mbedtls_aes128ecb = {
     PTLS_AES128_KEY_SIZE,
     PTLS_AES_BLOCK_SIZE,
     0 /* iv size */,
-    sizeof(struct st_ptls_mbedtls_aes_context_t),
-    ptls_mbedtls_cipher_setup_crypto_aes128_ecb};
+    sizeof(struct st_ptls_mbedtls_cipher_context_t),
+    ptls_mbedtls_cipher_setup_aes128_ecb};
 
-ptls_cipher_algorithm_t ptls_mbedtls_aes256ecb = {"AES256-ECB",
-PTLS_AES256_KEY_SIZE,
-PTLS_AES_BLOCK_SIZE,
-0 /* iv size */,
-sizeof(struct st_ptls_mbedtls_aes_context_t),
-ptls_mbedtls_cipher_setup_crypto_aes256_ecb};
+/*
+* Implementation of AES256_ECB using the PSA API:
+*/
+static int ptls_mbedtls_cipher_setup_aes256_ecb(ptls_cipher_context_t *_ctx, int is_enc, const void *key_bytes)
+{
+    return ptls_mbedtls_cipher_setup_crypto(_ctx, is_enc, key_bytes,
+        PSA_ALG_ECB_NO_PADDING, 0, PSA_KEY_TYPE_AES, 256);
+}
 
-ptls_cipher_algorithm_t ptls_mbedtls_aes128ctr = {"AES128-CTR",
-PTLS_AES128_KEY_SIZE,
-PTLS_AES_BLOCK_SIZE,
-0 /* iv size */,
-sizeof(struct st_ptls_mbedtls_aes_context_t),
-ptls_mbedtls_cipher_setup_crypto_aes128_ctr};
+ptls_cipher_algorithm_t ptls_mbedtls_aes256ecb = {
+    "AES256-ECB",
+    PTLS_AES128_KEY_SIZE,
+    PTLS_AES_BLOCK_SIZE,
+    0 /* iv size */,
+    sizeof(struct st_ptls_mbedtls_cipher_context_t),
+    ptls_mbedtls_cipher_setup_aes256_ecb};
 
-ptls_cipher_algorithm_t ptls_mbedtls_aes256ctr = {"AES256-CTR",
-PTLS_AES256_KEY_SIZE,
-PTLS_AES_BLOCK_SIZE,
-0 /* iv size */,
-sizeof(struct st_ptls_mbedtls_aes_context_t),
-ptls_mbedtls_cipher_setup_crypto_aes256_ctr};
+/*
+* Implementation of AES128_CTR using the PSA API:
+*/
 
+static int ptls_mbedtls_cipher_setup_aes128_ctr(ptls_cipher_context_t *_ctx, int is_enc, const void *key_bytes)
+{
+    return ptls_mbedtls_cipher_setup_crypto(_ctx, is_enc, key_bytes,
+        PSA_ALG_CTR, 16, PSA_KEY_TYPE_AES, 128);
+}
+
+ptls_cipher_algorithm_t ptls_mbedtls_aes128ctr = {
+    "AES128-CTR",
+    PTLS_AES128_KEY_SIZE,
+    PTLS_AES_BLOCK_SIZE,
+    16 /* iv size */,
+    sizeof(struct st_ptls_mbedtls_cipher_context_t),
+    ptls_mbedtls_cipher_setup_aes128_ctr};
+
+/*
+* Implementation of AES128_CTR using the PSA API:
+*/
+
+static int ptls_mbedtls_cipher_setup_aes256_ctr(ptls_cipher_context_t *_ctx, int is_enc, const void *key_bytes)
+{
+    return ptls_mbedtls_cipher_setup_crypto(_ctx, is_enc, key_bytes,
+        PSA_ALG_CTR, 16, PSA_KEY_TYPE_AES, 256);
+}
+
+ptls_cipher_algorithm_t ptls_mbedtls_aes256ctr = {
+    "AES128-CTR",
+    PTLS_AES256_KEY_SIZE,
+    PTLS_AES_BLOCK_SIZE,
+    16 /* iv size */,
+    sizeof(struct st_ptls_mbedtls_cipher_context_t),
+    ptls_mbedtls_cipher_setup_aes256_ctr};
+
+
+#if 0
+/*
+* Implementation of CHACHA20 using the PSA API.
+* This is disabled for now, as there seems to be an issue when
+* setting the 16 bytes long IV that we need.
+*/
+static int ptls_mbedtls_cipher_setup_crypto_chacha20(ptls_cipher_context_t *_ctx, int is_enc, const void *key_bytes)
+{
+    return ptls_mbedtls_cipher_setup_crypto(_ctx, is_enc, key_bytes,
+        PSA_ALG_STREAM_CIPHER, 16, PSA_KEY_TYPE_CHACHA20, 256);
+}
+
+ptls_cipher_algorithm_t ptls_mbedtls_chacha20 = {
+    "CHACHA20", PTLS_CHACHA20_KEY_SIZE, 1 /* block size */, PTLS_CHACHA20_IV_SIZE, sizeof(struct st_ptls_mbedtls_cipher_context_t),
+    ptls_mbedtls_cipher_setup_crypto_chacha20};
+#else
+/* Implementation of ChaCha20 using the low level ChaCha20 API.
+* TODO: remove this and the reference to chacha20.h as soon as
+* the IV bug in the generic implementation is fixed.
+*/
 struct st_ptls_mbedtls_chacha20_context_t {
     ptls_cipher_context_t super;
     mbedtls_chacha20_context mctx;
@@ -445,7 +414,7 @@ static int ptls_mbedtls_cipher_setup_crypto_chacha20(ptls_cipher_context_t *_ctx
 ptls_cipher_algorithm_t ptls_mbedtls_chacha20 = {
     "CHACHA20", PTLS_CHACHA20_KEY_SIZE, 1 /* block size */, PTLS_CHACHA20_IV_SIZE, sizeof(struct st_ptls_mbedtls_chacha20_context_t),
     ptls_mbedtls_cipher_setup_crypto_chacha20};
-
+#endif
 
 /* Definitions of AEAD algorithms.
 * 
@@ -780,19 +749,118 @@ ptls_aead_algorithm_t ptls_mbedtls_chacha20poly1305 = {
     ptls_mbedtls_aead_setup_crypto
 };
 
-ptls_cipher_suite_t ptls_mbedtls_aes128gcmsha256 = {.id = PTLS_CIPHER_SUITE_AES_128_GCM_SHA256,
-.name = PTLS_CIPHER_SUITE_NAME_AES_128_GCM_SHA256,
-.aead = &ptls_mbedtls_aes128gcm,
-.hash = &ptls_mbedtls_sha256};
+/* Key exchange algorithms.
+* The Picotls framework defines these algorithms as ptls_key_exchange_algorithm_t,
+* a structure containing two function pointers:
+* 
+* int (*create)(const struct st_ptls_key_exchange_algorithm_t *algo, ptls_key_exchange_context_t **ctx);
+* int (*exchange)(const struct st_ptls_key_exchange_algorithm_t *algo, ptls_iovec_t *pubkey, ptls_iovec_t *secret,
+*     ptls_iovec_t peerkey);
+* The "create" call is used on the client. It documents the ptls_key_exchange_context_t, which contains
+* the public key prepared by the client, as an iovec, and a function pointer:
+* 
+* int (*on_exchange)(struct st_ptls_key_exchange_context_t **keyex, int release, ptls_iovec_t *secret, ptls_iovec_t peerkey);
+* 
+* The public key of the client is passed to the server an ends up as "peerkey" argument to the (exchange) function.
+* That function documents the server's public key, and the secret coputed by combining server and client key.
+* 
+* When the client receives the server hello, the stack calls the "on_exchange" callback, passing the context
+* previously created by the client and the public key of the peer, so the client can compute its own
+* version of the secret.
+* 
+* The following code uses the MbedTLS API to create the "create", "exchange" and "on_exchange" functions.
+*/
 
-#if defined(MBEDTLS_SHA384_C)
-ptls_cipher_suite_t ptls_mbedtls_aes256gcmsha384 = {.id = PTLS_CIPHER_SUITE_AES_256_GCM_SHA384,
-.name = PTLS_CIPHER_SUITE_NAME_AES_256_GCM_SHA384,
-.aead = &ptls_mbedtls_aes256gcm,
-.hash = &ptls_mbedtls_sha384};
+/* TODO: use the PSA API, 
+* psa_generate_key
+* 
+*/
+#define PTLS_MBEDTLS_ECDH_PUBKEY_MAX 129
+#define TYPE_MBEDTLS_ECDH_UNCOMPRESSED_PUBLIC_KEY 4	
+
+struct ptls_mbedtls_ecdh_key_exchange_context_t {
+    ptls_key_exchange_context_t super;
+    mbedtls_ecdh_context ecdh_ctx;
+    uint8_t pub[PTLS_MBEDTLS_ECDH_PUBKEY_MAX];
+};
+
+#if 0
+static int ptls_mbedtls_ecdh_gen_public(struct ptls_mbedtls_ecdh_key_exchange_context_t * ctx)
+{
+    int ret = 0;
+    ret = mbedtls_ecdh_setup(&ctx->ecdh_ctx, ctx->group_id /* MBEDTLS_ECP_DP_CURVE25519 */);
+    if (ret == 0) {
+        ret = mbedtls_ecdh_make_params(&ctx->ecdh_ctx, &cli_olen, cli_to_srv,
+            sizeof(cli_to_srv),
+            mbedtls_ctr_drbg_random, &ptls_mbedtls_ctr_drbg);
+    }
+}
 #endif
 
-ptls_cipher_suite_t ptls_mbedtls_chacha20poly1305sha256 = {.id = PTLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256,
-.name = PTLS_CIPHER_SUITE_NAME_CHACHA20_POLY1305_SHA256,
-.aead = &ptls_mbedtls_chacha20poly1305,
-.hash = &ptls_mbedtls_sha256};
+static int ptls_mbedtls_exchange_id_from_tls(int tls_id)
+{
+    int mbedtls_id = MBEDTLS_ECP_DP_NONE;
+    switch (tls_id) {
+    case PTLS_GROUP_SECP256R1:
+        mbedtls_id = MBEDTLS_ECP_DP_SECP256R1;
+        break;
+    case PTLS_GROUP_SECP384R1:
+        mbedtls_id = MBEDTLS_ECP_DP_SECP384R1;
+        break;
+    case PTLS_GROUP_SECP521R1:
+        mbedtls_id = MBEDTLS_ECP_DP_SECP521R1;
+        break;
+    case PTLS_GROUP_X25519:
+        mbedtls_id = MBEDTLS_ECP_DP_CURVE25519;
+        break;
+    case PTLS_GROUP_X448:
+        mbedtls_id = MBEDTLS_ECP_DP_CURVE448;
+        break;
+    default:
+        break;
+    }
+    return mbedtls_id;
+}
+
+#if 0
+static int ptls_mbedtls_ecdh_on_exchange(
+    struct st_ptls_key_exchange_context_t** keyex, int release, ptls_iovec_t* secret, ptls_iovec_t peerkey)
+{
+
+}
+
+static int ptls_mbedtls_ecdh_create(const struct st_ptls_key_exchange_algorithm_t *algo, ptls_key_exchange_context_t **keyex)
+{
+    /* TODO: simplify */
+    struct ptls_mbedtls_ecdh_key_exchange_context_t *ctx;
+    int ret = 0;
+    int mbedtls_id = ptls_mbedtls_exchange_id_from_tls(algo->id);
+
+    if (mbedtls_id == MBEDTLS_ECP_DP_NONE) {
+        return PTLS_ERROR_NOT_AVAILABLE;
+    }
+    if ((ctx = (struct ptls_mbedtls_ecdh_key_exchange_context_t*)malloc(sizeof(*ctx))) == NULL) {
+        return PTLS_ERROR_NO_MEMORY;
+    }
+    ctx->super = (ptls_key_exchange_context_t){algo, ptls_iovec_init(ctx->pub, sizeof(ctx->pub)), ptls_mbedtls_ecdh_on_exchange};
+    ret = mbedtls_ecdh_setup(&ctx->ecdh_ctx, mbedtls_id);
+    ctx->pub[0] = TYPE_MBEDTLS_ECDH_UNCOMPRESSED_PUBLIC_KEY;
+
+
+
+
+    return 0;
+
+
+
+
+
+
+
+    if (ret == 0) {
+        ret = mbedtls_ecdh_make_params(&ctx->ecdh_ctx, &cli_olen, cli_to_srv,
+            sizeof(cli_to_srv),
+            mbedtls_ctr_drbg_random, &ptls_mbedtls_ctr_drbg);
+    }
+}
+#endif
