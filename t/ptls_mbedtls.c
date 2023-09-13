@@ -37,8 +37,6 @@
 #include "picotls/minicrypto.h"
 #include "../deps/picotest/picotest.h"
 
-#define PTLS_MBEDTLS_RANDOM_TEST_LENGTH 1021;
-
 static int random_trial()
 {
     /* The random test is just trying to check that we call the API properly. 
@@ -50,14 +48,14 @@ static int random_trial()
     * Note that this does not actually test the random generator.
     */
 
-    uint8_t buf[PTLS_MBEDTLS_RANDOM_TEST_LENGTH];
+    uint8_t buf[1021];
     uint64_t sum = 0;
     const uint64_t max_sum_1021 = 149505;
     const uint64_t min_sum_1021 = 110849;
     int ret = 0;
 
-    ptls_mbedtls_random_bytes(buf, PTLS_MBEDTLS_RANDOM_TEST_LENGTH);
-    for (size_t i = 0; i < PTLS_MBEDTLS_RANDOM_TEST_LENGTH; i++) {
+    ptls_mbedtls_random_bytes(buf, sizeof(buf));
+    for (size_t i = 0; i < sizeof(buf); i++) {
         sum += buf[i];
     }
     if (sum > max_sum_1021 || sum < min_sum_1021) {
