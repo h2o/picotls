@@ -46,7 +46,7 @@ static int x25519_derive_secret(ptls_iovec_t *secret, const uint8_t *clientpriv,
 
     cf_curve25519_mul(secret->base, clientpriv != NULL ? clientpriv : serverpriv, clientpriv != NULL ? serverpub : clientpub);
 
-    static const uint8_t zeros[X25519_KEY_SIZE] = {};
+    static const uint8_t zeros[X25519_KEY_SIZE] = {0};
     if (ptls_mem_equal(secret->base, zeros, sizeof(zeros))) {
         free(secret->base);
         return PTLS_ERROR_INCOMPATIBLE_KEY;
