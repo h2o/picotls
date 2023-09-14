@@ -1,3 +1,25 @@
+/*
+* Copyright (c) 2023, Christian Huitema
+*
+* Permission is hereby granted, free of charge, to any person obtaining a copy
+* of this software and associated documentation files (the "Software"), to
+* deal in the Software without restriction, including without limitation the
+* rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+* sell copies of the Software, and to permit persons to whom the Software is
+* furnished to do so, subject to the following conditions:
+*
+* The above copyright notice and this permission notice shall be included in
+* all copies or substantial portions of the Software.
+*
+* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+* IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+* FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+* AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+* LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+* FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+* IN THE SOFTWARE.
+*/
+
 #ifdef _WINDOWS
 #include "wincompat.h"
 #endif
@@ -704,6 +726,11 @@ ptls_aead_algorithm_t ptls_mbedtls_aes128gcm = {
     ptls_mbedtls_aead_setup_aes128gcm
 };
 
+ptls_cipher_suite_t ptls_mbedtls_aes128gcmsha256 = {.id = PTLS_CIPHER_SUITE_AES_128_GCM_SHA256,
+.name = PTLS_CIPHER_SUITE_NAME_AES_128_GCM_SHA256,
+.aead = &ptls_mbedtls_aes128gcm,
+.hash = &ptls_mbedtls_sha256};
+
 static int ptls_mbedtls_aead_setup_aes256gcm(ptls_aead_context_t* _ctx, int is_enc, const void* key_bytes, const void* iv)
 {
     return ptls_mbedtls_aead_setup_crypto(_ctx, is_enc, key_bytes, iv, PSA_ALG_GCM, 256, PSA_KEY_TYPE_AES);
@@ -725,6 +752,12 @@ ptls_aead_algorithm_t ptls_mbedtls_aes256gcm = {
     ptls_mbedtls_aead_setup_aes256gcm
 };
 
+ptls_cipher_suite_t ptls_mbedtls_aes256gcmsha384 = {
+    .id = PTLS_CIPHER_SUITE_AES_256_GCM_SHA384,
+    .name = PTLS_CIPHER_SUITE_NAME_AES_256_GCM_SHA384,
+    .aead = &ptls_mbedtls_aes256gcm,
+    .hash = &ptls_mbedtls_sha384};
+
 static int ptls_mbedtls_aead_setup_chacha20poly1305(ptls_aead_context_t* _ctx, int is_enc, const void* key_bytes, const void* iv)
 {
     return ptls_mbedtls_aead_setup_crypto(_ctx, is_enc, key_bytes, iv, PSA_ALG_CHACHA20_POLY1305, 256, PSA_KEY_TYPE_CHACHA20);
@@ -745,6 +778,11 @@ ptls_aead_algorithm_t ptls_mbedtls_chacha20poly1305 = {
     sizeof(struct ptls_mbedtls_aead_context_t),
     ptls_mbedtls_aead_setup_chacha20poly1305
 };
+
+ptls_cipher_suite_t ptls_mbedtls_chacha20poly1305sha256 = {.id = PTLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256,
+.name = PTLS_CIPHER_SUITE_NAME_CHACHA20_POLY1305_SHA256,
+.aead = &ptls_mbedtls_chacha20poly1305,
+.hash = &ptls_mbedtls_sha256};
 
 /* Key exchange algorithms.
 * The Picotls framework defines these algorithms as ptls_key_exchange_algorithm_t,
@@ -922,7 +960,7 @@ static int ptls_mbedtls_key_exchange_exchange(const struct st_ptls_key_exchange_
     return ret;
 }
 
-/* Instantiation of the generic API with secp256r1
+/* Instantiation of the generic key exchange API with secp256r1
 */
 static int ptls_mbedtls_secp256r1_create(const struct st_ptls_key_exchange_algorithm_t* algo, ptls_key_exchange_context_t** ctx)
 {
@@ -941,3 +979,23 @@ ptls_key_exchange_algorithm_t ptls_mbedtls_secp256r1 = {.id = PTLS_GROUP_SECP256
 .name = PTLS_GROUP_NAME_SECP256R1,
 .create = ptls_mbedtls_secp256r1_create,
 .exchange = ptls_mbedtls_secp256r1_exchange};
+
+/* Instantiation of the generic key exchange API with x25519
+*/
+static int ptls_mbedtls_x25519_create(const struct st_ptls_key_exchange_algorithm_t* algo, ptls_key_exchange_context_t** ctx)
+{
+    return ptls_mbedtls_key_exchange_create(algo, ctx,
+        PSA_ALG_ECDH, PSA_ECC_FAMILY_MONTGOMERY, 255, 32);
+}
+
+static int ptls_mbedtls_x25519_exchange(const struct st_ptls_key_exchange_algorithm_t* algo, ptls_iovec_t* pubkey, ptls_iovec_t* secret,
+    ptls_iovec_t peerkey)
+{
+    return ptls_mbedtls_key_exchange_exchange(algo, pubkey, secret, peerkey,
+        PSA_ALG_ECDH, PSA_ECC_FAMILY_MONTGOMERY, 255, 32);
+}
+
+ptls_key_exchange_algorithm_t ptls_mbedtls_x25519 = {.id = PTLS_GROUP_X25519,
+.name = PTLS_GROUP_NAME_X25519,
+.create = ptls_mbedtls_x25519_create,
+.exchange = ptls_mbedtls_x25519_exchange};
