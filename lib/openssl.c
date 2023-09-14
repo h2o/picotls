@@ -525,16 +525,16 @@ static int evp_keyex_on_exchange(ptls_key_exchange_context_t **_ctx, int release
     }
 
 #ifdef OPENSSL_IS_BORINGSSL
+#define X25519_KEY_SIZE 32
     if (ctx->super.algo->id == PTLS_GROUP_X25519) {
         /* allocate memory to return secret */
-        static const size_t SECRET_SIZE = 32;
-        if ((secret->base = malloc(SECRET_SIZE)) == NULL) {
+        if ((secret->base = malloc(X25519_KEY_SIZE)) == NULL) {
             ret = PTLS_ERROR_NO_MEMORY;
             goto Exit;
         }
-        secret->len = SECRET_SIZE;
+        secret->len = X25519_KEY_SIZE;
         /* fetch raw key and derive the secret */
-        uint8_t sk_raw[32];
+        uint8_t sk_raw[X25519_KEY_SIZE];
         size_t sk_raw_len = sizeof(sk_raw);
         if (EVP_PKEY_get_raw_private_key(ctx->privkey, sk_raw, &sk_raw_len) != 1) {
             ret = PTLS_ERROR_LIBRARY;
@@ -544,8 +544,8 @@ static int evp_keyex_on_exchange(ptls_key_exchange_context_t **_ctx, int release
         X25519(secret->base, sk_raw, peerkey.base);
         ptls_clear_memory(sk_raw, sizeof(sk_raw));
         /* check bad key */
-        static const uint8_t zeros[SECRET_SIZE] = {0};
-        if (ptls_mem_equal(secret->base, zeros, SECRET_SIZE)) {
+        static const uint8_t zeros[X25519_KEY_SIZE] = {0};
+        if (ptls_mem_equal(secret->base, zeros, X25519_KEY_SIZE)) {
             ret = PTLS_ERROR_INCOMPATIBLE_KEY;
             goto Exit;
         }
@@ -553,6 +553,7 @@ static int evp_keyex_on_exchange(ptls_key_exchange_context_t **_ctx, int release
         ret = 0;
         goto Exit;
     }
+#undef X25519_KEY_SIZE
 #endif
 
     if ((evppeer = EVP_PKEY_new()) == NULL) {
