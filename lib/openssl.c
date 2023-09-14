@@ -542,6 +542,7 @@ static int evp_keyex_on_exchange(ptls_key_exchange_context_t **_ctx, int release
         }
         assert(sk_raw_len == sizeof(sk_raw));
         X25519(secret->base, sk_raw, peerkey.base);
+        ptls_clear_memory(sk_raw, sizeof(sk_raw));
         /* check bad key */
         static const uint8_t zeros[SECRET_SIZE] = {0};
         if (ptls_mem_equal(secret->base, zeros, SECRET_SIZE)) {
