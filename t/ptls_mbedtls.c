@@ -36,6 +36,7 @@
 #include "picotls/ptls_mbedtls.h"
 #include "picotls/minicrypto.h"
 #include "../deps/picotest/picotest.h"
+#include "test.h"
 
 static int random_trial()
 {
@@ -401,6 +402,24 @@ static void test_chacha20poly1305_sha256(void)
     ok(!!"success");
 }
 
+static void test_secp256r1(void)
+{
+    test_key_exchange(&ptls_mbedtls_secp256r1, &ptls_minicrypto_secp256r1);
+    test_key_exchange(&ptls_minicrypto_secp256r1, &ptls_mbedtls_secp256r1);
+}
+
+static void test_x25519(void)
+{
+    test_key_exchange(&ptls_mbedtls_x25519, &ptls_minicrypto_x25519);
+    test_key_exchange(&ptls_minicrypto_x25519, &ptls_mbedtls_x25519);
+}
+
+static void test_key_exchanges(void)
+{
+    subtest("secp256r1", test_secp256r1);
+    subtest("x25519", test_x25519);
+}
+
 int main(int argc, char **argv)
 {
     /* Initialize the PSA crypto library. */
@@ -426,6 +445,7 @@ int main(int argc, char **argv)
     subtest("aes256gcm_sha384", test_aes256gcm_sha384);
 #endif
     subtest("chacha20poly1305_sha256", test_chacha20poly1305_sha256);
+    subtest("key_exchanges", test_key_exchanges);
     /* Deinitialize the PSA crypto library. */
     mbedtls_psa_crypto_free();
 
