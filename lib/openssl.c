@@ -526,18 +526,29 @@ static int evp_keyex_on_exchange(ptls_key_exchange_context_t **_ctx, int release
 
 #ifdef OPENSSL_IS_BORINGSSL
     if (ctx->super.algo->id == PTLS_GROUP_X25519) {
-        secret->len = peerkey.len;
-        if ((secret->base = malloc(secret->len)) == NULL) {
+        /* allocate memory to return secret */
+        static const size_t SECRET_SIZE = 32;
+        if ((secret->base = malloc(SECRET_SIZE)) == NULL) {
             ret = PTLS_ERROR_NO_MEMORY;
             goto Exit;
         }
+        secret->len = SECRET_SIZE;
+        /* fetch raw key and derive the secret */
         uint8_t sk_raw[32];
         size_t sk_raw_len = sizeof(sk_raw);
         if (EVP_PKEY_get_raw_private_key(ctx->privkey, sk_raw, &sk_raw_len) != 1) {
             ret = PTLS_ERROR_LIBRARY;
             goto Exit;
         }
+        assert(sk_raw_len == sizeof(sk_raw));
         X25519(secret->base, sk_raw, peerkey.base);
+        /* check bad key */
+        static const uint8_t zeros[SECRET_SIZE] = {0};
+        if (ptls_mem_equal(secret->base, zeros, SECRET_SIZE)) {
+            ret = PTLS_ERROR_INCOMPATIBLE_KEY;
+            goto Exit;
+        }
+        /* success */
         ret = 0;
         goto Exit;
     }
