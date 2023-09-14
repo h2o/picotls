@@ -43,6 +43,8 @@ extern "C" {
     extern ptls_aead_algorithm_t ptls_mbedtls_aes256gcm;
     extern ptls_aead_algorithm_t ptls_mbedtls_chacha20poly1305;
 
+    extern ptls_key_exchange_algorithm_t ptls_mbedtls_secp256r1;
+
     int ptls_mbedtls_init();
     void ptls_mbedtls_free();
     void ptls_mbedtls_random_bytes(void* buf, size_t len);

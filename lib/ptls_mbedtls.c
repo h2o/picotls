@@ -10,8 +10,10 @@
 #include "mbedtls/build_info.h"
 #include "psa/crypto.h"
 #include "psa/crypto_struct.h"
+#include "psa/crypto_values.h"
 
 #include "mbedtls/chacha20.h"
+
 #include "mbedtls/ecdh.h"
 
 /* Init and free functions. Init should be used before starting using
@@ -227,7 +229,7 @@ static void ptls_mbedtls_cipher_dispose(ptls_cipher_context_t *_ctx)
 }
 
 static int ptls_mbedtls_cipher_setup_key(mbedtls_svc_key_id_t* key_id, int is_enc, psa_algorithm_t alg, psa_key_type_t key_type,
-    size_t key_bits, uint8_t * key_bytes)
+    size_t key_bits, const uint8_t * key_bytes)
 {
     psa_key_attributes_t attributes = PSA_KEY_ATTRIBUTES_INIT;
     int ret = 0;
@@ -257,7 +259,7 @@ static int ptls_mbedtls_cipher_setup_crypto(ptls_cipher_context_t* _ctx, int is_
     ctx->iv_length = iv_length;
 
     /* Initialize the key attributes */
-    ret = ptls_mbedtls_cipher_setup_key(&ctx->key, is_enc, alg, key_type, key_bits, key_bytes);
+    ret = ptls_mbedtls_cipher_setup_key(&ctx->key, is_enc, alg, key_type, key_bits, (const uint8_t *)key_bytes);
     /* Finish initializing the context */
     ctx->super.do_dispose = ptls_mbedtls_cipher_dispose;
     ctx->super.do_init = ptls_mbedtls_cipher_init;
@@ -762,7 +764,7 @@ ptls_aead_algorithm_t ptls_mbedtls_chacha20poly1305 = {
 * int (*on_exchange)(struct st_ptls_key_exchange_context_t **keyex, int release, ptls_iovec_t *secret, ptls_iovec_t peerkey);
 * 
 * The public key of the client is passed to the server an ends up as "peerkey" argument to the (exchange) function.
-* That function documents the server's public key, and the secret coputed by combining server and client key.
+* That function documents the server's public key, and the secret computed by combining server and client key.
 * 
 * When the client receives the server hello, the stack calls the "on_exchange" callback, passing the context
 * previously created by the client and the public key of the peer, so the client can compute its own
@@ -778,89 +780,174 @@ ptls_aead_algorithm_t ptls_mbedtls_chacha20poly1305 = {
 #define PTLS_MBEDTLS_ECDH_PUBKEY_MAX 129
 #define TYPE_MBEDTLS_ECDH_UNCOMPRESSED_PUBLIC_KEY 4	
 
-struct ptls_mbedtls_ecdh_key_exchange_context_t {
+struct ptls_mbedtls_key_exchange_context_t {
     ptls_key_exchange_context_t super;
-    mbedtls_ecdh_context ecdh_ctx;
+    psa_algorithm_t psa_alg; 
+    psa_ecc_family_t curve;
+    size_t curve_bits;
+    size_t secret_size;
+    psa_key_id_t private_key;
     uint8_t pub[PTLS_MBEDTLS_ECDH_PUBKEY_MAX];
 };
 
-#if 0
-static int ptls_mbedtls_ecdh_gen_public(struct ptls_mbedtls_ecdh_key_exchange_context_t * ctx)
+/* Set a private key for key exchange. For now, we only support ECC
+*/
+
+static int ptls_mbedtls_key_exchange_set_private_key(psa_key_id_t * private_key,
+    psa_algorithm_t psa_alg, psa_ecc_family_t curve, size_t curve_bits)
+{
+    psa_key_attributes_t attributes = PSA_KEY_ATTRIBUTES_INIT;
+    int ret = 0;
+
+    psa_set_key_usage_flags(&attributes, PSA_KEY_USAGE_DERIVE);
+    psa_set_key_algorithm(&attributes, psa_alg);
+    psa_set_key_type(&attributes, PSA_KEY_TYPE_ECC_KEY_PAIR(curve) );
+    psa_set_key_bits(&attributes, curve_bits);
+    if (psa_generate_key(&attributes, private_key) != 0) {
+        ret = -1;
+    }
+    return ret;
+}
+
+/*
+* The key agreement is done by calling  psa_raw_key_agreement
+psa_status_t psa_raw_key_agreement(psa_algorithm_t alg,
+psa_key_id_t private_key,
+const uint8_t * peer_key,
+size_t peer_key_length,
+uint8_t * output,
+size_t output_size,
+size_t * output_length);
+*/
+
+int ptls_mbedtls_key_exchange_on_exchange(struct st_ptls_key_exchange_context_t** _pctx, int release, ptls_iovec_t* secret, ptls_iovec_t peerkey)
 {
     int ret = 0;
-    ret = mbedtls_ecdh_setup(&ctx->ecdh_ctx, ctx->group_id /* MBEDTLS_ECP_DP_CURVE25519 */);
-    if (ret == 0) {
-        ret = mbedtls_ecdh_make_params(&ctx->ecdh_ctx, &cli_olen, cli_to_srv,
-            sizeof(cli_to_srv),
-            mbedtls_ctr_drbg_random, &ptls_mbedtls_ctr_drbg);
+    struct ptls_mbedtls_key_exchange_context_t *keyex = (struct ptls_mbedtls_key_exchange_context_t *)*_pctx;
+
+    if (secret != NULL) {
+        uint8_t* secbytes = (uint8_t*)malloc(keyex->secret_size);
+
+        if (secbytes == NULL) {
+            ret = PTLS_ERROR_NO_MEMORY;
+        }
+        else {
+            size_t olen;
+            if (psa_raw_key_agreement(keyex->psa_alg, keyex->private_key, (const uint8_t*)peerkey.base, peerkey.len,
+                secbytes, keyex->secret_size, &olen) == 0) {
+                *secret = ptls_iovec_init(secbytes, keyex->secret_size);
+            }
+            else {
+                free(secbytes);
+                ret = PTLS_ERROR_LIBRARY;
+            }
+        }
     }
-}
-#endif
-
-static int ptls_mbedtls_exchange_id_from_tls(int tls_id)
-{
-    int mbedtls_id = MBEDTLS_ECP_DP_NONE;
-    switch (tls_id) {
-    case PTLS_GROUP_SECP256R1:
-        mbedtls_id = MBEDTLS_ECP_DP_SECP256R1;
-        break;
-    case PTLS_GROUP_SECP384R1:
-        mbedtls_id = MBEDTLS_ECP_DP_SECP384R1;
-        break;
-    case PTLS_GROUP_SECP521R1:
-        mbedtls_id = MBEDTLS_ECP_DP_SECP521R1;
-        break;
-    case PTLS_GROUP_X25519:
-        mbedtls_id = MBEDTLS_ECP_DP_CURVE25519;
-        break;
-    case PTLS_GROUP_X448:
-        mbedtls_id = MBEDTLS_ECP_DP_CURVE448;
-        break;
-    default:
-        break;
+    if (release) {
+        /* Clear the private key */
+        psa_destroy_key(keyex->private_key);
+        /* Set context to NULL */
+        *_pctx = NULL;
+        /* TODO: check whether allocated memory should be freed */
     }
-    return mbedtls_id;
+
+    return ret;
 }
 
-#if 0
-static int ptls_mbedtls_ecdh_on_exchange(
-    struct st_ptls_key_exchange_context_t** keyex, int release, ptls_iovec_t* secret, ptls_iovec_t peerkey)
+int ptls_mbedtls_key_exchange_create(const struct st_ptls_key_exchange_algorithm_t* algo, ptls_key_exchange_context_t** ctx,
+    psa_algorithm_t psa_alg, psa_ecc_family_t curve, size_t curve_bits, size_t secret_size)
 {
+    struct ptls_mbedtls_key_exchange_context_t *keyex;
+    size_t olen = 0;
 
+    if ((keyex = (struct ptls_mbedtls_key_exchange_context_t *)malloc(sizeof(struct ptls_mbedtls_key_exchange_context_t))) == NULL)
+        return PTLS_ERROR_NO_MEMORY;
+    /* Initialize the exchange context based on the algorithm definition */
+    keyex->psa_alg = psa_alg;
+    keyex->curve = curve;
+    keyex->curve_bits = curve_bits;
+    keyex->secret_size = secret_size;
+    /* Initialize the private key and format the public key */
+    if (ptls_mbedtls_key_exchange_set_private_key(&keyex->private_key, psa_alg, curve, curve_bits) != 0){
+        free(keyex);
+        *ctx = NULL;
+        return PTLS_ERROR_LIBRARY;
+    }
+    /* According to the doc, format of public key is same as picotls */
+    if (psa_export_public_key(keyex->private_key, keyex->pub, sizeof(keyex->pub), &olen) != 0) {
+        psa_destroy_key(keyex->private_key);
+        free(keyex);
+        *ctx = NULL;
+        return PTLS_ERROR_LIBRARY;
+    }
+    keyex->super.pubkey= ptls_iovec_init(keyex->pub, olen);
+    /* Initialize the ptls exchange context */
+    keyex->super.algo = algo;
+    keyex->super.on_exchange = ptls_mbedtls_key_exchange_on_exchange;
+    *ctx = (ptls_key_exchange_context_t*)keyex;
+    return 0;
 }
 
-static int ptls_mbedtls_ecdh_create(const struct st_ptls_key_exchange_algorithm_t *algo, ptls_key_exchange_context_t **keyex)
+static int ptls_mbedtls_key_exchange_exchange(const struct st_ptls_key_exchange_algorithm_t* algo, ptls_iovec_t* pubkey, ptls_iovec_t* secret,
+    ptls_iovec_t peerkey, psa_algorithm_t psa_alg, psa_ecc_family_t curve, size_t curve_bits, size_t secret_size)
 {
-    /* TODO: simplify */
-    struct ptls_mbedtls_ecdh_key_exchange_context_t *ctx;
+    /* generate a local private key for the selected algorithm */
+    psa_key_id_t private_key;
+    size_t pubkey_len;
+    uint8_t* pubkey_bytes = NULL;
+    size_t secret_len;
+    uint8_t* secret_bytes = (uint8_t*)malloc(secret_size);
     int ret = 0;
-    int mbedtls_id = ptls_mbedtls_exchange_id_from_tls(algo->id);
 
-    if (mbedtls_id == MBEDTLS_ECP_DP_NONE) {
-        return PTLS_ERROR_NOT_AVAILABLE;
-    }
-    if ((ctx = (struct ptls_mbedtls_ecdh_key_exchange_context_t*)malloc(sizeof(*ctx))) == NULL) {
+    if (secret_bytes == NULL) {
         return PTLS_ERROR_NO_MEMORY;
     }
-    ctx->super = (ptls_key_exchange_context_t){algo, ptls_iovec_init(ctx->pub, sizeof(ctx->pub)), ptls_mbedtls_ecdh_on_exchange};
-    ret = mbedtls_ecdh_setup(&ctx->ecdh_ctx, mbedtls_id);
-    ctx->pub[0] = TYPE_MBEDTLS_ECDH_UNCOMPRESSED_PUBLIC_KEY;
-
-
-
-
-    return 0;
-
-
-
-
-
-
-
-    if (ret == 0) {
-        ret = mbedtls_ecdh_make_params(&ctx->ecdh_ctx, &cli_olen, cli_to_srv,
-            sizeof(cli_to_srv),
-            mbedtls_ctr_drbg_random, &ptls_mbedtls_ctr_drbg);
+    pubkey_bytes = (uint8_t*)malloc(PTLS_MBEDTLS_ECDH_PUBKEY_MAX);
+    if (pubkey_bytes == NULL){
+        free(secret_bytes);
+        return PTLS_ERROR_NO_MEMORY;
     }
+
+    if (ptls_mbedtls_key_exchange_set_private_key(&private_key, psa_alg, curve, curve_bits) != 0) {
+        free(secret_bytes);
+        free(pubkey_bytes);
+        return PTLS_ERROR_LIBRARY;
+    }
+
+    /* Export public key and call key agrement function */
+    if (psa_export_public_key(private_key, pubkey_bytes, PTLS_MBEDTLS_ECDH_PUBKEY_MAX, &pubkey_len) == 0 &&
+        psa_raw_key_agreement(psa_alg, private_key, (const uint8_t*)peerkey.base, peerkey.len,
+            secret_bytes, secret_size, &secret_len) == 0) {
+        *secret = ptls_iovec_init(secret_bytes, secret_len);
+        *pubkey = ptls_iovec_init(pubkey_bytes, pubkey_len);
+    }
+    else {
+        free(secret_bytes);
+        free(pubkey_bytes);
+        return PTLS_ERROR_LIBRARY;
+    }
+
+    psa_destroy_key(private_key);
+
+    return ret;
 }
-#endif
+
+/* Instantiation of the generic API with secp256r1
+*/
+static int ptls_mbedtls_secp256r1_create(const struct st_ptls_key_exchange_algorithm_t* algo, ptls_key_exchange_context_t** ctx)
+{
+    return ptls_mbedtls_key_exchange_create(algo, ctx,
+        PSA_ALG_ECDH, PSA_ECC_FAMILY_SECP_R1, 256, 32);
+}
+
+static int ptls_mbedtls_secp256r1_exchange(const struct st_ptls_key_exchange_algorithm_t* algo, ptls_iovec_t* pubkey, ptls_iovec_t* secret,
+    ptls_iovec_t peerkey)
+{
+    return ptls_mbedtls_key_exchange_exchange(algo, pubkey, secret, peerkey,
+        PSA_ALG_ECDH, PSA_ECC_FAMILY_SECP_R1, 256, 32);
+}
+
+ptls_key_exchange_algorithm_t ptls_mbedtls_secp256r1 = {.id = PTLS_GROUP_SECP256R1,
+.name = PTLS_GROUP_NAME_SECP256R1,
+.create = ptls_mbedtls_secp256r1_create,
+.exchange = ptls_mbedtls_secp256r1_exchange};
