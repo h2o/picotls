@@ -625,37 +625,17 @@ size_t ptls_mbedtls_aead_do_decrypt(struct st_ptls_aead_context_t* _ctx, void* o
     return o_len;
 }
 
-static int ptls_mbedtls_aead_setup_crypto(ptls_aead_context_t *_ctx, int is_enc, const void *key_bytes, const void *iv)
+static int ptls_mbedtls_aead_setup_crypto(ptls_aead_context_t *_ctx, int is_enc, const void *key_bytes, const void *iv,
+    psa_algorithm_t psa_alg, size_t key_bits, psa_key_type_t key_type)
 {
     int ret = 0;
     struct ptls_mbedtls_aead_context_t* ctx =
         (struct ptls_mbedtls_aead_context_t*)_ctx;
-    size_t key_bits;
-    psa_key_type_t key_type;
+
 
     /* set mbed specific context to NULL, just to be sure */
     memset(&ctx->mctx, 0, sizeof(struct ptls_mbedtls_aead_param_t));
-
-    /* deduce the PSA algorithm from the name */
-    if (strcmp(ctx->super.algo->name, "AES128-GCM") == 0) {
-        ctx->mctx.alg = PSA_ALG_GCM;
-        key_bits = 128;
-        key_type = PSA_KEY_TYPE_AES;
-    } else if (strcmp(ctx->super.algo->name, "AES256-GCM") == 0) {
-        ctx->mctx.alg = PSA_ALG_GCM;
-        key_bits = 256;
-        key_type = PSA_KEY_TYPE_AES;
-    } else if (strcmp(ctx->super.algo->name, "AES128-GCM_8") == 0) {
-        ctx->mctx.alg = PSA_ALG_AEAD_WITH_SHORTENED_TAG(PSA_ALG_GCM, 8);
-        key_bits = 128;
-        key_type = PSA_KEY_TYPE_AES;
-    } else if (strcmp(ctx->super.algo->name, "CHACHA20-POLY1305") == 0) {
-        ctx->mctx.alg = PSA_ALG_CHACHA20_POLY1305;
-        key_bits = 256;
-        key_type = PSA_KEY_TYPE_CHACHA20;
-    } else {
-        ret = PTLS_ERROR_LIBRARY;
-    }
+    ctx->mctx.alg = psa_alg;
 
     /* Initialize the key attributes */
     if (ret == 0) {
@@ -703,6 +683,11 @@ static int ptls_mbedtls_aead_setup_crypto(ptls_aead_context_t *_ctx, int is_enc,
     return ret;
 }
 
+static int ptls_mbedtls_aead_setup_aes128gcm(ptls_aead_context_t* _ctx, int is_enc, const void* key_bytes, const void* iv)
+{
+    return ptls_mbedtls_aead_setup_crypto(_ctx, is_enc, key_bytes, iv, PSA_ALG_GCM, 128, PSA_KEY_TYPE_AES);
+}
+
 ptls_aead_algorithm_t ptls_mbedtls_aes128gcm = {
     "AES128-GCM",
     PTLS_AESGCM_CONFIDENTIALITY_LIMIT,
@@ -716,8 +701,13 @@ ptls_aead_algorithm_t ptls_mbedtls_aes128gcm = {
     0,
     0,
     sizeof(struct ptls_mbedtls_aead_context_t),
-    ptls_mbedtls_aead_setup_crypto
+    ptls_mbedtls_aead_setup_aes128gcm
 };
+
+static int ptls_mbedtls_aead_setup_aes256gcm(ptls_aead_context_t* _ctx, int is_enc, const void* key_bytes, const void* iv)
+{
+    return ptls_mbedtls_aead_setup_crypto(_ctx, is_enc, key_bytes, iv, PSA_ALG_GCM, 256, PSA_KEY_TYPE_AES);
+}
 
 ptls_aead_algorithm_t ptls_mbedtls_aes256gcm = {
     "AES256-GCM",
@@ -732,8 +722,13 @@ ptls_aead_algorithm_t ptls_mbedtls_aes256gcm = {
     0,
     0,
     sizeof(struct ptls_mbedtls_aead_context_t),
-    ptls_mbedtls_aead_setup_crypto
+    ptls_mbedtls_aead_setup_aes256gcm
 };
+
+static int ptls_mbedtls_aead_setup_chacha20poly1305(ptls_aead_context_t* _ctx, int is_enc, const void* key_bytes, const void* iv)
+{
+    return ptls_mbedtls_aead_setup_crypto(_ctx, is_enc, key_bytes, iv, PSA_ALG_CHACHA20_POLY1305, 256, PSA_KEY_TYPE_CHACHA20);
+}
 
 ptls_aead_algorithm_t ptls_mbedtls_chacha20poly1305 = {
     "CHACHA20-POLY1305",
@@ -748,7 +743,7 @@ ptls_aead_algorithm_t ptls_mbedtls_chacha20poly1305 = {
     0,
     0,
     sizeof(struct ptls_mbedtls_aead_context_t),
-    ptls_mbedtls_aead_setup_crypto
+    ptls_mbedtls_aead_setup_chacha20poly1305
 };
 
 /* Key exchange algorithms.
@@ -770,15 +765,10 @@ ptls_aead_algorithm_t ptls_mbedtls_chacha20poly1305 = {
 * previously created by the client and the public key of the peer, so the client can compute its own
 * version of the secret.
 * 
-* The following code uses the MbedTLS API to create the "create", "exchange" and "on_exchange" functions.
+* The following code uses the MbedTLS PSA API to create the "create", "exchange" and "on_exchange" functions.
 */
 
-/* TODO: use the PSA API, 
-* psa_generate_key
-* 
-*/
-#define PTLS_MBEDTLS_ECDH_PUBKEY_MAX 129
-#define TYPE_MBEDTLS_ECDH_UNCOMPRESSED_PUBLIC_KEY 4	
+#define PTLS_MBEDTLS_ECDH_PUBKEY_MAX 129	
 
 struct ptls_mbedtls_key_exchange_context_t {
     ptls_key_exchange_context_t super;
