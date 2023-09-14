@@ -36,7 +36,6 @@
 #include "picotls/ptls_mbedtls.h"
 #include "picotls/minicrypto.h"
 #include "../deps/picotest/picotest.h"
-#include "test.h"
 
 static int random_trial()
 {
@@ -400,6 +399,42 @@ static void test_chacha20poly1305_sha256(void)
         ok(!"fail");
     }
     ok(!!"success");
+}
+
+/* Test key exchange. This is a cut and paste of the "test_key_exchange"
+ * defined in test.h and openssl.c, because referring to that common code
+ * causes a link error.
+ */
+static void test_key_exchange(ptls_key_exchange_algorithm_t *client, ptls_key_exchange_algorithm_t *server)
+{
+    ptls_key_exchange_context_t *ctx;
+    ptls_iovec_t client_secret, server_pubkey, server_secret;
+    int ret;
+
+    /* fail */
+    ret = server->exchange(server, &server_pubkey, &server_secret, (ptls_iovec_t){NULL});
+    ok(ret != 0);
+
+    /* perform ecdh */
+    ret = client->create(client, &ctx);
+    ok(ret == 0);
+    ret = server->exchange(server, &server_pubkey, &server_secret, ctx->pubkey);
+    ok(ret == 0);
+    ret = ctx->on_exchange(&ctx, 1, &client_secret, server_pubkey);
+    ok(ret == 0);
+    ok(client_secret.len == server_secret.len);
+    ok(memcmp(client_secret.base, server_secret.base, client_secret.len) == 0);
+
+    free(client_secret.base);
+    free(server_pubkey.base);
+    free(server_secret.base);
+
+    /* client abort */
+    ret = client->create(client, &ctx);
+    ok(ret == 0);
+    ret = ctx->on_exchange(&ctx, 1, NULL, ptls_iovec_init(NULL, 0));
+    ok(ret == 0);
+    ok(ctx == NULL);
 }
 
 static void test_secp256r1(void)
