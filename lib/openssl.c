@@ -656,8 +656,10 @@ static int evp_keyex_create(ptls_key_exchange_algorithm_t *algo, ptls_key_exchan
     }
 
     /* setup */
-    if ((ret = evp_keyex_init(algo, ctx, pkey)) != 0)
+    if ((ret = evp_keyex_init(algo, ctx, pkey)) != 0) {
+        pkey = NULL; /* was free'd in the error path */
         goto Exit;
+    }
     pkey = NULL;
     ret = 0;
 
