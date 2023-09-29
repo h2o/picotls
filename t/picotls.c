@@ -2302,4 +2302,10 @@ void test_key_exchange(ptls_key_exchange_algorithm_t *client, ptls_key_exchange_
     ret = ctx->on_exchange(&ctx, 1, NULL, ptls_iovec_init(NULL, 0));
     ok(ret == 0);
     ok(ctx == NULL);
+
+    /* test derivation failure. In case of X25519, the outcome is derived key becoming all-zero and rejected. In case of others, it
+     * is most likely that the provided key would be rejected. */
+    static uint8_t zeros[32] = {0};
+    ret = server->exchange(server, &server_pubkey, &server_secret, ptls_iovec_init(zeros, sizeof(zeros)));
+    ok(ret != 0);
 }
