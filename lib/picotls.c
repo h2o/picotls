@@ -2821,6 +2821,12 @@ static int client_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
         tls->key_schedule->hashes[0].ctx_outer = NULL;
     }
 
+    /* if we (the client) offered PSK but the server did not use that, we call it a handshake failure */
+    if (tls->ctx->pre_shared_key.identity.base != NULL && !tls->is_psk_handshake) {
+        ret = PTLS_ALERT_HANDSHAKE_FAILURE;
+        goto Exit;
+    }
+
     ptls__key_schedule_update_hash(tls->key_schedule, message.base, message.len, 0);
 
     if (sh.peerkey.base != NULL) {
