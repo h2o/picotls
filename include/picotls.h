@@ -612,6 +612,12 @@ typedef const struct st_ptls_hpke_cipher_suite_t {
         ret (*cb)(struct st_ptls_##name##_t * self, __VA_ARGS__);                                                                  \
     } ptls_##name##_t
 
+typedef struct st_ptls_client_hello_psk_identity_t {
+    ptls_iovec_t identity;
+    uint32_t obfuscated_ticket_age;
+    ptls_iovec_t binder;
+} ptls_client_hello_psk_identity_t;
+
 /**
  * arguments passsed to the on_client_hello callback
  */
@@ -647,6 +653,10 @@ typedef struct st_ptls_on_client_hello_parameters_t {
         const uint8_t *list;
         size_t count;
     } server_certificate_types;
+    struct {
+        const ptls_client_hello_psk_identity_t *list;
+        size_t count;
+    } psk_identities;
     /**
      * set to 1 if ClientHello is too old (or too new) to be handled by picotls
      */

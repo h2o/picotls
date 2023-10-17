@@ -325,12 +325,6 @@ struct st_ptls_record_t {
     const uint8_t *fragment;
 };
 
-struct st_ptls_client_hello_psk_t {
-    ptls_iovec_t identity;
-    uint32_t obfuscated_ticket_age;
-    ptls_iovec_t binder;
-};
-
 #define MAX_UNKNOWN_EXTENSIONS 16
 #define MAX_CERTIFICATE_TYPES 8
 
@@ -381,7 +375,7 @@ struct st_ptls_client_hello_t {
     struct {
         const uint8_t *hash_end;
         struct {
-            struct st_ptls_client_hello_psk_t list[4];
+            ptls_client_hello_psk_identity_t list[4];
             size_t count;
         } identities;
         unsigned ke_modes;
@@ -3751,7 +3745,7 @@ static int decode_client_hello(ptls_context_t *ctx, struct st_ptls_client_hello_
             size_t num_identities = 0;
             ptls_decode_open_block(src, end, 2, {
                 do {
-                    struct st_ptls_client_hello_psk_t psk = {{NULL}};
+                    ptls_client_hello_psk_identity_t psk = {{NULL}};
                     ptls_decode_open_block(src, end, 2, {
                         if (end - src < 1) {
                             ret = PTLS_ALERT_DECODE_ERROR;
@@ -3976,7 +3970,8 @@ static inline int call_on_client_hello_cb(ptls_t *tls, ptls_iovec_t server_name,
                                           ptls_iovec_t cipher_suites, ptls_iovec_t *alpns, size_t num_alpns,
                                           const uint16_t *sig_algos, size_t num_sig_algos, const uint16_t *cert_comp_algos,
                                           size_t num_cert_comp_algos, const uint8_t *server_cert_types,
-                                          size_t num_server_cert_types, int incompatible_version)
+                                          size_t num_server_cert_types, const ptls_client_hello_psk_identity_t *psk_identities,
+                                          size_t num_psk_identities, int incompatible_version)
 {
     if (tls->ctx->on_client_hello == NULL)
         return 0;
@@ -3988,6 +3983,7 @@ static inline int call_on_client_hello_cb(ptls_t *tls, ptls_iovec_t server_name,
                                                 {sig_algos, num_sig_algos},
                                                 {cert_comp_algos, num_cert_comp_algos},
                                                 {server_cert_types, num_server_cert_types},
+                                                {psk_identities, num_psk_identities},
                                                 incompatible_version};
     return tls->ctx->on_client_hello->cb(tls->ctx->on_client_hello, tls, &params);
 }
@@ -4011,7 +4007,7 @@ static int check_client_hello_constraints(ptls_context_t *ctx, struct st_ptls_cl
         if (!is_second_flight) {
             int ret;
             if ((ret = call_on_client_hello_cb(tls_cbarg, ch->server_name, raw_message, ch->cipher_suites, ch->alpn.list,
-                                               ch->alpn.count, NULL, 0, NULL, 0, NULL, 0, 1)) != 0)
+                                               ch->alpn.count, NULL, 0, NULL, 0, NULL, 0, NULL, 0, 1)) != 0)
                 return ret;
         }
         return PTLS_ALERT_PROTOCOL_VERSION;
@@ -4069,7 +4065,7 @@ static int try_psk_handshake(ptls_t *tls, size_t *psk_index, int *accept_early_d
     ptls_buffer_init(&decbuf, "", 0);
 
     for (*psk_index = 0; *psk_index < ch->psk.identities.count; ++*psk_index) {
-        struct st_ptls_client_hello_psk_t *identity = ch->psk.identities.list + *psk_index;
+        ptls_client_hello_psk_identity_t *identity = ch->psk.identities.list + *psk_index;
         /* negotiate using fixed pre-shared key */
         if (tls->ctx->pre_shared_key.secret.base != NULL) {
             assert(tls->ctx->pre_shared_key.secret.len != 0 && tls->ctx->pre_shared_key.identity.len != 0 &&
@@ -4404,7 +4400,8 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
         if ((ret = call_on_client_hello_cb(tls, server_name, message, ch->cipher_suites, ch->alpn.list, ch->alpn.count,
                                            ch->signature_algorithms.list, ch->signature_algorithms.count,
                                            ch->cert_compression_algos.list, ch->cert_compression_algos.count,
-                                           ch->server_certificate_types.list, ch->server_certificate_types.count, 0)) != 0)
+                                           ch->server_certificate_types.list, ch->server_certificate_types.count,
+                                           ch->psk.identities.list, ch->psk.identities.count, 0)) != 0)
             goto Exit;
         if (!certificate_type_exists(ch->server_certificate_types.list, ch->server_certificate_types.count,
                                      tls->ctx->use_raw_public_keys ? PTLS_CERTIFICATE_TYPE_RAW_PUBLIC_KEY
