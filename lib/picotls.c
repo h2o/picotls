@@ -4599,6 +4599,13 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
         }
     }
 
+    /* If the server was setup to use an external PSK but failed to agree, abort the handshake. Because external PSK is a form of
+     * mutual authentication, we should abort continue the handshake upon negotiation failure, at least by default. */
+    if (tls->ctx->pre_shared_key.identity.base != NULL && tls->ctx->require_client_authentication && psk_index == SIZE_MAX) {
+        ret = PTLS_ALERT_UNKNOWN_PSK_IDENTITY;
+        goto Exit;
+    }
+
     /* If client authentication is enabled, we always force a full handshake.
      * TODO: Check for `post_handshake_auth` extension and if that is present, do not force full handshake!
      *       Remove also the check `!require_client_authentication` above.
