@@ -2099,6 +2099,8 @@ static void test_legacy_ch(void)
     ret = ptls_handshake(tls, &sendbuf, tls12_no_exts, &len, NULL);
     ptls_free(tls);
     ok(ret == PTLS_ALERT_PROTOCOL_VERSION);
+    free(legacy_params);
+    legacy_params = NULL;
 
     tls = ptls_new(ctx, 1);
     len = sizeof(tls10_with_exts);
