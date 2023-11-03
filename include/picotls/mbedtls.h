@@ -50,8 +50,8 @@ extern ptls_cipher_suite_t ptls_mbedtls_chacha20poly1305sha256;
 extern ptls_key_exchange_algorithm_t ptls_mbedtls_secp256r1;
 extern ptls_key_exchange_algorithm_t ptls_mbedtls_x25519;
 
-int ptls_mbedtls_init();
-void ptls_mbedtls_free();
+int ptls_mbedtls_init(void);
+void ptls_mbedtls_free(void);
 void ptls_mbedtls_random_bytes(void *buf, size_t len);
 
 #ifdef __cplusplus

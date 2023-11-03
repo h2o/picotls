@@ -42,12 +42,12 @@
  * library functions. Free should be used before leaving the program.
  */
 
-void ptls_mbedtls_free()
+void ptls_mbedtls_free(void)
 {
     mbedtls_psa_crypto_free();
 }
 
-int ptls_mbedtls_init()
+int ptls_mbedtls_init(void)
 {
     int ret = 0;
     psa_status_t status;
