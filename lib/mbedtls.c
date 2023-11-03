@@ -36,10 +36,6 @@
 
 #include "mbedtls/ecdh.h"
 
-/* Init and free functions. Init should be used before starting using
- * library functions. Free should be used before leaving the program.
- */
-
 void ptls_mbedtls_free(void)
 {
     mbedtls_psa_crypto_free();
@@ -56,10 +52,6 @@ int ptls_mbedtls_init(void)
     return ret;
 }
 
-/* Random number generator.
- * This is a call to the PSA random number generator, which according
- * to the documentation meets cryptographic requirements.
- */
 void ptls_mbedtls_random_bytes(void *buf, size_t len)
 {
     psa_generate_random((uint8_t *)buf, len);
