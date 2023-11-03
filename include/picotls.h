@@ -1763,6 +1763,10 @@ char *ptls_jsonescape(char *buf, const char *s, size_t len);
  * the default get_time callback
  */
 extern ptls_get_time_t ptls_get_time;
+/**
+ * default hash clone function that calls memcpy
+ */
+static void ptls_hash_clone_memcpy(void *dst, const void *src, size_t size);
 #if defined(PICOTLS_USE_DTRACE) && PICOTLS_USE_DTRACE
 /**
  *
@@ -1919,7 +1923,14 @@ inline size_t ptls_aead_decrypt(ptls_aead_context_t *ctx, void *output, const vo
     return ctx->do_decrypt(ctx, output, input, inlen, seq, aad, aadlen);
 }
 
+inline void ptls_hash_clone_memcpy(void *dst, const void *src, size_t size)
+{
+    memcpy(dst, src, size);
+}
+
 #define ptls_define_hash(name, ctx_type, init_func, update_func, final_func)                                                       \
+    ptls_define_hash6(name, ctx_type, init_func, update_func, final_func, ptls_hash_clone_memcpy)
+#define ptls_define_hash6(name, ctx_type, init_func, update_func, final_func, clone_func)                                          \
                                                                                                                                    \
     struct name##_context_t {                                                                                                      \
         ptls_hash_context_t super;                                                                                                 \
@@ -1962,7 +1973,8 @@ inline size_t ptls_aead_decrypt(ptls_aead_context_t *ctx, void *output, const vo
         struct name##_context_t *dst, *src = (struct name##_context_t *)_src;                                                      \
         if ((dst = malloc(sizeof(*dst))) == NULL)                                                                                  \
             return NULL;                                                                                                           \
-        *dst = *src;                                                                                                               \
+        dst->super = src->super;                                                                                                   \
+        clone_func(&dst->ctx, &src->ctx, sizeof(dst->ctx));                                                                        \
         return &dst->super;                                                                                                        \
     }                                                                                                                              \
                                                                                                                                    \
