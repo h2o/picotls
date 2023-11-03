@@ -281,11 +281,11 @@ static ptls_bench_entry_t aead_list[] = {
     {"openssl", "aes128gcm", &ptls_openssl_aes128gcm, &ptls_minicrypto_sha256, 1},
     {"openssl", "aes256gcm", &ptls_openssl_aes256gcm, &ptls_minicrypto_sha384, 1},
 #ifdef PTLS_HAVE_MBEDTLS
-    {"mbedtls", "aes128gcm",& ptls_mbedtls_aes128gcm,& ptls_mbedtls_sha256, 1},
+    {"mbedtls", "aes128gcm", &ptls_mbedtls_aes128gcm, &ptls_mbedtls_sha256, 1},
 #if defined(MBEDTLS_SHA384_C)
-    { "mbedtls", "aes256gcm", &ptls_mbedtls_aes256gcm, &ptls_mbedtls_sha384, 1 },
+    {"mbedtls", "aes256gcm", &ptls_mbedtls_aes256gcm, &ptls_mbedtls_sha384, 1},
 #endif
-    { "mbedtls", "chacha20poly1305", &ptls_mbedtls_chacha20poly1305, &ptls_mbedtls_sha256, 1 },
+    {"mbedtls", "chacha20poly1305", &ptls_mbedtls_chacha20poly1305, &ptls_mbedtls_sha256, 1},
 #endif
 };
 

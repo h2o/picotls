@@ -1,24 +1,24 @@
 /*
-* Copyright (c) 2023, Christian Huitema
-*
-* Permission is hereby granted, free of charge, to any person obtaining a copy
-* of this software and associated documentation files (the "Software"), to
-* deal in the Software without restriction, including without limitation the
-* rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
-* sell copies of the Software, and to permit persons to whom the Software is
-* furnished to do so, subject to the following conditions:
-*
-* The above copyright notice and this permission notice shall be included in
-* all copies or substantial portions of the Software.
-*
-* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-* IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-* FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-* AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-* LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-* FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
-* IN THE SOFTWARE.
-*/
+ * Copyright (c) 2023, Christian Huitema
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to
+ * deal in the Software without restriction, including without limitation the
+ * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+ * sell copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+ * IN THE SOFTWARE.
+ */
 
 #ifdef _WINDOWS
 #include "wincompat.h"
@@ -39,14 +39,14 @@
 
 static int random_trial()
 {
-    /* The random test is just trying to check that we call the API properly. 
-    * This is done by getting a vector of 1021 bytes, computing the sum of
-    * all values, and comparing to theoretical min and max,
-    * computed as average +- 8*standard deviation for sum of 1021 terms.
-    * 8 random deviations results in an extremely low probability of random
-    * failure.
-    * Note that this does not actually test the random generator.
-    */
+    /* The random test is just trying to check that we call the API properly.
+     * This is done by getting a vector of 1021 bytes, computing the sum of
+     * all values, and comparing to theoretical min and max,
+     * computed as average +- 8*standard deviation for sum of 1021 terms.
+     * 8 random deviations results in an extremely low probability of random
+     * failure.
+     * Note that this does not actually test the random generator.
+     */
 
     uint8_t buf[1021];
     uint64_t sum = 0;
@@ -74,10 +74,10 @@ static void test_random(void)
     ok(!!"success");
 }
 
-static int hash_trial(ptls_hash_algorithm_t* algo, const uint8_t* input, size_t len1, size_t len2, uint8_t* final_hash)
+static int hash_trial(ptls_hash_algorithm_t *algo, const uint8_t *input, size_t len1, size_t len2, uint8_t *final_hash)
 {
     int ret = 0;
-    ptls_hash_context_t* hash_ctx = algo->create();
+    ptls_hash_context_t *hash_ctx = algo->create();
 
     hash_ctx->update(hash_ctx, input, len1);
     if (len2 > 0) {
@@ -88,11 +88,11 @@ static int hash_trial(ptls_hash_algorithm_t* algo, const uint8_t* input, size_t 
     return ret;
 }
 
-static int hash_reset_trial(ptls_hash_algorithm_t* algo, const uint8_t* input, size_t len1, size_t len2, 
-    uint8_t* hash1, uint8_t* hash2)
+static int hash_reset_trial(ptls_hash_algorithm_t *algo, const uint8_t *input, size_t len1, size_t len2, uint8_t *hash1,
+                            uint8_t *hash2)
 {
     int ret = 0;
-    ptls_hash_context_t* hash_ctx = algo->create();
+    ptls_hash_context_t *hash_ctx = algo->create();
 
     hash_ctx->update(hash_ctx, input, len1);
     hash_ctx->final(hash_ctx, hash1, PTLS_HASH_FINAL_MODE_RESET);
@@ -102,7 +102,7 @@ static int hash_reset_trial(ptls_hash_algorithm_t* algo, const uint8_t* input, s
     return ret;
 }
 
-static int test_hash(ptls_hash_algorithm_t* algo, ptls_hash_algorithm_t* ref)
+static int test_hash(ptls_hash_algorithm_t *algo, ptls_hash_algorithm_t *ref)
 {
     int ret = 0;
     uint8_t input[1234];
@@ -139,8 +139,7 @@ static int test_hash(ptls_hash_algorithm_t* algo, ptls_hash_algorithm_t* ref)
     if (ret == 0) {
         if (memcmp(hash1, href1, ref->digest_size) != 0) {
             ret = -1;
-        }
-        else if (memcmp(hash2, href2, ref->digest_size) != 0) {
+        } else if (memcmp(hash2, href2, ref->digest_size) != 0) {
             ret = -1;
         }
     }
@@ -148,10 +147,11 @@ static int test_hash(ptls_hash_algorithm_t* algo, ptls_hash_algorithm_t* ref)
     return ret;
 }
 
-static int cipher_trial(ptls_cipher_algorithm_t * cipher, const uint8_t * key, const uint8_t * iv, int is_enc, const uint8_t * v_in, uint8_t * v_out1, uint8_t * v_out2, size_t len)
+static int cipher_trial(ptls_cipher_algorithm_t *cipher, const uint8_t *key, const uint8_t *iv, int is_enc, const uint8_t *v_in,
+                        uint8_t *v_out1, uint8_t *v_out2, size_t len)
 {
     int ret = 0;
-    ptls_cipher_context_t* test_cipher = ptls_cipher_new(cipher, is_enc, key);
+    ptls_cipher_context_t *test_cipher = ptls_cipher_new(cipher, is_enc, key);
     if (test_cipher == NULL) {
         ret = -1;
     } else {
@@ -169,7 +169,7 @@ static int cipher_trial(ptls_cipher_algorithm_t * cipher, const uint8_t * key, c
     return ret;
 }
 
-static int test_cipher(ptls_cipher_algorithm_t * cipher, ptls_cipher_algorithm_t * cipher_ref)
+static int test_cipher(ptls_cipher_algorithm_t *cipher, ptls_cipher_algorithm_t *cipher_ref)
 {
     uint8_t key[32];
     uint8_t iv[16];
@@ -190,8 +190,7 @@ static int test_cipher(ptls_cipher_algorithm_t * cipher, ptls_cipher_algorithm_t
     if (ret == 0) {
         if (memcmp(v_out_1a, v_out_1b, 16) != 0) {
             ret = -1;
-        }
-        else if (memcmp(v_out_2a, v_out_2b, 16) != 0) {
+        } else if (memcmp(v_out_2a, v_out_2b, 16) != 0) {
             ret = -1;
         }
     }
@@ -202,8 +201,7 @@ static int test_cipher(ptls_cipher_algorithm_t * cipher, ptls_cipher_algorithm_t
     if (ret == 0) {
         if (memcmp(v_out_1a, v_out_1d, 16) != 0) {
             ret = -1;
-        }
-        else if (memcmp(v_out_2d, v_in, 16) != 0) {
+        } else if (memcmp(v_out_2d, v_in, 16) != 0) {
             ret = -1;
         }
     }
@@ -211,12 +209,12 @@ static int test_cipher(ptls_cipher_algorithm_t * cipher, ptls_cipher_algorithm_t
     return ret;
 }
 
-static int label_test(ptls_hash_algorithm_t * hash, uint8_t * v_out, size_t o_len, const uint8_t * secret,
-    char const * label, char const * label_prefix)
+static int label_test(ptls_hash_algorithm_t *hash, uint8_t *v_out, size_t o_len, const uint8_t *secret, char const *label,
+                      char const *label_prefix)
 {
     uint8_t h_val_v[32];
-    ptls_iovec_t h_val = { 0 };
-    ptls_iovec_t s_vec = { 0 };
+    ptls_iovec_t h_val = {0};
+    ptls_iovec_t s_vec = {0};
     s_vec.base = (uint8_t *)secret;
     s_vec.len = 32;
     h_val.base = h_val_v;
@@ -227,13 +225,13 @@ static int label_test(ptls_hash_algorithm_t * hash, uint8_t * v_out, size_t o_le
     return 0;
 }
 
-static int test_label(ptls_hash_algorithm_t* hash, ptls_hash_algorithm_t* ref)
+static int test_label(ptls_hash_algorithm_t *hash, ptls_hash_algorithm_t *ref)
 {
     int ret = 0;
     uint8_t v_out[16], v_ref[16];
     uint8_t secret[32];
-    char const* label = "label";
-    char const* label_prefix = "label_prefix";
+    char const *label = "label";
+    char const *label_prefix = "label_prefix";
     memset(secret, 0x5e, sizeof(secret));
 
     ret = label_test(hash, v_out, 16, secret, label, label_prefix);
@@ -249,23 +247,21 @@ static int test_label(ptls_hash_algorithm_t* hash, ptls_hash_algorithm_t* ref)
     return ret;
 }
 
-static int aead_trial(ptls_aead_algorithm_t * algo, ptls_hash_algorithm_t * hash, const uint8_t * secret, int is_enc, 
-    const uint8_t * v_in, size_t len, uint8_t * aad, size_t aad_len, uint64_t seq, uint8_t * v_out, size_t * o_len)
+static int aead_trial(ptls_aead_algorithm_t *algo, ptls_hash_algorithm_t *hash, const uint8_t *secret, int is_enc,
+                      const uint8_t *v_in, size_t len, uint8_t *aad, size_t aad_len, uint64_t seq, uint8_t *v_out, size_t *o_len)
 {
     int ret = 0;
-    ptls_aead_context_t* aead = ptls_aead_new(algo, hash, is_enc, secret, "test_aead");
+    ptls_aead_context_t *aead = ptls_aead_new(algo, hash, is_enc, secret, "test_aead");
 
     if (aead == NULL) {
         ret = -1;
-    }
-    else{
+    } else {
         if (is_enc) {
             *o_len = ptls_aead_encrypt(aead, v_out, v_in, len, seq, aad, aad_len);
             if (*o_len != len + algo->tag_size) {
                 ret = -1;
             }
-        }
-        else {
+        } else {
             *o_len = ptls_aead_decrypt(aead, v_out, v_in, len, seq, aad, aad_len);
             if (*o_len != len - algo->tag_size) {
                 ret = -1;
@@ -276,7 +272,8 @@ static int aead_trial(ptls_aead_algorithm_t * algo, ptls_hash_algorithm_t * hash
     return ret;
 }
 
-static int test_aead(ptls_aead_algorithm_t* algo, ptls_hash_algorithm_t* hash, ptls_aead_algorithm_t* ref, ptls_hash_algorithm_t* hash_ref)
+static int test_aead(ptls_aead_algorithm_t *algo, ptls_hash_algorithm_t *hash, ptls_aead_algorithm_t *ref,
+                     ptls_hash_algorithm_t *hash_ref)
 {
     uint8_t secret[64];
     uint8_t v_in[1234];
@@ -395,7 +392,8 @@ static void test_aes256gcm_sha384(void)
 
 static void test_chacha20poly1305_sha256(void)
 {
-    if (test_aead(&ptls_mbedtls_chacha20poly1305, &ptls_mbedtls_sha256, &ptls_minicrypto_chacha20poly1305, &ptls_minicrypto_sha256) != 0) {
+    if (test_aead(&ptls_mbedtls_chacha20poly1305, &ptls_mbedtls_sha256, &ptls_minicrypto_chacha20poly1305,
+                  &ptls_minicrypto_sha256) != 0) {
         ok(!"fail");
     }
     ok(!!"success");
