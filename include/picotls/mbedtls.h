@@ -25,6 +25,9 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+#include "mbedtls/mbedtls_config.h"
+#include "mbedtls/build_info.h"
 #include "picotls.h"
 
 extern ptls_hash_algorithm_t ptls_mbedtls_sha256;
