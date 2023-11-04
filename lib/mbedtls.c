@@ -29,11 +29,7 @@
 #include <string.h>
 #include <picotls.h>
 #include "psa/crypto.h"
-#include "psa/crypto_struct.h"
-#include "psa/crypto_values.h"
-
 #include "mbedtls/chacha20.h"
-
 #include "mbedtls/ecdh.h"
 
 void ptls_mbedtls_free(void)
