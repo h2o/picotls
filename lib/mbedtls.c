@@ -34,8 +34,9 @@
 
 #define CALL_WITH_CHECK(fn, ...)                                                                                                   \
     do {                                                                                                                           \
-        if (fn(__VA_ARGS__) != PSA_SUCCESS) {                                                                                      \
-            fprintf(stderr, PTLS_TO_STR(fn) " failed\n");                                                                          \
+        psa_status_t ret;                                                                                                          \
+        if ((ret = fn(__VA_ARGS__)) != PSA_SUCCESS) {                                                                              \
+            fprintf(stderr, "in %s at line %d, " PTLS_TO_STR(fn) " failed (%d)\n", __FUNCTION__, __LINE__, (int)ret);              \
             abort();                                                                                                               \
         }                                                                                                                          \
     } while (0)
