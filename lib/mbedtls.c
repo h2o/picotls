@@ -32,11 +32,6 @@
 #include <mbedtls/ecdh.h>
 #include "picotls.h"
 
-void ptls_mbedtls_random_bytes(void *buf, size_t len)
-{
-    psa_generate_random((uint8_t *)buf, len);
-}
-
 #define CALL_WITH_CHECK(fn, ...)                                                                                                   \
     do {                                                                                                                           \
         if (fn(__VA_ARGS__) != PSA_SUCCESS) {                                                                                      \
@@ -44,6 +39,11 @@ void ptls_mbedtls_random_bytes(void *buf, size_t len)
             abort();                                                                                                               \
         }                                                                                                                          \
     } while (0)
+
+void ptls_mbedtls_random_bytes(void *buf, size_t len)
+{
+    CALL_WITH_CHECK(psa_generate_random, buf, len);
+}
 
 #define DEFINE_HASH(name, name_upcase, psa_alg)                                                                                    \
     static void name##_do_init(psa_hash_operation_t *op)                                                                           \
