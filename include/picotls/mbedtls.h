@@ -51,9 +51,11 @@ extern ptls_aead_algorithm_t ptls_mbedtls_chacha20poly1305;
 extern ptls_cipher_suite_t ptls_mbedtls_aes128gcmsha256;
 extern ptls_cipher_suite_t ptls_mbedtls_aes256gcmsha384;
 extern ptls_cipher_suite_t ptls_mbedtls_chacha20poly1305sha256;
+extern ptls_cipher_suite_t *ptls_mbedtls_cipher_suites[];
 
 extern ptls_key_exchange_algorithm_t ptls_mbedtls_secp256r1;
 extern ptls_key_exchange_algorithm_t ptls_mbedtls_x25519;
+extern ptls_key_exchange_algorithm_t *ptls_mbedtls_key_exchanges[];
 
 void ptls_mbedtls_random_bytes(void *buf, size_t len);
 

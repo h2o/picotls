@@ -576,6 +576,9 @@ ptls_cipher_suite_t ptls_mbedtls_chacha20poly1305sha256 = {.id = PTLS_CIPHER_SUI
                                                            .aead = &ptls_mbedtls_chacha20poly1305,
                                                            .hash = &ptls_mbedtls_sha256};
 
+ptls_cipher_suite_t *ptls_mbedtls_cipher_suites[] = {&ptls_mbedtls_aes256gcmsha384, &ptls_mbedtls_aes128gcmsha256,
+                                                     &ptls_mbedtls_chacha20poly1305sha256, NULL};
+
 /* Key exchange algorithms.
  * The Picotls framework defines these algorithms as ptls_key_exchange_algorithm_t,
  * a structure containing two function pointers:
@@ -786,3 +789,5 @@ ptls_key_exchange_algorithm_t ptls_mbedtls_x25519 = {.id = PTLS_GROUP_X25519,
                                                      .name = PTLS_GROUP_NAME_X25519,
                                                      .create = ptls_mbedtls_x25519_create,
                                                      .exchange = ptls_mbedtls_x25519_exchange};
+
+ptls_key_exchange_algorithm_t *ptls_mbedtls_key_exchanges[] = {&ptls_mbedtls_secp256r1, NULL};

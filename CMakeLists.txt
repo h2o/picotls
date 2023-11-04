@@ -211,7 +211,7 @@ IF (WITH_MBEDTLS)
         ADD_LIBRARY(picotls-mbedtls lib/mbedtls.c)
         ADD_EXECUTABLE(test-mbedtls.t
         deps/picotest/picotest.c
-        lib/picotls.c
+        ${CORE_TEST_FILES}
         t/mbedtls.c)
         TARGET_LINK_LIBRARIES(test-mbedtls.t
             picotls-minicrypto picotls-mbedtls
