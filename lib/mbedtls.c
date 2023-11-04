@@ -53,131 +53,41 @@ void ptls_mbedtls_random_bytes(void *buf, size_t len)
     psa_generate_random((uint8_t *)buf, len);
 }
 
-/* Definitions for hash algorithms.
- * In Picotls, these are described by the stucture
- * ptls_hash_algorithm_t, which include the function
- * pointer for creation of the hash context.
- *
- * The structure contains a function pointer to the
- * "create" function that creates a hash operation,
- * which itself contains three function pointers:
- *
- * void (*update)(struct st_ptls_hash_context_t *ctx, const void *src, size_t len);
- * void (*final)(struct st_ptls_hash_context_t *ctx, void *md, ptls_hash_final_mode_t mode);
- * struct st_ptls_hash_context_t *(*clone_)(struct st_ptls_hash_context_t *src);
- *
- */
+#define CALL_WITH_CHECK(fn, ...)                                                                                                   \
+    do {                                                                                                                           \
+        if (fn(__VA_ARGS__) != PSA_SUCCESS) {                                                                                      \
+            fprintf(stderr, PTLS_TO_STR(fn) " failed\n");                                                                          \
+            abort();                                                                                                               \
+        }                                                                                                                          \
+    } while (0)
 
-typedef struct st_ptls_mbedtls_hash_ctx_t {
-    ptls_hash_context_t super;
-    psa_algorithm_t alg;
-    size_t hash_size;
-    psa_hash_operation_t operation;
-} ptls_mbedtls_hash_ctx_t;
-
-static void ptls_mbedtls_hash_update(struct st_ptls_hash_context_t *_ctx, const void *src, size_t len)
-{
-    ptls_mbedtls_hash_ctx_t *ctx = (ptls_mbedtls_hash_ctx_t *)_ctx;
-
-    (void)psa_hash_update(&ctx->operation, (const uint8_t *)src, len);
-}
-
-static void ptls_mbedtls_hash_final(struct st_ptls_hash_context_t *_ctx, void *md, ptls_hash_final_mode_t mode);
-
-static struct st_ptls_hash_context_t *ptls_mbedtls_hash_clone(struct st_ptls_hash_context_t *_src)
-{
-    ptls_mbedtls_hash_ctx_t *ctx = (ptls_mbedtls_hash_ctx_t *)malloc(sizeof(ptls_mbedtls_hash_ctx_t));
-    const ptls_mbedtls_hash_ctx_t *src = (const ptls_mbedtls_hash_ctx_t *)_src;
-
-    if (ctx != NULL) {
-        ptls_mbedtls_hash_ctx_t *src = (ptls_mbedtls_hash_ctx_t *)_src;
-        memset(&ctx->operation, 0, sizeof(mbedtls_sha256_context));
-        ctx->super.clone_ = ptls_mbedtls_hash_clone;
-        ctx->super.update = ptls_mbedtls_hash_update;
-        ctx->super.final = ptls_mbedtls_hash_final;
-        ctx->alg = src->alg;
-        ctx->hash_size = src->hash_size;
-        if (psa_hash_clone(&src->operation, &ctx->operation) != 0) {
-            free(ctx);
-            ctx = NULL;
-        }
-    }
-    return (ptls_hash_context_t *)ctx;
-}
-
-static void ptls_mbedtls_hash_final(struct st_ptls_hash_context_t *_ctx, void *md, ptls_hash_final_mode_t mode)
-{
-    ptls_mbedtls_hash_ctx_t *ctx = (ptls_mbedtls_hash_ctx_t *)_ctx;
-
-    if (mode == PTLS_HASH_FINAL_MODE_SNAPSHOT) {
-        struct st_ptls_hash_context_t *cloned = ptls_mbedtls_hash_clone(_ctx);
-
-        if (cloned != NULL) {
-            ptls_mbedtls_hash_final(cloned, md, PTLS_HASH_FINAL_MODE_FREE);
-        }
-    } else {
-        if (md != NULL) {
-            size_t hash_length = 0;
-            if (psa_hash_finish(&ctx->operation, md, ctx->hash_size, &hash_length) != 0) {
-                memset(md, 0, ctx->hash_size);
-            }
-        }
-
-        if (mode == PTLS_HASH_FINAL_MODE_FREE) {
-            (void)psa_hash_abort(&ctx->operation);
-            free(ctx);
-        } else {
-            /* if mode = reset, reset the context */
-            memset(&ctx->operation, 0, sizeof(ctx->operation));
-            (void)psa_hash_setup(&ctx->operation, ctx->alg);
-        }
-    }
-}
-
-ptls_hash_context_t *ptls_mbedtls_hash_create(psa_algorithm_t alg, size_t hash_size)
-{
-    ptls_mbedtls_hash_ctx_t *ctx = (ptls_mbedtls_hash_ctx_t *)malloc(sizeof(ptls_mbedtls_hash_ctx_t));
-
-    if (ctx != NULL) {
-        memset(&ctx->operation, 0, sizeof(ctx->operation));
-        ctx->alg = alg;
-        ctx->hash_size = hash_size;
-        ctx->super.clone_ = ptls_mbedtls_hash_clone;
-        ctx->super.update = ptls_mbedtls_hash_update;
-        ctx->super.final = ptls_mbedtls_hash_final;
-        if (psa_hash_setup(&ctx->operation, alg) != 0) {
-            free(ctx);
-            ctx = NULL;
-        }
-    }
-    return (ptls_hash_context_t *)ctx;
-}
-
-ptls_hash_context_t *ptls_mbedtls_sha256_create(void)
-{
-    return ptls_mbedtls_hash_create(PSA_ALG_SHA_256, PTLS_SHA256_DIGEST_SIZE);
-}
-
-ptls_hash_context_t *ptls_mbedtls_sha512_create(void)
-{
-    return ptls_mbedtls_hash_create(PSA_ALG_SHA_512, PTLS_SHA512_DIGEST_SIZE);
-}
-
-ptls_hash_algorithm_t ptls_mbedtls_sha256 = {"sha256", PTLS_SHA256_BLOCK_SIZE, PTLS_SHA256_DIGEST_SIZE, ptls_mbedtls_sha256_create,
-                                             PTLS_ZERO_DIGEST_SHA256};
-
-ptls_hash_algorithm_t ptls_mbedtls_sha512 = {"SHA512", PTLS_SHA512_BLOCK_SIZE, PTLS_SHA512_DIGEST_SIZE, ptls_mbedtls_sha512_create,
-                                             PTLS_ZERO_DIGEST_SHA512};
-
+#define DEFINE_HASH(name, name_upcase, psa_alg)                                                                                    \
+    static void name##_do_init(psa_hash_operation_t *op)                                                                           \
+    {                                                                                                                              \
+        *op = psa_hash_operation_init();                                                                                           \
+        CALL_WITH_CHECK(psa_hash_setup, op, psa_alg);                                                                              \
+    }                                                                                                                              \
+    static void name##_do_update(psa_hash_operation_t *op, const void *src, size_t len)                                            \
+    {                                                                                                                              \
+        CALL_WITH_CHECK(psa_hash_update, op, src, len);                                                                            \
+    }                                                                                                                              \
+    static void name##_do_final(psa_hash_operation_t *op, void *md)                                                                \
+    {                                                                                                                              \
+        size_t unused;                                                                                                             \
+        CALL_WITH_CHECK(psa_hash_finish, op, md, PTLS_##name_upcase##_DIGEST_SIZE, &unused);                                       \
+    }                                                                                                                              \
+    static void name##_do_clone(psa_hash_operation_t *dst, psa_hash_operation_t *src, size_t unused)                               \
+    {                                                                                                                              \
+        CALL_WITH_CHECK(psa_hash_clone, src, dst);                                                                                 \
+    }                                                                                                                              \
+    ptls_define_hash6(name, psa_hash_operation_t, name##_do_init, name##_do_update, name##_do_final, name##_do_clone);             \
+    ptls_hash_algorithm_t ptls_mbedtls_##name = {PTLS_TO_STR(name), PTLS_##name_upcase##_BLOCK_SIZE,                               \
+                                                 PTLS_##name_upcase##_DIGEST_SIZE, name##_create, PTLS_ZERO_DIGEST_##name_upcase};
+DEFINE_HASH(sha256, SHA256, PSA_ALG_SHA_256);
+DEFINE_HASH(sha512, SHA512, PSA_ALG_SHA_512);
 #if defined(MBEDTLS_SHA384_C)
-ptls_hash_context_t *ptls_mbedtls_sha384_create(void)
-{
-    return ptls_mbedtls_hash_create(PSA_ALG_SHA_384, PTLS_SHA384_DIGEST_SIZE);
-}
-
-ptls_hash_algorithm_t ptls_mbedtls_sha384 = {"SHA384", PTLS_SHA384_BLOCK_SIZE, PTLS_SHA384_DIGEST_SIZE, ptls_mbedtls_sha384_create,
-                                             PTLS_ZERO_DIGEST_SHA384};
-#endif /* MBEDTLS_SHA384_C */
+DEFINE_HASH(sha384, SHA384, PSA_ALG_SHA_384);
+#endif
 
 /*
  * Generic implementation of a cipher using the PSA API
