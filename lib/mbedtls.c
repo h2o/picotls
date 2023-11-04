@@ -78,156 +78,109 @@ DEFINE_HASH(sha384, SHA384, PSA_ALG_SHA_384);
  */
 struct st_ptls_mbedtls_cipher_context_t {
     ptls_cipher_context_t super;
-    psa_algorithm_t alg;
     size_t iv_length;
-    int is_enc;
-    int is_op_in_progress;
-    mbedtls_svc_key_id_t key;
-    psa_cipher_operation_t operation;
+    psa_cipher_operation_t op;
 };
 
-static void ptls_mbedtls_cipher_init(ptls_cipher_context_t *_ctx, const void *iv)
+static void cipher_init(ptls_cipher_context_t *_ctx, const void *iv)
 {
     struct st_ptls_mbedtls_cipher_context_t *ctx = (struct st_ptls_mbedtls_cipher_context_t *)_ctx;
 
-    if (ctx->is_op_in_progress) {
-        psa_cipher_abort(&ctx->operation);
-        ctx->is_op_in_progress = 0;
-    }
-
-    memset(&ctx->operation, 0, sizeof(ctx->operation));
-    if (ctx->is_enc) {
-        (void)psa_cipher_encrypt_setup(&ctx->operation, ctx->key, ctx->alg);
-    } else {
-        (void)psa_cipher_decrypt_setup(&ctx->operation, ctx->key, ctx->alg);
-    }
-    if (ctx->iv_length > 0) {
-        (void)psa_cipher_set_iv(&ctx->operation, (const uint8_t *)iv, ctx->iv_length);
-    }
-    ctx->is_op_in_progress = 1;
+    if (ctx->iv_length > 0)
+        CALL_WITH_CHECK(psa_cipher_set_iv, &ctx->op, iv, ctx->iv_length);
 }
 
-static void ptls_mbedtls_cipher_transform(ptls_cipher_context_t *_ctx, void *output, const void *input, size_t len)
+static void cipher_transform(ptls_cipher_context_t *_ctx, void *output, const void *input, size_t len)
 {
     struct st_ptls_mbedtls_cipher_context_t *ctx = (struct st_ptls_mbedtls_cipher_context_t *)_ctx;
-    size_t outlen = 0;
+    size_t unused = 0;
 
-    (void)psa_cipher_update(&ctx->operation, (const uint8_t *)input, len, (uint8_t *)output, len, &outlen);
+    CALL_WITH_CHECK(psa_cipher_update, &ctx->op, input, len, output, len, &unused);
 }
 
-static void ptls_mbedtls_cipher_dispose(ptls_cipher_context_t *_ctx)
+static void cipher_dispose(ptls_cipher_context_t *_ctx)
 {
     struct st_ptls_mbedtls_cipher_context_t *ctx = (struct st_ptls_mbedtls_cipher_context_t *)_ctx;
-    if (ctx->is_op_in_progress) {
-        psa_cipher_abort(&ctx->operation);
-        ctx->is_op_in_progress = 0;
-    }
-    psa_destroy_key(ctx->key);
+
+    psa_cipher_abort(&ctx->op);
 }
 
-static int ptls_mbedtls_cipher_setup_key(mbedtls_svc_key_id_t *key_id, int is_enc, psa_algorithm_t alg, psa_key_type_t key_type,
-                                         size_t key_bits, const uint8_t *key_bytes)
+static int setup_crypto(ptls_cipher_context_t *_ctx, int is_enc, const void *key_bytes, psa_algorithm_t alg, size_t iv_length,
+                        psa_key_type_t key_type, size_t key_bits)
 {
+    struct st_ptls_mbedtls_cipher_context_t *ctx = (struct st_ptls_mbedtls_cipher_context_t *)_ctx;
+    mbedtls_svc_key_id_t key;
     psa_key_attributes_t attributes = PSA_KEY_ATTRIBUTES_INIT;
-    int ret = 0;
 
+    /* import key or fail immediately */
     psa_set_key_usage_flags(&attributes, (is_enc) ? PSA_KEY_USAGE_ENCRYPT : PSA_KEY_USAGE_DECRYPT);
     psa_set_key_algorithm(&attributes, alg);
     psa_set_key_type(&attributes, key_type);
     psa_set_key_bits(&attributes, key_bits);
-    /* Import key */
-    if (psa_import_key(&attributes, key_bytes, key_bits / 8, key_id) != PSA_SUCCESS) {
-        ret = PTLS_ERROR_LIBRARY;
-    }
+    if (psa_import_key(&attributes, key_bytes, key_bits / 8, &key) != PSA_SUCCESS)
+        return PTLS_ERROR_LIBRARY;
 
-    return ret;
-}
-
-static int ptls_mbedtls_cipher_setup_crypto(ptls_cipher_context_t *_ctx, int is_enc, const void *key_bytes, psa_algorithm_t alg,
-                                            size_t iv_length, psa_key_type_t key_type, size_t key_bits)
-{
-    struct st_ptls_mbedtls_cipher_context_t *ctx = (struct st_ptls_mbedtls_cipher_context_t *)_ctx;
-    int ret = 0;
-
-    ctx->alg = alg;
-    ctx->is_enc = is_enc;
+    /* init context */
+    ctx->super.do_dispose = cipher_dispose;
+    ctx->super.do_init = cipher_init;
+    ctx->super.do_transform = cipher_transform;
     ctx->iv_length = iv_length;
-
-    /* Initialize the key attributes */
-    ret = ptls_mbedtls_cipher_setup_key(&ctx->key, is_enc, alg, key_type, key_bits, (const uint8_t *)key_bytes);
-    /* Finish initializing the context */
-    ctx->super.do_dispose = ptls_mbedtls_cipher_dispose;
-    ctx->super.do_init = ptls_mbedtls_cipher_init;
-    ctx->super.do_transform = NULL;
-
-    if (ret == 0) {
-        ctx->super.do_transform = ptls_mbedtls_cipher_transform;
+    ctx->op = psa_cipher_operation_init();
+    if (is_enc) {
+        CALL_WITH_CHECK(psa_cipher_encrypt_setup, &ctx->op, key, alg);
+    } else {
+        CALL_WITH_CHECK(psa_cipher_decrypt_setup, &ctx->op, key, alg);
     }
 
-    return ret;
+    return 0;
 }
 
-/*
- * Implementation of AES128_ECB using the PSA API:
- */
-static int ptls_mbedtls_cipher_setup_aes128_ecb(ptls_cipher_context_t *_ctx, int is_enc, const void *key_bytes)
+static int setup_aes128ecb(ptls_cipher_context_t *ctx, int is_enc, const void *key_bytes)
 {
-    return ptls_mbedtls_cipher_setup_crypto(_ctx, is_enc, key_bytes, PSA_ALG_ECB_NO_PADDING, 0, PSA_KEY_TYPE_AES, 128);
+    return setup_crypto(ctx, is_enc, key_bytes, PSA_ALG_ECB_NO_PADDING, 0, PSA_KEY_TYPE_AES, 128);
 }
 
-ptls_cipher_algorithm_t ptls_mbedtls_aes128ecb = {"AES128-ECB",
-                                                  PTLS_AES128_KEY_SIZE,
-                                                  PTLS_AES_BLOCK_SIZE,
-                                                  0 /* iv size */,
-                                                  sizeof(struct st_ptls_mbedtls_cipher_context_t),
-                                                  ptls_mbedtls_cipher_setup_aes128_ecb};
+ptls_cipher_algorithm_t ptls_mbedtls_aes128ecb = {
+    "AES128-ECB",   PTLS_AES128_KEY_SIZE, PTLS_AES_BLOCK_SIZE, 0 /* iv size */, sizeof(struct st_ptls_mbedtls_cipher_context_t),
+    setup_aes128ecb};
 
 /*
  * Implementation of AES256_ECB using the PSA API:
  */
-static int ptls_mbedtls_cipher_setup_aes256_ecb(ptls_cipher_context_t *_ctx, int is_enc, const void *key_bytes)
+static int setup_aes256ecb(ptls_cipher_context_t *ctx, int is_enc, const void *key_bytes)
 {
-    return ptls_mbedtls_cipher_setup_crypto(_ctx, is_enc, key_bytes, PSA_ALG_ECB_NO_PADDING, 0, PSA_KEY_TYPE_AES, 256);
+    return setup_crypto(ctx, is_enc, key_bytes, PSA_ALG_ECB_NO_PADDING, 0, PSA_KEY_TYPE_AES, 256);
 }
 
-ptls_cipher_algorithm_t ptls_mbedtls_aes256ecb = {"AES256-ECB",
-                                                  PTLS_AES128_KEY_SIZE,
-                                                  PTLS_AES_BLOCK_SIZE,
-                                                  0 /* iv size */,
-                                                  sizeof(struct st_ptls_mbedtls_cipher_context_t),
-                                                  ptls_mbedtls_cipher_setup_aes256_ecb};
+ptls_cipher_algorithm_t ptls_mbedtls_aes256ecb = {
+    "AES256-ECB",   PTLS_AES128_KEY_SIZE, PTLS_AES_BLOCK_SIZE, 0 /* iv size */, sizeof(struct st_ptls_mbedtls_cipher_context_t),
+    setup_aes256ecb};
 
 /*
  * Implementation of AES128_CTR using the PSA API:
  */
 
-static int ptls_mbedtls_cipher_setup_aes128_ctr(ptls_cipher_context_t *_ctx, int is_enc, const void *key_bytes)
+static int setup_aes128ctr(ptls_cipher_context_t *ctx, int is_enc, const void *key_bytes)
 {
-    return ptls_mbedtls_cipher_setup_crypto(_ctx, is_enc, key_bytes, PSA_ALG_CTR, 16, PSA_KEY_TYPE_AES, 128);
+    return setup_crypto(ctx, is_enc, key_bytes, PSA_ALG_CTR, 16, PSA_KEY_TYPE_AES, 128);
 }
 
-ptls_cipher_algorithm_t ptls_mbedtls_aes128ctr = {"AES128-CTR",
-                                                  PTLS_AES128_KEY_SIZE,
-                                                  PTLS_AES_BLOCK_SIZE,
-                                                  16 /* iv size */,
-                                                  sizeof(struct st_ptls_mbedtls_cipher_context_t),
-                                                  ptls_mbedtls_cipher_setup_aes128_ctr};
+ptls_cipher_algorithm_t ptls_mbedtls_aes128ctr = {
+    "AES128-CTR",   PTLS_AES128_KEY_SIZE, PTLS_AES_BLOCK_SIZE, 16 /* iv size */, sizeof(struct st_ptls_mbedtls_cipher_context_t),
+    setup_aes128ctr};
 
 /*
  * Implementation of AES128_CTR using the PSA API:
  */
 
-static int ptls_mbedtls_cipher_setup_aes256_ctr(ptls_cipher_context_t *_ctx, int is_enc, const void *key_bytes)
+static int setup_aes256ctr(ptls_cipher_context_t *ctx, int is_enc, const void *key_bytes)
 {
-    return ptls_mbedtls_cipher_setup_crypto(_ctx, is_enc, key_bytes, PSA_ALG_CTR, 16, PSA_KEY_TYPE_AES, 256);
+    return setup_crypto(ctx, is_enc, key_bytes, PSA_ALG_CTR, 16, PSA_KEY_TYPE_AES, 256);
 }
 
-ptls_cipher_algorithm_t ptls_mbedtls_aes256ctr = {"AES128-CTR",
-                                                  PTLS_AES256_KEY_SIZE,
-                                                  PTLS_AES_BLOCK_SIZE,
-                                                  16 /* iv size */,
-                                                  sizeof(struct st_ptls_mbedtls_cipher_context_t),
-                                                  ptls_mbedtls_cipher_setup_aes256_ctr};
+ptls_cipher_algorithm_t ptls_mbedtls_aes256ctr = {
+    "AES128-CTR",   PTLS_AES256_KEY_SIZE, PTLS_AES_BLOCK_SIZE, 16 /* iv size */, sizeof(struct st_ptls_mbedtls_cipher_context_t),
+    setup_aes256ctr};
 
 #if 0
 /*
@@ -235,15 +188,14 @@ ptls_cipher_algorithm_t ptls_mbedtls_aes256ctr = {"AES128-CTR",
 * This is disabled for now, as there seems to be an issue when
 * setting the 16 bytes long IV that we need.
 */
-static int ptls_mbedtls_cipher_setup_crypto_chacha20(ptls_cipher_context_t *_ctx, int is_enc, const void *key_bytes)
+static int setup_crypto_chacha20(ptls_cipher_context_t *ctx, int is_enc, const void *key_bytes)
 {
-    return ptls_mbedtls_cipher_setup_crypto(_ctx, is_enc, key_bytes,
-        PSA_ALG_STREAM_CIPHER, 16, PSA_KEY_TYPE_CHACHA20, 256);
+    return setup_crypto(ctx, is_enc, key_bytes, PSA_ALG_STREAM_CIPHER, 16, PSA_KEY_TYPE_CHACHA20, 256);
 }
 
 ptls_cipher_algorithm_t ptls_mbedtls_chacha20 = {
     "CHACHA20", PTLS_CHACHA20_KEY_SIZE, 1 /* block size */, PTLS_CHACHA20_IV_SIZE, sizeof(struct st_ptls_mbedtls_cipher_context_t),
-    ptls_mbedtls_cipher_setup_crypto_chacha20};
+    setup_chacha20};
 #else
 /* Implementation of ChaCha20 using the low level ChaCha20 API.
  * TODO: remove this and the reference to chacha20.h as soon as
@@ -254,7 +206,7 @@ struct st_ptls_mbedtls_chacha20_context_t {
     mbedtls_chacha20_context mctx;
 };
 
-static void ptls_mbedtls_chacha20_init(ptls_cipher_context_t *_ctx, const void *v_iv)
+static void chacha20_init(ptls_cipher_context_t *_ctx, const void *v_iv)
 {
     struct st_ptls_mbedtls_chacha20_context_t *ctx = (struct st_ptls_mbedtls_chacha20_context_t *)_ctx;
     const uint8_t *iv = (const uint8_t *)v_iv;
@@ -263,38 +215,36 @@ static void ptls_mbedtls_chacha20_init(ptls_cipher_context_t *_ctx, const void *
     (void)mbedtls_chacha20_starts(&ctx->mctx, (const uint8_t *)(iv + 4), ctr);
 }
 
-static void ptls_mbedtls_chacha20_transform(ptls_cipher_context_t *_ctx, void *output, const void *input, size_t len)
+static void chacha20_transform(ptls_cipher_context_t *_ctx, void *output, const void *input, size_t len)
 {
     struct st_ptls_mbedtls_chacha20_context_t *ctx = (struct st_ptls_mbedtls_chacha20_context_t *)_ctx;
 
     if (mbedtls_chacha20_update(&ctx->mctx, len, (const uint8_t *)input, (uint8_t *)output) != 0) {
-        memset(output, 0, len);
+        fprintf(stderr, "mbedtls_chacha20_update failed\n");
+        abort();
     }
 }
 
-static void ptls_mbedtls_chacha20_dispose(ptls_cipher_context_t *_ctx)
+static void chacha20_dispose(ptls_cipher_context_t *_ctx)
 {
     struct st_ptls_mbedtls_chacha20_context_t *ctx = (struct st_ptls_mbedtls_chacha20_context_t *)_ctx;
+
     mbedtls_chacha20_free(&ctx->mctx);
 }
 
-static int ptls_mbedtls_cipher_setup_crypto_chacha20(ptls_cipher_context_t *_ctx, int is_enc, const void *key)
+static int setup_chacha20(ptls_cipher_context_t *_ctx, int is_enc, const void *key)
 {
     struct st_ptls_mbedtls_chacha20_context_t *ctx = (struct st_ptls_mbedtls_chacha20_context_t *)_ctx;
-    int ret = 0;
 
     mbedtls_chacha20_init(&ctx->mctx);
-    ret = mbedtls_chacha20_setkey(&ctx->mctx, (const uint8_t *)key);
+    if (mbedtls_chacha20_setkey(&ctx->mctx, key) != 0)
+        return PTLS_ERROR_LIBRARY;
 
-    ctx->super.do_dispose = ptls_mbedtls_chacha20_dispose;
-    ctx->super.do_init = ptls_mbedtls_chacha20_init;
-    ctx->super.do_transform = NULL;
+    ctx->super.do_dispose = chacha20_dispose;
+    ctx->super.do_init = chacha20_init;
+    ctx->super.do_transform = chacha20_transform;
 
-    if (ret == 0) {
-        ctx->super.do_transform = ptls_mbedtls_chacha20_transform;
-    }
-
-    return ret;
+    return 0;
 }
 
 ptls_cipher_algorithm_t ptls_mbedtls_chacha20 = {"CHACHA20",
@@ -302,7 +252,7 @@ ptls_cipher_algorithm_t ptls_mbedtls_chacha20 = {"CHACHA20",
                                                  1 /* block size */,
                                                  PTLS_CHACHA20_IV_SIZE,
                                                  sizeof(struct st_ptls_mbedtls_chacha20_context_t),
-                                                 ptls_mbedtls_cipher_setup_crypto_chacha20};
+                                                 setup_chacha20};
 #endif
 
 /* Definitions of AEAD algorithms.
