@@ -33,7 +33,7 @@
 #include "mbedtls/build_info.h"
 #include "psa/crypto.h"
 #include "psa/crypto_struct.h"
-#include "picotls/ptls_mbedtls.h"
+#include "picotls/mbedtls.h"
 #include "picotls/minicrypto.h"
 #include "../deps/picotest/picotest.h"
 

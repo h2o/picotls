@@ -208,11 +208,11 @@ IF (WITH_MBEDTLS)
         message(STATUS "mbedtls/include: ${MBEDTLS_INCLUDE_DIRS}")
         message(STATUS "mbedtls libraries: ${MBEDTLS_LIBRARIES}")
         INCLUDE_DIRECTORIES(${MBEDTLS_INCLUDE_DIRS})
-        ADD_LIBRARY(picotls-mbedtls lib/ptls_mbedtls.c)
+        ADD_LIBRARY(picotls-mbedtls lib/mbedtls.c)
         ADD_EXECUTABLE(test-mbedtls.t
         deps/picotest/picotest.c
         lib/picotls.c
-        t/ptls_mbedtls.c)
+        t/mbedtls.c)
         TARGET_LINK_LIBRARIES(test-mbedtls.t
             picotls-minicrypto picotls-mbedtls
             ${MBEDTLS_LIBRARIES})

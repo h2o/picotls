@@ -62,7 +62,7 @@
 #ifdef PTLS_HAVE_MBEDTLS
 #include "mbedtls/build_info.h"
 #include "psa/crypto.h"
-#include "picotls/ptls_mbedtls.h"
+#include "picotls/mbedtls.h"
 #endif
 
 /* Time in microseconds */
