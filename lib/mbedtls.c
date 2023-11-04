@@ -79,7 +79,11 @@ DEFINE_HASH(sha384, SHA384, PSA_ALG_SHA_384);
  */
 struct st_ptls_mbedtls_cipher_context_t {
     ptls_cipher_context_t super;
+    psa_algorithm_t alg;
     size_t iv_length;
+    unsigned is_enc : 1;
+    unsigned is_op_in_progress : 1;
+    mbedtls_svc_key_id_t key;
     psa_cipher_operation_t op;
 };
 
@@ -87,6 +91,18 @@ static void cipher_init(ptls_cipher_context_t *_ctx, const void *iv)
 {
     struct st_ptls_mbedtls_cipher_context_t *ctx = (struct st_ptls_mbedtls_cipher_context_t *)_ctx;
 
+    if (ctx->is_op_in_progress) {
+        psa_cipher_abort(&ctx->op);
+        ctx->is_op_in_progress = 0;
+    }
+
+    ctx->op = psa_cipher_operation_init();
+    if (ctx->is_enc) {
+        CALL_WITH_CHECK(psa_cipher_encrypt_setup, &ctx->op, ctx->key, ctx->alg);
+    } else {
+        CALL_WITH_CHECK(psa_cipher_decrypt_setup, &ctx->op, ctx->key, ctx->alg);
+    }
+    ctx->is_op_in_progress = 1;
     if (ctx->iv_length > 0)
         CALL_WITH_CHECK(psa_cipher_set_iv, &ctx->op, iv, ctx->iv_length);
 }
@@ -103,14 +119,15 @@ static void cipher_dispose(ptls_cipher_context_t *_ctx)
 {
     struct st_ptls_mbedtls_cipher_context_t *ctx = (struct st_ptls_mbedtls_cipher_context_t *)_ctx;
 
-    psa_cipher_abort(&ctx->op);
+    if (ctx->is_op_in_progress)
+        psa_cipher_abort(&ctx->op);
+    psa_destroy_key(ctx->key);
 }
 
 static int setup_crypto(ptls_cipher_context_t *_ctx, int is_enc, const void *key_bytes, psa_algorithm_t alg, size_t iv_length,
                         psa_key_type_t key_type, size_t key_bits)
 {
     struct st_ptls_mbedtls_cipher_context_t *ctx = (struct st_ptls_mbedtls_cipher_context_t *)_ctx;
-    mbedtls_svc_key_id_t key;
     psa_key_attributes_t attributes = PSA_KEY_ATTRIBUTES_INIT;
 
     /* import key or fail immediately */
@@ -118,20 +135,18 @@ static int setup_crypto(ptls_cipher_context_t *_ctx, int is_enc, const void *key
     psa_set_key_algorithm(&attributes, alg);
     psa_set_key_type(&attributes, key_type);
     psa_set_key_bits(&attributes, key_bits);
-    if (psa_import_key(&attributes, key_bytes, key_bits / 8, &key) != PSA_SUCCESS)
+    if (psa_import_key(&attributes, key_bytes, key_bits / 8, &ctx->key) != PSA_SUCCESS)
         return PTLS_ERROR_LIBRARY;
 
-    /* init context */
+    /* init the rest that are guaranteed to succeed */
     ctx->super.do_dispose = cipher_dispose;
     ctx->super.do_init = cipher_init;
     ctx->super.do_transform = cipher_transform;
+    ctx->alg = alg;
     ctx->iv_length = iv_length;
+    ctx->is_enc = is_enc;
+    ctx->is_op_in_progress = 0;
     ctx->op = psa_cipher_operation_init();
-    if (is_enc) {
-        CALL_WITH_CHECK(psa_cipher_encrypt_setup, &ctx->op, key, alg);
-    } else {
-        CALL_WITH_CHECK(psa_cipher_decrypt_setup, &ctx->op, key, alg);
-    }
 
     return 0;
 }
