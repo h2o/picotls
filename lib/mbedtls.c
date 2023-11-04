@@ -32,22 +32,6 @@
 #include <mbedtls/ecdh.h>
 #include "picotls.h"
 
-void ptls_mbedtls_free(void)
-{
-    mbedtls_psa_crypto_free();
-}
-
-int ptls_mbedtls_init(void)
-{
-    int ret = 0;
-    psa_status_t status;
-    if ((status = psa_crypto_init()) != PSA_SUCCESS) {
-        ret = -1;
-    }
-
-    return ret;
-}
-
 void ptls_mbedtls_random_bytes(void *buf, size_t len)
 {
     psa_generate_random((uint8_t *)buf, len);

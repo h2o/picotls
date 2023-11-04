@@ -30,6 +30,8 @@ extern "C" {
 #include <mbedtls/build_info.h>
 #include "picotls.h"
 
+/* before using any of these objects, psa_crypto_init() must be called */
+
 extern ptls_hash_algorithm_t ptls_mbedtls_sha256;
 extern ptls_hash_algorithm_t ptls_mbedtls_sha512;
 #if defined(MBEDTLS_SHA384_C)
@@ -53,14 +55,6 @@ extern ptls_cipher_suite_t ptls_mbedtls_chacha20poly1305sha256;
 extern ptls_key_exchange_algorithm_t ptls_mbedtls_secp256r1;
 extern ptls_key_exchange_algorithm_t ptls_mbedtls_x25519;
 
-/**
- * Init should be used before starting using library functions.
- */
-int ptls_mbedtls_init(void);
-/**
- * Free should be used before leaving the program.
- */
-void ptls_mbedtls_free(void);
 void ptls_mbedtls_random_bytes(void *buf, size_t len);
 
 #ifdef __cplusplus
