@@ -124,7 +124,7 @@ static void cipher_dispose(ptls_cipher_context_t *_ctx)
     psa_destroy_key(ctx->key);
 }
 
-static int setup_crypto(ptls_cipher_context_t *_ctx, int is_enc, const void *key_bytes, psa_algorithm_t alg, size_t iv_length,
+static int cipher_setup(ptls_cipher_context_t *_ctx, int is_enc, const void *key_bytes, psa_algorithm_t alg, size_t iv_length,
                         psa_key_type_t key_type, size_t key_bits)
 {
     struct st_ptls_mbedtls_cipher_context_t *ctx = (struct st_ptls_mbedtls_cipher_context_t *)_ctx;
@@ -151,9 +151,27 @@ static int setup_crypto(ptls_cipher_context_t *_ctx, int is_enc, const void *key
     return 0;
 }
 
+static int ecb_setup(ptls_cipher_context_t *ctx, int is_enc, const void *key_bytes, psa_key_type_t key_type, size_t key_bits)
+{
+    int ret;
+
+    if ((ret = cipher_setup(ctx, is_enc, key_bytes, PSA_ALG_ECB_NO_PADDING, 0, key_type, key_bits)) != 0)
+        return ret;
+    /* ECB mode does not necessary call `ptls_cipher_init` */
+    cipher_init(ctx, NULL);
+
+    return 0;
+}
+
+static int ctr_setup(ptls_cipher_context_t *ctx, int is_enc, const void *key_bytes, size_t iv_length, psa_key_type_t key_type,
+                     size_t key_bits)
+{
+    return cipher_setup(ctx, is_enc, key_bytes, PSA_ALG_CTR, iv_length, key_type, key_bits);
+}
+
 static int setup_aes128ecb(ptls_cipher_context_t *ctx, int is_enc, const void *key_bytes)
 {
-    return setup_crypto(ctx, is_enc, key_bytes, PSA_ALG_ECB_NO_PADDING, 0, PSA_KEY_TYPE_AES, 128);
+    return ecb_setup(ctx, is_enc, key_bytes, PSA_KEY_TYPE_AES, 128);
 }
 
 ptls_cipher_algorithm_t ptls_mbedtls_aes128ecb = {
@@ -165,7 +183,7 @@ ptls_cipher_algorithm_t ptls_mbedtls_aes128ecb = {
  */
 static int setup_aes256ecb(ptls_cipher_context_t *ctx, int is_enc, const void *key_bytes)
 {
-    return setup_crypto(ctx, is_enc, key_bytes, PSA_ALG_ECB_NO_PADDING, 0, PSA_KEY_TYPE_AES, 256);
+    return ecb_setup(ctx, is_enc, key_bytes, PSA_KEY_TYPE_AES, 256);
 }
 
 ptls_cipher_algorithm_t ptls_mbedtls_aes256ecb = {
@@ -178,7 +196,7 @@ ptls_cipher_algorithm_t ptls_mbedtls_aes256ecb = {
 
 static int setup_aes128ctr(ptls_cipher_context_t *ctx, int is_enc, const void *key_bytes)
 {
-    return setup_crypto(ctx, is_enc, key_bytes, PSA_ALG_CTR, 16, PSA_KEY_TYPE_AES, 128);
+    return ctr_setup(ctx, is_enc, key_bytes, 16, PSA_KEY_TYPE_AES, 128);
 }
 
 ptls_cipher_algorithm_t ptls_mbedtls_aes128ctr = {
@@ -191,7 +209,7 @@ ptls_cipher_algorithm_t ptls_mbedtls_aes128ctr = {
 
 static int setup_aes256ctr(ptls_cipher_context_t *ctx, int is_enc, const void *key_bytes)
 {
-    return setup_crypto(ctx, is_enc, key_bytes, PSA_ALG_CTR, 16, PSA_KEY_TYPE_AES, 256);
+    return ctr_setup(ctx, is_enc, key_bytes, 16, PSA_KEY_TYPE_AES, 256);
 }
 
 ptls_cipher_algorithm_t ptls_mbedtls_aes256ctr = {
@@ -206,7 +224,7 @@ ptls_cipher_algorithm_t ptls_mbedtls_aes256ctr = {
 */
 static int setup_crypto_chacha20(ptls_cipher_context_t *ctx, int is_enc, const void *key_bytes)
 {
-    return setup_crypto(ctx, is_enc, key_bytes, PSA_ALG_STREAM_CIPHER, 16, PSA_KEY_TYPE_CHACHA20, 256);
+    return cipher_setup(ctx, is_enc, key_bytes, PSA_ALG_STREAM_CIPHER, 16, PSA_KEY_TYPE_CHACHA20, 256);
 }
 
 ptls_cipher_algorithm_t ptls_mbedtls_chacha20 = {
