@@ -481,28 +481,6 @@ ptls_cipher_suite_t ptls_mbedtls_chacha20poly1305sha256 = {.id = PTLS_CIPHER_SUI
 ptls_cipher_suite_t *ptls_mbedtls_cipher_suites[] = {&ptls_mbedtls_aes256gcmsha384, &ptls_mbedtls_aes128gcmsha256,
                                                      &ptls_mbedtls_chacha20poly1305sha256, NULL};
 
-/* Key exchange algorithms.
- * The Picotls framework defines these algorithms as ptls_key_exchange_algorithm_t,
- * a structure containing two function pointers:
- *
- * int (*create)(const struct st_ptls_key_exchange_algorithm_t *algo, ptls_key_exchange_context_t **ctx);
- * int (*exchange)(const struct st_ptls_key_exchange_algorithm_t *algo, ptls_iovec_t *pubkey, ptls_iovec_t *secret,
- *     ptls_iovec_t peerkey);
- * The "create" call is used on the client. It documents the ptls_key_exchange_context_t, which contains
- * the public key prepared by the client, as an iovec, and a function pointer:
- *
- * int (*on_exchange)(struct st_ptls_key_exchange_context_t **keyex, int release, ptls_iovec_t *secret, ptls_iovec_t peerkey);
- *
- * The public key of the client is passed to the server an ends up as "peerkey" argument to the (exchange) function.
- * That function documents the server's public key, and the secret computed by combining server and client key.
- *
- * When the client receives the server hello, the stack calls the "on_exchange" callback, passing the context
- * previously created by the client and the public key of the peer, so the client can compute its own
- * version of the secret.
- *
- * The following code uses the MbedTLS PSA API to create the "create", "exchange" and "on_exchange" functions.
- */
-
 #define PTLS_MBEDTLS_ECDH_PUBKEY_MAX 129
 
 struct ptls_mbedtls_key_exchange_context_t {

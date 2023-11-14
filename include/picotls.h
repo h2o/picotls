@@ -338,11 +338,14 @@ typedef struct st_ptls_key_exchange_context_t {
      */
     const struct st_ptls_key_exchange_algorithm_t *algo;
     /**
-     * the public key
+     * public key of this context
      */
     ptls_iovec_t pubkey;
     /**
-     * If `release` is set, the callee frees resources allocated to the context and set *keyex to NULL
+     * This function can be used for deriving a shared secret or for destroying the context.
+     * When `secret` is non-NULL, this callback derives the shared secret using the public key of the context and the peer key being
+     * given, and sets the value in `secret`. The memory pointed to by `secret->base` must be freed by the caller by calling `free`.
+     * When `release` is set, the callee frees resources allocated to the context and set *keyex to NULL.
      */
     int (*on_exchange)(struct st_ptls_key_exchange_context_t **keyex, int release, ptls_iovec_t *secret, ptls_iovec_t peerkey);
 } ptls_key_exchange_context_t;
@@ -356,12 +359,14 @@ typedef const struct st_ptls_key_exchange_algorithm_t {
      */
     uint16_t id;
     /**
-     * creates a context for asynchronous key exchange. The function is called when ClientHello is generated. The on_exchange
+     * Creates a context for asynchronous key exchange. The function is called when ClientHello is generated. The on_exchange
      * callback of the created context is called when the client receives ServerHello.
      */
     int (*create)(const struct st_ptls_key_exchange_algorithm_t *algo, ptls_key_exchange_context_t **ctx);
     /**
-     * implements synchronous key exchange. Called when receiving a ServerHello.
+     * Implements synchronous key exchange. Called when receiving a ServerHello.
+     * Given a public key provided by the peer (`peerkey`), this callback returns a empheral public key (`pubkey`) and a secret
+     * (`secret) `derived from the two public keys.
      */
     int (*exchange)(const struct st_ptls_key_exchange_algorithm_t *algo, ptls_iovec_t *pubkey, ptls_iovec_t *secret,
                     ptls_iovec_t peerkey);
