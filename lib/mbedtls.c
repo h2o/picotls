@@ -128,15 +128,16 @@ static int cipher_setup(ptls_cipher_context_t *_ctx, int is_enc, const void *key
                         psa_key_type_t key_type, size_t key_bits)
 {
     struct st_ptls_mbedtls_cipher_context_t *ctx = (struct st_ptls_mbedtls_cipher_context_t *)_ctx;
-    psa_key_attributes_t attributes = PSA_KEY_ATTRIBUTES_INIT;
 
-    /* import key or fail immediately */
-    psa_set_key_usage_flags(&attributes, (is_enc) ? PSA_KEY_USAGE_ENCRYPT : PSA_KEY_USAGE_DECRYPT);
-    psa_set_key_algorithm(&attributes, alg);
-    psa_set_key_type(&attributes, key_type);
-    psa_set_key_bits(&attributes, key_bits);
-    if (psa_import_key(&attributes, key_bytes, key_bits / 8, &ctx->key) != PSA_SUCCESS)
-        return PTLS_ERROR_LIBRARY;
+    { /* import key or fail immediately */
+        psa_key_attributes_t attributes = PSA_KEY_ATTRIBUTES_INIT;
+        psa_set_key_usage_flags(&attributes, is_enc ? PSA_KEY_USAGE_ENCRYPT : PSA_KEY_USAGE_DECRYPT);
+        psa_set_key_algorithm(&attributes, alg);
+        psa_set_key_type(&attributes, key_type);
+        psa_set_key_bits(&attributes, key_bits);
+        if (psa_import_key(&attributes, key_bytes, key_bits / 8, &ctx->key) != PSA_SUCCESS)
+            return PTLS_ERROR_LIBRARY;
+    }
 
     /* init the rest that are guaranteed to succeed */
     ctx->super.do_dispose = cipher_dispose;
