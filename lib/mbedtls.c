@@ -224,9 +224,9 @@ ptls_cipher_algorithm_t ptls_mbedtls_aes256ctr = {
 * This is disabled for now, as there seems to be an issue when
 * setting the 16 bytes long IV that we need.
 */
-static int setup_crypto_chacha20(ptls_cipher_context_t *ctx, int is_enc, const void *key_bytes)
+static int setup_chacha20(ptls_cipher_context_t *ctx, int is_enc, const void *key_bytes)
 {
-    return cipher_setup(ctx, is_enc, key_bytes, PSA_ALG_STREAM_CIPHER, 16, PSA_KEY_TYPE_CHACHA20);
+    return cipher_setup(ctx, is_enc, key_bytes, PSA_ALG_CTR, PSA_KEY_TYPE_CHACHA20);
 }
 
 ptls_cipher_algorithm_t ptls_mbedtls_chacha20 = {
