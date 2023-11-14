@@ -608,6 +608,9 @@ Exit:
     return ret;
 }
 
+/**
+ * Upon success, ownership of `pkey` is transferred to the object being created. Otherwise, the refcount remains unchanged.
+ */
 static int evp_keyex_init(ptls_key_exchange_algorithm_t *algo, ptls_key_exchange_context_t **_ctx, EVP_PKEY *pkey)
 {
     struct st_evp_keyex_context_t *ctx = NULL;
@@ -630,8 +633,10 @@ static int evp_keyex_init(ptls_key_exchange_algorithm_t *algo, ptls_key_exchange
     *_ctx = &ctx->super;
     ret = 0;
 Exit:
-    if (ret != 0 && ctx != NULL)
+    if (ret != 0 && ctx != NULL) {
+        ctx->privkey = NULL; /* do not decrement refcount of pkey in case of error */
         evp_keyex_free(ctx);
+    }
     return ret;
 }
 
