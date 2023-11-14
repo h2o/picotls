@@ -49,7 +49,9 @@ extern ptls_aead_algorithm_t ptls_mbedtls_aes256gcm;
 extern ptls_aead_algorithm_t ptls_mbedtls_chacha20poly1305;
 
 extern ptls_cipher_suite_t ptls_mbedtls_aes128gcmsha256;
+#if defined(MBEDTLS_SHA384_C)
 extern ptls_cipher_suite_t ptls_mbedtls_aes256gcmsha384;
+#endif
 extern ptls_cipher_suite_t ptls_mbedtls_chacha20poly1305sha256;
 extern ptls_cipher_suite_t *ptls_mbedtls_cipher_suites[];
 
