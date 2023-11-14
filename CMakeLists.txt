@@ -12,7 +12,7 @@ ENDIF ()
 FIND_PACKAGE(PkgConfig REQUIRED)
 INCLUDE(cmake/dtrace-utils.cmake)
 INCLUDE(cmake/boringssl-adjust.cmake)
-set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+SET(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 CHECK_DTRACE(${PROJECT_SOURCE_DIR}/picotls-probes.d)
 IF ((CMAKE_SIZEOF_VOID_P EQUAL 8) AND
@@ -204,23 +204,22 @@ ENDIF ()
 
 IF (WITH_MBEDTLS)
     FIND_PACKAGE(MbedTLS)
-    # IF (MbedTLS_FOUND)
-        message(STATUS "mbedtls/include: ${MBEDTLS_INCLUDE_DIRS}")
-        message(STATUS "mbedtls libraries: ${MBEDTLS_LIBRARIES}")
-        INCLUDE_DIRECTORIES(${MBEDTLS_INCLUDE_DIRS})
-        ADD_LIBRARY(picotls-mbedtls lib/mbedtls.c)
-        ADD_EXECUTABLE(test-mbedtls.t
+    IF (NOT MbedTLS_FOUND)
+        MESSAGE(FATAL_ERROR "-DWITH_MBEDTLS set but mbedtls not found")
+    ENDIF ()
+    message(STATUS "mbedtls/include: ${MBEDTLS_INCLUDE_DIRS}")
+    message(STATUS "mbedtls libraries: ${MBEDTLS_LIBRARIES}")
+    INCLUDE_DIRECTORIES(${MBEDTLS_INCLUDE_DIRS})
+    ADD_LIBRARY(picotls-mbedtls lib/mbedtls.c)
+    ADD_EXECUTABLE(test-mbedtls.t
         deps/picotest/picotest.c
         ${CORE_TEST_FILES}
         t/mbedtls.c)
-        TARGET_LINK_LIBRARIES(test-mbedtls.t
-            picotls-minicrypto picotls-mbedtls
-            ${MBEDTLS_LIBRARIES})
-        SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DPTLS_HAVE_MBEDTLS=1")
-        LIST(APPEND PTLSBENCH_LIBS picotls-mbedtls ${MBEDTLS_LIBRARIES})
-    #ELSE ()
-    #    MESSAGE (FATAL_ERROR "MbedTLS not found")
-    #ENDIF()
+    TARGET_LINK_LIBRARIES(test-mbedtls.t
+        picotls-minicrypto picotls-mbedtls
+        ${MBEDTLS_LIBRARIES})
+    SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DPTLS_HAVE_MBEDTLS=1")
+    LIST(APPEND PTLSBENCH_LIBS picotls-mbedtls ${MBEDTLS_LIBRARIES})
 ENDIF ()
 
 ADD_EXECUTABLE(ptlsbench t/ptlsbench.c)

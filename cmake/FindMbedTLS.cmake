@@ -1,32 +1,48 @@
-# - Try to find MbedTLS
-# set(MBEDTLS_LIBRARY mbedtls)
-# set(MBEDTLS_INCLUDE_DIRS ${MBEDTLS_SOURCE_DIR}/include)
-find_path(MBEDTLS_INCLUDE_DIRS
-    NAMES mbedtls/build_info.h psa/crypto.h
-    HINTS ${MBEDTLS_PREFIX}/include/
-        ${CMAKE_SOURCE_DIR}/../mbedtls/include/
-        ${CMAKE_BINARY_DIR}/../mbedtls/include/
-        ../mbedtls/include/ )
+# Try to find MbedTLS; recognized hints are:
+#  * MBEDTLS_ROOT_DIR
+#  * MBEDTLS_LIBDIR
+# Upon return,
+#  * MBEDTLS_INCLUDE_DIRS
+#  * MBEDTLS_LIBRARIES
+# will be set.
+# Users may supply MBEDTLS_INCLUDE_DIRS or MBEDTLS_LIBRARIES directly.
 
+INCLUDE(FindPackageHandleStandardArgs)
 
+# setup default vars for the hints
+IF (NOT DEFINED MBEDTLS_ROOT_DIR)
+    SET(MBEDTLS_ROOT_DIR "/usr/local" "/usr")
+ENDIF ()
+IF (NOT DEFINED MBEDTLS_LIBDIR)
+    SET(MBEDTLS_LIBDIR)
+    FOREACH (item IN LISTS MBEDTLS_ROOT_DIR)
+        LIST(APPEND MBEDTLS_LIBDIR "${item}/lib" "${item}/build/library")
+    ENDFOREACH ()
+ENDIF ()
 
-set(MBEDTLS_HINTS ${MBEDTLS_PREFIX}/build/library 
-    ${CMAKE_BINARY_DIR}/../mbedtls/build/library
-    ../mbedtls/build/library ../mbedtls/library)
+# find include directory
+IF (NOT DEFINED MBEDTLS_INCLUDE_DIRS)
+    SET(HINTS)
+    FOREACH (item IN LISTS MBEDTLS_ROOT_DIR)
+        LIST(APPEND HINTS "${item}/include")
+    ENDFOREACH ()
+    FIND_PATH(MBEDTLS_INCLUDE_DIRS
+        NAMES mbedtls/build_info.h psa/crypto.h
+        HINTS $HINTS)
+ENDIF ()
 
-find_library(MBEDTLS_LIBRARY mbedtls HINTS ${MBEDTLS_HINTS})
-find_library(MBEDTLS_CRYPTO mbedcrypto HINTS ${MBEDTLS_HINTS})
-find_library(MBEDTLS_X509 mbedx509 HINTS ${MBEDTLS_HINTS})
-include(FindPackageHandleStandardArgs)
-# handle the QUIETLY and REQUIRED arguments and set PTLS_FOUND to TRUE
-# if all listed variables are TRUE
-find_package_handle_standard_args(MbedTLS REQUIRED_VARS
+# find libraries
+FIND_LIBRARY(MBEDTLS_LIBRARY mbedtls HINTS $MBEDTLS_LIBDIR)
+FIND_LIBRARY(MBEDTLS_CRYPTO mbedcrypto HINTS $MBEDTLS_LIBDIR)
+FIND_LIBRARY(MBEDTLS_X509 mbedx509 HINTS $MBEDTLS_LIBDIR)
+
+# setup
+FIND_PACKAGE_HANDLE_STANDARD_ARGS(MbedTLS REQUIRED_VARS
     MBEDTLS_LIBRARY
     MBEDTLS_CRYPTO
     MBEDTLS_X509
     MBEDTLS_INCLUDE_DIRS)
-    
-if (MbedTLS_FOUND)
-    set(MBEDTLS_LIBRARIES ${MBEDTLS_LIBRARY} ${MBEDTLS_CRYPTO} ${MBEDTLS_X509})
-    mark_as_advanced(MBEDTLS_LIBRARIES MBEDTLS_INCLUDE_DIRS)
-endif ()
+IF (MbedTLS_FOUND)
+    SET(MBEDTLS_LIBRARIES ${MBEDTLS_LIBRARY} ${MBEDTLS_CRYPTO} ${MBEDTLS_X509})
+    MARK_AS_ADVANCED(MBEDTLS_LIBRARIES MBEDTLS_INCLUDE_DIRS)
+ENDIF ()
