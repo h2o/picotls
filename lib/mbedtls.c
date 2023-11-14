@@ -350,8 +350,8 @@ static void aead_encrypt_v(struct st_ptls_aead_context_t *_ctx, void *output, pt
     psa_aead_abort(&op);
 }
 
-size_t aead_decrypt(struct st_ptls_aead_context_t *_ctx, void *output, const void *input, size_t inlen, uint64_t seq,
-                    const void *aad, size_t aadlen)
+static size_t aead_decrypt(struct st_ptls_aead_context_t *_ctx, void *output, const void *input, size_t inlen, uint64_t seq,
+                           const void *aad, size_t aadlen)
 {
     struct ptls_mbedtls_aead_context_t *ctx = (struct ptls_mbedtls_aead_context_t *)_ctx;
     uint8_t iv[PTLS_MAX_IV_SIZE];
@@ -509,8 +509,8 @@ static int generate_private_key(psa_key_id_t *private_key, psa_algorithm_t psa_a
     return ret;
 }
 
-int key_exchange_on_exchange(struct st_ptls_key_exchange_context_t **_keyex, int release, ptls_iovec_t *secret,
-                             ptls_iovec_t peerkey)
+static int key_exchange_on_exchange(struct st_ptls_key_exchange_context_t **_keyex, int release, ptls_iovec_t *secret,
+                                    ptls_iovec_t peerkey)
 {
     struct ptls_mbedtls_key_exchange_context_t *keyex = (struct ptls_mbedtls_key_exchange_context_t *)*_keyex;
     int ret = 0;
