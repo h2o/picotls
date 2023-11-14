@@ -525,22 +525,35 @@ static int evp_keyex_on_exchange(ptls_key_exchange_context_t **_ctx, int release
     }
 
 #ifdef OPENSSL_IS_BORINGSSL
+#define X25519_KEY_SIZE 32
     if (ctx->super.algo->id == PTLS_GROUP_X25519) {
-        secret->len = peerkey.len;
-        if ((secret->base = malloc(secret->len)) == NULL) {
+        /* allocate memory to return secret */
+        if ((secret->base = malloc(X25519_KEY_SIZE)) == NULL) {
             ret = PTLS_ERROR_NO_MEMORY;
             goto Exit;
         }
-        uint8_t sk_raw[32];
+        secret->len = X25519_KEY_SIZE;
+        /* fetch raw key and derive the secret */
+        uint8_t sk_raw[X25519_KEY_SIZE];
         size_t sk_raw_len = sizeof(sk_raw);
         if (EVP_PKEY_get_raw_private_key(ctx->privkey, sk_raw, &sk_raw_len) != 1) {
             ret = PTLS_ERROR_LIBRARY;
             goto Exit;
         }
+        assert(sk_raw_len == sizeof(sk_raw));
         X25519(secret->base, sk_raw, peerkey.base);
+        ptls_clear_memory(sk_raw, sizeof(sk_raw));
+        /* check bad key */
+        static const uint8_t zeros[X25519_KEY_SIZE] = {0};
+        if (ptls_mem_equal(secret->base, zeros, X25519_KEY_SIZE)) {
+            ret = PTLS_ERROR_INCOMPATIBLE_KEY;
+            goto Exit;
+        }
+        /* success */
         ret = 0;
         goto Exit;
     }
+#undef X25519_KEY_SIZE
 #endif
 
     if ((evppeer = EVP_PKEY_new()) == NULL) {
@@ -595,6 +608,9 @@ Exit:
     return ret;
 }
 
+/**
+ * Upon success, ownership of `pkey` is transferred to the object being created. Otherwise, the refcount remains unchanged.
+ */
 static int evp_keyex_init(ptls_key_exchange_algorithm_t *algo, ptls_key_exchange_context_t **_ctx, EVP_PKEY *pkey)
 {
     struct st_evp_keyex_context_t *ctx = NULL;
@@ -617,8 +633,10 @@ static int evp_keyex_init(ptls_key_exchange_algorithm_t *algo, ptls_key_exchange
     *_ctx = &ctx->super;
     ret = 0;
 Exit:
-    if (ret != 0 && ctx != NULL)
+    if (ret != 0 && ctx != NULL) {
+        ctx->privkey = NULL; /* do not decrement refcount of pkey in case of error */
         evp_keyex_free(ctx);
+    }
     return ret;
 }
 

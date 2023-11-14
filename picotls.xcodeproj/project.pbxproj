@@ -206,6 +206,7 @@
 		081F00CD291A358800534A86 /* pembase64.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = pembase64.h; sourceTree = "<group>"; };
 		081F00CE291A358800534A86 /* ptlsbcrypt.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ptlsbcrypt.h; sourceTree = "<group>"; };
 		087F1A732B034AEB00E81AC1 /* FindMbedTLS.cmake */ = {isa = PBXFileReference; lastKnownFileType = text; path = FindMbedTLS.cmake; sourceTree = "<group>"; };
+		0883D3272AEF8F2500B711CC /* fusion.cmake */ = {isa = PBXFileReference; lastKnownFileType = text; path = fusion.cmake; sourceTree = "<group>"; };
 		0883D32A2AF601A700B711CC /* mbedtls.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = mbedtls.c; sourceTree = "<group>"; };
 		0883D32B2AF601B900B711CC /* mbedtls.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = mbedtls.c; sourceTree = "<group>"; };
 		0883D32C2AF601CB00B711CC /* mbedtls.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = mbedtls.h; sourceTree = "<group>"; };
@@ -533,9 +534,10 @@
 		E95EBCC9227E9FF30022C32D /* cmake */ = {
 			isa = PBXGroup;
 			children = (
-				087F1A732B034AEB00E81AC1 /* FindMbedTLS.cmake */,
 				08A835EB2996971300D872CE /* boringssl-adjust.cmake */,
 				E95EBCCA227EA0180022C32D /* dtrace-utils.cmake */,
+				087F1A732B034AEB00E81AC1 /* FindMbedTLS.cmake */,
+				0883D3272AEF8F2500B711CC /* fusion.cmake */,
 			);
 			path = cmake;
 			sourceTree = "<group>";
