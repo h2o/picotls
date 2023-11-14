@@ -78,7 +78,7 @@ DEFINE_HASH(sha512, SHA512, PSA_ALG_SHA_512);
 DEFINE_HASH(sha384, SHA384, PSA_ALG_SHA_384);
 #endif
 
-/*
+/**
  * Generic implementation of a cipher using the PSA API
  */
 struct st_ptls_mbedtls_cipher_context_t {
@@ -175,9 +175,6 @@ ptls_cipher_algorithm_t ptls_mbedtls_aes128ecb = {
     "AES128-ECB",   PTLS_AES128_KEY_SIZE, PTLS_AES_BLOCK_SIZE, 0 /* iv size */, sizeof(struct st_ptls_mbedtls_cipher_context_t),
     setup_aes128ecb};
 
-/*
- * Implementation of AES256_ECB using the PSA API:
- */
 static int setup_aes256ecb(ptls_cipher_context_t *ctx, int is_enc, const void *key_bytes)
 {
     return ecb_setup(ctx, is_enc, key_bytes, PSA_KEY_TYPE_AES);
@@ -187,10 +184,6 @@ ptls_cipher_algorithm_t ptls_mbedtls_aes256ecb = {
     "AES256-ECB",   PTLS_AES256_KEY_SIZE, PTLS_AES_BLOCK_SIZE, 0 /* iv size */, sizeof(struct st_ptls_mbedtls_cipher_context_t),
     setup_aes256ecb};
 
-/*
- * Implementation of AES128_CTR using the PSA API:
- */
-
 static int setup_aes128ctr(ptls_cipher_context_t *ctx, int is_enc, const void *key_bytes)
 {
     return cipher_setup(ctx, is_enc, key_bytes, PSA_ALG_CTR, PSA_KEY_TYPE_AES);
@@ -199,10 +192,6 @@ static int setup_aes128ctr(ptls_cipher_context_t *ctx, int is_enc, const void *k
 ptls_cipher_algorithm_t ptls_mbedtls_aes128ctr = {
     "AES128-CTR",   PTLS_AES128_KEY_SIZE, PTLS_AES_BLOCK_SIZE, 16 /* iv size */, sizeof(struct st_ptls_mbedtls_cipher_context_t),
     setup_aes128ctr};
-
-/*
- * Implementation of AES128_CTR using the PSA API:
- */
 
 static int setup_aes256ctr(ptls_cipher_context_t *ctx, int is_enc, const void *key_bytes)
 {
@@ -214,11 +203,8 @@ ptls_cipher_algorithm_t ptls_mbedtls_aes256ctr = {
     setup_aes256ctr};
 
 #if 0
-/*
-* Implementation of CHACHA20 using the PSA API.
-* This is disabled for now, as there seems to be an issue when
-* setting the 16 bytes long IV that we need.
-*/
+/* CHACHA20 backend using PSA API is disabled for now, as there seems to be an issue when setting the 16 bytes long IV that we
+ * need. */
 static int setup_chacha20(ptls_cipher_context_t *ctx, int is_enc, const void *key_bytes)
 {
     return cipher_setup(ctx, is_enc, key_bytes, PSA_ALG_CTR, PSA_KEY_TYPE_CHACHA20);
@@ -229,9 +215,7 @@ ptls_cipher_algorithm_t ptls_mbedtls_chacha20 = {
     setup_chacha20};
 #else
 /* Implementation of ChaCha20 using the low level ChaCha20 API.
- * TODO: remove this and the reference to chacha20.h as soon as
- * the IV bug in the generic implementation is fixed.
- */
+ * TODO: remove this and the reference to chacha20.h as soon as the IV bug in the generic implementation is fixed. */
 struct st_ptls_mbedtls_chacha20_context_t {
     ptls_cipher_context_t super;
     mbedtls_chacha20_context mctx;
@@ -621,8 +605,6 @@ Exit:
     return ret;
 }
 
-/* Instantiation of the generic key exchange API with secp256r1
- */
 static int secp256r1_create(const struct st_ptls_key_exchange_algorithm_t *algo, ptls_key_exchange_context_t **ctx)
 {
     return key_exchange_create(algo, ctx, &secp256r1_params);
@@ -637,8 +619,6 @@ static int secp256r1_exchange(const struct st_ptls_key_exchange_algorithm_t *alg
 ptls_key_exchange_algorithm_t ptls_mbedtls_secp256r1 = {
     .id = PTLS_GROUP_SECP256R1, .name = PTLS_GROUP_NAME_SECP256R1, .create = secp256r1_create, .exchange = secp256r1_exchange};
 
-/* Instantiation of the generic key exchange API with x25519
- */
 static int x25519_create(const struct st_ptls_key_exchange_algorithm_t *algo, ptls_key_exchange_context_t **ctx)
 {
     return key_exchange_create(algo, ctx, &x25519_params);
