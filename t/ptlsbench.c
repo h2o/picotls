@@ -60,8 +60,6 @@
 #endif
 
 #ifdef PTLS_HAVE_MBEDTLS
-#include "mbedtls/build_info.h"
-#include "psa/crypto.h"
 #include "picotls/mbedtls.h"
 #endif
 

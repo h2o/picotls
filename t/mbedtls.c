@@ -29,10 +29,6 @@
 #include <stdio.h>
 #include <string.h>
 #include <picotls.h>
-#include "mbedtls/mbedtls_config.h"
-#include "mbedtls/build_info.h"
-#include "psa/crypto.h"
-#include "psa/crypto_struct.h"
 #include "picotls/mbedtls.h"
 #include "picotls/minicrypto.h"
 #include "../deps/picotest/picotest.h"

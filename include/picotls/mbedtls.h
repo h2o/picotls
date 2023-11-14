@@ -26,8 +26,7 @@
 extern "C" {
 #endif
 
-#include <mbedtls/mbedtls_config.h>
-#include <mbedtls/build_info.h>
+#include <psa/crypto.h>
 #include "picotls.h"
 
 /* before using any of these objects, psa_crypto_init() must be called */
