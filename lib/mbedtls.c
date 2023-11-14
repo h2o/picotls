@@ -483,10 +483,17 @@ ptls_cipher_suite_t *ptls_mbedtls_cipher_suites[] = {&ptls_mbedtls_aes256gcmsha3
 
 #define PTLS_MBEDTLS_ECDH_PUBKEY_MAX 129
 
+static const struct ptls_mbedtls_key_exchange_params_t {
+    psa_algorithm_t alg;
+    psa_ecc_family_t curve;
+    size_t curve_bits;
+    size_t secret_size;
+} secp256r1_params = {PSA_ALG_ECDH, PSA_ECC_FAMILY_SECP_R1, 256, 32},
+  x25519_params = {PSA_ALG_ECDH, PSA_ECC_FAMILY_MONTGOMERY, 255, 32};
+
 struct ptls_mbedtls_key_exchange_context_t {
     ptls_key_exchange_context_t super;
-    psa_algorithm_t psa_alg;
-    size_t secret_size;
+    const struct ptls_mbedtls_key_exchange_params_t *params;
     psa_key_id_t private_key;
     uint8_t pubkeybuf[PTLS_MBEDTLS_ECDH_PUBKEY_MAX];
 };
@@ -494,15 +501,15 @@ struct ptls_mbedtls_key_exchange_context_t {
 /**
  * Generates a private key. For now, we only support ECC.
  */
-static int generate_private_key(psa_key_id_t *private_key, psa_algorithm_t psa_alg, psa_ecc_family_t curve, size_t curve_bits)
+static int generate_private_key(psa_key_id_t *private_key, const struct ptls_mbedtls_key_exchange_params_t *params)
 {
     psa_key_attributes_t attributes = PSA_KEY_ATTRIBUTES_INIT;
     int ret = 0;
 
     psa_set_key_usage_flags(&attributes, PSA_KEY_USAGE_DERIVE);
-    psa_set_key_algorithm(&attributes, psa_alg);
-    psa_set_key_type(&attributes, PSA_KEY_TYPE_ECC_KEY_PAIR(curve));
-    psa_set_key_bits(&attributes, curve_bits);
+    psa_set_key_algorithm(&attributes, params->alg);
+    psa_set_key_type(&attributes, PSA_KEY_TYPE_ECC_KEY_PAIR(params->curve));
+    psa_set_key_bits(&attributes, params->curve_bits);
     if (psa_generate_key(&attributes, private_key) != 0) {
         ret = -1;
     }
@@ -519,16 +526,16 @@ static int key_exchange_on_exchange(struct st_ptls_key_exchange_context_t **_key
         goto Exit;
 
     /* derive shared secret */
-    if ((secret->base = malloc(keyex->secret_size)) == NULL) {
+    if ((secret->base = malloc(keyex->params->secret_size)) == NULL) {
         ret = PTLS_ERROR_NO_MEMORY;
         goto Exit;
     }
-    if (psa_raw_key_agreement(keyex->psa_alg, keyex->private_key, peerkey.base, peerkey.len, secret->base, keyex->secret_size,
-                              &secret->len) != 0) {
+    if (psa_raw_key_agreement(keyex->params->alg, keyex->private_key, peerkey.base, peerkey.len, secret->base,
+                              keyex->params->secret_size, &secret->len) != 0) {
         ret = PTLS_ERROR_LIBRARY;
         goto Exit;
     }
-    assert(keyex->secret_size == secret->len);
+    assert(keyex->params->secret_size == secret->len);
     ret = 0;
 
 Exit:
@@ -544,8 +551,8 @@ Exit:
     return ret;
 }
 
-static int key_exchange_create(ptls_key_exchange_algorithm_t *algo, ptls_key_exchange_context_t **ctx, psa_algorithm_t psa_alg,
-                               psa_ecc_family_t curve, size_t curve_bits, size_t secret_size)
+static int key_exchange_create(ptls_key_exchange_algorithm_t *algo, ptls_key_exchange_context_t **ctx,
+                               const struct ptls_mbedtls_key_exchange_params_t *params)
 {
     struct ptls_mbedtls_key_exchange_context_t *keyex;
 
@@ -558,12 +565,11 @@ static int key_exchange_create(ptls_key_exchange_algorithm_t *algo, ptls_key_exc
         .super.algo = algo,
         .super.pubkey.base = keyex->pubkeybuf,
         .super.on_exchange = key_exchange_on_exchange,
-        .psa_alg = psa_alg,
-        .secret_size = secret_size,
+        .params = params,
     };
 
     /* generate private key */
-    if (generate_private_key(&keyex->private_key, psa_alg, curve, curve_bits) != 0) {
+    if (generate_private_key(&keyex->private_key, keyex->params) != 0) {
         free(keyex);
         return PTLS_ERROR_LIBRARY;
     }
@@ -579,8 +585,7 @@ static int key_exchange_create(ptls_key_exchange_algorithm_t *algo, ptls_key_exc
 }
 
 static int key_exchange_exchange(ptls_key_exchange_algorithm_t *algo, ptls_iovec_t *pubkey, ptls_iovec_t *secret,
-                                 ptls_iovec_t peerkey, psa_algorithm_t psa_alg, psa_ecc_family_t curve, size_t curve_bits,
-                                 size_t secret_size)
+                                 ptls_iovec_t peerkey, const struct ptls_mbedtls_key_exchange_params_t *params)
 {
     psa_key_id_t private_key;
     int ret;
@@ -589,11 +594,11 @@ static int key_exchange_exchange(ptls_key_exchange_algorithm_t *algo, ptls_iovec
     *secret = ptls_iovec_init(NULL, 0);
 
     /* generate private key (and return immediately upon failure) */
-    if (generate_private_key(&private_key, psa_alg, curve, curve_bits) != 0)
+    if (generate_private_key(&private_key, params) != 0)
         return PTLS_ERROR_LIBRARY;
 
     /* allocate buffers */
-    if ((secret->base = malloc(secret_size)) == NULL) {
+    if ((secret->base = malloc(params->secret_size)) == NULL) {
         ret = PTLS_ERROR_NO_MEMORY;
         goto Exit;
     }
@@ -604,7 +609,8 @@ static int key_exchange_exchange(ptls_key_exchange_algorithm_t *algo, ptls_iovec
 
     /* export public key and call key agrement function */
     if (psa_export_public_key(private_key, pubkey->base, PTLS_MBEDTLS_ECDH_PUBKEY_MAX, &pubkey->len) != 0 ||
-        psa_raw_key_agreement(psa_alg, private_key, peerkey.base, peerkey.len, secret->base, secret_size, &secret->len) != 0) {
+        psa_raw_key_agreement(params->alg, private_key, peerkey.base, peerkey.len, secret->base, params->secret_size,
+                              &secret->len) != 0) {
         ret = PTLS_ERROR_LIBRARY;
         goto Exit;
     }
@@ -627,13 +633,13 @@ Exit:
  */
 static int secp256r1_create(const struct st_ptls_key_exchange_algorithm_t *algo, ptls_key_exchange_context_t **ctx)
 {
-    return key_exchange_create(algo, ctx, PSA_ALG_ECDH, PSA_ECC_FAMILY_SECP_R1, 256, 32);
+    return key_exchange_create(algo, ctx, &secp256r1_params);
 }
 
 static int secp256r1_exchange(const struct st_ptls_key_exchange_algorithm_t *algo, ptls_iovec_t *pubkey, ptls_iovec_t *secret,
                               ptls_iovec_t peerkey)
 {
-    return key_exchange_exchange(algo, pubkey, secret, peerkey, PSA_ALG_ECDH, PSA_ECC_FAMILY_SECP_R1, 256, 32);
+    return key_exchange_exchange(algo, pubkey, secret, peerkey, &secp256r1_params);
 }
 
 ptls_key_exchange_algorithm_t ptls_mbedtls_secp256r1 = {
@@ -643,13 +649,13 @@ ptls_key_exchange_algorithm_t ptls_mbedtls_secp256r1 = {
  */
 static int x25519_create(const struct st_ptls_key_exchange_algorithm_t *algo, ptls_key_exchange_context_t **ctx)
 {
-    return key_exchange_create(algo, ctx, PSA_ALG_ECDH, PSA_ECC_FAMILY_MONTGOMERY, 255, 32);
+    return key_exchange_create(algo, ctx, &x25519_params);
 }
 
 static int x25519_exchange(const struct st_ptls_key_exchange_algorithm_t *algo, ptls_iovec_t *pubkey, ptls_iovec_t *secret,
                            ptls_iovec_t peerkey)
 {
-    return key_exchange_exchange(algo, pubkey, secret, peerkey, PSA_ALG_ECDH, PSA_ECC_FAMILY_MONTGOMERY, 255, 32);
+    return key_exchange_exchange(algo, pubkey, secret, peerkey, &x25519_params);
 }
 
 ptls_key_exchange_algorithm_t ptls_mbedtls_x25519 = {
