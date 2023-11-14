@@ -486,18 +486,15 @@ ptls_cipher_suite_t *ptls_mbedtls_cipher_suites[] = {&ptls_mbedtls_aes256gcmsha3
 struct ptls_mbedtls_key_exchange_context_t {
     ptls_key_exchange_context_t super;
     psa_algorithm_t psa_alg;
-    psa_ecc_family_t curve;
-    size_t curve_bits;
     size_t secret_size;
     psa_key_id_t private_key;
-    uint8_t pub[PTLS_MBEDTLS_ECDH_PUBKEY_MAX];
+    uint8_t pubkeybuf[PTLS_MBEDTLS_ECDH_PUBKEY_MAX];
 };
 
-/* Set a private key for key exchange. For now, we only support ECC
+/**
+ * Generates a private key. For now, we only support ECC.
  */
-
-static int ptls_mbedtls_key_exchange_set_private_key(psa_key_id_t *private_key, psa_algorithm_t psa_alg, psa_ecc_family_t curve,
-                                                     size_t curve_bits)
+static int generate_private_key(psa_key_id_t *private_key, psa_algorithm_t psa_alg, psa_ecc_family_t curve, size_t curve_bits)
 {
     psa_key_attributes_t attributes = PSA_KEY_ATTRIBUTES_INIT;
     int ret = 0;
@@ -512,123 +509,115 @@ static int ptls_mbedtls_key_exchange_set_private_key(psa_key_id_t *private_key, 
     return ret;
 }
 
-/*
-* The key agreement is done by calling  psa_raw_key_agreement
-psa_status_t psa_raw_key_agreement(psa_algorithm_t alg,
-psa_key_id_t private_key,
-const uint8_t * peer_key,
-size_t peer_key_length,
-uint8_t * output,
-size_t output_size,
-size_t * output_length);
-*/
-
-int ptls_mbedtls_key_exchange_on_exchange(struct st_ptls_key_exchange_context_t **_pctx, int release, ptls_iovec_t *secret,
-                                          ptls_iovec_t peerkey)
+int key_exchange_on_exchange(struct st_ptls_key_exchange_context_t **_keyex, int release, ptls_iovec_t *secret,
+                             ptls_iovec_t peerkey)
 {
+    struct ptls_mbedtls_key_exchange_context_t *keyex = (struct ptls_mbedtls_key_exchange_context_t *)*_keyex;
     int ret = 0;
-    struct ptls_mbedtls_key_exchange_context_t *keyex = (struct ptls_mbedtls_key_exchange_context_t *)*_pctx;
 
-    if (secret != NULL) {
-        uint8_t *secbytes = (uint8_t *)malloc(keyex->secret_size);
+    if (secret == NULL)
+        goto Exit;
 
-        if (secbytes == NULL) {
-            ret = PTLS_ERROR_NO_MEMORY;
-        } else {
-            size_t olen;
-            if (psa_raw_key_agreement(keyex->psa_alg, keyex->private_key, (const uint8_t *)peerkey.base, peerkey.len, secbytes,
-                                      keyex->secret_size, &olen) == 0) {
-                *secret = ptls_iovec_init(secbytes, keyex->secret_size);
-            } else {
-                free(secbytes);
-                ret = PTLS_ERROR_LIBRARY;
-            }
-        }
+    /* derive shared secret */
+    if ((secret->base = malloc(keyex->secret_size)) == NULL) {
+        ret = PTLS_ERROR_NO_MEMORY;
+        goto Exit;
+    }
+    if (psa_raw_key_agreement(keyex->psa_alg, keyex->private_key, peerkey.base, peerkey.len, secret->base, keyex->secret_size,
+                              &secret->len) != 0) {
+        ret = PTLS_ERROR_LIBRARY;
+        goto Exit;
+    }
+    assert(keyex->secret_size == secret->len);
+    ret = 0;
+
+Exit:
+    if (ret != 0 && secret != NULL) {
+        free(secret->base);
+        *secret = ptls_iovec_init(NULL, 0);
     }
     if (release) {
-        /* Clear the private key */
         psa_destroy_key(keyex->private_key);
-        /* Set context to NULL */
-        *_pctx = NULL;
-        /* TODO: check whether allocated memory should be freed */
+        free(keyex);
+        *_keyex = NULL;
     }
-
     return ret;
 }
 
-int ptls_mbedtls_key_exchange_create(const struct st_ptls_key_exchange_algorithm_t *algo, ptls_key_exchange_context_t **ctx,
-                                     psa_algorithm_t psa_alg, psa_ecc_family_t curve, size_t curve_bits, size_t secret_size)
+static int key_exchange_create(ptls_key_exchange_algorithm_t *algo, ptls_key_exchange_context_t **ctx, psa_algorithm_t psa_alg,
+                               psa_ecc_family_t curve, size_t curve_bits, size_t secret_size)
 {
     struct ptls_mbedtls_key_exchange_context_t *keyex;
-    size_t olen = 0;
 
-    if ((keyex = (struct ptls_mbedtls_key_exchange_context_t *)malloc(sizeof(struct ptls_mbedtls_key_exchange_context_t))) == NULL)
+    *ctx = NULL;
+
+    /* setup context */
+    if ((keyex = malloc(sizeof(*keyex))) == NULL)
         return PTLS_ERROR_NO_MEMORY;
-    /* Initialize the exchange context based on the algorithm definition */
-    keyex->psa_alg = psa_alg;
-    keyex->curve = curve;
-    keyex->curve_bits = curve_bits;
-    keyex->secret_size = secret_size;
-    /* Initialize the private key and format the public key */
-    if (ptls_mbedtls_key_exchange_set_private_key(&keyex->private_key, psa_alg, curve, curve_bits) != 0) {
+    *keyex = (struct ptls_mbedtls_key_exchange_context_t){
+        .super.algo = algo,
+        .super.pubkey.base = keyex->pubkeybuf,
+        .super.on_exchange = key_exchange_on_exchange,
+        .psa_alg = psa_alg,
+        .secret_size = secret_size,
+    };
+
+    /* generate private key */
+    if (generate_private_key(&keyex->private_key, psa_alg, curve, curve_bits) != 0) {
         free(keyex);
-        *ctx = NULL;
         return PTLS_ERROR_LIBRARY;
     }
-    /* According to the doc, format of public key is same as picotls */
-    if (psa_export_public_key(keyex->private_key, keyex->pub, sizeof(keyex->pub), &olen) != 0) {
-        psa_destroy_key(keyex->private_key);
-        free(keyex);
-        *ctx = NULL;
-        return PTLS_ERROR_LIBRARY;
+    { /* export public key */
+        psa_status_t ret =
+            psa_export_public_key(keyex->private_key, keyex->pubkeybuf, sizeof(keyex->pubkeybuf), &keyex->super.pubkey.len);
+        if (ret != 0)
+            PSA_FUNC_FAILED(psa_export_public_key, ret);
     }
-    keyex->super.pubkey = ptls_iovec_init(keyex->pub, olen);
-    /* Initialize the ptls exchange context */
-    keyex->super.algo = algo;
-    keyex->super.on_exchange = ptls_mbedtls_key_exchange_on_exchange;
-    *ctx = (ptls_key_exchange_context_t *)keyex;
+
+    *ctx = &keyex->super;
     return 0;
 }
 
-static int ptls_mbedtls_key_exchange_exchange(const struct st_ptls_key_exchange_algorithm_t *algo, ptls_iovec_t *pubkey,
-                                              ptls_iovec_t *secret, ptls_iovec_t peerkey, psa_algorithm_t psa_alg,
-                                              psa_ecc_family_t curve, size_t curve_bits, size_t secret_size)
+static int key_exchange_exchange(ptls_key_exchange_algorithm_t *algo, ptls_iovec_t *pubkey, ptls_iovec_t *secret,
+                                 ptls_iovec_t peerkey, psa_algorithm_t psa_alg, psa_ecc_family_t curve, size_t curve_bits,
+                                 size_t secret_size)
 {
-    /* generate a local private key for the selected algorithm */
     psa_key_id_t private_key;
-    size_t pubkey_len;
-    uint8_t *pubkey_bytes = NULL;
-    size_t secret_len;
-    uint8_t *secret_bytes = (uint8_t *)malloc(secret_size);
-    int ret = 0;
+    int ret;
 
-    if (secret_bytes == NULL) {
-        return PTLS_ERROR_NO_MEMORY;
-    }
-    pubkey_bytes = (uint8_t *)malloc(PTLS_MBEDTLS_ECDH_PUBKEY_MAX);
-    if (pubkey_bytes == NULL) {
-        free(secret_bytes);
-        return PTLS_ERROR_NO_MEMORY;
-    }
+    *pubkey = ptls_iovec_init(NULL, 0);
+    *secret = ptls_iovec_init(NULL, 0);
 
-    if (ptls_mbedtls_key_exchange_set_private_key(&private_key, psa_alg, curve, curve_bits) != 0) {
-        free(secret_bytes);
-        free(pubkey_bytes);
+    /* generate private key (and return immediately upon failure) */
+    if (generate_private_key(&private_key, psa_alg, curve, curve_bits) != 0)
         return PTLS_ERROR_LIBRARY;
+
+    /* allocate buffers */
+    if ((secret->base = malloc(secret_size)) == NULL) {
+        ret = PTLS_ERROR_NO_MEMORY;
+        goto Exit;
+    }
+    if ((pubkey->base = malloc(PTLS_MBEDTLS_ECDH_PUBKEY_MAX)) == NULL) {
+        ret = PTLS_ERROR_NO_MEMORY;
+        goto Exit;
     }
 
-    /* Export public key and call key agrement function */
-    if (psa_export_public_key(private_key, pubkey_bytes, PTLS_MBEDTLS_ECDH_PUBKEY_MAX, &pubkey_len) == 0 &&
-        psa_raw_key_agreement(psa_alg, private_key, (const uint8_t *)peerkey.base, peerkey.len, secret_bytes, secret_size,
-                              &secret_len) == 0) {
-        *secret = ptls_iovec_init(secret_bytes, secret_len);
-        *pubkey = ptls_iovec_init(pubkey_bytes, pubkey_len);
-    } else {
-        free(secret_bytes);
-        free(pubkey_bytes);
-        return PTLS_ERROR_LIBRARY;
+    /* export public key and call key agrement function */
+    if (psa_export_public_key(private_key, pubkey->base, PTLS_MBEDTLS_ECDH_PUBKEY_MAX, &pubkey->len) != 0 ||
+        psa_raw_key_agreement(psa_alg, private_key, peerkey.base, peerkey.len, secret->base, secret_size, &secret->len) != 0) {
+        ret = PTLS_ERROR_LIBRARY;
+        goto Exit;
     }
 
+    ret = 0;
+
+Exit:
+    if (ret != 0) {
+        free(pubkey->base);
+        *pubkey = ptls_iovec_init(NULL, 0);
+        free(secret->base);
+        *secret = ptls_iovec_init(NULL, 0);
+    }
     psa_destroy_key(private_key);
 
     return ret;
@@ -638,13 +627,13 @@ static int ptls_mbedtls_key_exchange_exchange(const struct st_ptls_key_exchange_
  */
 static int ptls_mbedtls_secp256r1_create(const struct st_ptls_key_exchange_algorithm_t *algo, ptls_key_exchange_context_t **ctx)
 {
-    return ptls_mbedtls_key_exchange_create(algo, ctx, PSA_ALG_ECDH, PSA_ECC_FAMILY_SECP_R1, 256, 32);
+    return key_exchange_create(algo, ctx, PSA_ALG_ECDH, PSA_ECC_FAMILY_SECP_R1, 256, 32);
 }
 
 static int ptls_mbedtls_secp256r1_exchange(const struct st_ptls_key_exchange_algorithm_t *algo, ptls_iovec_t *pubkey,
                                            ptls_iovec_t *secret, ptls_iovec_t peerkey)
 {
-    return ptls_mbedtls_key_exchange_exchange(algo, pubkey, secret, peerkey, PSA_ALG_ECDH, PSA_ECC_FAMILY_SECP_R1, 256, 32);
+    return key_exchange_exchange(algo, pubkey, secret, peerkey, PSA_ALG_ECDH, PSA_ECC_FAMILY_SECP_R1, 256, 32);
 }
 
 ptls_key_exchange_algorithm_t ptls_mbedtls_secp256r1 = {.id = PTLS_GROUP_SECP256R1,
@@ -656,13 +645,13 @@ ptls_key_exchange_algorithm_t ptls_mbedtls_secp256r1 = {.id = PTLS_GROUP_SECP256
  */
 static int ptls_mbedtls_x25519_create(const struct st_ptls_key_exchange_algorithm_t *algo, ptls_key_exchange_context_t **ctx)
 {
-    return ptls_mbedtls_key_exchange_create(algo, ctx, PSA_ALG_ECDH, PSA_ECC_FAMILY_MONTGOMERY, 255, 32);
+    return key_exchange_create(algo, ctx, PSA_ALG_ECDH, PSA_ECC_FAMILY_MONTGOMERY, 255, 32);
 }
 
 static int ptls_mbedtls_x25519_exchange(const struct st_ptls_key_exchange_algorithm_t *algo, ptls_iovec_t *pubkey,
                                         ptls_iovec_t *secret, ptls_iovec_t peerkey)
 {
-    return ptls_mbedtls_key_exchange_exchange(algo, pubkey, secret, peerkey, PSA_ALG_ECDH, PSA_ECC_FAMILY_MONTGOMERY, 255, 32);
+    return key_exchange_exchange(algo, pubkey, secret, peerkey, PSA_ALG_ECDH, PSA_ECC_FAMILY_MONTGOMERY, 255, 32);
 }
 
 ptls_key_exchange_algorithm_t ptls_mbedtls_x25519 = {.id = PTLS_GROUP_X25519,
