@@ -290,40 +290,6 @@ ptls_cipher_algorithm_t ptls_mbedtls_chacha20 = {"CHACHA20",
                                                  setup_chacha20};
 #endif
 
-/* Definitions of AEAD algorithms.
- *
- * For the picotls API, AEAD algorithms are created by calling:
- *
- * ptls_aead_context_t *ptls_aead_new(ptls_aead_algorithm_t *aead,
- *       ptls_hash_algorithm_t *hash, int is_enc, const void *secret,
- *                                   const char *label_prefix)
- * That procedure will allocate memory and create keys, and then call
- * a provider specific function:
- *
- *   if (aead->setup_crypto(ctx, is_enc, key, iv) != 0) {
- *       free(ctx);
- *       return NULL;
- *   }
- *
- * The function will finish completing the aead structure, perform
- * initialization, and then document the function pointers:
- *
- * ctx->super.dispose_crypto: release all resourc
- * ctx->super.do_get_iv: return IV
- * ctx->super.do_set_iv: set IV value
- * ctx->super.do_decrypt: decrypt function
- * ctx->super.do_encrypt_init: start encrypting one message
- * ctx->super.do_encrypt_update: feed more ciphertext to descriptor
- * ctx->super.do_encrypt_final: finalize encryption, including AEAD checksum
- * ctx->super.do_encrypt: single shot variant of init/update/final
- * ctx->super.do_encrypt_v: scatter gather version of do encrypt
- *
- * The aead context also documents the underlying "ECB" and "CTR" modes.
- * In QUIC, these are used for PN encryption.
- *
- * TODO: declare other algorithms besides AES128_GCM
- */
-
 struct ptls_mbedtls_aead_param_t {
     uint8_t static_iv[PTLS_MAX_IV_SIZE];
     psa_algorithm_t alg;
