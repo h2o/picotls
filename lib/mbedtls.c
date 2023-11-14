@@ -625,38 +625,34 @@ Exit:
 
 /* Instantiation of the generic key exchange API with secp256r1
  */
-static int ptls_mbedtls_secp256r1_create(const struct st_ptls_key_exchange_algorithm_t *algo, ptls_key_exchange_context_t **ctx)
+static int secp256r1_create(const struct st_ptls_key_exchange_algorithm_t *algo, ptls_key_exchange_context_t **ctx)
 {
     return key_exchange_create(algo, ctx, PSA_ALG_ECDH, PSA_ECC_FAMILY_SECP_R1, 256, 32);
 }
 
-static int ptls_mbedtls_secp256r1_exchange(const struct st_ptls_key_exchange_algorithm_t *algo, ptls_iovec_t *pubkey,
-                                           ptls_iovec_t *secret, ptls_iovec_t peerkey)
+static int secp256r1_exchange(const struct st_ptls_key_exchange_algorithm_t *algo, ptls_iovec_t *pubkey, ptls_iovec_t *secret,
+                              ptls_iovec_t peerkey)
 {
     return key_exchange_exchange(algo, pubkey, secret, peerkey, PSA_ALG_ECDH, PSA_ECC_FAMILY_SECP_R1, 256, 32);
 }
 
-ptls_key_exchange_algorithm_t ptls_mbedtls_secp256r1 = {.id = PTLS_GROUP_SECP256R1,
-                                                        .name = PTLS_GROUP_NAME_SECP256R1,
-                                                        .create = ptls_mbedtls_secp256r1_create,
-                                                        .exchange = ptls_mbedtls_secp256r1_exchange};
+ptls_key_exchange_algorithm_t ptls_mbedtls_secp256r1 = {
+    .id = PTLS_GROUP_SECP256R1, .name = PTLS_GROUP_NAME_SECP256R1, .create = secp256r1_create, .exchange = secp256r1_exchange};
 
 /* Instantiation of the generic key exchange API with x25519
  */
-static int ptls_mbedtls_x25519_create(const struct st_ptls_key_exchange_algorithm_t *algo, ptls_key_exchange_context_t **ctx)
+static int x25519_create(const struct st_ptls_key_exchange_algorithm_t *algo, ptls_key_exchange_context_t **ctx)
 {
     return key_exchange_create(algo, ctx, PSA_ALG_ECDH, PSA_ECC_FAMILY_MONTGOMERY, 255, 32);
 }
 
-static int ptls_mbedtls_x25519_exchange(const struct st_ptls_key_exchange_algorithm_t *algo, ptls_iovec_t *pubkey,
-                                        ptls_iovec_t *secret, ptls_iovec_t peerkey)
+static int x25519_exchange(const struct st_ptls_key_exchange_algorithm_t *algo, ptls_iovec_t *pubkey, ptls_iovec_t *secret,
+                           ptls_iovec_t peerkey)
 {
     return key_exchange_exchange(algo, pubkey, secret, peerkey, PSA_ALG_ECDH, PSA_ECC_FAMILY_MONTGOMERY, 255, 32);
 }
 
-ptls_key_exchange_algorithm_t ptls_mbedtls_x25519 = {.id = PTLS_GROUP_X25519,
-                                                     .name = PTLS_GROUP_NAME_X25519,
-                                                     .create = ptls_mbedtls_x25519_create,
-                                                     .exchange = ptls_mbedtls_x25519_exchange};
+ptls_key_exchange_algorithm_t ptls_mbedtls_x25519 = {
+    .id = PTLS_GROUP_X25519, .name = PTLS_GROUP_NAME_X25519, .create = x25519_create, .exchange = x25519_exchange};
 
 ptls_key_exchange_algorithm_t *ptls_mbedtls_key_exchanges[] = {&ptls_mbedtls_secp256r1, NULL};
