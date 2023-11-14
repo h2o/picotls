@@ -32,13 +32,17 @@
 #include <mbedtls/ecdh.h>
 #include "picotls.h"
 
+#define PSA_FUNC_FAILED(fn, ret)                                                                                                   \
+    do {                                                                                                                           \
+        fprintf(stderr, "in %s at line %d, " PTLS_TO_STR(fn) " failed (%d)\n", __FUNCTION__, __LINE__, (int)ret);                  \
+        abort();                                                                                                                   \
+    } while (0)
+
 #define CALL_WITH_CHECK(fn, ...)                                                                                                   \
     do {                                                                                                                           \
         psa_status_t ret;                                                                                                          \
-        if ((ret = fn(__VA_ARGS__)) != PSA_SUCCESS) {                                                                              \
-            fprintf(stderr, "in %s at line %d, " PTLS_TO_STR(fn) " failed (%d)\n", __FUNCTION__, __LINE__, (int)ret);              \
-            abort();                                                                                                               \
-        }                                                                                                                          \
+        if ((ret = fn(__VA_ARGS__)) != PSA_SUCCESS)                                                                                \
+            PSA_FUNC_FAILED(fn, ret);                                                                                              \
     } while (0)
 
 void ptls_mbedtls_random_bytes(void *buf, size_t len)
@@ -247,17 +251,18 @@ static void chacha20_init(ptls_cipher_context_t *_ctx, const void *v_iv)
     const uint8_t *iv = (const uint8_t *)v_iv;
     uint32_t ctr = iv[0] | ((uint32_t)iv[1] << 8) | ((uint32_t)iv[2] << 16) | ((uint32_t)iv[3] << 24);
 
-    (void)mbedtls_chacha20_starts(&ctx->mctx, (const uint8_t *)(iv + 4), ctr);
+    int ret = mbedtls_chacha20_starts(&ctx->mctx, (const uint8_t *)(iv + 4), ctr);
+    if (ret != 0)
+        PSA_FUNC_FAILED(mbedtls_chacha20_starts, ret);
 }
 
 static void chacha20_transform(ptls_cipher_context_t *_ctx, void *output, const void *input, size_t len)
 {
     struct st_ptls_mbedtls_chacha20_context_t *ctx = (struct st_ptls_mbedtls_chacha20_context_t *)_ctx;
 
-    if (mbedtls_chacha20_update(&ctx->mctx, len, (const uint8_t *)input, (uint8_t *)output) != 0) {
-        fprintf(stderr, "mbedtls_chacha20_update failed\n");
-        abort();
-    }
+    int ret = mbedtls_chacha20_update(&ctx->mctx, len, (const uint8_t *)input, (uint8_t *)output);
+    if (ret != 0)
+        PSA_FUNC_FAILED(mbedtls_chacha20_update, ret);
 }
 
 static void chacha20_dispose(ptls_cipher_context_t *_ctx)
@@ -354,14 +359,16 @@ size_t aead_decrypt(struct st_ptls_aead_context_t *_ctx, void *output, const voi
 
     ptls_aead__build_iv(ctx->super.algo, iv, ctx->static_iv, seq);
 
-    switch (psa_aead_decrypt(ctx->key, ctx->alg, iv, ctx->super.algo->iv_size, aad, aadlen, input, inlen, output, inlen, &outlen)) {
+    psa_status_t ret =
+        psa_aead_decrypt(ctx->key, ctx->alg, iv, ctx->super.algo->iv_size, aad, aadlen, input, inlen, output, inlen, &outlen);
+    switch (ret) {
     case PSA_SUCCESS:
         break;
     case PSA_ERROR_INVALID_SIGNATURE:
         outlen = SIZE_MAX;
         break;
     default:
-        abort();
+        PSA_FUNC_FAILED(psa_aead_decrypt, ret);
         break;
     }
 
