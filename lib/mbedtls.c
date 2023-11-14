@@ -290,224 +290,118 @@ ptls_cipher_algorithm_t ptls_mbedtls_chacha20 = {"CHACHA20",
                                                  setup_chacha20};
 #endif
 
-struct ptls_mbedtls_aead_param_t {
+struct ptls_mbedtls_aead_context_t {
+    struct st_ptls_aead_context_t super;
     uint8_t static_iv[PTLS_MAX_IV_SIZE];
     psa_algorithm_t alg;
     psa_key_id_t key;
-    psa_aead_operation_t op;
-    size_t extra_bytes;
-    int is_op_in_progress;
 };
 
-struct ptls_mbedtls_aead_context_t {
-    struct st_ptls_aead_context_t super;
-    struct ptls_mbedtls_aead_param_t mctx;
-};
-
-void ptls_mbedtls_aead_dispose_crypto(struct st_ptls_aead_context_t *_ctx)
-{
-    struct ptls_mbedtls_aead_context_t *ctx = (struct ptls_mbedtls_aead_context_t *)_ctx;
-    if (ctx->mctx.is_op_in_progress) {
-        psa_aead_abort(&ctx->mctx.op);
-        ctx->mctx.is_op_in_progress = 0;
-    }
-    psa_destroy_key(ctx->mctx.key);
-}
-
-static void ptls_mbedtls_aead_get_iv(ptls_aead_context_t *_ctx, void *iv)
+static void aead_dispose_crypto(struct st_ptls_aead_context_t *_ctx)
 {
     struct ptls_mbedtls_aead_context_t *ctx = (struct ptls_mbedtls_aead_context_t *)_ctx;
 
-    memcpy(iv, ctx->mctx.static_iv, ctx->super.algo->iv_size);
+    psa_destroy_key(ctx->key);
 }
 
-static void ptls_mbedtls_aead_set_iv(ptls_aead_context_t *_ctx, const void *iv)
+static void aead_get_iv(ptls_aead_context_t *_ctx, void *iv)
 {
     struct ptls_mbedtls_aead_context_t *ctx = (struct ptls_mbedtls_aead_context_t *)_ctx;
 
-    memcpy(ctx->mctx.static_iv, iv, ctx->super.algo->iv_size);
+    memcpy(iv, ctx->static_iv, ctx->super.algo->iv_size);
 }
 
-void ptls_mbedtls_aead_do_encrypt_init(struct st_ptls_aead_context_t *_ctx, uint64_t seq, const void *aad, size_t aadlen)
+static void aead_set_iv(ptls_aead_context_t *_ctx, const void *iv)
 {
     struct ptls_mbedtls_aead_context_t *ctx = (struct ptls_mbedtls_aead_context_t *)_ctx;
-    psa_status_t status;
 
-    if (ctx->mctx.is_op_in_progress) {
-        psa_aead_abort(&ctx->mctx.op); /* required on errors, harmless on success */
-        ctx->mctx.is_op_in_progress = 0;
-    }
-
-    ctx->mctx.is_op_in_progress = 1;
-    memset(&ctx->mctx.op, 0, sizeof(ctx->mctx.op));
-
-    status = psa_aead_encrypt_setup(&ctx->mctx.op, ctx->mctx.key, ctx->mctx.alg);
-
-    if (status == PSA_SUCCESS) {
-        /* set the nonce. */
-        uint8_t iv[PTLS_MAX_IV_SIZE];
-        ptls_aead__build_iv(ctx->super.algo, iv, ctx->mctx.static_iv, seq);
-        status = psa_aead_set_nonce(&ctx->mctx.op, iv, ctx->super.algo->iv_size);
-    }
-
-    if (status == PSA_SUCCESS) {
-        status = psa_aead_update_ad(&ctx->mctx.op, aad, aadlen);
-    }
-
-    if (status != PSA_SUCCESS) {
-        psa_aead_abort(&ctx->mctx.op); /* required on errors, harmless on success */
-        ctx->mctx.is_op_in_progress = 0;
-    }
+    memcpy(ctx->static_iv, iv, ctx->super.algo->iv_size);
 }
 
-size_t ptls_mbedtls_aead_do_encrypt_update(struct st_ptls_aead_context_t *_ctx, void *output, const void *input, size_t inlen)
+static void aead_encrypt_v(struct st_ptls_aead_context_t *_ctx, void *output, ptls_iovec_t *input, size_t incnt, uint64_t seq,
+                           const void *aad, size_t aadlen)
 {
-    size_t olen = 0;
     struct ptls_mbedtls_aead_context_t *ctx = (struct ptls_mbedtls_aead_context_t *)_ctx;
+    psa_aead_operation_t op = psa_aead_operation_init();
+    uint8_t *dst = output, iv[PTLS_MAX_IV_SIZE], tag[PSA_AEAD_TAG_MAX_SIZE];
+    size_t outlen, taglen;
 
-    if (ctx->mctx.is_op_in_progress) {
-        size_t available = inlen + ctx->mctx.extra_bytes;
-        psa_status_t status =
-            psa_aead_update(&ctx->mctx.op, input, inlen, (uint8_t *)output, available + ctx->super.algo->tag_size, &olen);
+    /* setup op */
+    CALL_WITH_CHECK(psa_aead_encrypt_setup, &op, ctx->key, ctx->alg);
+    ptls_aead__build_iv(ctx->super.algo, iv, ctx->static_iv, seq);
+    CALL_WITH_CHECK(psa_aead_set_nonce, &op, iv, ctx->super.algo->iv_size);
+    CALL_WITH_CHECK(psa_aead_update_ad, &op, aad, aadlen);
 
-        if (status == PSA_SUCCESS) {
-            if (olen < available) {
-                ctx->mctx.extra_bytes = available - olen;
-            } else {
-                ctx->mctx.extra_bytes = 0;
-            }
-        } else {
-            psa_aead_abort(&ctx->mctx.op); /* required on errors */
-            ctx->mctx.is_op_in_progress = 0;
-        }
-    }
-
-    return olen;
-}
-
-size_t ptls_mbedtls_aead_do_encrypt_final(struct st_ptls_aead_context_t *_ctx, void *output)
-{
-    size_t olen = 0;
-    struct ptls_mbedtls_aead_context_t *ctx = (struct ptls_mbedtls_aead_context_t *)_ctx;
-
-    if (ctx->mctx.is_op_in_progress) {
-        unsigned char tag[PSA_AEAD_TAG_MAX_SIZE];
-        size_t olen_tag = 0;
-        size_t available = ctx->mctx.extra_bytes;
-        uint8_t *p = (uint8_t *)output;
-        psa_status_t status =
-            psa_aead_finish(&ctx->mctx.op, p, available + ctx->super.algo->tag_size, &olen, tag, sizeof(tag), &olen_tag);
-
-        if (status == PSA_SUCCESS) {
-            p += olen;
-            memcpy(p, tag, ctx->super.algo->tag_size);
-            olen += ctx->super.algo->tag_size;
-        } else {
-            psa_aead_abort(&ctx->mctx.op); /* required on errors */
-        }
-        ctx->mctx.is_op_in_progress = 0;
-    }
-
-    return (olen);
-}
-
-void ptls_mbedtls_aead_do_encrypt_v(struct st_ptls_aead_context_t *_ctx, void *output, ptls_iovec_t *input, size_t incnt,
-                                    uint64_t seq, const void *aad, size_t aadlen)
-{
-    unsigned char *p = (uint8_t *)output;
-
-    ptls_mbedtls_aead_do_encrypt_init(_ctx, seq, aad, aadlen);
-
+    /* encrypt */
     for (size_t i = 0; i < incnt; i++) {
-        p += ptls_mbedtls_aead_do_encrypt_update(_ctx, p, input[i].base, input[i].len);
+        CALL_WITH_CHECK(psa_aead_update, &op, input[i].base, input[i].len, dst, SIZE_MAX, &outlen);
+        dst += outlen;
     }
+    CALL_WITH_CHECK(psa_aead_finish, &op, dst, SIZE_MAX, &outlen, tag, sizeof(tag), &taglen);
+    dst += outlen;
+    memcpy(dst, tag, taglen);
 
-    (void)ptls_mbedtls_aead_do_encrypt_final(_ctx, p);
+    /* destroy op */
+    psa_aead_abort(&op);
 }
 
-void ptls_mbedtls_aead_do_encrypt(struct st_ptls_aead_context_t *_ctx, void *output, const void *input, size_t inlen, uint64_t seq,
-                                  const void *aad, size_t aadlen, ptls_aead_supplementary_encryption_t *supp)
+size_t aead_decrypt(struct st_ptls_aead_context_t *_ctx, void *output, const void *input, size_t inlen, uint64_t seq,
+                    const void *aad, size_t aadlen)
 {
-    ptls_iovec_t in_v;
-    in_v.base = (uint8_t *)input;
-    in_v.len = inlen;
-
-    ptls_mbedtls_aead_do_encrypt_v(_ctx, output, &in_v, 1, seq, aad, aadlen);
-}
-
-size_t ptls_mbedtls_aead_do_decrypt(struct st_ptls_aead_context_t *_ctx, void *output, const void *input, size_t inlen,
-                                    uint64_t seq, const void *aad, size_t aadlen)
-{
-    size_t o_len = 0;
+    struct ptls_mbedtls_aead_context_t *ctx = (struct ptls_mbedtls_aead_context_t *)_ctx;
     uint8_t iv[PTLS_MAX_IV_SIZE];
-    struct ptls_mbedtls_aead_context_t *ctx = (struct ptls_mbedtls_aead_context_t *)_ctx;
-    psa_status_t status;
-    /* set the nonce. */
-    ptls_aead__build_iv(ctx->super.algo, iv, ctx->mctx.static_iv, seq);
+    size_t outlen;
 
-    status = psa_aead_decrypt(ctx->mctx.key, ctx->mctx.alg, iv, ctx->super.algo->iv_size, (uint8_t *)aad, aadlen, (uint8_t *)input,
-                              inlen, (uint8_t *)output, inlen, &o_len);
-    if (status != PSA_SUCCESS) {
-        o_len = inlen + 1;
+    ptls_aead__build_iv(ctx->super.algo, iv, ctx->static_iv, seq);
+
+    switch (psa_aead_decrypt(ctx->key, ctx->alg, iv, ctx->super.algo->iv_size, aad, aadlen, input, inlen, output, inlen, &outlen)) {
+    case PSA_SUCCESS:
+        break;
+    case PSA_ERROR_INVALID_SIGNATURE:
+        outlen = SIZE_MAX;
+        break;
+    default:
+        abort();
+        break;
     }
-    return o_len;
+
+    return outlen;
 }
 
-static int ptls_mbedtls_aead_setup_crypto(ptls_aead_context_t *_ctx, int is_enc, const void *key_bytes, const void *iv,
-                                          psa_algorithm_t psa_alg, size_t key_bits, psa_key_type_t key_type)
+static int aead_setup(ptls_aead_context_t *_ctx, int is_enc, const void *key_bytes, const void *iv, psa_algorithm_t psa_alg,
+                      size_t key_bits, psa_key_type_t key_type)
 {
-    int ret = 0;
     struct ptls_mbedtls_aead_context_t *ctx = (struct ptls_mbedtls_aead_context_t *)_ctx;
 
-    /* set mbed specific context to NULL, just to be sure */
-    memset(&ctx->mctx, 0, sizeof(struct ptls_mbedtls_aead_param_t));
-    ctx->mctx.alg = psa_alg;
-
-    /* Initialize the key attributes */
-    if (ret == 0) {
+    { /* setup key */
         psa_key_attributes_t attributes = PSA_KEY_ATTRIBUTES_INIT;
-        psa_set_key_usage_flags(&attributes, (is_enc) ? PSA_KEY_USAGE_ENCRYPT : PSA_KEY_USAGE_DECRYPT);
-        psa_set_key_algorithm(&attributes, ctx->mctx.alg);
+        psa_set_key_usage_flags(&attributes, is_enc ? PSA_KEY_USAGE_ENCRYPT : PSA_KEY_USAGE_DECRYPT);
+        psa_set_key_algorithm(&attributes, psa_alg);
         psa_set_key_type(&attributes, key_type);
         psa_set_key_bits(&attributes, key_bits);
-        /* Import key */
-        if (psa_import_key(&attributes, key_bytes, key_bits / 8, &ctx->mctx.key) != PSA_SUCCESS) {
-            ret = PTLS_ERROR_LIBRARY;
-        }
+        if (psa_import_key(&attributes, key_bytes, key_bits / 8, &ctx->key) != PSA_SUCCESS)
+            return PTLS_ERROR_LIBRARY;
     }
 
-    if (ret == 0) {
-        /* Store the static IV */
-        if (ctx->super.algo->iv_size > PTLS_MAX_IV_SIZE) {
-            ret = PTLS_ERROR_LIBRARY;
-        } else {
-            memcpy(ctx->mctx.static_iv, iv, ctx->super.algo->iv_size);
-            ctx->mctx.is_op_in_progress = 0;
-        }
+    /* setup the rest */
+    ctx->super.dispose_crypto = aead_dispose_crypto;
+    ctx->super.do_get_iv = aead_get_iv;
+    ctx->super.do_set_iv = aead_set_iv;
+    if (is_enc) {
+        ctx->super.do_encrypt = ptls_aead__do_encrypt;
+        ctx->super.do_encrypt_v = aead_encrypt_v;
+    } else {
+        ctx->super.do_decrypt = aead_decrypt;
     }
+    memcpy(ctx->static_iv, iv, ctx->super.algo->iv_size);
+    ctx->alg = psa_alg;
 
-    /* set the pointers to the individual functions */
-    if (ret == 0) {
-        if (is_enc) {
-            ctx->super.do_encrypt_init = ptls_mbedtls_aead_do_encrypt_init;
-            ctx->super.do_encrypt_update = ptls_mbedtls_aead_do_encrypt_update;
-            ctx->super.do_encrypt_final = ptls_mbedtls_aead_do_encrypt_final;
-            ctx->super.do_encrypt = ptls_mbedtls_aead_do_encrypt;
-            ctx->super.do_encrypt_v = ptls_mbedtls_aead_do_encrypt_v;
-        } else {
-            ctx->super.do_decrypt = ptls_mbedtls_aead_do_decrypt;
-        }
-        ctx->super.dispose_crypto = ptls_mbedtls_aead_dispose_crypto;
-        ctx->super.do_get_iv = ptls_mbedtls_aead_get_iv;
-        ctx->super.do_set_iv = ptls_mbedtls_aead_set_iv;
-    }
-
-    return ret;
+    return 0;
 }
 
-static int ptls_mbedtls_aead_setup_aes128gcm(ptls_aead_context_t *_ctx, int is_enc, const void *key_bytes, const void *iv)
+static int aead_setup_aes128gcm(ptls_aead_context_t *_ctx, int is_enc, const void *key_bytes, const void *iv)
 {
-    return ptls_mbedtls_aead_setup_crypto(_ctx, is_enc, key_bytes, iv, PSA_ALG_GCM, 128, PSA_KEY_TYPE_AES);
+    return aead_setup(_ctx, is_enc, key_bytes, iv, PSA_ALG_GCM, 128, PSA_KEY_TYPE_AES);
 }
 
 ptls_aead_algorithm_t ptls_mbedtls_aes128gcm = {"AES128-GCM",
@@ -522,16 +416,16 @@ ptls_aead_algorithm_t ptls_mbedtls_aes128gcm = {"AES128-GCM",
                                                 0,
                                                 0,
                                                 sizeof(struct ptls_mbedtls_aead_context_t),
-                                                ptls_mbedtls_aead_setup_aes128gcm};
+                                                aead_setup_aes128gcm};
 
 ptls_cipher_suite_t ptls_mbedtls_aes128gcmsha256 = {.id = PTLS_CIPHER_SUITE_AES_128_GCM_SHA256,
                                                     .name = PTLS_CIPHER_SUITE_NAME_AES_128_GCM_SHA256,
                                                     .aead = &ptls_mbedtls_aes128gcm,
                                                     .hash = &ptls_mbedtls_sha256};
 
-static int ptls_mbedtls_aead_setup_aes256gcm(ptls_aead_context_t *_ctx, int is_enc, const void *key_bytes, const void *iv)
+static int aead_setup_aes256gcm(ptls_aead_context_t *_ctx, int is_enc, const void *key_bytes, const void *iv)
 {
-    return ptls_mbedtls_aead_setup_crypto(_ctx, is_enc, key_bytes, iv, PSA_ALG_GCM, 256, PSA_KEY_TYPE_AES);
+    return aead_setup(_ctx, is_enc, key_bytes, iv, PSA_ALG_GCM, 256, PSA_KEY_TYPE_AES);
 }
 
 ptls_aead_algorithm_t ptls_mbedtls_aes256gcm = {"AES256-GCM",
@@ -546,16 +440,16 @@ ptls_aead_algorithm_t ptls_mbedtls_aes256gcm = {"AES256-GCM",
                                                 0,
                                                 0,
                                                 sizeof(struct ptls_mbedtls_aead_context_t),
-                                                ptls_mbedtls_aead_setup_aes256gcm};
+                                                aead_setup_aes256gcm};
 
 ptls_cipher_suite_t ptls_mbedtls_aes256gcmsha384 = {.id = PTLS_CIPHER_SUITE_AES_256_GCM_SHA384,
                                                     .name = PTLS_CIPHER_SUITE_NAME_AES_256_GCM_SHA384,
                                                     .aead = &ptls_mbedtls_aes256gcm,
                                                     .hash = &ptls_mbedtls_sha384};
 
-static int ptls_mbedtls_aead_setup_chacha20poly1305(ptls_aead_context_t *_ctx, int is_enc, const void *key_bytes, const void *iv)
+static int aead_setup_chacha20poly1305(ptls_aead_context_t *_ctx, int is_enc, const void *key_bytes, const void *iv)
 {
-    return ptls_mbedtls_aead_setup_crypto(_ctx, is_enc, key_bytes, iv, PSA_ALG_CHACHA20_POLY1305, 256, PSA_KEY_TYPE_CHACHA20);
+    return aead_setup(_ctx, is_enc, key_bytes, iv, PSA_ALG_CHACHA20_POLY1305, 256, PSA_KEY_TYPE_CHACHA20);
 }
 
 ptls_aead_algorithm_t ptls_mbedtls_chacha20poly1305 = {"CHACHA20-POLY1305",
@@ -570,7 +464,7 @@ ptls_aead_algorithm_t ptls_mbedtls_chacha20poly1305 = {"CHACHA20-POLY1305",
                                                        0,
                                                        0,
                                                        sizeof(struct ptls_mbedtls_aead_context_t),
-                                                       ptls_mbedtls_aead_setup_chacha20poly1305};
+                                                       aead_setup_chacha20poly1305};
 
 ptls_cipher_suite_t ptls_mbedtls_chacha20poly1305sha256 = {.id = PTLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256,
                                                            .name = PTLS_CIPHER_SUITE_NAME_CHACHA20_POLY1305_SHA256,
