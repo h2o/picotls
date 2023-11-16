@@ -225,12 +225,8 @@ static void test_ciphersuite(ptls_cipher_suite_t *cs1, ptls_cipher_suite_t *cs2)
     /* encrypt */
     c = ptls_aead_new(cs1->aead, cs1->hash, 1, traffic_secret, NULL);
     assert(c != NULL);
-    ptls_aead_encrypt_init(c, 0, NULL, 0);
-    enc1len = ptls_aead_encrypt_update(c, enc1, src1, strlen(src1));
-    enc1len += ptls_aead_encrypt_final(c, enc1 + enc1len);
-    ptls_aead_encrypt_init(c, 1, NULL, 0);
-    enc2len = ptls_aead_encrypt_update(c, enc2, src2, strlen(src2));
-    enc2len += ptls_aead_encrypt_final(c, enc2 + enc2len);
+    enc1len = ptls_aead_encrypt(c, enc1, src1, strlen(src1), 0, NULL, 0);
+    enc2len = ptls_aead_encrypt(c, enc2, src2, strlen(src2), 1, NULL, 0);
     ptls_aead_free(c);
 
     c = ptls_aead_new(cs2->aead, cs2->hash, 0, traffic_secret, NULL);
@@ -275,6 +271,10 @@ static void test_ciphersuite_stream(ptls_cipher_suite_t *cs1, ptls_cipher_suite_
     /* encrypt */
     c = ptls_aead_new(cs1->aead, cs1->hash, 1, traffic_secret, NULL);
     assert(c != NULL);
+    if (c->do_encrypt_init == NULL) {
+        note("new ciphers may omit support for init-update-final");
+        return;
+    }
     ptls_aead_encrypt_init(c, 0, NULL, 0);
     enclen = 0;
     for (size_t i = 0; text[i] != NULL; ++i)
@@ -311,9 +311,7 @@ static void test_aad_ciphersuite(ptls_cipher_suite_t *cs1, ptls_cipher_suite_t *
     /* encrypt */
     c = ptls_aead_new(cs1->aead, cs1->hash, 1, traffic_secret, NULL);
     assert(c != NULL);
-    ptls_aead_encrypt_init(c, 123, aad, strlen(aad));
-    enclen = ptls_aead_encrypt_update(c, enc, src, strlen(src));
-    enclen += ptls_aead_encrypt_final(c, enc + enclen);
+    enclen = ptls_aead_encrypt(c, enc, src, strlen(src), 123, aad, strlen(aad));
     ptls_aead_free(c);
 
     /* decrypt */
@@ -340,9 +338,7 @@ static void test_aad96_ciphersuite(ptls_cipher_suite_t *cs1, ptls_cipher_suite_t
     c = ptls_aead_new(cs1->aead, cs1->hash, 1, traffic_secret, NULL);
     assert(c != NULL);
     ptls_aead_xor_iv(c, seq32, sizeof(seq32));
-    ptls_aead_encrypt_init(c, 123, aad, strlen(aad));
-    enclen = ptls_aead_encrypt_update(c, enc, src, strlen(src));
-    enclen += ptls_aead_encrypt_final(c, enc + enclen);
+    enclen = ptls_aead_encrypt(c, enc, src, strlen(src), 123, aad, strlen(aad));
     ptls_aead_free(c);
 
     /* decrypt */
