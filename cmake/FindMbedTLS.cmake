@@ -16,7 +16,7 @@ ENDIF ()
 IF (NOT DEFINED MBEDTLS_LIBDIR)
     SET(MBEDTLS_LIBDIR)
     FOREACH (item IN LISTS MBEDTLS_ROOT_DIR)
-        LIST(APPEND MBEDTLS_LIBDIR "${item}/lib" "${item}/build/library")
+        LIST(APPEND MBEDTLS_LIBDIR "${item}/lib")
     ENDFOREACH ()
 ENDIF ()
 
