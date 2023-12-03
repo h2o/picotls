@@ -10,18 +10,13 @@ IF (CMAKE_VERSION VERSION_LESS 3.13.0)
 ENDIF ()
 
 FIND_PACKAGE(PkgConfig REQUIRED)
-INCLUDE(cmake/dtrace-utils.cmake)
 INCLUDE(cmake/boringssl-adjust.cmake)
+INCLUDE(cmake/dtrace-utils.cmake)
+INCLUDE(cmake/fusion.cmake)
+SET(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 CHECK_DTRACE(${PROJECT_SOURCE_DIR}/picotls-probes.d)
-IF ((CMAKE_SIZEOF_VOID_P EQUAL 8) AND
-    (CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64") OR
-     (CMAKE_SYSTEM_PROCESSOR STREQUAL "amd64") OR
-     (CMAKE_SYSTEM_PROCESSOR STREQUAL "AMD64"))
-    SET(WITH_FUSION_DEFAULT "ON")
-ELSE ()
-    SET(WITH_FUSION_DEFAULT "OFF")
-ENDIF ()
+CHECK_FUSION_PREREQUISITES()
 
 OPTION(WITH_DTRACE "use USDT (userspace Dtrace probes)" ${HAVE_DTRACE})
 OPTION(WITH_FUSION "build 'fusion' AES-GCM engine" ${WITH_FUSION_DEFAULT})
@@ -32,6 +27,7 @@ IF (WITH_FUSION)
     MESSAGE(STATUS "Enabling 'fusion' AES-GCM engine")
 ENDIF ()
 OPTION(WITH_AEGIS "enable AEGIS (requires libaegis)" ${WITH_AEGIS})
+OPTION(WITH_MBEDTLS "enable MBEDTLS" ${WITH_MBEDTLS})
 
 SET(CMAKE_C_FLAGS "-std=c99 -Wall -O2 -g ${CC_WARNING_FLAGS} ${CMAKE_C_FLAGS}")
 INCLUDE_DIRECTORIES(
@@ -196,7 +192,28 @@ IF (WITH_FUSION)
     ENDIF ()
     SET(TEST_EXES ${TEST_EXES} test-fusion.t)
 
+    SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DPTLS_HAVE_FUSION=1")
     LIST(APPEND PTLSBENCH_LIBS picotls-fusion)
+ENDIF ()
+
+IF (WITH_MBEDTLS)
+    FIND_PACKAGE(MbedTLS)
+    IF (NOT MbedTLS_FOUND)
+        MESSAGE(FATAL_ERROR "-DWITH_MBEDTLS set but mbedtls not found")
+    ENDIF ()
+    message(STATUS "mbedtls/include: ${MBEDTLS_INCLUDE_DIRS}")
+    message(STATUS "mbedtls libraries: ${MBEDTLS_LIBRARIES}")
+    INCLUDE_DIRECTORIES(${MBEDTLS_INCLUDE_DIRS})
+    ADD_LIBRARY(picotls-mbedtls lib/mbedtls.c)
+    ADD_EXECUTABLE(test-mbedtls.t
+        deps/picotest/picotest.c
+        ${CORE_TEST_FILES}
+        t/mbedtls.c)
+    TARGET_LINK_LIBRARIES(test-mbedtls.t
+        picotls-minicrypto picotls-mbedtls
+        ${MBEDTLS_LIBRARIES})
+    SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DPTLS_HAVE_MBEDTLS=1")
+    LIST(APPEND PTLSBENCH_LIBS picotls-mbedtls ${MBEDTLS_LIBRARIES})
 ENDIF ()
 
 ADD_EXECUTABLE(ptlsbench t/ptlsbench.c)
