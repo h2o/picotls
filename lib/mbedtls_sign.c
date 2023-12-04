@@ -36,7 +36,6 @@
 #include <psa/crypto.h>
 #include <psa/crypto_struct.h>
 #include <psa/crypto_values.h>
-#include "ptls_mbedtls.h"
 
 typedef struct st_ptls_mbedtls_signature_scheme_t {
     uint16_t scheme_id;
@@ -95,8 +94,6 @@ static int ptls_mbedtls_parse_der_length(const unsigned char* pem_buf, size_t pe
 static int ptls_mbedtls_parse_ecdsa_field(const unsigned char* pem_buf, size_t pem_len, size_t* key_index, size_t* key_length)
 {
     int ret = 0;
-    int param_index_index = -1;
-    int param_length = 0;
     size_t x = 0;
 
     // const unsigned char head = { 0x30, l-2, 0x02, 0x01, 0x01, 0x04 }
@@ -265,7 +262,6 @@ int test_parse_private_key_field(const unsigned char* pem_buf, size_t pem_len,
         /* At that point the oid has been identified.
         * The next parameter is an octet string containing the key info.
         */
-        size_t l = 0;
         if (x + 2 > pem_len ||
             pem_buf[x++]  != 0x04){
             ret = -1;
@@ -672,7 +668,7 @@ int ptls_mbedtls_load_private_key(ptls_context_t* ctx, char const* pem_fname)
     unsigned char* buf;
     mbedtls_pem_context pem = { 0 };
     mbedtls_pk_type_t pk_type = 0;
-    mbedtls_svc_key_id_t key_id = 0;
+    /* mbedtls_svc_key_id_t key_id = 0; */
     size_t key_length = 0;
     size_t key_index = 0;
     ptls_mbedtls_sign_certificate_t* signer = (ptls_mbedtls_sign_certificate_t*)malloc(sizeof(ptls_mbedtls_sign_certificate_t));

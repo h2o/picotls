@@ -34,6 +34,22 @@
 #include "../deps/picotest/picotest.h"
 #include "test.h"
 
+typedef struct st_ptls_mbedtls_signature_scheme_t {
+    uint16_t scheme_id;
+    psa_algorithm_t hash_algo;
+} ptls_mbedtls_signature_scheme_t;
+
+typedef struct st_ptls_mbedtls_sign_certificate_t {
+    ptls_sign_certificate_t super;
+    mbedtls_svc_key_id_t key_id;
+    psa_key_attributes_t attributes;
+    const ptls_mbedtls_signature_scheme_t * schemes;
+} ptls_mbedtls_sign_certificate_t;
+
+int ptls_mbedtls_sign_certificate(ptls_sign_certificate_t* _self, ptls_t* tls,
+    ptls_async_job_t** async, uint16_t* selected_algorithm,
+    ptls_buffer_t* outbuf, ptls_iovec_t input, const uint16_t* algorithms, size_t num_algorithms);
+
 static int random_trial()
 {
     /* The random test is just trying to check that we call the API properly.
@@ -118,9 +134,9 @@ Output buffer is already partially filled.
 #define ASSET_SECP521R1_KEY "t/assets/secp521r1/key.pem"
 #define ASSET_SECP256R1_PKCS8_KEY "t/assets/secp256r1-pkcs8/key.pem"
 
-void test_load_one_der_key(char const* path)
+int test_load_one_der_key(char const* path)
 {
-    int ret = MBEDTLS_ERR_ERROR_CORRUPTION_DETECTED;
+    int ret = -1;
     unsigned char hash[32];
     const unsigned char h0[32] = {
         1, 2, 3, 4, 5, 6, 7, 8,
@@ -129,11 +145,11 @@ void test_load_one_der_key(char const* path)
         25, 26, 27, 28, 29, 30, 31, 32
     };
     ptls_context_t ctx = { 0 };
-    psa_status_t status = 0;
 
     ret = ptls_mbedtls_load_private_key(&ctx, path);
     if (ret != 0) {
-        ok(ret == 0, "Cannot create sign_certificate from: %s\n", path);
+        printf("Cannot create sign_certificate from: %s\n", path);
+        ret = -1;
     }
     else if (ctx.sign_certificate == NULL) {
         printf("Sign_certificate not set in ptls context for: %s\n", path);
@@ -145,7 +161,6 @@ void test_load_one_der_key(char const* path)
         ptls_mbedtls_sign_certificate_t* signer = (ptls_mbedtls_sign_certificate_t*)
             (((unsigned char*)ctx.sign_certificate) - offsetof(struct st_ptls_mbedtls_sign_certificate_t, super));
         /* get the key algorithm */
-        psa_algorithm_t algo = psa_get_key_algorithm(&signer->attributes);
         ptls_buffer_t outbuf;
         uint8_t outbuf_smallbuf[256];
         ptls_iovec_t input = { hash, sizeof(hash) };
@@ -154,7 +169,8 @@ void test_load_one_der_key(char const* path)
         uint16_t algorithms[16];
         memcpy(hash, h0, 32);
         while (signer->schemes[num_algorithms].scheme_id != UINT16_MAX && num_algorithms < 16) {
-            algorithms[num_algorithms++] = signer->schemes[num_algorithms].scheme_id;
+            algorithms[num_algorithms] = signer->schemes[num_algorithms].scheme_id;
+            num_algorithms++;
         }
 
         ptls_buffer_init(&outbuf, outbuf_smallbuf, sizeof(outbuf_smallbuf));
@@ -170,7 +186,64 @@ void test_load_one_der_key(char const* path)
         ptls_buffer_dispose(&outbuf);
         ptls_mbedtls_dispose_sign_certificate(&signer->super);
     }
+    return ret;
+}
 
+static void test_load_rsa_key() 
+{
+    int ret = test_load_one_der_key(ASSET_RSA_KEY);
+    
+    if (ret != 0) {
+        ok(!"fail");
+        return;
+    }
+    ok(!!"success");
+}
+
+static void test_load_secp256r1_key()
+{
+    int ret = test_load_one_der_key(ASSET_SECP256R1_KEY);
+    if (ret != 0) {
+        ok(!"fail");
+        return;
+    }
+    ok(!!"success");
+}
+        
+static void test_load_secp384r1_key()
+{   
+    int ret = test_load_one_der_key(ASSET_SECP384R1_KEY);
+    if (ret != 0) {
+        ok(!"fail");
+        return;
+    }
+    ok(!!"success");
+}
+
+    
+static void test_load_secp521r1_key()
+{   
+    int ret = test_load_one_der_key(ASSET_SECP521R1_KEY);
+    if (ret != 0) { 
+        ok(!"fail");
+        return;
+    }
+    ok(!!"success");
+}
+
+static void test_load_secp256r1_pkcs8_key()
+{
+    int ret = test_load_one_der_key(ASSET_SECP256R1_PKCS8_KEY);
+    if (ret != 0) { 
+        ok(!"fail");
+        return;
+    }
+    ok(!!"success");
+}   
+
+static void test_load_rsa_pkcs8_key()
+{
+    int ret = test_load_one_der_key(ASSET_RSA_PKCS8_KEY);
     if (ret != 0) {
         ok(!"fail");
         return;
@@ -179,19 +252,15 @@ void test_load_one_der_key(char const* path)
 }
 
 void test_sign_certificate(void)
-{
-    int ret = 0;
-    
-    ok(test_load_one_der_key(ASSET_RSA_KEY));
-    ok(test_load_one_der_key(ASSET_SECP256R1_KEY));
-    ok(test_load_one_der_key(ASSET_SECP384R1_KEY));
-    ok(test_load_one_der_key(ASSET_SECP521R1_KEY));
-    ok(test_load_one_der_key(ASSET_SECP256R1_PKCS8_KEY));
-    ok(test_load_one_der_key(ASSET_RSA_PKCS8_KEY));
+{    
+    subtest("load rsa key", test_load_rsa_key);
+    subtest("load secp256r1 key", test_load_secp256r1_key);
+    subtest("load secp384r1 key", test_load_secp384r1_key);
+    subtest("load secp521r1 key", test_load_secp521r1_key);
+    subtest("load secp521r1-pkcs8 key", test_load_secp256r1_pkcs8_key);
+    subtest("load rsa-pkcs8 key", test_load_rsa_pkcs8_key);
 
     /* we do not test EDDSA keys, because they are not yet supported */
-
-    return ret;
 }
 
 DEFINE_FFX_AES128_ALGORITHMS(mbedtls);
