@@ -2220,10 +2220,10 @@ ptls_aead_algorithm_t ptls_openssl_aegis256 = {
     .context_size = sizeof(struct aegis256_context_t),
     .setup_crypto = aegis256_setup_crypto,
 };
-ptls_cipher_suite_t ptls_openssl_aegis256sha384 = {.id = PTLS_CIPHER_SUITE_AEGIS256_SHA384,
-                                                    .name = PTLS_CIPHER_SUITE_NAME_AEGIS256_SHA384,
+ptls_cipher_suite_t ptls_openssl_aegis256sha512 = {.id = PTLS_CIPHER_SUITE_AEGIS256_SHA512,
+                                                    .name = PTLS_CIPHER_SUITE_NAME_AEGIS256_SHA512,
                                                     .aead = &ptls_openssl_aegis256,
-                                                    .hash = &ptls_openssl_sha384};
+                                                    .hash = &ptls_openssl_sha512};
 #endif
 
 
@@ -2240,7 +2240,7 @@ ptls_cipher_suite_t *ptls_openssl_cipher_suites[] = {// ciphers used with sha384
 
 ptls_cipher_suite_t *ptls_openssl_cipher_suites_all[] = {// ciphers used with sha384 (must be first)
 #if PTLS_HAVE_AEGIS
-                                                        &ptls_openssl_aegis256sha384,
+                                                        &ptls_openssl_aegis256sha512,
 #endif
                                                         &ptls_openssl_aes256gcmsha384,
 
