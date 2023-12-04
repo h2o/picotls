@@ -255,8 +255,8 @@ int main(int argc, char **argv)
     subtest("minicrypto vs.", test_picotls);
 
     /* test the sign certificate */
-    subtest("sign certificate", test_sign_certificate)
-
+    subtest("sign certificate", test_sign_certificate);
+      
     /* Deinitialize the PSA crypto library. */
     mbedtls_psa_crypto_free();
 
