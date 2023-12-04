@@ -90,7 +90,7 @@ static void test_key_exchanges(void)
 }
 
 /*
-Sign certificate has to implement a callback:
+Sign certificate implements a callback:
 
 if ((ret = tls->ctx->sign_certificate->cb(
 tls->ctx->sign_certificate, tls, tls->is_server ? &tls->server.async_job : NULL, &algo, sendbuf,
@@ -108,44 +108,6 @@ ptls_buffer_t *output, ptls_iovec_t input, const uint16_t *algorithms, size_t nu
 
 The notation is simple: input buffer and supported algorithms as input, selected algo and output buffer as output.
 Output buffer is already partially filled.
-
-For PSA/MbedTLS, see:
-https://mbed-tls.readthedocs.io/en/latest/getting_started/psa/
-Using PSA, Signing a message with RSA provides the following sequence:
-
--- Set key attributes --
-psa_set_key_usage_flags(&attributes, PSA_KEY_USAGE_SIGN_HASH);
-psa_set_key_algorithm(&attributes, PSA_ALG_RSA_PKCS1V15_SIGN_RAW);
-psa_set_key_type(&attributes, PSA_KEY_TYPE_RSA_KEY_PAIR);
-psa_set_key_bits(&attributes, 1024);
-
--- Import the key --
-status = psa_import_key(&attributes, key, key_len, &key_id);
-if (status != PSA_SUCCESS) {
-printf("Failed to import key\n");
-return;
-}
-
--- Sign message using the key --
-status = psa_sign_hash(key_id, PSA_ALG_RSA_PKCS1V15_SIGN_RAW,
-hash, sizeof(hash),
-signature, sizeof(signature),
-&signature_length);
-
-TODO: verify that Picotls does compute the hash before calling sign.
-TODO: verify that there are "sign raw" implementations for ECDSA, EDDSA
-
--- Verify hash:
-psa_status_t psa_verify_hash(mbedtls_svc_key_id_t key, psa_algorithm_t alg, const uint8_t *hash, size_t hash_length, const uint8_t *signature, size_t signature_length)
-
-Load a key in memory
-
-int mbedtls_pk_parse_keyfile(mbedtls_pk_context* ctx,
-const char* path, const char* pwd,
-int (*f_rng)(void*, unsigned char*, size_t), void* p_rng);
-
-But before using the psa API, the key must be imported. That means the key has to
-be expressed in the proper x509/DER format.
 
 */
 
