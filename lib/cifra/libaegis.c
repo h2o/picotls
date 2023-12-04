@@ -20,10 +20,8 @@
  * IN THE SOFTWARE.
  */
 
+#include "picotls/minicrypto.h"
 #include "../libaegis.h"
-
-extern ptls_hash_algorithm_t ptls_minicrypto_sha256;
-extern ptls_hash_algorithm_t ptls_minicrypto_sha384;
 
 ptls_aead_algorithm_t ptls_minicrypto_aegis128l = {"AEGIS-128L",
                                                    PTLS_AEGIS128L_CONFIDENTIALITY_LIMIT,
