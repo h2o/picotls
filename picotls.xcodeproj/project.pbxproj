@@ -205,6 +205,8 @@
 		081F00CC291A358800534A86 /* asn1.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = asn1.h; sourceTree = "<group>"; };
 		081F00CD291A358800534A86 /* pembase64.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = pembase64.h; sourceTree = "<group>"; };
 		081F00CE291A358800534A86 /* ptlsbcrypt.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ptlsbcrypt.h; sourceTree = "<group>"; };
+		085BDAE52B1D618E002851EA /* libaegis.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = libaegis.c; sourceTree = "<group>"; };
+		085BDAE62B1D6238002851EA /* libaegis.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = libaegis.h; sourceTree = "<group>"; };
 		087F1A732B034AEB00E81AC1 /* FindMbedTLS.cmake */ = {isa = PBXFileReference; lastKnownFileType = text; path = FindMbedTLS.cmake; sourceTree = "<group>"; };
 		0883D3272AEF8F2500B711CC /* fusion.cmake */ = {isa = PBXFileReference; lastKnownFileType = text; path = fusion.cmake; sourceTree = "<group>"; };
 		0883D32A2AF601A700B711CC /* mbedtls.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = mbedtls.c; sourceTree = "<group>"; };
@@ -448,6 +450,7 @@
 				E97577022212405D00D1EF74 /* ffx.c */,
 				E9B43DBF24619D1700824E51 /* fusion.c */,
 				08F0FDF52910F67A00EE657D /* hpke.c */,
+				085BDAE62B1D6238002851EA /* libaegis.h */,
 				0883D32B2AF601B900B711CC /* mbedtls.c */,
 				E949EF272073629300511ECA /* minicrypto-pem.c */,
 				106530C21D9B004B005B2C60 /* openssl.c */,
@@ -556,6 +559,7 @@
 				E9F20BE222E34B340018D260 /* aes128.c */,
 				E9F20BE022E34B340018D260 /* aes256.c */,
 				E9F20BE422E34B340018D260 /* chacha20.c */,
+				085BDAE52B1D618E002851EA /* libaegis.c */,
 				E9F20BF922E34C110018D260 /* random.c */,
 				E9F20BE122E34B340018D260 /* x25519.c */,
 			);
