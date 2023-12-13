@@ -248,6 +248,7 @@ extern "C" {
 #define PTLS_ERROR_REJECT_EARLY_DATA (PTLS_ERROR_CLASS_INTERNAL + 9)
 #define PTLS_ERROR_DELEGATE (PTLS_ERROR_CLASS_INTERNAL + 10)
 #define PTLS_ERROR_ASYNC_OPERATION (PTLS_ERROR_CLASS_INTERNAL + 11)
+#define PTLS_ERROR_BLOCK_OVERFLOW (PTLS_ERROR_CLASS_INTERNAL + 12)
 
 #define PTLS_ERROR_INCORRECT_BASE64 (PTLS_ERROR_CLASS_INTERNAL + 50)
 #define PTLS_ERROR_PEM_LABEL_NOT_FOUND (PTLS_ERROR_CLASS_INTERNAL + 51)
@@ -1203,6 +1204,10 @@ static uint8_t *ptls_encode_quicint(uint8_t *p, uint64_t v);
         } while (0);                                                                                                               \
         size_t body_size = (buf)->off - body_start;                                                                                \
         if (capacity != -1) {                                                                                                      \
+            if (body_size >= (size_t)1 << (capacity * 8)) {                                                                        \
+                ret = PTLS_ERROR_BLOCK_OVERFLOW;                                                                                   \
+                goto Exit;                                                                                                         \
+            }                                                                                                                      \
             for (; capacity != 0; --capacity)                                                                                      \
                 (buf)->base[body_start - capacity] = (uint8_t)(body_size >> (8 * (capacity - 1)));                                 \
         } else {                                                                                                                   \
