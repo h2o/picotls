@@ -1916,9 +1916,13 @@ static void do_test_tlsblock(size_t len_encoded, size_t max_bytes)
     src = buf.base;
     end = buf.base + buf.off;
     ptls_decode_block(src, end, len_encoded, {
-        ok(end - src == 255);
-        for (size_t i = 0; i < max_bytes; ++i)
-            ok(*src == i);
+        ok(end - src == max_bytes);
+        int bytes_eq = 1;
+        for (size_t i = 0; i < max_bytes; ++i) {
+            if (src[i] != (uint8_t)i)
+                bytes_eq = 0;
+        }
+        ok(bytes_eq);
         src = end;
     });
 
