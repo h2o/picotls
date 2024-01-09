@@ -67,6 +67,7 @@
 #define PTLS_EXTENSION_TYPE_SUPPORTED_VERSIONS 43
 #define PTLS_EXTENSION_TYPE_COOKIE 44
 #define PTLS_EXTENSION_TYPE_PSK_KEY_EXCHANGE_MODES 45
+#define PTLS_EXTENSION_TYPE_CERTIFICATE_AUTHORITIES 47
 #define PTLS_EXTENSION_TYPE_KEY_SHARE 51
 #define PTLS_EXTENSION_TYPE_ECH_OUTER_EXTENSIONS 0xfd00
 #define PTLS_EXTENSION_TYPE_ENCRYPTED_CLIENT_HELLO 0xfe0d
@@ -4684,6 +4685,20 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
                         if ((ret = push_signature_algorithms(tls->ctx->verify_certificate, sendbuf)) != 0)
                             goto Exit;
                     });
+
+                    /* <optional> certificate authorities entension */
+                    if (tls->ctx->client_ca_names.count > 0) {
+                        buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_CERTIFICATE_AUTHORITIES, {
+                            ptls_buffer_push_block(sendbuf, 2, {
+                                for (size_t i = 0; i != tls->ctx->client_ca_names.count; ++i) {
+                                    ptls_buffer_push_block(sendbuf, 2, {
+                                        ptls_iovec_t name = tls->ctx->client_ca_names.list[i];
+                                        ptls_buffer_pushv(sendbuf, name.base, name.len);
+                                    });
+                                }
+                            });
+                        });
+                    }
                 });
             });
 

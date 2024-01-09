@@ -981,6 +981,13 @@ struct st_ptls_context_t {
      * (optional) list of supported tls12 cipher-suites terminated by NULL
      */
     ptls_cipher_suite_t **tls12_cipher_suites;
+    /**
+     * (optional) used in CR message, must be DNs in DER format.
+     */
+    struct {
+        const ptls_iovec_t *list;
+        size_t count;
+    } client_ca_names;
 };
 
 typedef struct st_ptls_raw_extension_t {
