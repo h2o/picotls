@@ -89,6 +89,7 @@ static void test_key_exchanges(void)
     subtest("x25519", test_x25519);
 }
 
+<
 DEFINE_FFX_AES128_ALGORITHMS(mbedtls);
 DEFINE_FFX_CHACHA20_ALGORITHMS(mbedtls);
 
