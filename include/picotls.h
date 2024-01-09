@@ -248,6 +248,7 @@ extern "C" {
 #define PTLS_ERROR_REJECT_EARLY_DATA (PTLS_ERROR_CLASS_INTERNAL + 9)
 #define PTLS_ERROR_DELEGATE (PTLS_ERROR_CLASS_INTERNAL + 10)
 #define PTLS_ERROR_ASYNC_OPERATION (PTLS_ERROR_CLASS_INTERNAL + 11)
+#define PTLS_ERROR_BLOCK_OVERFLOW (PTLS_ERROR_CLASS_INTERNAL + 12)
 
 #define PTLS_ERROR_INCORRECT_BASE64 (PTLS_ERROR_CLASS_INTERNAL + 50)
 #define PTLS_ERROR_PEM_LABEL_NOT_FOUND (PTLS_ERROR_CLASS_INTERNAL + 51)
@@ -919,8 +920,7 @@ struct st_ptls_context_t {
      */
     unsigned send_change_cipher_spec : 1;
     /**
-     * if set, the server requests client certificates
-     * to authenticate the client.
+     * if set, the server requests client certificates to authenticate the client
      */
     unsigned require_client_authentication : 1;
     /**
@@ -988,6 +988,14 @@ struct st_ptls_context_t {
         uint8_t bytes[PTLS_SHA256_DIGEST_SIZE];
         uint8_t is_set : 1;
     } ticket_context;
+    /**
+     * (optional) list of CAs advertised to clients as supported in the CertificateRequest message; each item must be DNs in DER
+     * format. The values are sent to the client only when `ptls_context_t::require_client_authentication` is set to true.
+     */
+    struct {
+        const ptls_iovec_t *list;
+        size_t count;
+    } client_ca_names;
 };
 
 typedef struct st_ptls_raw_extension_t {
@@ -1210,6 +1218,10 @@ static uint8_t *ptls_encode_quicint(uint8_t *p, uint64_t v);
         } while (0);                                                                                                               \
         size_t body_size = (buf)->off - body_start;                                                                                \
         if (capacity != -1) {                                                                                                      \
+            if (capacity < sizeof(size_t) && body_size >= (size_t)1 << (capacity * 8)) {                                           \
+                ret = PTLS_ERROR_BLOCK_OVERFLOW;                                                                                   \
+                goto Exit;                                                                                                         \
+            }                                                                                                                      \
             for (; capacity != 0; --capacity)                                                                                      \
                 (buf)->base[body_start - capacity] = (uint8_t)(body_size >> (8 * (capacity - 1)));                                 \
         } else {                                                                                                                   \

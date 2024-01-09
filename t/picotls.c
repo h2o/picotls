@@ -1901,6 +1901,60 @@ static void test_all_handshakes(void)
         ctx->sign_certificate = second_sc_orig;
 }
 
+static void do_test_tlsblock(size_t len_encoded, size_t max_bytes)
+{
+    ptls_buffer_t buf;
+    const uint8_t *src, *end;
+    int expect_overflow = 0, ret;
+
+    /* block that fits in */
+    ptls_buffer_init(&buf, "", 0);
+    ptls_buffer_push_block(&buf, len_encoded, {
+        for (size_t i = 0; i < max_bytes; ++i)
+            ptls_buffer_push(&buf, (uint8_t)i);
+    });
+    src = buf.base;
+    end = buf.base + buf.off;
+    ptls_decode_block(src, end, len_encoded, {
+        ok(end - src == max_bytes);
+        int bytes_eq = 1;
+        for (size_t i = 0; i < max_bytes; ++i) {
+            if (src[i] != (uint8_t)i)
+                bytes_eq = 0;
+        }
+        ok(bytes_eq);
+        src = end;
+    });
+
+    /* block that does not fit in */
+    ptls_buffer_push_block(&buf, len_encoded, {
+        for (size_t i = 0; i < max_bytes + 1; i++)
+            ptls_buffer_push(&buf, 1);
+        expect_overflow = 1;
+    });
+    ok(!"fail");
+
+Exit:
+    if (ret != 0) {
+        if (expect_overflow) {
+            ok(ret == PTLS_ERROR_BLOCK_OVERFLOW);
+        } else {
+            ok(!"fail");
+        }
+    }
+    ptls_buffer_dispose(&buf);
+}
+
+static void test_tlsblock8(void)
+{
+    do_test_tlsblock(1, 255);
+}
+
+static void test_tlsblock16(void)
+{
+    do_test_tlsblock(2, 65535);
+}
+
 static void test_quicint(void)
 {
 #define CHECK_PATTERN(output, ...)                                                                                                 \
@@ -2161,6 +2215,8 @@ void test_picotls(void)
     subtest("chacha20", test_chacha20);
     subtest("ffx", test_ffx);
     subtest("base64-decode", test_base64_decode);
+    subtest("tls-block8", test_tlsblock8);
+    subtest("tls-block16", test_tlsblock16);
     subtest("ech", test_ech);
     subtest("fragmented-message", test_fragmented_message);
     subtest("handshake", test_all_handshakes);
