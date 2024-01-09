@@ -4674,10 +4674,9 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
         /* send certificate request if client authentication is activated */
         if (tls->ctx->require_client_authentication) {
             ptls_push_message(emitter, tls->key_schedule, PTLS_HANDSHAKE_TYPE_CERTIFICATE_REQUEST, {
-                /* certificate_request_context, this field SHALL be zero length, unless the certificate
-                 * request is used for post-handshake authentication.
-                 */
                 ptls_buffer_t *sendbuf = emitter->buf;
+                /* certificate_request_context: this field SHALL be zero length, unless the certificate request is used for post-
+                 * handshake authentication. */
                 ptls_buffer_push(sendbuf, 0);
                 /* extensions */
                 ptls_buffer_push_block(sendbuf, 2, {
@@ -4685,8 +4684,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
                         if ((ret = push_signature_algorithms(tls->ctx->verify_certificate, sendbuf)) != 0)
                             goto Exit;
                     });
-
-                    /* <optional> certificate authorities entension */
+                    /* certificate authorities entension */
                     if (tls->ctx->client_ca_names.count > 0) {
                         buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_CERTIFICATE_AUTHORITIES, {
                             ptls_buffer_push_block(sendbuf, 2, {
