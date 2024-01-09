@@ -67,6 +67,7 @@
 #define PTLS_EXTENSION_TYPE_SUPPORTED_VERSIONS 43
 #define PTLS_EXTENSION_TYPE_COOKIE 44
 #define PTLS_EXTENSION_TYPE_PSK_KEY_EXCHANGE_MODES 45
+#define PTLS_EXTENSION_TYPE_CERTIFICATE_AUTHORITIES 47
 #define PTLS_EXTENSION_TYPE_KEY_SHARE 51
 #define PTLS_EXTENSION_TYPE_ECH_OUTER_EXTENSIONS 0xfd00
 #define PTLS_EXTENSION_TYPE_ENCRYPTED_CLIENT_HELLO 0xfe0d
@@ -4673,10 +4674,9 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
         /* send certificate request if client authentication is activated */
         if (tls->ctx->require_client_authentication) {
             ptls_push_message(emitter, tls->key_schedule, PTLS_HANDSHAKE_TYPE_CERTIFICATE_REQUEST, {
-                /* certificate_request_context, this field SHALL be zero length, unless the certificate
-                 * request is used for post-handshake authentication.
-                 */
                 ptls_buffer_t *sendbuf = emitter->buf;
+                /* certificate_request_context: this field SHALL be zero length, unless the certificate request is used for post-
+                 * handshake authentication. */
                 ptls_buffer_push(sendbuf, 0);
                 /* extensions */
                 ptls_buffer_push_block(sendbuf, 2, {
@@ -4684,6 +4684,19 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
                         if ((ret = push_signature_algorithms(tls->ctx->verify_certificate, sendbuf)) != 0)
                             goto Exit;
                     });
+                    /* certificate authorities entension */
+                    if (tls->ctx->client_ca_names.count > 0) {
+                        buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_CERTIFICATE_AUTHORITIES, {
+                            ptls_buffer_push_block(sendbuf, 2, {
+                                for (size_t i = 0; i != tls->ctx->client_ca_names.count; ++i) {
+                                    ptls_buffer_push_block(sendbuf, 2, {
+                                        ptls_iovec_t name = tls->ctx->client_ca_names.list[i];
+                                        ptls_buffer_pushv(sendbuf, name.base, name.len);
+                                    });
+                                }
+                            });
+                        });
+                    }
                 });
             });
 

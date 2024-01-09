@@ -920,8 +920,7 @@ struct st_ptls_context_t {
      */
     unsigned send_change_cipher_spec : 1;
     /**
-     * if set, the server requests client certificates
-     * to authenticate the client.
+     * if set, the server requests client certificates to authenticate the client
      */
     unsigned require_client_authentication : 1;
     /**
@@ -982,6 +981,14 @@ struct st_ptls_context_t {
      * (optional) list of supported tls12 cipher-suites terminated by NULL
      */
     ptls_cipher_suite_t **tls12_cipher_suites;
+    /**
+     * (optional) list of CAs advertised to clients as supported in the CertificateRequest message; each item must be DNs in DER
+     * format. The values are sent to the client only when `ptls_context_t::require_client_authentication` is set to true.
+     */
+    struct {
+        const ptls_iovec_t *list;
+        size_t count;
+    } client_ca_names;
 };
 
 typedef struct st_ptls_raw_extension_t {
