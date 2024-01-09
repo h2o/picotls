@@ -1204,7 +1204,7 @@ static uint8_t *ptls_encode_quicint(uint8_t *p, uint64_t v);
         } while (0);                                                                                                               \
         size_t body_size = (buf)->off - body_start;                                                                                \
         if (capacity != -1) {                                                                                                      \
-            if (body_size >= (size_t)1 << (capacity * 8)) {                                                                        \
+            if (capacity < sizeof(size_t) && body_size >= (size_t)1 << (capacity * 8)) {                                           \
                 ret = PTLS_ERROR_BLOCK_OVERFLOW;                                                                                   \
                 goto Exit;                                                                                                         \
             }                                                                                                                      \
