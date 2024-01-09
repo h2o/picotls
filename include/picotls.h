@@ -982,6 +982,13 @@ struct st_ptls_context_t {
      */
     ptls_cipher_suite_t **tls12_cipher_suites;
     /**
+     * (optional) session ID Context to segment resumption
+     */
+    struct {
+        uint8_t bytes[PTLS_SHA256_DIGEST_SIZE];
+        uint8_t is_set : 1;
+    } ticket_context;
+    /**
      * (optional) list of CAs advertised to clients as supported in the CertificateRequest message; each item must be DNs in DER
      * format. The values are sent to the client only when `ptls_context_t::require_client_authentication` is set to true.
      */
