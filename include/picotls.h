@@ -986,7 +986,7 @@ struct st_ptls_context_t {
      */
     struct {
         uint8_t bytes[PTLS_SHA256_DIGEST_SIZE];
-        uint8_t is_set : 1;
+        unsigned is_set : 1;
     } ticket_context;
     /**
      * (optional) list of CAs advertised to clients as supported in the CertificateRequest message; each item must be DNs in DER
