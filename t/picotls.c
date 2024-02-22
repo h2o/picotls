@@ -87,7 +87,8 @@ static void test_select_cipher(void)
     }
 
     {
-        ptls_cipher_suite_t *candidates[] = {&ptls_minicrypto_aes128gcmsha256, &ptls_minicrypto_aes256gcmsha384, &ptls_minicrypto_chacha20poly1305sha256, NULL};
+        ptls_cipher_suite_t *candidates[] = {&ptls_minicrypto_aes128gcmsha256, &ptls_minicrypto_aes256gcmsha384,
+                                             &ptls_minicrypto_chacha20poly1305sha256, NULL};
         static const uint8_t input[] = {C(PTLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256), C(PTLS_CIPHER_SUITE_AES_128_GCM_SHA256)};
         ok(select_cipher(&selected, candidates, input, input + sizeof(input), 1, 0) == 0);
         ok(selected == &ptls_minicrypto_aes128gcmsha256);
@@ -96,8 +97,10 @@ static void test_select_cipher(void)
     }
 
     {
-        ptls_cipher_suite_t *candidates[] = {&ptls_minicrypto_aes256gcmsha384, &ptls_minicrypto_chacha20poly1305sha256, &ptls_minicrypto_aes128gcmsha256, NULL};
-        static const uint8_t input[] = {C(PTLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256), C(PTLS_CIPHER_SUITE_AES_128_GCM_SHA256), C(PTLS_CIPHER_SUITE_AES_256_GCM_SHA384)};
+        ptls_cipher_suite_t *candidates[] = {&ptls_minicrypto_aes256gcmsha384, &ptls_minicrypto_chacha20poly1305sha256,
+                                             &ptls_minicrypto_aes128gcmsha256, NULL};
+        static const uint8_t input[] = {C(PTLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256), C(PTLS_CIPHER_SUITE_AES_128_GCM_SHA256),
+                                        C(PTLS_CIPHER_SUITE_AES_256_GCM_SHA384)};
         ok(select_cipher(&selected, candidates, input, input + sizeof(input), 1, 0) == 0);
         ok(selected == &ptls_minicrypto_aes256gcmsha384);
         ok(select_cipher(&selected, candidates, input, input + sizeof(input), 1, 1) == 0);
@@ -107,8 +110,10 @@ static void test_select_cipher(void)
     }
 
     {
-        ptls_cipher_suite_t *candidates[] = {&ptls_minicrypto_aes256gcmsha384, &ptls_minicrypto_chacha20poly1305sha256, &ptls_minicrypto_aes128gcmsha256, NULL};
-        static const uint8_t input[] = {C(PTLS_CIPHER_SUITE_AES_128_GCM_SHA256), C(PTLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256), C(PTLS_CIPHER_SUITE_AES_256_GCM_SHA384)};
+        ptls_cipher_suite_t *candidates[] = {&ptls_minicrypto_aes256gcmsha384, &ptls_minicrypto_chacha20poly1305sha256,
+                                             &ptls_minicrypto_aes128gcmsha256, NULL};
+        static const uint8_t input[] = {C(PTLS_CIPHER_SUITE_AES_128_GCM_SHA256), C(PTLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256),
+                                        C(PTLS_CIPHER_SUITE_AES_256_GCM_SHA384)};
         ok(select_cipher(&selected, candidates, input, input + sizeof(input), 1, 1) == 0);
         ok(selected == &ptls_minicrypto_aes256gcmsha384);
         ok(select_cipher(&selected, candidates, input, input + sizeof(input), 1, 1) == 0);
@@ -117,7 +122,8 @@ static void test_select_cipher(void)
 
     {
         ptls_cipher_suite_t *candidates[] = {&ptls_minicrypto_aes256gcmsha384, &ptls_minicrypto_aes128gcmsha256, NULL};
-        static const uint8_t input[] = {C(PTLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256), C(PTLS_CIPHER_SUITE_AES_128_GCM_SHA256), C(PTLS_CIPHER_SUITE_AES_256_GCM_SHA384)};
+        static const uint8_t input[] = {C(PTLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256), C(PTLS_CIPHER_SUITE_AES_128_GCM_SHA256),
+                                        C(PTLS_CIPHER_SUITE_AES_256_GCM_SHA384)};
         ok(select_cipher(&selected, candidates, input, input + sizeof(input), 1, 0) == 0);
         ok(selected == &ptls_minicrypto_aes256gcmsha384);
         ok(select_cipher(&selected, candidates, input, input + sizeof(input), 1, 1) == 0);
