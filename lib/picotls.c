@@ -1630,7 +1630,7 @@ static int setup_traffic_protection(ptls_t *tls, int is_enc, const char *secret_
 
     ctx->epoch = epoch;
 
-    if (tls->key_schedule)
+    if (tls->key_schedule != NULL)
         log_secret(tls, log_labels[ptls_is_server(tls) == is_enc][epoch],
                    ptls_iovec_init(ctx->secret, tls->key_schedule->hashes[0].algo->digest_size));
 
