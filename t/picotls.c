@@ -864,20 +864,12 @@ static int can_ech(ptls_context_t *ctx, int is_server)
     }
 }
 
-#define ERROUT_IF(cond, err_string)    \
-    if (cond) {                        \
-        *err = err_string;             \
-        return -1;                     \
-    } while (0)
-
-static int aead_keys_cmp(ptls_t *src, ptls_t *dst, const char **err)
+static void aead_keys_cmp(ptls_t *src, ptls_t *dst, const char **err)
 {
-    ERROUT_IF((src->cipher_suite->hash->digest_size != dst->cipher_suite->hash->digest_size), "cipher digest size");
+    ok(src->cipher_suite->hash->digest_size == dst->cipher_suite->hash->digest_size);
     size_t digest_size = dst->cipher_suite->hash->digest_size;
-    int r = memcmp(src->traffic_protection.enc.secret, dst->traffic_protection.enc.secret, digest_size);
-    ERROUT_IF((r != 0), "secrets");
-    r = memcmp(src->traffic_protection.dec.secret, dst->traffic_protection.dec.secret, digest_size);
-    ERROUT_IF((r != 0), "secrets");
+    ok(memcmp(src->traffic_protection.enc.secret, dst->traffic_protection.enc.secret, digest_size) == 0);
+    ok(memcmp(src->traffic_protection.dec.secret, dst->traffic_protection.dec.secret, digest_size) == 0);
     const unsigned enc_idx = 0;
     const unsigned dec_idx = 1;
     struct st_keys {
@@ -887,29 +879,20 @@ static int aead_keys_cmp(ptls_t *src, ptls_t *dst, const char **err)
     };
     struct st_keys src_keys[2] = {0};
     struct st_keys dst_keys[2] = {0};
-    r = ptls_get_traffic_keys(src, 1, src_keys[enc_idx].key, src_keys[enc_idx].iv, &src_keys[enc_idx].seq);
-    assert(r == 0);
-    r = ptls_get_traffic_keys(src, 0, src_keys[dec_idx].key, src_keys[dec_idx].iv, &src_keys[dec_idx].seq);
-    assert(r == 0);
-    r = ptls_get_traffic_keys(dst, 1, dst_keys[enc_idx].key, dst_keys[enc_idx].iv, &dst_keys[enc_idx].seq);
-    assert(r == 0);
-    r = ptls_get_traffic_keys(dst, 0, dst_keys[dec_idx].key, dst_keys[dec_idx].iv, &dst_keys[dec_idx].seq);
-    assert(r == 0);
-    ERROUT_IF((src_keys[enc_idx].seq != dst_keys[enc_idx].seq), "sequence numbers");
-    ERROUT_IF((src_keys[dec_idx].seq != dst_keys[dec_idx].seq), "sequence numbers");
-    r = memcmp(src_keys[enc_idx].key, dst_keys[enc_idx].key, PTLS_MAX_SECRET_SIZE);
-    ERROUT_IF((r != 0), "keys");
-    r = memcmp(src_keys[dec_idx].key, dst_keys[dec_idx].key, PTLS_MAX_SECRET_SIZE);
-    ERROUT_IF((r != 0), "keys");
-    r = memcmp(src_keys[enc_idx].iv, dst_keys[enc_idx].iv, PTLS_MAX_IV_SIZE);
-    ERROUT_IF((r != 0), "ivs");
-    r = memcmp(src_keys[dec_idx].iv, dst_keys[dec_idx].iv, PTLS_MAX_IV_SIZE);
-    ERROUT_IF((r != 0), "ivs");
-    return 0;
+    ok(ptls_get_traffic_keys(src, 1, src_keys[enc_idx].key, src_keys[enc_idx].iv, &src_keys[enc_idx].seq) == 0);
+    ok(ptls_get_traffic_keys(src, 0, src_keys[dec_idx].key, src_keys[dec_idx].iv, &src_keys[dec_idx].seq) == 0);
+    ok(ptls_get_traffic_keys(dst, 1, dst_keys[enc_idx].key, dst_keys[enc_idx].iv, &dst_keys[enc_idx].seq) == 0);
+    ok(ptls_get_traffic_keys(dst, 0, dst_keys[dec_idx].key, dst_keys[dec_idx].iv, &dst_keys[dec_idx].seq) == 0);
+    ok(src_keys[enc_idx].seq == dst_keys[enc_idx].seq);
+    ok(src_keys[dec_idx].seq == dst_keys[dec_idx].seq);
+    ok(memcmp(src_keys[enc_idx].key, dst_keys[enc_idx].key, PTLS_MAX_SECRET_SIZE) == 0);
+    ok(memcmp(src_keys[dec_idx].key, dst_keys[dec_idx].key, PTLS_MAX_SECRET_SIZE) == 0);
+    ok(memcmp(src_keys[enc_idx].iv, dst_keys[enc_idx].iv, PTLS_MAX_IV_SIZE) == 0);
+    ok(memcmp(src_keys[dec_idx].iv, dst_keys[dec_idx].iv, PTLS_MAX_IV_SIZE) == 0);
 }
 #undef ERROUT_IF
 
-static ptls_t *ptls_dup(ptls_t *prev_tls)
+static ptls_t *test_alloc_and_migrate_tls_context(ptls_t *prev_tls)
 {
     ptls_buffer_t sess_data;
     ptls_buffer_init(&sess_data, "", 0);
@@ -920,12 +903,7 @@ static ptls_t *ptls_dup(ptls_t *prev_tls)
 
     assert(r == 0);
     const char *err = NULL;
-    if (aead_keys_cmp(prev_tls, tls, &err) != 0) {
-        fprintf(stdout, "error: keys mismatch [%s]\n", err);
-        ptls_free(prev_tls);
-        ptls_free(tls);
-        return NULL;
-    }
+    aead_keys_cmp(prev_tls, tls, &err);
     ptls_free(prev_tls);
     return tls;
 }
@@ -1135,7 +1113,7 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int expect_ticket, int
         decbuf.off = 0;
         cbuf.off = 0;
 
-        server = ptls_dup(server);
+        server = test_alloc_and_migrate_tls_context(server);
 
         ret = ptls_send(server, &sbuf, resp, strlen(resp));
         ok(ret == 0);

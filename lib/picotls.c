@@ -1615,7 +1615,7 @@ static int get_traffic_keys(ptls_aead_algorithm_t *aead, ptls_hash_algorithm_t *
     return ret;
 }
 
-static int setup_traffic_protection(ptls_t *tls, int is_enc, const char *secret_label, size_t epoch, int skip_notify, int seq)
+static int setup_traffic_protection(ptls_t *tls, int is_enc, const char *secret_label, size_t epoch, uint64_t seq, int skip_notify)
 {
     static const char *log_labels[2][4] = {
         {NULL, "CLIENT_EARLY_TRAFFIC_SECRET", "CLIENT_HANDSHAKE_TRAFFIC_SECRET", "CLIENT_TRAFFIC_SECRET_0"},
@@ -1665,7 +1665,7 @@ static int commission_handshake_secret(ptls_t *tls)
     free(tls->pending_handshake_secret);
     tls->pending_handshake_secret = NULL;
 
-    return setup_traffic_protection(tls, is_enc, NULL, 2, 1, 0);
+    return setup_traffic_protection(tls, is_enc, NULL, 2, 0, 1);
 }
 
 static void log_client_random(ptls_t *tls)
@@ -4848,7 +4848,7 @@ static int update_traffic_key(ptls_t *tls, int is_enc)
                                       "traffic upd", ptls_iovec_init(NULL, 0), NULL)) != 0)
         goto Exit;
     memcpy(tp->secret, secret, sizeof(secret));
-    ret = setup_traffic_protection(tls, is_enc, NULL, 3, 1, 0);
+    ret = setup_traffic_protection(tls, is_enc, NULL, 3, 0, 1);
 
 Exit:
     ptls_clear_memory(secret, sizeof(secret));
@@ -5180,7 +5180,7 @@ static int build_tls13_traffic_protection(ptls_t *tls, int is_enc, const uint8_t
         return PTLS_ALERT_DECODE_ERROR;
 
     int skip_notify = is_enc ? 1 : 0;
-    if (setup_traffic_protection(tls, is_enc, NULL, 3, skip_notify, tp->seq) != 0)
+    if (setup_traffic_protection(tls, is_enc, NULL, 3, tp->seq, skip_notify) != 0)
         return PTLS_ERROR_INCOMPATIBLE_KEY;
 
     return 0;
@@ -5282,7 +5282,6 @@ Exit:
             *tls = NULL;
         }
     }
-    assert(ret == 0);
     return ret;
 }
 
@@ -6294,7 +6293,7 @@ ptls_aead_context_t *new_aead(ptls_aead_algorithm_t *aead, ptls_hash_algorithm_t
     struct {
         uint8_t key[PTLS_MAX_SECRET_SIZE];
         uint8_t iv[PTLS_MAX_IV_SIZE];
-    } key_iv = {0};
+    } key_iv;
     int ret;
 
     if ((ret = get_traffic_keys(aead, hash, key_iv.key, key_iv.iv, secret, hash_value, label_prefix)) != 0)
