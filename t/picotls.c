@@ -890,7 +890,6 @@ static void aead_keys_cmp(ptls_t *src, ptls_t *dst, const char **err)
     ok(memcmp(src_keys[enc_idx].iv, dst_keys[enc_idx].iv, PTLS_MAX_IV_SIZE) == 0);
     ok(memcmp(src_keys[dec_idx].iv, dst_keys[dec_idx].iv, PTLS_MAX_IV_SIZE) == 0);
 }
-#undef ERROUT_IF
 
 static ptls_t *test_alloc_and_migrate_tls_context(ptls_t *prev_tls)
 {
@@ -904,7 +903,6 @@ static ptls_t *test_alloc_and_migrate_tls_context(ptls_t *prev_tls)
     assert(r == 0);
     const char *err = NULL;
     aead_keys_cmp(prev_tls, tls, &err);
-    ptls_free(prev_tls);
     return tls;
 }
 
@@ -1099,6 +1097,9 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int expect_ticket, int
         cbuf.off = 0;
     }
 
+    /* holds the ptls_t pointer of server prior to migration */
+    ptls_t *original_server = server;
+
     if (mode != TEST_HANDSHAKE_EARLY_DATA || require_client_authentication) {
         ret = ptls_send(client, &cbuf, req, strlen(req));
         ok(ret == 0);
@@ -1112,8 +1113,7 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int expect_ticket, int
         ok(ptls_handshake_is_complete(server));
         decbuf.off = 0;
         cbuf.off = 0;
-
-        server = test_alloc_and_migrate_tls_context(server);
+        server = test_alloc_and_migrate_tls_context(original_server);
 
         ret = ptls_send(server, &sbuf, resp, strlen(resp));
         ok(ret == 0);
@@ -1171,18 +1171,21 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int expect_ticket, int
         decbuf.off = 0;
     }
 
+    /* original_server is used for the server-side checks because handshake data is never migrated */
     if (can_ech(ctx_peer, 1) && can_ech(ctx, 0)) {
         ok(ptls_is_ech_handshake(client, NULL, NULL, NULL));
-        ok(ptls_is_ech_handshake(server, NULL, NULL, NULL));
+        ok(ptls_is_ech_handshake(original_server, NULL, NULL, NULL));
     } else {
         ok(!ptls_is_ech_handshake(client, NULL, NULL, NULL));
-        ok(!ptls_is_ech_handshake(server, NULL, NULL, NULL));
+        ok(!ptls_is_ech_handshake(original_server, NULL, NULL, NULL));
     }
 
     ptls_buffer_dispose(&cbuf);
     ptls_buffer_dispose(&sbuf);
     ptls_buffer_dispose(&decbuf);
     ptls_free(client);
+    if (original_server != server)
+        ptls_free(original_server);
     ptls_free(server);
 
     if (check_ch)
