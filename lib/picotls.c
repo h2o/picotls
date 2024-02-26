@@ -5131,14 +5131,15 @@ int ptls_export(ptls_t *tls, ptls_buffer_t *output)
         if (tls->state != PTLS_STATE_SERVER_POST_HANDSHAKE)
             return PTLS_ERROR_LIBRARY;
         return export_tls13_params(output, tls->is_server, tls->is_psk_handshake, tls->cipher_suite, tls->client_random,
-                               tls->server_name, negotiated_protocol, tls->traffic_protection.enc.secret, tls->traffic_protection.enc.seq,
-                               tls->traffic_protection.dec.secret, tls->traffic_protection.dec.seq);
+                                   tls->server_name, negotiated_protocol, tls->traffic_protection.enc.secret,
+                                   tls->traffic_protection.enc.seq, tls->traffic_protection.dec.secret,
+                                   tls->traffic_protection.dec.seq);
     } else {
         return export_tls12_params(output, tls->is_server, tls->is_psk_handshake, tls->cipher_suite, tls->client_random,
-                               tls->server_name, negotiated_protocol, tls->traffic_protection.enc.secret,
-                               tls->traffic_protection.enc.secret + PTLS_MAX_SECRET_SIZE, tls->traffic_protection.enc.seq,
-                               tls->traffic_protection.enc.tls12_enc_record_iv, tls->traffic_protection.dec.secret,
-                               tls->traffic_protection.dec.secret + PTLS_MAX_SECRET_SIZE, tls->traffic_protection.dec.seq);
+                                   tls->server_name, negotiated_protocol, tls->traffic_protection.enc.secret,
+                                   tls->traffic_protection.enc.secret + PTLS_MAX_SECRET_SIZE, tls->traffic_protection.enc.seq,
+                                   tls->traffic_protection.enc.tls12_enc_record_iv, tls->traffic_protection.dec.secret,
+                                   tls->traffic_protection.dec.secret + PTLS_MAX_SECRET_SIZE, tls->traffic_protection.dec.seq);
     }
 }
 
@@ -5261,7 +5262,7 @@ int ptls_import(ptls_context_t *ctx, ptls_t **tls, ptls_iovec_t params)
                     goto Exit;
                 (*tls)->key_schedule = key_schedule_new((*tls)->cipher_suite, (*tls)->ctx->cipher_suites, (*tls)->ech.aead != NULL);
                 (*tls)->state = PTLS_STATE_SERVER_POST_HANDSHAKE;
-            goto Exit;
+                goto Exit;
             default:
                 ret = PTLS_ALERT_ILLEGAL_PARAMETER;
                 break;

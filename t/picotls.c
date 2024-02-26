@@ -891,14 +891,14 @@ static void aead_keys_cmp(ptls_t *src, ptls_t *dst, const char **err)
     ok(memcmp(src_keys[dec_idx].iv, dst_keys[dec_idx].iv, PTLS_MAX_IV_SIZE) == 0);
 }
 
-static ptls_t *test_alloc_and_migrate_tls_context(ptls_t *prev_tls)
+static ptls_t *alloc_and_migrate_tls_context(ptls_t *prev_tls)
 {
     ptls_buffer_t sess_data;
     ptls_buffer_init(&sess_data, "", 0);
     int r = ptls_export(prev_tls, &sess_data);
     assert(r == 0);
     ptls_t *tls = NULL;
-    r = ptls_import(ctx_peer, &tls, (ptls_iovec_t){ .base = sess_data.base, .len = sess_data.off });
+    r = ptls_import(ctx_peer, &tls, (ptls_iovec_t){.base = sess_data.base, .len = sess_data.off});
 
     assert(r == 0);
     const char *err = NULL;
@@ -906,7 +906,8 @@ static ptls_t *test_alloc_and_migrate_tls_context(ptls_t *prev_tls)
     return tls;
 }
 
-static void test_handshake(ptls_iovec_t ticket, int mode, int expect_ticket, int check_ch, int require_client_authentication, int transfer_session)
+static void test_handshake(ptls_iovec_t ticket, int mode, int expect_ticket, int check_ch, int require_client_authentication,
+                           int transfer_session)
 {
     ptls_t *client, *server;
     ptls_handshake_properties_t client_hs_prop = {{{{NULL}, ticket}}}, server_hs_prop = {{{{NULL}}}};
@@ -1113,7 +1114,7 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int expect_ticket, int
         ok(ptls_handshake_is_complete(server));
         decbuf.off = 0;
         cbuf.off = 0;
-        server = test_alloc_and_migrate_tls_context(original_server);
+        server = alloc_and_migrate_tls_context(original_server);
 
         ret = ptls_send(server, &sbuf, resp, strlen(resp));
         ok(ret == 0);
@@ -1348,7 +1349,8 @@ static void test_resumption_impl(int different_preferred_key_share, int require_
     ctx_peer->encrypt_ticket = &et;
     ctx->save_ticket = &st;
 
-    test_handshake(saved_ticket, different_preferred_key_share ? TEST_HANDSHAKE_2RTT : TEST_HANDSHAKE_1RTT, 1, 0, 0, transfer_session);
+    test_handshake(saved_ticket, different_preferred_key_share ? TEST_HANDSHAKE_2RTT : TEST_HANDSHAKE_1RTT, 1, 0, 0,
+                   transfer_session);
     ok(server_sc_callcnt == 1);
     ok(saved_ticket.base != NULL);
 
