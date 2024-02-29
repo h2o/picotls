@@ -864,31 +864,29 @@ static int can_ech(ptls_context_t *ctx, int is_server)
     }
 }
 
-static void aead_keys_cmp(ptls_t *src, ptls_t *dst)
+static void check_clone(ptls_t *src, ptls_t *dest)
 {
-    ok(src->cipher_suite->hash->digest_size == dst->cipher_suite->hash->digest_size);
-    size_t digest_size = dst->cipher_suite->hash->digest_size;
-    ok(memcmp(src->traffic_protection.enc.secret, dst->traffic_protection.enc.secret, digest_size) == 0);
-    ok(memcmp(src->traffic_protection.dec.secret, dst->traffic_protection.dec.secret, digest_size) == 0);
+    ok(src->cipher_suite->hash->digest_size == dest->cipher_suite->hash->digest_size);
+    size_t digest_size = dest->cipher_suite->hash->digest_size;
+    ok(memcmp(src->traffic_protection.enc.secret, dest->traffic_protection.enc.secret, digest_size) == 0);
+    ok(memcmp(src->traffic_protection.dec.secret, dest->traffic_protection.dec.secret, digest_size) == 0);
     const unsigned enc_idx = 0;
     const unsigned dec_idx = 1;
-    struct st_keys {
+    struct {
         uint8_t key[PTLS_MAX_SECRET_SIZE];
         uint8_t iv[PTLS_MAX_IV_SIZE];
         uint64_t seq;
-    };
-    struct st_keys src_keys[2] = {0};
-    struct st_keys dst_keys[2] = {0};
+    } src_keys[2] = {0}, dest_keys[2] = {0};
     ok(ptls_get_traffic_keys(src, 1, src_keys[enc_idx].key, src_keys[enc_idx].iv, &src_keys[enc_idx].seq) == 0);
     ok(ptls_get_traffic_keys(src, 0, src_keys[dec_idx].key, src_keys[dec_idx].iv, &src_keys[dec_idx].seq) == 0);
-    ok(ptls_get_traffic_keys(dst, 1, dst_keys[enc_idx].key, dst_keys[enc_idx].iv, &dst_keys[enc_idx].seq) == 0);
-    ok(ptls_get_traffic_keys(dst, 0, dst_keys[dec_idx].key, dst_keys[dec_idx].iv, &dst_keys[dec_idx].seq) == 0);
-    ok(src_keys[enc_idx].seq == dst_keys[enc_idx].seq);
-    ok(src_keys[dec_idx].seq == dst_keys[dec_idx].seq);
-    ok(memcmp(src_keys[enc_idx].key, dst_keys[enc_idx].key, PTLS_MAX_SECRET_SIZE) == 0);
-    ok(memcmp(src_keys[dec_idx].key, dst_keys[dec_idx].key, PTLS_MAX_SECRET_SIZE) == 0);
-    ok(memcmp(src_keys[enc_idx].iv, dst_keys[enc_idx].iv, PTLS_MAX_IV_SIZE) == 0);
-    ok(memcmp(src_keys[dec_idx].iv, dst_keys[dec_idx].iv, PTLS_MAX_IV_SIZE) == 0);
+    ok(ptls_get_traffic_keys(dest, 1, dest_keys[enc_idx].key, dest_keys[enc_idx].iv, &dest_keys[enc_idx].seq) == 0);
+    ok(ptls_get_traffic_keys(dest, 0, dest_keys[dec_idx].key, dest_keys[dec_idx].iv, &dest_keys[dec_idx].seq) == 0);
+    ok(src_keys[enc_idx].seq == dest_keys[enc_idx].seq);
+    ok(src_keys[dec_idx].seq == dest_keys[dec_idx].seq);
+    ok(memcmp(src_keys[enc_idx].key, dest_keys[enc_idx].key, PTLS_MAX_SECRET_SIZE) == 0);
+    ok(memcmp(src_keys[dec_idx].key, dest_keys[dec_idx].key, PTLS_MAX_SECRET_SIZE) == 0);
+    ok(memcmp(src_keys[enc_idx].iv, dest_keys[enc_idx].iv, PTLS_MAX_IV_SIZE) == 0);
+    ok(memcmp(src_keys[dec_idx].iv, dest_keys[dec_idx].iv, PTLS_MAX_IV_SIZE) == 0);
 }
 
 static ptls_t *clone_tls(ptls_t *src)
@@ -903,7 +901,8 @@ static ptls_t *clone_tls(ptls_t *src)
     assert(r == 0);
     ptls_buffer_dispose(&sess_data);
 
-    aead_keys_cmp(src, dest);
+    check_clone(src, dest);
+
     return dest;
 }
 
