@@ -5260,7 +5260,7 @@ int ptls_import(ptls_context_t *ctx, ptls_t **tls, ptls_iovec_t params)
                     goto Exit;
                 if ((ret = build_tls13_traffic_protection(*tls, 0, &src, end)) != 0)
                     goto Exit;
-                (*tls)->key_schedule = key_schedule_new((*tls)->cipher_suite, (*tls)->ctx->cipher_suites, (*tls)->ech.aead != NULL);
+                (*tls)->key_schedule = key_schedule_new((*tls)->cipher_suite, NULL, (*tls)->ech.aead != NULL);
                 (*tls)->state = PTLS_STATE_SERVER_POST_HANDSHAKE;
                 goto Exit;
             default:
