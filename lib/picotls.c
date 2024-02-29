@@ -1630,9 +1630,8 @@ static int setup_traffic_protection(ptls_t *tls, int is_enc, const char *secret_
 
     ctx->epoch = epoch;
 
-    if (tls->key_schedule != NULL)
-        log_secret(tls, log_labels[ptls_is_server(tls) == is_enc][epoch],
-                   ptls_iovec_init(ctx->secret, tls->key_schedule->hashes[0].algo->digest_size));
+    log_secret(tls, log_labels[ptls_is_server(tls) == is_enc][epoch],
+               ptls_iovec_init(ctx->secret, tls->key_schedule->hashes[0].algo->digest_size));
 
     /* special path for applications having their own record layer */
     if (tls->ctx->update_traffic_key != NULL) {
@@ -5256,14 +5255,14 @@ int ptls_import(ptls_context_t *ctx, ptls_t **tls, ptls_iovec_t params)
                     goto Exit;
                 }
                 /* setup AEAD keys */
-                if ((ret = build_tls13_traffic_protection(*tls, 1, &src, end)) != 0)
-                    goto Exit;
-                if ((ret = build_tls13_traffic_protection(*tls, 0, &src, end)) != 0)
-                    goto Exit;
                 if (((*tls)->key_schedule = key_schedule_new((*tls)->cipher_suite, NULL, (*tls)->ech.aead != NULL)) == NULL) {
                     ret = PTLS_ERROR_NO_MEMORY;
                     goto Exit;
                 }
+                if ((ret = build_tls13_traffic_protection(*tls, 1, &src, end)) != 0)
+                    goto Exit;
+                if ((ret = build_tls13_traffic_protection(*tls, 0, &src, end)) != 0)
+                    goto Exit;
                 (*tls)->state = PTLS_STATE_SERVER_POST_HANDSHAKE;
                 goto Exit;
             default:
