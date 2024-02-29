@@ -1114,7 +1114,8 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int expect_ticket, int
         ok(ptls_handshake_is_complete(server));
         decbuf.off = 0;
         cbuf.off = 0;
-        server = alloc_and_migrate_tls_context(original_server);
+        if (transfer_session)
+            server = alloc_and_migrate_tls_context(original_server);
 
         ret = ptls_send(server, &sbuf, resp, strlen(resp));
         ok(ret == 0);
