@@ -1588,6 +1588,7 @@ int ptls_handshake_is_complete(ptls_t *tls);
 int ptls_is_psk_handshake(ptls_t *tls);
 /**
  * return if a ECH handshake was performed, as well as optionally the kem and cipher-suite being used
+ * FIXME: this function always return false when the TLS session is exported and imported
  */
 int ptls_is_ech_handshake(ptls_t *tls, uint8_t *config_id, ptls_hpke_kem_t **kem, ptls_hpke_cipher_suite_t **cipher);
 /**
