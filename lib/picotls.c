@@ -5179,8 +5179,7 @@ static int import_tls13_traffic_protection(ptls_t *tls, int is_enc, const uint8_
     if (ptls_decode64(&tp->seq, src, end) != 0)
         return PTLS_ALERT_DECODE_ERROR;
 
-    int skip_notify = is_enc ? 1 : 0;
-    if (setup_traffic_protection(tls, is_enc, NULL, 3, tp->seq, skip_notify) != 0)
+    if (setup_traffic_protection(tls, is_enc, NULL, 3, tp->seq, 0) != 0)
         return PTLS_ERROR_INCOMPATIBLE_KEY;
 
     return 0;
