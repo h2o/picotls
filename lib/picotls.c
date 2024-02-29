@@ -5142,7 +5142,7 @@ int ptls_export(ptls_t *tls, ptls_buffer_t *output)
     }
 }
 
-static int build_tls12_traffic_protection(ptls_t *tls, int is_enc, const uint8_t **src, const uint8_t *const end)
+static int import_tls12_traffic_protection(ptls_t *tls, int is_enc, const uint8_t **src, const uint8_t *const end)
 {
     struct st_ptls_traffic_protection_t *tp = is_enc ? &tls->traffic_protection.enc : &tls->traffic_protection.dec;
 
@@ -5169,7 +5169,7 @@ static int build_tls12_traffic_protection(ptls_t *tls, int is_enc, const uint8_t
     return 0;
 }
 
-static int build_tls13_traffic_protection(ptls_t *tls, int is_enc, const uint8_t **src, const uint8_t *const end)
+static int import_tls13_traffic_protection(ptls_t *tls, int is_enc, const uint8_t **src, const uint8_t *const end)
 {
     struct st_ptls_traffic_protection_t *tp = is_enc ? &tls->traffic_protection.enc : &tls->traffic_protection.dec;
 
@@ -5242,9 +5242,9 @@ int ptls_import(ptls_context_t *ctx, ptls_t **tls, ptls_iovec_t params)
                     goto Exit;
                 }
                 /* setup AEAD keys */
-                if ((ret = build_tls12_traffic_protection(*tls, 1, &src, end)) != 0)
+                if ((ret = import_tls12_traffic_protection(*tls, 1, &src, end)) != 0)
                     goto Exit;
-                if ((ret = build_tls12_traffic_protection(*tls, 0, &src, end)) != 0)
+                if ((ret = import_tls12_traffic_protection(*tls, 0, &src, end)) != 0)
                     goto Exit;
                 break;
             case PTLS_PROTOCOL_VERSION_TLS13:
@@ -5259,9 +5259,9 @@ int ptls_import(ptls_context_t *ctx, ptls_t **tls, ptls_iovec_t params)
                     ret = PTLS_ERROR_NO_MEMORY;
                     goto Exit;
                 }
-                if ((ret = build_tls13_traffic_protection(*tls, 1, &src, end)) != 0)
+                if ((ret = import_tls13_traffic_protection(*tls, 1, &src, end)) != 0)
                     goto Exit;
-                if ((ret = build_tls13_traffic_protection(*tls, 0, &src, end)) != 0)
+                if ((ret = import_tls13_traffic_protection(*tls, 0, &src, end)) != 0)
                     goto Exit;
                 (*tls)->state = PTLS_STATE_SERVER_POST_HANDSHAKE;
                 goto Exit;
