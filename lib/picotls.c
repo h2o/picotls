@@ -5248,7 +5248,6 @@ int ptls_import(ptls_context_t *ctx, ptls_t **tls, ptls_iovec_t params)
                     goto Exit;
                 break;
             case PTLS_PROTOCOL_VERSION_TLS13:
-                assert((*tls)->key_schedule == NULL);
                 (*tls)->cipher_suite = ptls_find_cipher_suite(ctx->cipher_suites, csid);
                 if ((*tls)->cipher_suite == NULL) {
                     ret = PTLS_ALERT_HANDSHAKE_FAILURE;
