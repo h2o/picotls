@@ -5262,11 +5262,10 @@ int ptls_import(ptls_context_t *ctx, ptls_t **tls, ptls_iovec_t params)
                     goto Exit;
                 if ((ret = import_tls13_traffic_protection(*tls, 0, &src, end)) != 0)
                     goto Exit;
-                (*tls)->state = PTLS_STATE_SERVER_POST_HANDSHAKE;
-                goto Exit;
+                break;
             default:
                 ret = PTLS_ALERT_ILLEGAL_PARAMETER;
-                break;
+                goto Exit;
             }
         });
         /* extensions */
