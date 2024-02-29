@@ -891,18 +891,18 @@ static void aead_keys_cmp(ptls_t *src, ptls_t *dst)
     ok(memcmp(src_keys[dec_idx].iv, dst_keys[dec_idx].iv, PTLS_MAX_IV_SIZE) == 0);
 }
 
-static ptls_t *alloc_and_migrate_tls_context(ptls_t *prev_tls)
+static ptls_t *clone_tls(ptls_t *src)
 {
     ptls_buffer_t sess_data;
     ptls_buffer_init(&sess_data, "", 0);
-    int r = ptls_export(prev_tls, &sess_data);
+    int r = ptls_export(src, &sess_data);
     assert(r == 0);
-    ptls_t *tls = NULL;
-    r = ptls_import(ctx_peer, &tls, (ptls_iovec_t){.base = sess_data.base, .len = sess_data.off});
+    ptls_t *dest = NULL;
+    r = ptls_import(ctx_peer, &dest, (ptls_iovec_t){.base = sess_data.base, .len = sess_data.off});
 
     assert(r == 0);
-    aead_keys_cmp(prev_tls, tls);
-    return tls;
+    aead_keys_cmp(src, dest);
+    return dest;
 }
 
 static void test_handshake(ptls_iovec_t ticket, int mode, int expect_ticket, int check_ch, int require_client_authentication,
@@ -1114,7 +1114,7 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int expect_ticket, int
         decbuf.off = 0;
         cbuf.off = 0;
         if (transfer_session)
-            server = alloc_and_migrate_tls_context(original_server);
+            server = clone_tls(original_server);
 
         ret = ptls_send(server, &sbuf, resp, strlen(resp));
         ok(ret == 0);
