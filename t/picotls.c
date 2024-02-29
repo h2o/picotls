@@ -864,7 +864,7 @@ static int can_ech(ptls_context_t *ctx, int is_server)
     }
 }
 
-static void aead_keys_cmp(ptls_t *src, ptls_t *dst, const char **err)
+static void aead_keys_cmp(ptls_t *src, ptls_t *dst)
 {
     ok(src->cipher_suite->hash->digest_size == dst->cipher_suite->hash->digest_size);
     size_t digest_size = dst->cipher_suite->hash->digest_size;
@@ -901,8 +901,7 @@ static ptls_t *alloc_and_migrate_tls_context(ptls_t *prev_tls)
     r = ptls_import(ctx_peer, &tls, (ptls_iovec_t){.base = sess_data.base, .len = sess_data.off});
 
     assert(r == 0);
-    const char *err = NULL;
-    aead_keys_cmp(prev_tls, tls, &err);
+    aead_keys_cmp(prev_tls, tls);
     return tls;
 }
 
