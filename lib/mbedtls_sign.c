@@ -69,6 +69,8 @@ static const ptls_mbedtls_signature_scheme_t ed25519_signature_schemes[] = {
 
 #if defined(MBEDTLS_PEM_PARSE_C)
 
+/* Mapping of MBEDTLS APIs to Picotls */
+
 static int ptls_mbedtls_parse_der_length(const unsigned char* pem_buf, size_t pem_len, size_t* px, size_t *pl)
 {
     int ret = 0;
