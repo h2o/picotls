@@ -37,7 +37,7 @@
 #include <psa/crypto.h>
 #include <psa/crypto_struct.h>
 #include <psa/crypto_values.h>
-#include "ptls_mbedtls.h"
+/* #include "ptls_mbedtls.h" */
 
 
 typedef struct st_ptls_mbedtls_signature_scheme_t {
