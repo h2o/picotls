@@ -20,6 +20,7 @@
 * IN THE SOFTWARE.
 */
 
+
 #ifdef _WINDOWS
 #include "wincompat.h"
 #endif
@@ -36,6 +37,8 @@
 #include <psa/crypto.h>
 #include <psa/crypto_struct.h>
 #include <psa/crypto_values.h>
+#include "ptls_mbedtls.h"
+
 
 typedef struct st_ptls_mbedtls_signature_scheme_t {
     uint16_t scheme_id;
@@ -58,6 +61,7 @@ static const ptls_mbedtls_signature_scheme_t rsa_signature_schemes[] = {
     {PTLS_SIGNATURE_RSA_PSS_RSAE_SHA384, PSA_ALG_SHA_384},
     {PTLS_SIGNATURE_RSA_PSS_RSAE_SHA512, PSA_ALG_SHA_512},
     {UINT16_MAX, PSA_ALG_NONE}};
+
 static const ptls_mbedtls_signature_scheme_t secp256r1_signature_schemes[] = {
     {PTLS_SIGNATURE_ECDSA_SECP256R1_SHA256, PSA_ALG_SHA_256}, {UINT16_MAX, PSA_ALG_NONE}};
 static const ptls_mbedtls_signature_scheme_t secp384r1_signature_schemes[] = {
@@ -178,6 +182,7 @@ static int ptls_mbedtls_parse_eddsa_key(const unsigned char* pem_buf, size_t pem
             ret = -1;
         }
         else {
+
             *key_index = x;
             *key_length = l_key;
         }
@@ -325,6 +330,7 @@ int ptls_mbedtls_get_der_key(mbedtls_pem_context* pem,
         return MBEDTLS_ERR_PK_PASSWORD_REQUIRED;
     }
     else if (ret != MBEDTLS_ERR_PEM_NO_HEADER_FOOTER_PRESENT) {
+
         return ret;
     }
 #endif /* MBEDTLS_RSA_C */
@@ -401,6 +407,7 @@ const ptls_mbedtls_signature_scheme_t* ptls_mbedtls_select_signature_scheme(
     const uint16_t *algorithms, size_t num_algorithms)
 {
     const ptls_mbedtls_signature_scheme_t* scheme;
+
     /* select the algorithm, driven by server-isde preference of `available` */
     for (scheme = available; scheme->scheme_id != UINT16_MAX; ++scheme) {
         for (size_t i = 0; i != num_algorithms; ++i) {
@@ -498,6 +505,7 @@ int ptls_mbedtls_sign_certificate(ptls_sign_certificate_t* _self, ptls_t* tls,
         /* First prepare the hash */
         unsigned char hash_buffer[PTLS_MAX_DIGEST_SIZE];
         unsigned char* hash_value = NULL;
+
         size_t hash_length = 0;
 
         if (scheme->hash_algo == PSA_ALG_NONE) {
@@ -530,7 +538,6 @@ int ptls_mbedtls_sign_certificate(ptls_sign_certificate_t* _self, ptls_t* tls,
             }
             if ((ret = ptls_buffer_reserve(outbuf, nb_bytes)) == 0) {
                 size_t signature_length = 0;
-
                 if (psa_sign_hash(self->key_id, sign_algo, hash_value, hash_length,
                     outbuf->base + outbuf->off, nb_bytes, &signature_length) != 0) {
                     ret = PTLS_ERROR_INCOMPATIBLE_KEY;
@@ -661,7 +668,6 @@ int ptls_mbedtls_set_ec_key_attributes(ptls_mbedtls_sign_certificate_t* signer, 
 
     return ret;
 }
-
 
 int ptls_mbedtls_load_private_key(ptls_context_t* ctx, char const* pem_fname)
 {
