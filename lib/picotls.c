@@ -67,6 +67,7 @@
 #define PTLS_EXTENSION_TYPE_SUPPORTED_VERSIONS 43
 #define PTLS_EXTENSION_TYPE_COOKIE 44
 #define PTLS_EXTENSION_TYPE_PSK_KEY_EXCHANGE_MODES 45
+#define PTLS_EXTENSION_TYPE_CERTIFICATE_AUTHORITIES 47
 #define PTLS_EXTENSION_TYPE_KEY_SHARE 51
 #define PTLS_EXTENSION_TYPE_ECH_OUTER_EXTENSIONS 0xfd00
 #define PTLS_EXTENSION_TYPE_ENCRYPTED_CLIENT_HELLO 0xfe0d
@@ -1614,7 +1615,7 @@ static int get_traffic_keys(ptls_aead_algorithm_t *aead, ptls_hash_algorithm_t *
     return ret;
 }
 
-static int setup_traffic_protection(ptls_t *tls, int is_enc, const char *secret_label, size_t epoch, int skip_notify)
+static int setup_traffic_protection(ptls_t *tls, int is_enc, const char *secret_label, size_t epoch, uint64_t seq, int skip_notify)
 {
     static const char *log_labels[2][4] = {
         {NULL, "CLIENT_EARLY_TRAFFIC_SECRET", "CLIENT_HANDSHAKE_TRAFFIC_SECRET", "CLIENT_TRAFFIC_SECRET_0"},
@@ -1644,7 +1645,7 @@ static int setup_traffic_protection(ptls_t *tls, int is_enc, const char *secret_
     if ((ctx->aead = ptls_aead_new(tls->cipher_suite->aead, tls->cipher_suite->hash, is_enc, ctx->secret,
                                    tls->ctx->hkdf_label_prefix__obsolete)) == NULL)
         return PTLS_ERROR_NO_MEMORY; /* TODO obtain error from ptls_aead_new */
-    ctx->seq = 0;
+    ctx->seq = seq;
 
     PTLS_DEBUGF("[%s] %02x%02x,%02x%02x\n", log_labels[ptls_is_server(tls)][epoch], (unsigned)ctx->secret[0],
                 (unsigned)ctx->secret[1], (unsigned)ctx->aead->static_iv[0], (unsigned)ctx->aead->static_iv[1]);
@@ -1663,7 +1664,7 @@ static int commission_handshake_secret(ptls_t *tls)
     free(tls->pending_handshake_secret);
     tls->pending_handshake_secret = NULL;
 
-    return setup_traffic_protection(tls, is_enc, NULL, 2, 1);
+    return setup_traffic_protection(tls, is_enc, NULL, 2, 0, 1);
 }
 
 static void log_client_random(ptls_t *tls)
@@ -1702,10 +1703,13 @@ static int encode_session_identifier(ptls_context_t *ctx, ptls_buffer_t *buf, ui
         ptls_buffer_push16(buf, csid);
         /* ticket_age_add */
         ptls_buffer_push32(buf, ticket_age_add);
-        /* server-name */
+        /* session ID context */
         ptls_buffer_push_block(buf, 2, {
-            if (server_name != NULL)
+            if (ctx->ticket_context.is_set) {
+                ptls_buffer_pushv(buf, ctx->ticket_context.bytes, sizeof(ctx->ticket_context.bytes));
+            } else if (server_name != NULL) {
                 ptls_buffer_pushv(buf, server_name, strlen(server_name));
+            }
         });
         /* alpn */
         ptls_buffer_push_block(buf, 1, {
@@ -1718,7 +1722,7 @@ Exit:
     return ret;
 }
 
-int decode_session_identifier(uint64_t *issued_at, ptls_iovec_t *psk, uint32_t *ticket_age_add, ptls_iovec_t *server_name,
+int decode_session_identifier(uint64_t *issued_at, ptls_iovec_t *psk, uint32_t *ticket_age_add, ptls_iovec_t *ticket_ctx,
                               uint16_t *key_exchange_id, uint16_t *csid, ptls_iovec_t *negotiated_protocol, const uint8_t *src,
                               const uint8_t *const end)
 {
@@ -1744,7 +1748,7 @@ int decode_session_identifier(uint64_t *issued_at, ptls_iovec_t *psk, uint32_t *
         if ((ret = ptls_decode32(ticket_age_add, &src, end)) != 0)
             goto Exit;
         ptls_decode_open_block(src, end, 2, {
-            *server_name = ptls_iovec_init(src, end - src);
+            *ticket_ctx = ptls_iovec_init(src, end - src);
             src = end;
         });
         ptls_decode_open_block(src, end, 1, {
@@ -1979,7 +1983,7 @@ Exit:
 }
 
 static int select_cipher(ptls_cipher_suite_t **selected, ptls_cipher_suite_t **candidates, const uint8_t *src,
-                         const uint8_t *const end, int server_preference)
+                         const uint8_t *const end, int server_preference, int server_chacha_priority)
 {
     size_t found_index = SIZE_MAX;
     int ret;
@@ -1990,7 +1994,7 @@ static int select_cipher(ptls_cipher_suite_t **selected, ptls_cipher_suite_t **c
             goto Exit;
         for (size_t i = 0; candidates[i] != NULL; ++i) {
             if (candidates[i]->id == id) {
-                if (server_preference) {
+                if (server_preference && !(server_chacha_priority && id == PTLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256)) {
                     /* preserve smallest matching index, and proceed to the next input */
                     if (i < found_index) {
                         found_index = i;
@@ -2003,6 +2007,11 @@ static int select_cipher(ptls_cipher_suite_t **selected, ptls_cipher_suite_t **c
                 }
             }
         }
+        /* first position of the server list matched (server_preference) */
+        if (found_index == 0)
+            break;
+        /* server preference is overridden only if the first entry of client-provided list is chachapoly */
+        server_chacha_priority = 0;
     }
     if (found_index != SIZE_MAX) {
         *selected = candidates[found_index];
@@ -2364,7 +2373,10 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
 
     /* initialize key schedule */
     if (!is_second_flight) {
-        tls->key_schedule = key_schedule_new(tls->cipher_suite, tls->ctx->cipher_suites, tls->ech.aead != NULL);
+        if ((tls->key_schedule = key_schedule_new(tls->cipher_suite, tls->ctx->cipher_suites, tls->ech.aead != NULL)) == NULL) {
+            ret = PTLS_ERROR_NO_MEMORY;
+            goto Exit;
+        }
         if ((ret = key_schedule_extract(tls->key_schedule, resumption_secret)) != 0)
             goto Exit;
     }
@@ -2467,7 +2479,7 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
 
     if (tls->client.using_early_data) {
         assert(!is_second_flight);
-        if ((ret = setup_traffic_protection(tls, 1, "c e traffic", 1, 0)) != 0)
+        if ((ret = setup_traffic_protection(tls, 1, "c e traffic", 1, 0, 0)) != 0)
             goto Exit;
         if ((ret = push_change_cipher_spec(tls, emitter)) != 0)
             goto Exit;
@@ -2783,7 +2795,7 @@ static int client_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
 
     if ((ret = key_schedule_extract(tls->key_schedule, ecdh_secret)) != 0)
         goto Exit;
-    if ((ret = setup_traffic_protection(tls, 0, "s hs traffic", 2, 0)) != 0)
+    if ((ret = setup_traffic_protection(tls, 0, "s hs traffic", 2, 0, 0)) != 0)
         goto Exit;
     if (tls->client.using_early_data) {
         if ((tls->pending_handshake_secret = malloc(PTLS_MAX_DIGEST_SIZE)) == NULL) {
@@ -2796,7 +2808,7 @@ static int client_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
             (ret = tls->ctx->update_traffic_key->cb(tls->ctx->update_traffic_key, tls, 1, 2, tls->pending_handshake_secret)) != 0)
             goto Exit;
     } else {
-        if ((ret = setup_traffic_protection(tls, 1, "c hs traffic", 2, 0)) != 0)
+        if ((ret = setup_traffic_protection(tls, 1, "c hs traffic", 2, 0, 0)) != 0)
             goto Exit;
     }
 
@@ -3361,7 +3373,7 @@ static int client_handle_finished(ptls_t *tls, ptls_message_emitter_t *emitter, 
     /* update traffic keys by using messages upto ServerFinished, but commission them after sending ClientFinished */
     if ((ret = key_schedule_extract(tls->key_schedule, ptls_iovec_init(NULL, 0))) != 0)
         goto Exit;
-    if ((ret = setup_traffic_protection(tls, 0, "s ap traffic", 3, 0)) != 0)
+    if ((ret = setup_traffic_protection(tls, 0, "s ap traffic", 3, 0, 0)) != 0)
         goto Exit;
     if ((ret = derive_secret(tls->key_schedule, send_secret, "c ap traffic")) != 0)
         goto Exit;
@@ -3395,7 +3407,7 @@ static int client_handle_finished(ptls_t *tls, ptls_message_emitter_t *emitter, 
     ret = send_finished(tls, emitter);
 
     memcpy(tls->traffic_protection.enc.secret, send_secret, sizeof(send_secret));
-    if ((ret = setup_traffic_protection(tls, 1, NULL, 3, 0)) != 0)
+    if ((ret = setup_traffic_protection(tls, 1, NULL, 3, 0, 0)) != 0)
         goto Exit;
 
     tls->state = PTLS_STATE_CLIENT_POST_HANDSHAKE;
@@ -3561,10 +3573,10 @@ static int decode_client_hello(ptls_context_t *ctx, struct st_ptls_client_hello_
         src = end;
     });
 
-    /* CH defined in TLS versions below 1.2 might not have extensions (or they might, see what OpenSSL 1.0.0 sends); so bail out
-     * after parsing the main variables. Zero is returned as it is a valid ClientHello. However `ptls_t::selected_version` remains
-     * zero indicating that no compatible version were found. */
-    if (ch->legacy_version < 0x0303 && src == end) {
+    /* In TLS versions 1.2 and earlier CH might not have an extensions block (or they might, see what OpenSSL 1.0.0 sends); so bail
+     * out if that is the case after parsing the main variables. Zero is returned as it is a valid ClientHello. However
+     * `ptls_t::selected_version` remains zero indicating that no compatible version were found. */
+    if (src == end) {
         ret = 0;
         goto Exit;
     }
@@ -3997,7 +4009,7 @@ static int try_psk_handshake(ptls_t *tls, size_t *psk_index, int *accept_early_d
                              ptls_iovec_t ch_trunc)
 {
     ptls_buffer_t decbuf;
-    ptls_iovec_t ticket_psk, ticket_server_name, ticket_negotiated_protocol;
+    ptls_iovec_t ticket_psk, ticket_ctx, ticket_negotiated_protocol;
     uint64_t issue_at, now = tls->ctx->get_time->cb(tls->ctx->get_time);
     uint32_t age_add;
     uint16_t ticket_key_exchange_id, ticket_csid;
@@ -4020,7 +4032,7 @@ static int try_psk_handshake(ptls_t *tls, size_t *psk_index, int *accept_early_d
         default: /* decryption failure */
             continue;
         }
-        if (decode_session_identifier(&issue_at, &ticket_psk, &age_add, &ticket_server_name, &ticket_key_exchange_id, &ticket_csid,
+        if (decode_session_identifier(&issue_at, &ticket_psk, &age_add, &ticket_ctx, &ticket_key_exchange_id, &ticket_csid,
                                       &ticket_negotiated_protocol, decbuf.base, decbuf.base + decbuf.off) != 0)
             continue;
         /* check age */
@@ -4037,15 +4049,22 @@ static int try_psk_handshake(ptls_t *tls, size_t *psk_index, int *accept_early_d
             if (tls->ctx->max_early_data_size != 0 && delta <= PTLS_EARLY_DATA_MAX_DELAY)
                 *accept_early_data = 1;
         }
-        /* check server-name */
-        if (ticket_server_name.len != 0) {
-            if (tls->server_name == NULL)
-                continue;
-            if (!vec_is_string(ticket_server_name, tls->server_name))
+        /* check ticket context */
+        if (tls->ctx->ticket_context.is_set) {
+            if (!(ticket_ctx.len == sizeof(tls->ctx->ticket_context.bytes) &&
+                  memcmp(ticket_ctx.base, tls->ctx->ticket_context.bytes, ticket_ctx.len) == 0))
                 continue;
         } else {
-            if (tls->server_name != NULL)
-                continue;
+            /* check server-name */
+            if (ticket_ctx.len != 0) {
+                if (tls->server_name == NULL)
+                    continue;
+                if (!vec_is_string(ticket_ctx, tls->server_name))
+                    continue;
+            } else {
+                if (tls->server_name != NULL)
+                    continue;
+            }
         }
         { /* check key-exchange */
             ptls_key_exchange_algorithm_t **a;
@@ -4352,12 +4371,16 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
 
     { /* select (or check) cipher-suite, create key_schedule */
         ptls_cipher_suite_t *cs;
-        if ((ret = select_cipher(&cs, tls->ctx->cipher_suites, ch->cipher_suites.base,
-                                 ch->cipher_suites.base + ch->cipher_suites.len, tls->ctx->server_cipher_preference)) != 0)
+        if ((ret =
+                 select_cipher(&cs, tls->ctx->cipher_suites, ch->cipher_suites.base, ch->cipher_suites.base + ch->cipher_suites.len,
+                               tls->ctx->server_cipher_preference, tls->ctx->server_cipher_chacha_priority)) != 0)
             goto Exit;
         if (!is_second_flight) {
             tls->cipher_suite = cs;
-            tls->key_schedule = key_schedule_new(cs, NULL, 0);
+            if ((tls->key_schedule = key_schedule_new(cs, NULL, 0)) == NULL) {
+                ret = PTLS_ERROR_NO_MEMORY;
+                goto Exit;
+            }
         } else {
             if (tls->cipher_suite != cs) {
                 ret = PTLS_ALERT_HANDSHAKE_FAILURE;
@@ -4549,7 +4572,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
         }
         if ((ret = derive_exporter_secret(tls, 1)) != 0)
             goto Exit;
-        if ((ret = setup_traffic_protection(tls, 0, "c e traffic", 1, 0)) != 0)
+        if ((ret = setup_traffic_protection(tls, 0, "c e traffic", 1, 0, 0)) != 0)
             goto Exit;
     }
 
@@ -4608,7 +4631,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
     /* create protection contexts for the handshake */
     assert(tls->key_schedule->generation == 1);
     key_schedule_extract(tls->key_schedule, ecdh_secret);
-    if ((ret = setup_traffic_protection(tls, 1, "s hs traffic", 2, 0)) != 0)
+    if ((ret = setup_traffic_protection(tls, 1, "s hs traffic", 2, 0, 0)) != 0)
         goto Exit;
     if (tls->pending_handshake_secret != NULL) {
         if ((ret = derive_secret(tls->key_schedule, tls->pending_handshake_secret, "c hs traffic")) != 0)
@@ -4617,7 +4640,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
             (ret = tls->ctx->update_traffic_key->cb(tls->ctx->update_traffic_key, tls, 0, 2, tls->pending_handshake_secret)) != 0)
             goto Exit;
     } else {
-        if ((ret = setup_traffic_protection(tls, 0, "c hs traffic", 2, 0)) != 0)
+        if ((ret = setup_traffic_protection(tls, 0, "c hs traffic", 2, 0, 0)) != 0)
             goto Exit;
         if (ch->psk.early_data_indication)
             tls->server.early_data_skipped_bytes = 0;
@@ -4662,10 +4685,9 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
         /* send certificate request if client authentication is activated */
         if (tls->ctx->require_client_authentication) {
             ptls_push_message(emitter, tls->key_schedule, PTLS_HANDSHAKE_TYPE_CERTIFICATE_REQUEST, {
-                /* certificate_request_context, this field SHALL be zero length, unless the certificate
-                 * request is used for post-handshake authentication.
-                 */
                 ptls_buffer_t *sendbuf = emitter->buf;
+                /* certificate_request_context: this field SHALL be zero length, unless the certificate request is used for post-
+                 * handshake authentication. */
                 ptls_buffer_push(sendbuf, 0);
                 /* extensions */
                 ptls_buffer_push_block(sendbuf, 2, {
@@ -4673,6 +4695,19 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
                         if ((ret = push_signature_algorithms(tls->ctx->verify_certificate, sendbuf)) != 0)
                             goto Exit;
                     });
+                    /* certificate authorities entension */
+                    if (tls->ctx->client_ca_names.count > 0) {
+                        buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_CERTIFICATE_AUTHORITIES, {
+                            ptls_buffer_push_block(sendbuf, 2, {
+                                for (size_t i = 0; i != tls->ctx->client_ca_names.count; ++i) {
+                                    ptls_buffer_push_block(sendbuf, 2, {
+                                        ptls_iovec_t name = tls->ctx->client_ca_names.list[i];
+                                        ptls_buffer_pushv(sendbuf, name.base, name.len);
+                                    });
+                                }
+                            });
+                        });
+                    }
                 });
             });
 
@@ -4731,7 +4766,7 @@ static int server_finish_handshake(ptls_t *tls, ptls_message_emitter_t *emitter,
     assert(tls->key_schedule->generation == 2);
     if ((ret = key_schedule_extract(tls->key_schedule, ptls_iovec_init(NULL, 0))) != 0)
         goto Exit;
-    if ((ret = setup_traffic_protection(tls, 1, "s ap traffic", 3, 0)) != 0)
+    if ((ret = setup_traffic_protection(tls, 1, "s ap traffic", 3, 0, 0)) != 0)
         goto Exit;
     if ((ret = derive_secret(tls->key_schedule, tls->server.pending_traffic_secret, "c ap traffic")) != 0)
         goto Exit;
@@ -4792,7 +4827,7 @@ static int server_handle_finished(ptls_t *tls, ptls_iovec_t message)
 
     memcpy(tls->traffic_protection.dec.secret, tls->server.pending_traffic_secret, sizeof(tls->server.pending_traffic_secret));
     ptls_clear_memory(tls->server.pending_traffic_secret, sizeof(tls->server.pending_traffic_secret));
-    if ((ret = setup_traffic_protection(tls, 0, NULL, 3, 0)) != 0)
+    if ((ret = setup_traffic_protection(tls, 0, NULL, 3, 0, 0)) != 0)
         return ret;
 
     ptls__key_schedule_update_hash(tls->key_schedule, message.base, message.len, 0);
@@ -4812,7 +4847,7 @@ static int update_traffic_key(ptls_t *tls, int is_enc)
                                       "traffic upd", ptls_iovec_init(NULL, 0), NULL)) != 0)
         goto Exit;
     memcpy(tp->secret, secret, sizeof(secret));
-    ret = setup_traffic_protection(tls, is_enc, NULL, 3, 1);
+    ret = setup_traffic_protection(tls, is_enc, NULL, 3, 0, 1);
 
 Exit:
     ptls_clear_memory(secret, sizeof(secret));
@@ -4982,6 +5017,28 @@ ptls_t *ptls_server_new(ptls_context_t *ctx)
     return tls;
 }
 
+#define export_tls_params(output, is_server, session_reused, protocol_version, cipher, client_random, server_name,                 \
+                          negotiated_protocol, ver_block)                                                                          \
+    do {                                                                                                                           \
+        const char *_server_name = (server_name);                                                                                  \
+        ptls_iovec_t _negotiated_protocol = (negotiated_protocol);                                                                 \
+        ptls_buffer_push_block((output), 2, {                                                                                      \
+            ptls_buffer_push((output), (is_server));                                                                               \
+            ptls_buffer_push((output), (session_reused));                                                                          \
+            ptls_buffer_push16((output), (protocol_version));                                                                      \
+            ptls_buffer_push16((output), (cipher)->id);                                                                            \
+            ptls_buffer_pushv((output), (client_random), PTLS_HELLO_RANDOM_SIZE);                                                  \
+            ptls_buffer_push_block((output), 2, {                                                                                  \
+                size_t len = _server_name != NULL ? strlen(_server_name) : 0;                                                      \
+                ptls_buffer_pushv((output), _server_name, len);                                                                    \
+            });                                                                                                                    \
+            ptls_buffer_push_block((output), 2,                                                                                    \
+                                   { ptls_buffer_pushv((output), _negotiated_protocol.base, _negotiated_protocol.len); });         \
+            ptls_buffer_push_block((output), 2, {ver_block}); /* version-specific block */                                         \
+            ptls_buffer_push_block((output), 2, {});          /* for future extensions */                                          \
+        });                                                                                                                        \
+    } while (0)
+
 static int export_tls12_params(ptls_buffer_t *output, int is_server, int session_reused, ptls_cipher_suite_t *cipher,
                                const void *client_random, const char *server_name, ptls_iovec_t negotiated_protocol,
                                const void *enc_key, const void *enc_iv, uint64_t enc_seq, uint64_t enc_record_iv,
@@ -4989,29 +5046,18 @@ static int export_tls12_params(ptls_buffer_t *output, int is_server, int session
 {
     int ret;
 
-    ptls_buffer_push_block(output, 2, {
-        ptls_buffer_push(output, is_server);
-        ptls_buffer_push(output, session_reused);
-        ptls_buffer_push16(output, PTLS_PROTOCOL_VERSION_TLS12);
-        ptls_buffer_push16(output, cipher->id);
-        ptls_buffer_pushv(output, client_random, PTLS_HELLO_RANDOM_SIZE);
-        ptls_buffer_push_block(output, 2, {
-            size_t len = server_name != NULL ? strlen(server_name) : 0;
-            ptls_buffer_pushv(output, server_name, len);
-        });
-        ptls_buffer_push_block(output, 2, { ptls_buffer_pushv(output, negotiated_protocol.base, negotiated_protocol.len); });
-        ptls_buffer_push_block(output, 2, {
-            ptls_buffer_pushv(output, enc_key, cipher->aead->key_size);
-            ptls_buffer_pushv(output, enc_iv, cipher->aead->tls12.fixed_iv_size);
-            ptls_buffer_push64(output, enc_seq);
-            if (cipher->aead->tls12.record_iv_size != 0)
-                ptls_buffer_push64(output, enc_record_iv);
-            ptls_buffer_pushv(output, dec_key, cipher->aead->key_size);
-            ptls_buffer_pushv(output, dec_iv, cipher->aead->tls12.fixed_iv_size);
-            ptls_buffer_push64(output, dec_seq);
-        });
-        ptls_buffer_push_block(output, 2, {}); /* for future extensions */
-    });
+    export_tls_params(output, is_server, session_reused, PTLS_PROTOCOL_VERSION_TLS12, cipher, client_random, server_name,
+                      negotiated_protocol, {
+                          ptls_buffer_pushv(output, enc_key, cipher->aead->key_size);
+                          ptls_buffer_pushv(output, enc_iv, cipher->aead->tls12.fixed_iv_size);
+                          ptls_buffer_push64(output, enc_seq);
+                          if (cipher->aead->tls12.record_iv_size != 0)
+                              ptls_buffer_push64(output, enc_record_iv);
+                          ptls_buffer_pushv(output, dec_key, cipher->aead->key_size);
+                          ptls_buffer_pushv(output, dec_iv, cipher->aead->tls12.fixed_iv_size);
+                          ptls_buffer_push64(output, dec_seq);
+                      });
+    ret = 0;
 
 Exit:
     return ret;
@@ -5059,20 +5105,39 @@ Exit:
 
 int ptls_export(ptls_t *tls, ptls_buffer_t *output)
 {
-    /* TODO add tls13 support */
-    if (!tls->traffic_protection.enc.tls12)
-        return PTLS_ERROR_LIBRARY;
-
     ptls_iovec_t negotiated_protocol =
         ptls_iovec_init(tls->negotiated_protocol, tls->negotiated_protocol != NULL ? strlen(tls->negotiated_protocol) : 0);
-    return export_tls12_params(output, tls->is_server, tls->is_psk_handshake, tls->cipher_suite, tls->client_random,
-                               tls->server_name, negotiated_protocol, tls->traffic_protection.enc.secret,
-                               tls->traffic_protection.enc.secret + PTLS_MAX_SECRET_SIZE, tls->traffic_protection.enc.seq,
-                               tls->traffic_protection.enc.tls12_enc_record_iv, tls->traffic_protection.dec.secret,
-                               tls->traffic_protection.dec.secret + PTLS_MAX_SECRET_SIZE, tls->traffic_protection.dec.seq);
+    int ret;
+
+    if (tls->state != PTLS_STATE_SERVER_POST_HANDSHAKE) {
+        ret = PTLS_ERROR_LIBRARY;
+        goto Exit;
+    }
+
+    if (ptls_get_protocol_version(tls) == PTLS_PROTOCOL_VERSION_TLS13) {
+        export_tls_params(output, tls->is_server, tls->is_psk_handshake, PTLS_PROTOCOL_VERSION_TLS13, tls->cipher_suite,
+                          tls->client_random, tls->server_name, negotiated_protocol, {
+                              ptls_buffer_pushv(output, tls->traffic_protection.enc.secret, tls->cipher_suite->hash->digest_size);
+                              ptls_buffer_push64(output, tls->traffic_protection.enc.seq);
+                              ptls_buffer_pushv(output, tls->traffic_protection.dec.secret, tls->cipher_suite->hash->digest_size);
+                              ptls_buffer_push64(output, tls->traffic_protection.dec.seq);
+                          });
+        ret = 0;
+    } else {
+        if ((ret = export_tls12_params(output, tls->is_server, tls->is_psk_handshake, tls->cipher_suite, tls->client_random,
+                                       tls->server_name, negotiated_protocol, tls->traffic_protection.enc.secret,
+                                       tls->traffic_protection.enc.secret + PTLS_MAX_SECRET_SIZE, tls->traffic_protection.enc.seq,
+                                       tls->traffic_protection.enc.tls12_enc_record_iv, tls->traffic_protection.dec.secret,
+                                       tls->traffic_protection.dec.secret + PTLS_MAX_SECRET_SIZE,
+                                       tls->traffic_protection.dec.seq)) != 0)
+            goto Exit;
+    }
+
+Exit:
+    return ret;
 }
 
-static int build_tls12_traffic_protection(ptls_t *tls, int is_enc, const uint8_t **src, const uint8_t *const end)
+static int import_tls12_traffic_protection(ptls_t *tls, int is_enc, const uint8_t **src, const uint8_t *const end)
 {
     struct st_ptls_traffic_protection_t *tp = is_enc ? &tls->traffic_protection.enc : &tls->traffic_protection.dec;
 
@@ -5095,6 +5160,22 @@ static int build_tls12_traffic_protection(ptls_t *tls, int is_enc, const uint8_t
     /* instantiate aead */
     if ((tp->aead = ptls_aead_new_direct(tls->cipher_suite->aead, is_enc, tp->secret, tp->secret + PTLS_MAX_SECRET_SIZE)) == NULL)
         return PTLS_ERROR_NO_MEMORY;
+
+    return 0;
+}
+
+static int import_tls13_traffic_protection(ptls_t *tls, int is_enc, const uint8_t **src, const uint8_t *const end)
+{
+    struct st_ptls_traffic_protection_t *tp = is_enc ? &tls->traffic_protection.enc : &tls->traffic_protection.dec;
+
+    /* set properties */
+    memcpy(tp->secret, *src, tls->cipher_suite->hash->digest_size);
+    *src += tls->cipher_suite->hash->digest_size;
+    if (ptls_decode64(&tp->seq, src, end) != 0)
+        return PTLS_ALERT_DECODE_ERROR;
+
+    if (setup_traffic_protection(tls, is_enc, NULL, 3, tp->seq, 0) != 0)
+        return PTLS_ERROR_INCOMPATIBLE_KEY;
 
     return 0;
 }
@@ -5124,11 +5205,6 @@ int ptls_import(ptls_context_t *ctx, ptls_t **tls, ptls_iovec_t params)
             goto Exit;
         if ((ret = ptls_decode16(&csid, &src, end)) != 0)
             goto Exit;
-        (*tls)->cipher_suite = ptls_find_cipher_suite(ctx->tls12_cipher_suites, csid);
-        if ((*tls)->cipher_suite == NULL) {
-            ret = PTLS_ALERT_HANDSHAKE_FAILURE;
-            goto Exit;
-        }
         /* other version-independent stuff */
         if (end - src < PTLS_HELLO_RANDOM_SIZE) {
             ret = PTLS_ALERT_DECODE_ERROR;
@@ -5154,15 +5230,36 @@ int ptls_import(ptls_context_t *ctx, ptls_t **tls, ptls_iovec_t params)
         ptls_decode_open_block(src, end, 2, {
             switch (protocol_version) {
             case PTLS_PROTOCOL_VERSION_TLS12:
-                /* setup AEAD keys */
-                if ((ret = build_tls12_traffic_protection(*tls, 1, &src, end)) != 0)
+                (*tls)->cipher_suite = ptls_find_cipher_suite(ctx->tls12_cipher_suites, csid);
+                if ((*tls)->cipher_suite == NULL) {
+                    ret = PTLS_ALERT_HANDSHAKE_FAILURE;
                     goto Exit;
-                if ((ret = build_tls12_traffic_protection(*tls, 0, &src, end)) != 0)
+                }
+                /* setup AEAD keys */
+                if ((ret = import_tls12_traffic_protection(*tls, 1, &src, end)) != 0)
+                    goto Exit;
+                if ((ret = import_tls12_traffic_protection(*tls, 0, &src, end)) != 0)
+                    goto Exit;
+                break;
+            case PTLS_PROTOCOL_VERSION_TLS13:
+                (*tls)->cipher_suite = ptls_find_cipher_suite(ctx->cipher_suites, csid);
+                if ((*tls)->cipher_suite == NULL) {
+                    ret = PTLS_ALERT_HANDSHAKE_FAILURE;
+                    goto Exit;
+                }
+                /* setup AEAD keys */
+                if (((*tls)->key_schedule = key_schedule_new((*tls)->cipher_suite, NULL, (*tls)->ech.aead != NULL)) == NULL) {
+                    ret = PTLS_ERROR_NO_MEMORY;
+                    goto Exit;
+                }
+                if ((ret = import_tls13_traffic_protection(*tls, 1, &src, end)) != 0)
+                    goto Exit;
+                if ((ret = import_tls13_traffic_protection(*tls, 0, &src, end)) != 0)
                     goto Exit;
                 break;
             default:
                 ret = PTLS_ALERT_ILLEGAL_PARAMETER;
-                break;
+                goto Exit;
             }
         });
         /* extensions */
@@ -5876,9 +5973,11 @@ int ptls_send(ptls_t *tls, ptls_buffer_t *sendbuf, const void *input, size_t inl
     assert(tls->traffic_protection.enc.aead != NULL);
 
     /* "For AES-GCM, up to 2^24.5 full-size records (about 24 million) may be encrypted on a given connection while keeping a
-     * safety margin of approximately 2^-57 for Authenticated Encryption (AE) security." (RFC 8446 section 5.5)
+     * safety margin of approximately 2^-57 for Authenticated Encryption (AE) security." (RFC 8446 section 5.5).
+     *
+     * Key updates do not happen with tls 1.2, check `key_schedule` to see if we are using tls/1.3
      */
-    if (tls->traffic_protection.enc.seq >= 16777216)
+    if (tls->traffic_protection.enc.seq >= 16777216 && tls->key_schedule != NULL)
         tls->needs_key_update = 1;
 
     if (tls->needs_key_update) {
@@ -6195,7 +6294,6 @@ ptls_aead_context_t *new_aead(ptls_aead_algorithm_t *aead, ptls_hash_algorithm_t
     if ((ret = get_traffic_keys(aead, hash, key_iv.key, key_iv.iv, secret, hash_value, label_prefix)) != 0)
         goto Exit;
     ctx = ptls_aead_new_direct(aead, is_enc, key_iv.key, key_iv.iv);
-
 Exit:
     ptls_clear_memory(&key_iv, sizeof(key_iv));
     return ctx;
