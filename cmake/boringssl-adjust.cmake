@@ -1,5 +1,5 @@
 FUNCTION (BORINGSSL_ADJUST)
-    cmake_minimum_required(VERSION 3.14)
+    cmake_minimum_required(VERSION 3.3)
 
     IF (OPENSSL_FOUND AND EXISTS "${OPENSSL_INCLUDE_DIR}/openssl/base.h")
         MESSAGE(STATUS "  BoringSSL found; assuming OpenSSL 1.1.1 compatibility")
@@ -12,8 +12,6 @@ FUNCTION (BORINGSSL_ADJUST)
             SET (OPENSSL_CRYPTO_LIBRARIES "${OPENSSL_CRYPTO_LIBRARIES}" PARENT_SCOPE)
             LIST(APPEND OPENSSL_LIBRARIES "BoringSSL::decrepit")
             set (OPENSSL_LIBRARIES ${OPENSSL_LIBRARIES} PARENT_SCOPE)
-
-            message("Appending decrepit: ${OPENSSL_LIBRARIES}")
 
         else ()
             LIST(GET OPENSSL_CRYPTO_LIBRARIES 0 OPENSSL_ONE_LIB_PATH)
