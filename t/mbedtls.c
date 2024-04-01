@@ -112,30 +112,24 @@ int main(int argc, char **argv)
     ptls_minicrypto_secp256r1sha256_sign_certificate_t minicrypto_sign_certificate;
     ptls_minicrypto_init_secp256r1sha256_sign_certificate(
         &minicrypto_sign_certificate, ptls_iovec_init(SECP256R1_PRIVATE_KEY, sizeof(SECP256R1_PRIVATE_KEY) - 1));
-    ptls_context_t minicrypto_ctx = {ptls_minicrypto_random_bytes,
-                                     &ptls_get_time,
-                                     ptls_minicrypto_key_exchanges,
-                                     ptls_minicrypto_cipher_suites,
-                                     {&secp256r1_certificate, 1},
-                                     {{NULL}},
-                                     NULL,
-                                     NULL,
-                                     &minicrypto_sign_certificate.super};
+    ptls_context_t minicrypto_ctx = {.random_bytes = ptls_minicrypto_random_bytes,
+                                     .get_time = &ptls_get_time,
+                                     .key_exchanges = ptls_minicrypto_key_exchanges,
+                                     .cipher_suites = ptls_minicrypto_cipher_suites,
+                                     .certificates = {&secp256r1_certificate, 1},
+                                     .sign_certificate = &minicrypto_sign_certificate.super};
 
     /* context using mbedtls as backend; minicrypto is used for signing certificate as the mbedtls backend does not (yet) have the
      * capability */
     ptls_minicrypto_secp256r1sha256_sign_certificate_t mbedtls_sign_certificate;
     ptls_minicrypto_init_secp256r1sha256_sign_certificate(
         &mbedtls_sign_certificate, ptls_iovec_init(SECP256R1_PRIVATE_KEY, sizeof(SECP256R1_PRIVATE_KEY) - 1));
-    ptls_context_t mbedtls_ctx = {ptls_mbedtls_random_bytes,
-                                  &ptls_get_time,
-                                  ptls_mbedtls_key_exchanges,
-                                  ptls_mbedtls_cipher_suites,
-                                  {&secp256r1_certificate, 1},
-                                  {{NULL}},
-                                  NULL,
-                                  NULL,
-                                  &mbedtls_sign_certificate.super};
+    ptls_context_t mbedtls_ctx = {.random_bytes = ptls_mbedtls_random_bytes,
+                                  .get_time = &ptls_get_time,
+                                  .key_exchanges = ptls_mbedtls_key_exchanges,
+                                  .cipher_suites = ptls_mbedtls_cipher_suites,
+                                  .certificates = {&secp256r1_certificate, 1},
+                                  .sign_certificate = &mbedtls_sign_certificate.super};
 
     ctx = &mbedtls_ctx;
     ctx_peer = &mbedtls_ctx;
