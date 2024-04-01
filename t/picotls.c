@@ -1621,10 +1621,8 @@ static void test_ech_config_mismatch(void)
 
 static void do_test_pre_shared_key(int clear_ke)
 {
-    struct {
-        ptls_key_exchange_algorithm_t **key_exchanges;
-        uint32_t max_early_data_size;
-    } backup = {ctx->key_exchanges, ctx->max_early_data_size};
+    ptls_context_t ctx_backup = *ctx;
+
     if (clear_ke)
         ctx->key_exchanges = NULL;
     ctx->max_early_data_size = 16384;
@@ -1719,17 +1717,13 @@ static void do_test_pre_shared_key(int clear_ke)
     ptls_free(client);
     ptls_free(server);
 
-    ctx->key_exchanges = backup.key_exchanges;
-    ctx->max_early_data_size = backup.max_early_data_size;
-    ctx->pre_shared_key.identity = ptls_iovec_init(NULL, 0);
-    ctx->pre_shared_key.secret = ptls_iovec_init(NULL, 0);
-    ctx->pre_shared_key.hash = NULL;
+    *ctx = ctx_backup;
 }
 
 static void test_pre_shared_key(void)
 {
-    do_test_pre_shared_key(0);
-    do_test_pre_shared_key(1);
+    subtest("without key-share", do_test_pre_shared_key, 0);
+    subtest("with key-share", do_test_pre_shared_key, 1);
 }
 
 typedef uint8_t traffic_secrets_t[2 /* is_enc */][4 /* epoch */][PTLS_MAX_DIGEST_SIZE /* octets */];
