@@ -1641,8 +1641,15 @@ static int setup_traffic_protection(ptls_t *tls, int is_enc, const char *secret_
         return PTLS_ERROR_NO_MEMORY; /* TODO obtain error from ptls_aead_new */
     ctx->seq = seq;
 
-    PTLS_DEBUGF("[%s] %02x%02x,%02x%02x\n", log_labels[ptls_is_server(tls)][epoch], (unsigned)ctx->secret[0],
-                (unsigned)ctx->secret[1], (unsigned)ctx->aead->static_iv[0], (unsigned)ctx->aead->static_iv[1]);
+#if defined(PTLS_DEBUG) && PTLS_DEBUG
+    {
+        uint8_t static_iv[PTLS_MAX_IV_SIZE];
+        ptls_aead_get_iv(ctx->aead, static_iv);
+        PTLS_DEBUGF("[%s] %02x%02x,%02x%02x\n", log_labels[ptls_is_server(tls)][epoch], (unsigned)ctx->secret[0],
+                    (unsigned)ctx->secret[1], static_iv[0], static_iv[1]);
+    }
+#endif
+
 
     return 0;
 }
