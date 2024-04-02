@@ -1619,12 +1619,36 @@ static void test_ech_config_mismatch(void)
     free(retry_configs.base);
 }
 
-static void do_test_pre_shared_key(int clear_ke)
+static void do_test_pre_shared_key(int mode)
 {
     ptls_context_t ctx_backup = *ctx;
+    ptls_key_exchange_algorithm_t *alternate_keyex[3];
+    size_t client_max_early_data_size = 0;
+    ptls_handshake_properties_t client_prop = {.client.max_early_data_size = &client_max_early_data_size};
 
-    if (clear_ke)
+    switch (mode) {
+    case 0: /* no keyex */
         ctx->key_exchanges = NULL;
+        break;
+    case 1: /* keyex match */
+        break;
+    case 2: /* keyex mismatch */
+        if (!(ctx->key_exchanges[0] != NULL && ctx->key_exchanges[1] != NULL)) {
+            note("keyex mismatch test requires two key exchange algorithms");
+            return;
+        }
+        alternate_keyex[0] = ctx->key_exchanges[1];
+        alternate_keyex[1] = ctx->key_exchanges[0];
+        alternate_keyex[2] = NULL;
+        ctx->key_exchanges = alternate_keyex;
+        break;
+    case 3: /* negotiate */
+        client_prop.client.negotiate_before_key_exchange = 1;
+        break;
+    default:
+        assert(!"FIXME");
+    }
+
     ctx->max_early_data_size = 16384;
     assert(ctx->pre_shared_key.identity.len == 0 && ctx->pre_shared_key.secret.len == 0);
     ctx->pre_shared_key.identity = ptls_iovec_init("", 1);
@@ -1643,10 +1667,6 @@ static void do_test_pre_shared_key(int clear_ke)
     ptls_buffer_init(&sbuf, "", 0);
     ptls_buffer_init(&decbuf, "", 0);
 
-    ptls_handshake_properties_t client_prop = {{{{NULL}}}};
-    size_t client_max_early_data_size = 0;
-    client_prop.client.max_early_data_size = &client_max_early_data_size;
-
     /* [client] send CH and early data */
     int ret = ptls_handshake(client, &cbuf, NULL, NULL, &client_prop);
     ok(ret == PTLS_ERROR_IN_PROGRESS);
@@ -1658,20 +1678,35 @@ static void do_test_pre_shared_key(int clear_ke)
     /* [server] read CH and generate up to ServerFinished */
     size_t consumed = cbuf.off;
     ret = ptls_handshake(server, &sbuf, cbuf.base, &consumed, NULL);
-    ok(ret == 0);
-    ok(consumed < cbuf.off);
+    ok(consumed <= cbuf.off);
     memmove(cbuf.base, cbuf.base + consumed, cbuf.off - consumed);
     cbuf.off -= consumed;
-
-    /* [server] read early data */
-    consumed = cbuf.off;
-    ret = ptls_receive(server, &decbuf, cbuf.base, &consumed);
-    ok(ret == 0);
-    ok(consumed == cbuf.off);
-    cbuf.off = 0;
-    ok(decbuf.off == 5);
-    ok(memcmp(decbuf.base, "hello", 5) == 0);
-    decbuf.off = 0;
+    if (mode >= 2) {
+        ok(ret == PTLS_ERROR_IN_PROGRESS);
+        ok(cbuf.off == 0);
+        consumed = sbuf.off;
+        ret = ptls_handshake(client, &cbuf, sbuf.base, &consumed, &client_prop);
+        ok(ret == PTLS_ERROR_IN_PROGRESS);
+        ok(client_prop.client.early_data_acceptance == PTLS_EARLY_DATA_REJECTED);
+        ok(consumed == sbuf.off);
+        sbuf.off = 0;
+        consumed = cbuf.off;
+        ret = ptls_handshake(server, &sbuf, cbuf.base, &consumed, NULL);
+        ok(ret == 0);
+        ok(consumed == cbuf.off);
+        cbuf.off = 0;
+    } else {
+        ok(ret == 0);
+        /* [server] read early data */
+        consumed = cbuf.off;
+        ret = ptls_receive(server, &decbuf, cbuf.base, &consumed);
+        ok(ret == 0);
+        ok(consumed == cbuf.off);
+        cbuf.off = 0;
+        ok(decbuf.off == 5);
+        ok(memcmp(decbuf.base, "hello", 5) == 0);
+        decbuf.off = 0;
+    }
 
     /* [server] write 0.5-RTT data */
     ret = ptls_send(server, &sbuf, "hi", 2);
@@ -1722,8 +1757,10 @@ static void do_test_pre_shared_key(int clear_ke)
 
 static void test_pre_shared_key(void)
 {
-    subtest("without key-share", do_test_pre_shared_key, 0);
-    subtest("with key-share", do_test_pre_shared_key, 1);
+    subtest("key-share:no", do_test_pre_shared_key, 0);
+    subtest("key-share:yes", do_test_pre_shared_key, 1);
+    subtest("key-share:mismatch", do_test_pre_shared_key, 2);
+    subtest("key-share:negotiate", do_test_pre_shared_key, 3);
 }
 
 typedef uint8_t traffic_secrets_t[2 /* is_enc */][4 /* epoch */][PTLS_MAX_DIGEST_SIZE /* octets */];
