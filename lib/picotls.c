@@ -1372,10 +1372,17 @@ void ptls__key_schedule_update_hash(ptls_key_schedule_t *sched, const uint8_t *m
 {
     size_t i;
 
-    PTLS_DEBUGF("%s:%zu\n", __FUNCTION__, msglen);
+    PTLS_DEBUGF("%s:%p:len=%zu\n", __FUNCTION__, sched, msglen);
     for (i = 0; i != sched->num_hashes; ++i) {
         ptls_hash_context_t *ctx = use_outer ? sched->hashes[i].ctx_outer : sched->hashes[i].ctx;
         ctx->update(ctx, msg, msglen);
+#if defined(PTLS_DEBUG) && PTLS_DEBUG
+        {
+            uint8_t digest[PTLS_MAX_DIGEST_SIZE];
+            ctx->final(ctx, digest, PTLS_HASH_FINAL_MODE_SNAPSHOT);
+            PTLS_DEBUGF("  %zu: %02x%02x%02x%02x\n", i, digest[0], digest[1], digest[2], digest[3]);
+        }
+#endif
     }
 }
 
