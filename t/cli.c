@@ -385,6 +385,7 @@ static void usage(const char *cmd)
            "                       argument is ignored.\n"
            "  -p psk-identity      name of the PSK key; if set, -c and -C specify the\n"
            "                       pre-shared secret\n"
+           "  -P psk-hash          hash function associated to the PSK (default: sha256)\n"
            "  -u                   update the traffic key when handshake is complete\n"
            "  -v                   verify peer using the default certificates\n"
            "  -V CA-root-file      verify peer using the CA Root File\n"
@@ -446,14 +447,14 @@ int main(int argc, char **argv)
         .ech = {.client = {ptls_openssl_hpke_cipher_suites, ptls_openssl_hpke_kems}, .server = {NULL /* activated by -K option */}},
     };
     ptls_handshake_properties_t hsprop = {{{{NULL}}}};
-    const char *host, *port, *input_file = NULL;
+    const char *host, *port, *input_file = NULL, *psk_hash = "sha256";
     int is_server = 0, use_early_data = 0, request_key_update = 0, keep_sender_open = 0, ch;
     struct sockaddr_storage sa;
     socklen_t salen;
     int family = 0;
     const char *raw_pub_key_file = NULL, *cert_location = NULL;
 
-    while ((ch = getopt(argc, argv, "46abBC:c:i:Ij:k:nN:es:Sr:p:E:K:l:y:vV:h")) != -1) {
+    while ((ch = getopt(argc, argv, "46abBC:c:i:Ij:k:nN:es:Sr:p:P:E:K:l:y:vV:h")) != -1) {
         switch (ch) {
         case '4':
             family = AF_INET;
@@ -507,6 +508,9 @@ int main(int argc, char **argv)
             break;
         case 'p':
             ctx.pre_shared_key.identity = ptls_iovec_init(optarg, strlen(optarg));
+            break;
+        case 'P':
+            psk_hash = optarg;
             break;
         case 's':
             setup_session_file(&ctx, &hsprop, optarg);
@@ -651,9 +655,19 @@ int main(int argc, char **argv)
     if (key_exchanges[0] == NULL)
         key_exchanges[0] = &ptls_openssl_secp256r1;
     if (cipher_suites[0] == NULL) {
-        size_t i;
-        for (i = 0; ptls_openssl_cipher_suites[i] != NULL; ++i)
+        for (size_t i = 0; ptls_openssl_cipher_suites[i] != NULL; ++i)
             cipher_suites[i] = ptls_openssl_cipher_suites[i];
+    }
+    if (ctx.pre_shared_key.identity.base != NULL) {
+        size_t i;
+        for (i = 0; cipher_suites[i] != NULL; ++i)
+            if (strcmp(cipher_suites[i]->hash->name, psk_hash) == 0)
+                break;
+        if (cipher_suites[i] == NULL) {
+            fprintf(stderr, "no compatible cipher-suite for psk hash: %s\n", psk_hash);
+            exit(1);
+        }
+        ctx.pre_shared_key.hash = cipher_suites[i]->hash;
     }
     if (argc != 2) {
         fprintf(stderr, "missing host and port\n");
