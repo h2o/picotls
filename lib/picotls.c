@@ -4477,6 +4477,9 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
     }
 
     if (!is_second_flight) {
+        /* the only ikm we adopt alongside HRR is the external PSK; session tickets are disregarded when sending HRR */
+        ptls_iovec_t ikm_of_1st_ch = tls->ctx->pre_shared_key.secret;
+
         if (ch->cookie.all.len != 0 && key_share.algorithm != NULL) {
 
             /* use cookie to check the integrity of the handshake, and update the context */
@@ -4493,7 +4496,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
             /* integrity check passed; update states */
             key_schedule_update_ch1hash_prefix(tls->key_schedule);
             ptls__key_schedule_update_hash(tls->key_schedule, ch->cookie.ch1_hash.base, ch->cookie.ch1_hash.len, 0);
-            key_schedule_extract(tls->key_schedule, ptls_iovec_init(NULL, 0));
+            key_schedule_extract(tls->key_schedule, ikm_of_1st_ch);
             /* ... reusing sendbuf to rebuild HRR for hash calculation */
             size_t hrr_start = emitter->buf->off;
             EMIT_HELLO_RETRY_REQUEST(tls->key_schedule, ch->cookie.sent_key_share ? key_share.algorithm : NULL,
@@ -4526,7 +4529,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
                 properties != NULL && properties->server.retry_uses_cookie && !ptls_is_ech_handshake(tls, NULL, NULL, NULL);
             if (!retry_uses_cookie) {
                 key_schedule_transform_post_ch1hash(tls->key_schedule);
-                key_schedule_extract(tls->key_schedule, ptls_iovec_init(NULL, 0));
+                key_schedule_extract(tls->key_schedule, ikm_of_1st_ch);
             }
             size_t ech_confirm_off = 0;
             EMIT_HELLO_RETRY_REQUEST(
