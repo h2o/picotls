@@ -1318,7 +1318,7 @@ static int key_schedule_extract(ptls_key_schedule_t *sched, ptls_iovec_t ikm)
     return ret;
 }
 
-static int key_schedule_select_cipher(ptls_key_schedule_t *sched, ptls_cipher_suite_t *cs, int reset)
+static int key_schedule_select_cipher(ptls_key_schedule_t *sched, ptls_cipher_suite_t *cs, int reset, ptls_iovec_t reset_ikm)
 {
     size_t found_slot = SIZE_MAX, i;
     int ret;
@@ -1346,7 +1346,7 @@ static int key_schedule_select_cipher(ptls_key_schedule_t *sched, ptls_cipher_su
     if (reset) {
         --sched->generation;
         memset(sched->secret, 0, sizeof(sched->secret));
-        if ((ret = key_schedule_extract(sched, ptls_iovec_init(NULL, 0))) != 0)
+        if ((ret = key_schedule_extract(sched, reset_ikm)) != 0)
             goto Exit;
     }
 
@@ -2316,8 +2316,8 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
     if (tls->server_name != NULL && !ptls_server_name_is_ipaddr(tls->server_name))
         sni_name = tls->server_name;
 
+    /* try to use ECH (ignore broken ECHConfigList; it is delivered insecurely) */
     if (properties != NULL) {
-        /* try to use ECH (ignore broken ECHConfigList; it is delivered insecurely) */
         if (!is_second_flight && sni_name != NULL && tls->ctx->ech.client.ciphers != NULL) {
             if (properties->client.ech.configs.len != 0) {
                 struct st_decoded_ech_config_t decoded;
@@ -2332,47 +2332,52 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
                                         sni_name);
             }
         }
-        /* setup resumption-related data. If successful, psk_secret becomes a non-zero value. */
-        if (properties->client.session_ticket.base != NULL && tls->ctx->key_exchanges != NULL &&
-            tls->ctx->pre_shared_key.identity.base == NULL) {
-            ptls_key_exchange_algorithm_t *key_share = NULL;
-            ptls_cipher_suite_t *cipher_suite = NULL;
-            uint32_t max_early_data_size;
-            if (decode_stored_session_ticket(tls, &key_share, &cipher_suite, &psk_secret, &obfuscated_ticket_age, &psk_identity,
-                                             &max_early_data_size, properties->client.session_ticket.base,
-                                             properties->client.session_ticket.base + properties->client.session_ticket.len) == 0) {
-                tls->client.offered_psk = 1;
-                /* key-share selected by HRR should not be overridden */
-                if (tls->key_share == NULL)
-                    tls->key_share = key_share;
-                tls->cipher_suite = cipher_suite;
-                if (!is_second_flight && max_early_data_size != 0 && properties->client.max_early_data_size != NULL) {
-                    tls->client.using_early_data = 1;
-                    *properties->client.max_early_data_size = max_early_data_size;
-                }
-            } else {
-                psk_secret = ptls_iovec_init(NULL, 0);
-            }
-        }
     }
 
-    /* use external PSK if provided and resumption is not to be used */
-    if (psk_secret.base == NULL && tls->ctx->pre_shared_key.identity.base != NULL) {
-        assert(tls->ctx->pre_shared_key.hash != NULL);
-        tls->client.offered_psk = 1;
-        for (size_t i = 0; tls->ctx->cipher_suites[i] != NULL; ++i) {
-            if (tls->ctx->cipher_suites[i]->hash == tls->ctx->pre_shared_key.hash) {
-                tls->cipher_suite = tls->ctx->cipher_suites[i];
-                break;
+    /* use external PSK if provided */
+    if (tls->ctx->pre_shared_key.identity.base != NULL) {
+        if (!is_second_flight) {
+            assert(tls->ctx->pre_shared_key.hash != NULL);
+            tls->client.offered_psk = 1;
+            for (size_t i = 0; tls->ctx->cipher_suites[i] != NULL; ++i) {
+                if (tls->ctx->cipher_suites[i]->hash == tls->ctx->pre_shared_key.hash) {
+                    tls->cipher_suite = tls->ctx->cipher_suites[i];
+                    break;
+                }
             }
+            assert(tls->cipher_suite != NULL && "no compatible cipher-suite provided that matches psk.hash");
+            if (properties->client.max_early_data_size != NULL) {
+                tls->client.using_early_data = 1;
+                *properties->client.max_early_data_size = SIZE_MAX;
+            }
+        } else {
+            assert(tls->cipher_suite != NULL && tls->cipher_suite->hash == tls->ctx->pre_shared_key.hash);
         }
-        assert(tls->cipher_suite != NULL && "no compatible cipher-suite provided that matches psk.hash");
         psk_secret = tls->ctx->pre_shared_key.secret;
         psk_identity = tls->ctx->pre_shared_key.identity;
         binder_key_label = "ext binder";
-        if (!is_second_flight && properties->client.max_early_data_size != NULL) {
-            tls->client.using_early_data = 1;
-            *properties->client.max_early_data_size = SIZE_MAX;
+    }
+
+    /* try to setup resumption-related data, unless external PSK is used */
+    if (psk_secret.base == NULL && properties != NULL && properties->client.session_ticket.base != NULL &&
+        tls->ctx->key_exchanges != NULL) {
+        ptls_key_exchange_algorithm_t *key_share = NULL;
+        ptls_cipher_suite_t *cipher_suite = NULL;
+        uint32_t max_early_data_size;
+        if (decode_stored_session_ticket(tls, &key_share, &cipher_suite, &psk_secret, &obfuscated_ticket_age, &psk_identity,
+                                         &max_early_data_size, properties->client.session_ticket.base,
+                                         properties->client.session_ticket.base + properties->client.session_ticket.len) == 0) {
+            tls->client.offered_psk = 1;
+            /* key-share selected by HRR should not be overridden */
+            if (tls->key_share == NULL)
+                tls->key_share = key_share;
+            tls->cipher_suite = cipher_suite;
+            if (!is_second_flight && max_early_data_size != 0 && properties->client.max_early_data_size != NULL) {
+                tls->client.using_early_data = 1;
+                *properties->client.max_early_data_size = max_early_data_size;
+            }
+        } else {
+            psk_secret = ptls_iovec_init(NULL, 0);
         }
     }
 
@@ -2776,7 +2781,7 @@ static int client_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
     }
 
     if (sh.is_retry_request) {
-        if ((ret = key_schedule_select_cipher(tls->key_schedule, tls->cipher_suite, 0)) != 0)
+        if ((ret = key_schedule_select_cipher(tls->key_schedule, tls->cipher_suite, 0, tls->ctx->pre_shared_key.secret)) != 0)
             goto Exit;
         key_schedule_transform_post_ch1hash(tls->key_schedule);
         if (tls->ech.aead != NULL) {
@@ -2795,7 +2800,7 @@ static int client_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
     }
 
     if ((ret = key_schedule_select_cipher(tls->key_schedule, tls->cipher_suite,
-                                          tls->client.offered_psk && !tls->is_psk_handshake)) != 0)
+                                          tls->client.offered_psk && !tls->is_psk_handshake, ptls_iovec_init(NULL, 0))) != 0)
         goto Exit;
 
     /* check if ECH is accepted */
@@ -4591,10 +4596,9 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
         goto Exit;
 
     /* try psk handshake */
-    if (!is_second_flight && ch->psk.hash_end != 0 &&
-        (ch->psk.ke_modes & ((1u << PTLS_PSK_KE_MODE_PSK) | (1u << PTLS_PSK_KE_MODE_PSK_DHE))) != 0 &&
-        (tls->ctx->encrypt_ticket != NULL || tls->ctx->pre_shared_key.identity.base != NULL) &&
-        !tls->ctx->require_client_authentication) {
+    if (ch->psk.hash_end != 0 && (ch->psk.ke_modes & ((1u << PTLS_PSK_KE_MODE_PSK) | (1u << PTLS_PSK_KE_MODE_PSK_DHE))) != 0 &&
+        !tls->ctx->require_client_authentication &&
+        ((!is_second_flight && tls->ctx->encrypt_ticket != NULL) || tls->ctx->pre_shared_key.identity.base != NULL)) {
         if ((ret = try_psk_handshake(tls, &psk_index, &accept_early_data, ch,
                                      ptls_iovec_init(message.base, ch->psk.hash_end - message.base))) != 0) {
             goto Exit;
