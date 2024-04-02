@@ -533,31 +533,36 @@ int main(int argc, char **argv)
         case 'V':
             setup_verify_certificate(&ctx, optarg);
             break;
-        case 'N': {
-            ptls_key_exchange_algorithm_t *algo = NULL;
+        case 'N':
+            if (strcasecmp(optarg, "null") == 0) {
+                /* disable use of key exchanges entirely */
+                ctx.key_exchanges = NULL;
+            } else {
+                ptls_key_exchange_algorithm_t *algo = NULL;
 #define MATCH(name)                                                                                                                \
     if (algo == NULL && strcasecmp(optarg, #name) == 0)                                                                            \
     algo = (&ptls_openssl_##name)
-            MATCH(secp256r1);
+                MATCH(secp256r1);
 #if PTLS_OPENSSL_HAVE_SECP384R1
-            MATCH(secp384r1);
+                MATCH(secp384r1);
 #endif
 #if PTLS_OPENSSL_HAVE_SECP521R1
-            MATCH(secp521r1);
+                MATCH(secp521r1);
 #endif
 #if PTLS_OPENSSL_HAVE_X25519
-            MATCH(x25519);
+                MATCH(x25519);
 #endif
 #undef MATCH
-            if (algo == NULL) {
-                fprintf(stderr, "could not find key exchange: %s\n", optarg);
-                return 1;
+                if (algo == NULL) {
+                    fprintf(stderr, "could not find key exchange: %s\n", optarg);
+                    return 1;
+                }
+                size_t i;
+                for (i = 0; key_exchanges[i] != NULL; ++i)
+                    ;
+                key_exchanges[i++] = algo;
             }
-            size_t i;
-            for (i = 0; key_exchanges[i] != NULL; ++i)
-                ;
-            key_exchanges[i++] = algo;
-        } break;
+            break;
         case 'u':
             request_key_update = 1;
             break;
