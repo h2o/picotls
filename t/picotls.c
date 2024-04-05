@@ -1716,7 +1716,7 @@ static void do_test_pre_shared_key(int mode)
     consumed = sbuf.off;
     ret = ptls_handshake(client, &cbuf, sbuf.base, &consumed, &client_prop);
     ok(ret == 0);
-    ok(client_prop.client.early_data_acceptance == PTLS_EARLY_DATA_ACCEPTED);
+    ok(client_prop.client.early_data_acceptance == (mode < 2 ? PTLS_EARLY_DATA_ACCEPTED : PTLS_EARLY_DATA_REJECTED));
     ok(consumed < sbuf.off);
     memmove(sbuf.base, sbuf.base + consumed, sbuf.off - consumed);
     sbuf.off -= consumed;
