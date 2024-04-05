@@ -4073,7 +4073,7 @@ static int vec_is_string(ptls_iovec_t x, const char *y)
  * external_psk is set, only tries handshake using those keys provided. Otherwise, tries resumption.
  */
 static int try_psk_handshake(ptls_t *tls, size_t *psk_index, int *accept_early_data, struct st_ptls_client_hello_t *ch,
-                             ptls_iovec_t ch_trunc)
+                             ptls_iovec_t ch_trunc, int is_second_flight)
 {
     ptls_buffer_t decbuf;
     ptls_iovec_t secret, ticket_ctx, ticket_negotiated_protocol;
@@ -4186,9 +4186,9 @@ static int try_psk_handshake(ptls_t *tls, size_t *psk_index, int *accept_early_d
     goto Exit;
 
 Found:
-    if ((ret = key_schedule_extract(tls->key_schedule, secret)) != 0)
+    if (!is_second_flight && (ret = key_schedule_extract(tls->key_schedule, secret)) != 0)
         goto Exit;
-    if ((ret = derive_secret(tls->key_schedule, binder_key, binder_label)) != 0)
+    if ((ret = derive_secret_with_empty_digest(tls->key_schedule, binder_key, binder_label)) != 0)
         goto Exit;
     ptls__key_schedule_update_hash(tls->key_schedule, ch_trunc.base, ch_trunc.len, 0);
     if ((ret = calc_verify_data(binder_key /* to conserve space, reuse binder_key for storing verify_data */, tls->key_schedule,
@@ -4617,7 +4617,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
         !tls->ctx->require_client_authentication &&
         ((!is_second_flight && tls->ctx->encrypt_ticket != NULL) || tls->ctx->pre_shared_key.identity.base != NULL)) {
         if ((ret = try_psk_handshake(tls, &psk_index, &accept_early_data, ch,
-                                     ptls_iovec_init(message.base, ch->psk.hash_end - message.base))) != 0) {
+                                     ptls_iovec_init(message.base, ch->psk.hash_end - message.base), is_second_flight)) != 0) {
             goto Exit;
         }
     }
