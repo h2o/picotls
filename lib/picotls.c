@@ -4085,13 +4085,13 @@ static int try_psk_handshake(ptls_t *tls, size_t *psk_index, int *accept_early_d
     uint32_t age_add;
     uint16_t ticket_key_exchange_id, ticket_csid;
     uint8_t binder_key[PTLS_MAX_DIGEST_SIZE];
-    const char *binder_label = "res binder";
     int ret;
 
     ptls_buffer_init(&decbuf, "", 0);
 
     for (*psk_index = 0; *psk_index < ch->psk.identities.count; ++*psk_index) {
         ptls_client_hello_psk_identity_t *identity = ch->psk.identities.list + *psk_index;
+
         /* negotiate using fixed pre-shared key */
         if (tls->ctx->pre_shared_key.secret.base != NULL) {
             assert(tls->ctx->pre_shared_key.secret.len != 0 && tls->ctx->pre_shared_key.identity.len != 0 &&
@@ -4101,11 +4101,11 @@ static int try_psk_handshake(ptls_t *tls, size_t *psk_index, int *accept_early_d
                 *accept_early_data = ch->psk.early_data_indication && *psk_index == 0;
                 tls->key_share = NULL;
                 secret = tls->ctx->pre_shared_key.secret;
-                binder_label = "ext binder";
                 goto Found;
             }
             continue;
         }
+
         /* decrypt ticket and decode */
         if (tls->ctx->encrypt_ticket == NULL || tls->ctx->key_exchanges == NULL)
             continue;
@@ -4192,7 +4192,8 @@ static int try_psk_handshake(ptls_t *tls, size_t *psk_index, int *accept_early_d
 Found:
     if (!is_second_flight && (ret = key_schedule_extract(tls->key_schedule, secret)) != 0)
         goto Exit;
-    if ((ret = derive_secret_with_empty_digest(tls->key_schedule, binder_key, binder_label)) != 0)
+    if ((ret = derive_secret_with_empty_digest(tls->key_schedule, binder_key,
+                                               tls->ctx->pre_shared_key.secret.base != NULL ? "ext binder" : "res binder")) != 0)
         goto Exit;
     ptls__key_schedule_update_hash(tls->key_schedule, ch_trunc.base, ch_trunc.len, 0);
     if ((ret = calc_verify_data(binder_key /* to conserve space, reuse binder_key for storing verify_data */, tls->key_schedule,
