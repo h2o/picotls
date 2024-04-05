@@ -1657,7 +1657,6 @@ static int setup_traffic_protection(ptls_t *tls, int is_enc, const char *secret_
     }
 #endif
 
-
     return 0;
 }
 
@@ -2817,8 +2816,8 @@ static int client_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
         return handle_hello_retry_request(tls, emitter, &sh, message, properties);
     }
 
-    if ((ret = key_schedule_select_cipher(tls->key_schedule, tls->cipher_suite,
-                                          tls->client.offered_psk && !tls->is_psk_handshake, ptls_iovec_init(NULL, 0))) != 0)
+    if ((ret = key_schedule_select_cipher(tls->key_schedule, tls->cipher_suite, tls->client.offered_psk && !tls->is_psk_handshake,
+                                          ptls_iovec_init(NULL, 0))) != 0)
         goto Exit;
 
     /* check if ECH is accepted */
@@ -2841,7 +2840,7 @@ static int client_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
         tls->key_schedule->hashes[0].ctx_outer = NULL;
     }
 
-    /* if we (the client) offered PSK but the server did not use that, we call it a handshake failure */
+    /* if the client offered external PSK but the server did not use that, we call it a handshake failure */
     if (tls->ctx->pre_shared_key.identity.base != NULL && !tls->is_psk_handshake) {
         ret = PTLS_ALERT_HANDSHAKE_FAILURE;
         goto Exit;
@@ -4074,7 +4073,7 @@ static int vec_is_string(ptls_iovec_t x, const char *y)
 
 /**
  * Looks for a PSK identity that can be used, and if found, updates the handshake state and returns the necessary variables. If
- * external_psk is set, only tries handshake using those keys provided. Otherwise, tries resumption.
+ * `ptls_context_t::pre_shared_key` is set, only tries handshake using those keys provided. Otherwise, tries resumption.
  */
 static int try_psk_handshake(ptls_t *tls, size_t *psk_index, int *accept_early_data, struct st_ptls_client_hello_t *ch,
                              ptls_iovec_t ch_trunc, int is_second_flight)
@@ -4489,13 +4488,9 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
     }
 
     if (!is_second_flight) {
-        /* the only ikm we adopt alongside HRR is the external PSK; session tickets are disregarded when sending HRR */
-        ptls_iovec_t ikm_of_1st_ch = tls->ctx->pre_shared_key.secret;
-
         if (ch->cookie.all.len != 0 && key_share.algorithm != NULL) {
 
-            /* use cookie to check the integrity of the handshake, and update the context */
-            {
+            { /* use cookie to check the integrity of the handshake, and update the context */
                 uint8_t sig[PTLS_MAX_DIGEST_SIZE];
                 size_t sigsize = tls->ctx->cipher_suites[0]->hash->digest_size;
                 if ((ret = calc_cookie_signature(tls, properties, key_share.algorithm, ch->cookie.tbs, sig)) != 0)
@@ -4508,7 +4503,9 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
             /* integrity check passed; update states */
             key_schedule_update_ch1hash_prefix(tls->key_schedule);
             ptls__key_schedule_update_hash(tls->key_schedule, ch->cookie.ch1_hash.base, ch->cookie.ch1_hash.len, 0);
-            key_schedule_extract(tls->key_schedule, ikm_of_1st_ch);
+            key_schedule_extract(tls->key_schedule,
+                                 tls->ctx->pre_shared_key.secret /* this argument will be a zero-length vector unless external PSK
+                                                                  is used, and that's fine; we never resume when sending HRR */);
             /* ... reusing sendbuf to rebuild HRR for hash calculation */
             size_t hrr_start = emitter->buf->off;
             EMIT_HELLO_RETRY_REQUEST(tls->key_schedule, ch->cookie.sent_key_share ? key_share.algorithm : NULL,
@@ -4541,7 +4538,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
                 properties != NULL && properties->server.retry_uses_cookie && !ptls_is_ech_handshake(tls, NULL, NULL, NULL);
             if (!retry_uses_cookie) {
                 key_schedule_transform_post_ch1hash(tls->key_schedule);
-                key_schedule_extract(tls->key_schedule, ikm_of_1st_ch);
+                key_schedule_extract(tls->key_schedule, tls->ctx->pre_shared_key.secret /* see comment above */);
             }
             size_t ech_confirm_off = 0;
             EMIT_HELLO_RETRY_REQUEST(
@@ -4628,7 +4625,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
     }
 
     /* If the server was setup to use an external PSK but failed to agree, abort the handshake. Because external PSK is a form of
-     * mutual authentication, we should abort continue the handshake upon negotiation failure, at least by default. */
+     * mutual authentication, it makes sense to abort (at least as the default). */
     if (tls->ctx->pre_shared_key.identity.base != NULL && psk_index == SIZE_MAX) {
         ret = PTLS_ALERT_UNKNOWN_PSK_IDENTITY;
         goto Exit;
