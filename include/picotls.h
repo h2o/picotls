@@ -861,7 +861,7 @@ struct st_ptls_context_t {
         size_t count;
     } certificates;
     /**
-     * if set, the endpoints negotiate using the provided pre-shared key
+     * External pre-shared key used for mutual authentication. Unless when using PSK, all the fields must be set to NULL / 0.
      */
     struct st_ptls_external_psk_t {
         ptls_iovec_t identity;
