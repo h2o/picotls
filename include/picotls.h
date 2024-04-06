@@ -863,7 +863,7 @@ struct st_ptls_context_t {
     /**
      * External pre-shared key used for mutual authentication. Unless when using PSK, all the fields must be set to NULL / 0.
      */
-    struct st_ptls_external_psk_t {
+    struct {
         ptls_iovec_t identity;
         ptls_iovec_t secret;
         /**
