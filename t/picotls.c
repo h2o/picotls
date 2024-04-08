@@ -1621,47 +1621,64 @@ static void test_ech_config_mismatch(void)
 
 static void do_test_pre_shared_key(int mode)
 {
-    ptls_context_t ctx_backup = *ctx;
+    ptls_context_t ctx_client = *ctx;
     ptls_key_exchange_algorithm_t *alternate_keyex[3];
     size_t client_max_early_data_size = 0;
     ptls_handshake_properties_t client_prop = {.client.max_early_data_size = &client_max_early_data_size};
 
     switch (mode) {
     case 0: /* no keyex */
-        ctx->key_exchanges = NULL;
+        ctx_client.key_exchanges = NULL;
         break;
     case 1: /* keyex match */
         break;
-    case 2: /* keyex mismatch */
-        if (!(ctx->key_exchanges[0] != NULL && ctx->key_exchanges[1] != NULL)) {
+    case 2: /* server has no keyex */
+        break;
+    case 3: /* keyex mismatch */
+        if (!(ctx_client.key_exchanges[0] != NULL && ctx_client.key_exchanges[1] != NULL)) {
             note("keyex mismatch test requires two key exchange algorithms");
             return;
         }
-        alternate_keyex[0] = ctx->key_exchanges[1];
-        alternate_keyex[1] = ctx->key_exchanges[0];
+        alternate_keyex[0] = ctx_client.key_exchanges[1];
+        alternate_keyex[1] = ctx_client.key_exchanges[0];
         alternate_keyex[2] = NULL;
-        ctx->key_exchanges = alternate_keyex;
+        ctx_client.key_exchanges = alternate_keyex;
         break;
-    case 3: /* negotiate */
+    case 4: /* negotiate */
         client_prop.client.negotiate_before_key_exchange = 1;
+        break;
+    case -1: /* fail:requires-psk-dhe */
+        ctx_client.key_exchanges = NULL;
         break;
     default:
         assert(!"FIXME");
     }
 
-    ctx->max_early_data_size = 16384;
-    assert(ctx->pre_shared_key.identity.len == 0 && ctx->pre_shared_key.secret.len == 0);
-    ctx->pre_shared_key.identity = ptls_iovec_init("", 1);
-    ctx->pre_shared_key.secret = ptls_iovec_init("hello world", 11);
-    for (size_t i = 0; ctx->cipher_suites[i] != NULL; ++i) {
-        if (strcmp(ctx->cipher_suites[i]->hash->name, "sha256") == 0) {
-            ctx->pre_shared_key.hash = ctx->cipher_suites[i]->hash;
+    ctx_client.max_early_data_size = 16384;
+    assert(ctx_client.pre_shared_key.identity.len == 0 && ctx_client.pre_shared_key.secret.len == 0);
+    ctx_client.pre_shared_key.identity = ptls_iovec_init("", 1);
+    ctx_client.pre_shared_key.secret = ptls_iovec_init("hello world", 11);
+    for (size_t i = 0; ctx_client.cipher_suites[i] != NULL; ++i) {
+        if (strcmp(ctx_client.cipher_suites[i]->hash->name, "sha256") == 0) {
+            ctx_client.pre_shared_key.hash = ctx_client.cipher_suites[i]->hash;
             break;
         }
     }
-    assert(ctx->pre_shared_key.hash != NULL);
+    assert(ctx_client.pre_shared_key.hash != NULL);
 
-    ptls_t *client = ptls_new(ctx, 0), *server = ptls_new(ctx, 1);
+    ptls_context_t ctx_server = ctx_client;
+    switch (mode) {
+    case 2: /* server has no keyex */
+        ctx_server.key_exchanges = NULL;
+        break;
+    case -1: /* fail:requires-psk-dhe */
+        ctx_server.require_dhe_on_psk = 1;
+        break;
+    default:
+        break;
+    }
+
+    ptls_t *client = ptls_new(&ctx_client, 0), *server = ptls_new(&ctx_server, 1);
     ptls_buffer_t cbuf, sbuf, decbuf;
     ptls_buffer_init(&cbuf, "", 0);
     ptls_buffer_init(&sbuf, "", 0);
@@ -1678,10 +1695,14 @@ static void do_test_pre_shared_key(int mode)
     /* [server] read CH and generate up to ServerFinished */
     size_t consumed = cbuf.off;
     ret = ptls_handshake(server, &sbuf, cbuf.base, &consumed, NULL);
+    if (mode < 0) {
+        ok(ret == PTLS_ALERT_HANDSHAKE_FAILURE);
+        goto Exit;
+    }
     ok(consumed <= cbuf.off);
     memmove(cbuf.base, cbuf.base + consumed, cbuf.off - consumed);
     cbuf.off -= consumed;
-    if (mode >= 2) {
+    if (mode >= 3) {
         ok(ret == PTLS_ERROR_IN_PROGRESS);
         ok(cbuf.off == 0);
         consumed = sbuf.off;
@@ -1716,7 +1737,7 @@ static void do_test_pre_shared_key(int mode)
     consumed = sbuf.off;
     ret = ptls_handshake(client, &cbuf, sbuf.base, &consumed, &client_prop);
     ok(ret == 0);
-    ok(client_prop.client.early_data_acceptance == (mode < 2 ? PTLS_EARLY_DATA_ACCEPTED : PTLS_EARLY_DATA_REJECTED));
+    ok(client_prop.client.early_data_acceptance == (mode < 3 ? PTLS_EARLY_DATA_ACCEPTED : PTLS_EARLY_DATA_REJECTED));
     ok(consumed < sbuf.off);
     memmove(sbuf.base, sbuf.base + consumed, sbuf.off - consumed);
     sbuf.off -= consumed;
@@ -1746,21 +1767,28 @@ static void do_test_pre_shared_key(int mode)
     ok(decbuf.off == 3);
     ok(memcmp(decbuf.base, "bye", 3) == 0);
 
+Exit:
     ptls_buffer_dispose(&cbuf);
     ptls_buffer_dispose(&sbuf);
     ptls_buffer_dispose(&decbuf);
     ptls_free(client);
     ptls_free(server);
-
-    *ctx = ctx_backup;
 }
 
 static void test_pre_shared_key(void)
 {
+    if (ctx != ctx_peer) {
+        note("psk tests use `ctx` only");
+        return;
+    }
+
     subtest("key-share:no", do_test_pre_shared_key, 0);
     subtest("key-share:yes", do_test_pre_shared_key, 1);
-    subtest("key-share:mismatch", do_test_pre_shared_key, 2);
-    subtest("key-share:negotiate", do_test_pre_shared_key, 3);
+    subtest("key-share:server-wo-key-share", do_test_pre_shared_key, 2);
+    subtest("key-share:mismatch", do_test_pre_shared_key, 3);
+    subtest("key-share:negotiate", do_test_pre_shared_key, 4);
+
+    subtest("fail:requires-psk-dhe", do_test_pre_shared_key, -1);
 }
 
 typedef uint8_t traffic_secrets_t[2 /* is_enc */][4 /* epoch */][PTLS_MAX_DIGEST_SIZE /* octets */];
