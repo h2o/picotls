@@ -2353,7 +2353,6 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
     /* use external PSK if provided */
     if (tls->ctx->pre_shared_key.identity.base != NULL) {
         if (!is_second_flight) {
-            assert(tls->ctx->pre_shared_key.hash != NULL);
             tls->client.offered_psk = 1;
             for (size_t i = 0; tls->ctx->cipher_suites[i] != NULL; ++i) {
                 if (tls->ctx->cipher_suites[i]->hash == tls->ctx->pre_shared_key.hash) {
@@ -4092,9 +4091,7 @@ static int try_psk_handshake(ptls_t *tls, size_t *psk_index, int *accept_early_d
         ptls_client_hello_psk_identity_t *identity = ch->psk.identities.list + *psk_index;
 
         /* negotiate using fixed pre-shared key */
-        if (tls->ctx->pre_shared_key.secret.base != NULL) {
-            assert(tls->ctx->pre_shared_key.secret.len != 0 && tls->ctx->pre_shared_key.identity.len != 0 &&
-                   tls->ctx->pre_shared_key.hash != NULL && "`ptls_context_t::pre_shared_key` in incosistent state");
+        if (tls->ctx->pre_shared_key.identity.base != NULL) {
             if (identity->identity.len == tls->ctx->pre_shared_key.identity.len &&
                 memcmp(identity->identity.base, tls->ctx->pre_shared_key.identity.base, identity->identity.len) == 0) {
                 *accept_early_data = ch->psk.early_data_indication && *psk_index == 0;
@@ -5074,7 +5071,17 @@ static ptls_t *new_instance(ptls_context_t *ctx, int is_server)
 {
     ptls_t *tls;
 
+    /* check consistency of `ptls_context_t` before instantiating a connection object */
     assert(ctx->get_time != NULL && "please set ctx->get_time to `&ptls_get_time`; see #92");
+    if (ctx->pre_shared_key.identity.base != NULL) {
+        assert(ctx->pre_shared_key.identity.len != 0 && ctx->pre_shared_key.secret.base != NULL &&
+               ctx->pre_shared_key.secret.len != 0 && ctx->pre_shared_key.hash != NULL &&
+               "`ptls_context_t::pre_shared_key` in incosistent state");
+    } else {
+        assert(ctx->pre_shared_key.identity.len == 0 && ctx->pre_shared_key.secret.base == NULL &&
+               ctx->pre_shared_key.secret.len == 0 && ctx->pre_shared_key.hash == NULL &&
+               "`ptls_context_t::pre_shared_key` in inconsitent state");
+    }
 
     if ((tls = malloc(sizeof(*tls))) == NULL)
         return NULL;
