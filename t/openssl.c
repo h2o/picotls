@@ -599,15 +599,12 @@ int main(int argc, char **argv)
     ptls_iovec_t minicrypto_certificate = ptls_iovec_init(SECP256R1_CERTIFICATE, sizeof(SECP256R1_CERTIFICATE) - 1);
     ptls_minicrypto_init_secp256r1sha256_sign_certificate(
         &minicrypto_sign_certificate, ptls_iovec_init(SECP256R1_PRIVATE_KEY, sizeof(SECP256R1_PRIVATE_KEY) - 1));
-    ptls_context_t minicrypto_ctx = {ptls_minicrypto_random_bytes,
-                                     &ptls_get_time,
-                                     ptls_minicrypto_key_exchanges,
-                                     ptls_minicrypto_cipher_suites,
-                                     {&minicrypto_certificate, 1},
-                                     {{NULL}},
-                                     NULL,
-                                     NULL,
-                                     &minicrypto_sign_certificate.super};
+    ptls_context_t minicrypto_ctx = {.random_bytes = ptls_minicrypto_random_bytes,
+                                     .get_time = &ptls_get_time,
+                                     .key_exchanges = ptls_minicrypto_key_exchanges,
+                                     .cipher_suites = ptls_minicrypto_cipher_suites,
+                                     .certificates = {&minicrypto_certificate, 1},
+                                     .sign_certificate = &minicrypto_sign_certificate.super};
     ctx = &openssl_ctx;
     ctx_peer = &minicrypto_ctx;
     subtest("vs. minicrypto", test_picotls);
