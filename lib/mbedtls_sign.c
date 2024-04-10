@@ -598,6 +598,59 @@ int ptls_mbedtls_set_ec_key_attributes(ptls_mbedtls_sign_certificate_t *signer, 
     return ret;
 }
 
+int ptls_mbedtls_load_file(char const * file_name, unsigned char ** buf, size_t * n)
+{
+    int ret = 0;
+    FILE* F = NULL;
+    *buf = NULL;
+    *n = 0;
+#ifdef _WINDOWS
+    errno_t err = fopen_s(&F, file_name, "rb");
+    if (err != 0){
+        if (F != NULL) {
+            fclose(F);
+            F = NULL;
+        }
+    }
+#else
+    F = fopen(file_name, "rb");
+#endif
+
+
+    if (F != NULL) {
+        long sz;
+        fseek(F, 0, SEEK_END);
+        sz = ftell(F);
+  
+        if (sz > 0) {
+            *buf = (unsigned char *)malloc(sz+1);
+            if (*buf == NULL){
+                ret = PTLS_ERROR_NO_MEMORY;
+            }
+            else {
+                size_t nb_read = 0;
+                fseek(F, 0, SEEK_SET);
+                while(nb_read < sz){
+                    *n = sz;
+                    size_t ret = fread(*buf + nb_read, sz - nb_read, 1, F);
+                    if (ret > 0){
+                        nb_read += ret;
+                    } else {
+                        /* No need to check for EOF, since we know the length of the file */
+                        ret = PTLS_ERROR_NOT_AVAILABLE;
+                        free(*buf);
+                        *buf = NULL;
+                        *n = 0;
+                        break;
+                    }
+                }
+            }
+            (void)fclose(F);
+        }
+    }
+    return ret;
+}
+
 int ptls_mbedtls_load_private_key(ptls_context_t *ctx, char const *pem_fname)
 {
     int ret = MBEDTLS_ERR_ERROR_CORRUPTION_DETECTED;
@@ -616,7 +669,7 @@ int ptls_mbedtls_load_private_key(ptls_context_t *ctx, char const *pem_fname)
     memset(signer, 0, sizeof(ptls_mbedtls_sign_certificate_t));
     signer->attributes = psa_key_attributes_init();
 
-    if ((ret = mbedtls_pk_load_file(pem_fname, &buf, &n)) != 0) {
+    if ((ret = ptls_mbedtls_load_file(pem_fname, &buf, &n)) != 0) {
         if (ret == MBEDTLS_ERR_PK_ALLOC_FAILED) {
             return (PTLS_ERROR_NO_MEMORY);
         } else {
