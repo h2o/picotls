@@ -22,6 +22,8 @@
 
 #ifdef _WINDOWS
 #include "wincompat.h"
+else
+#include <errno.h>
 #endif
 
 #include <stdlib.h>
@@ -640,9 +642,10 @@ int ptls_mbedtls_load_file(char const * file_name, unsigned char ** buf, size_t 
                         nb_read += bytes_read;
                     } else {
                         /* No need to check for EOF, since we know the length of the file */
+#ifdef _WINDOWS
                         ferror(F);
                         printf("File %s stops after %zu bytes, err=%x\n", file_name, nb_read, errno);
-
+#endif
                         ret = PTLS_ERROR_NOT_AVAILABLE;
                         free(*buf);
                         *buf = NULL;
