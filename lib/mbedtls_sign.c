@@ -633,7 +633,7 @@ int ptls_mbedtls_load_file(char const * file_name, unsigned char ** buf, size_t 
                 while(nb_read < sz){
                     unsigned char * position = *buf;
                     position += nb_read;
-                    size_t bytes_read = fread(position, sz - nb_read, 1, F);
+                    size_t bytes_read = fread(position, 1, sz - nb_read, F);
                     if (bytes_read > 0){
                         nb_read += bytes_read;
                     } else {
