@@ -1559,9 +1559,8 @@ static int verify_cert_chain(X509_STORE *store, X509 *cert, STACK_OF(X509) * cha
         X509_VERIFY_PARAM *params = X509_STORE_CTX_get0_param(verify_ctx);
         X509_VERIFY_PARAM_set_purpose(params, is_server ? X509_PURPOSE_SSL_CLIENT : X509_PURPOSE_SSL_SERVER);
         X509_VERIFY_PARAM_set_depth(params, 98); /* use the default of OpenSSL 1.0.2 and above; see `man SSL_CTX_set_verify` */
-        /* when _acting_ as client, set the server name */
-        if (!is_server) {
-            assert(server_name != NULL && "ptls_set_server_name MUST be called");
+        /* when _acting_ as client, set the server name if provided*/
+        if (!is_server && server_name) {
             if (ptls_server_name_is_ipaddr(server_name)) {
                 X509_VERIFY_PARAM_set1_ip_asc(params, server_name);
             } else {
