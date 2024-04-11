@@ -598,11 +598,6 @@ int ptls_mbedtls_set_ec_key_attributes(ptls_mbedtls_sign_certificate_t *signer, 
     return ret;
 }
 
-#ifndef _WINDOWS
-/* Delete after debug! */
-extern int errno;
-#endif
-
 int ptls_mbedtls_load_file(char const * file_name, unsigned char ** buf, size_t * n)
 {
     int ret = 0;
@@ -637,6 +632,7 @@ int ptls_mbedtls_load_file(char const * file_name, unsigned char ** buf, size_t 
                 *n = sz;
 
                 fseek(F, 0, SEEK_SET);
+                printf("After fseek(%s, 0), position: %zu\n", file_name, ftell(F));
                 while(nb_read < sz){
                     unsigned char * position = *buf;
                     position += nb_read;
@@ -645,10 +641,7 @@ int ptls_mbedtls_load_file(char const * file_name, unsigned char ** buf, size_t 
                         nb_read += bytes_read;
                     } else {
                         /* No need to check for EOF, since we know the length of the file */
-#ifndef _WINDOWS
-                        int this_err = (ferror(F))?errno:0;
-                        printf("File %s stops after %zu bytes, err=%x\n", file_name, nb_read, this_err);
-#endif
+                        printf("File %s stops after %zu bytes\n", file_name, nb_read);
                         ret = PTLS_ERROR_NOT_AVAILABLE;
                         free(*buf);
                         *buf = NULL;
@@ -657,6 +650,9 @@ int ptls_mbedtls_load_file(char const * file_name, unsigned char ** buf, size_t 
                     }
                 }
             }
+            else {
+                ret = PTLS_ERROR_NOT_AVAILABLE;
+            }
         }
         (void)fclose(F);
     }
@@ -664,6 +660,14 @@ int ptls_mbedtls_load_file(char const * file_name, unsigned char ** buf, size_t 
         ret = PTLS_ERROR_NOT_AVAILABLE;
         printf("Cannot open file: %s\n", file_name);
     }
+    if (ret != 0){
+        if (*buf != NULL){
+            free(*buf);
+            *buf = NULL;
+        }
+        *n = 0;
+    }
+
     return ret;
 }
 
