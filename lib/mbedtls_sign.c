@@ -616,7 +616,6 @@ int ptls_mbedtls_load_file(char const * file_name, unsigned char ** buf, size_t 
     F = fopen(file_name, "rb");
 #endif
 
-
     if (F != NULL) {
         long sz;
         fseek(F, 0, SEEK_END);
@@ -650,15 +649,14 @@ int ptls_mbedtls_load_file(char const * file_name, unsigned char ** buf, size_t 
                     }
                 }
             }
-            else {
-                ret = PTLS_ERROR_NOT_AVAILABLE;
-            }
+        }
+        else {
+            ret = PTLS_ERROR_NOT_AVAILABLE;
         }
         (void)fclose(F);
     }
     else {
         ret = PTLS_ERROR_NOT_AVAILABLE;
-        printf("Cannot open file: %s\n", file_name);
     }
     if (ret != 0){
         if (*buf != NULL){
