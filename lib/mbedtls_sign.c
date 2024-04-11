@@ -620,7 +620,6 @@ int ptls_mbedtls_load_file(char const * file_name, unsigned char ** buf, size_t 
         long sz;
         fseek(F, 0, SEEK_END);
         sz = ftell(F);
-        printf("File %s, sz=%zu\n", file_name, sz);  
         if (sz > 0) {
             *buf = (unsigned char *)malloc(sz);
             if (*buf == NULL){
@@ -631,20 +630,15 @@ int ptls_mbedtls_load_file(char const * file_name, unsigned char ** buf, size_t 
                 *n = sz;
 
                 fseek(F, 0, SEEK_SET);
-                printf("After fseek(%s, 0), position: %zu\n", file_name, ftell(F));
                 while(nb_read < sz){
                     unsigned char * position = *buf;
                     position += nb_read;
                     size_t bytes_read = fread(position, sz - nb_read, 1, F);
-                    if (ret > 0){
+                    if (bytes_read > 0){
                         nb_read += bytes_read;
                     } else {
                         /* No need to check for EOF, since we know the length of the file */
-                        printf("File %s stops after %zu bytes\n", file_name, nb_read);
                         ret = PTLS_ERROR_NOT_AVAILABLE;
-                        free(*buf);
-                        *buf = NULL;
-                        *n = 0;
                         break;
                     }
                 }
