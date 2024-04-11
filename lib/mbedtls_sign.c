@@ -646,8 +646,8 @@ int ptls_mbedtls_load_file(char const * file_name, unsigned char ** buf, size_t 
                     } else {
                         /* No need to check for EOF, since we know the length of the file */
 #ifndef _WINDOWS
-                        ferror(F);
-                        printf("File %s stops after %zu bytes, err=%x\n", file_name, nb_read, errno);
+                        int this_err = (ferror(F))?errno:0;
+                        printf("File %s stops after %zu bytes, err=%x\n", file_name, nb_read, this_err);
 #endif
                         ret = PTLS_ERROR_NOT_AVAILABLE;
                         free(*buf);
