@@ -633,11 +633,16 @@ int ptls_mbedtls_load_file(char const * file_name, unsigned char ** buf, size_t 
 
                 fseek(F, 0, SEEK_SET);
                 while(nb_read < sz){
-                    size_t bytes_read = fread(*buf + nb_read, sz - nb_read, 1, F);
+                    unsigned char * position = *buf;
+                    position += nb_read;
+                    size_t bytes_read = fread(position, sz - nb_read, 1, F);
                     if (ret > 0){
                         nb_read += bytes_read;
                     } else {
                         /* No need to check for EOF, since we know the length of the file */
+                        ferror(F);
+                        printf("File %s stops after %zu bytes, err=%x\n", file_name, nb_read, errno);
+
                         ret = PTLS_ERROR_NOT_AVAILABLE;
                         free(*buf);
                         *buf = NULL;
@@ -647,10 +652,11 @@ int ptls_mbedtls_load_file(char const * file_name, unsigned char ** buf, size_t 
                     }
                 }
             }
-            (void)fclose(F);
         }
+        (void)fclose(F);
     }
     else {
+        ret = PTLS_ERROR_NOT_AVAILABLE;
         printf("Cannot open file: %s\n", file_name);
     }
     return ret;
