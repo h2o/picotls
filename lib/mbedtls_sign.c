@@ -22,8 +22,6 @@
 
 #ifdef _WINDOWS
 #include "wincompat.h"
-else
-#include <errno.h>
 #endif
 
 #include <stdlib.h>
@@ -600,6 +598,11 @@ int ptls_mbedtls_set_ec_key_attributes(ptls_mbedtls_sign_certificate_t *signer, 
     return ret;
 }
 
+#ifndef _WINDOWS
+/* Delete after debug! */
+extern int errno;
+#endif
+
 int ptls_mbedtls_load_file(char const * file_name, unsigned char ** buf, size_t * n)
 {
     int ret = 0;
@@ -642,7 +645,7 @@ int ptls_mbedtls_load_file(char const * file_name, unsigned char ** buf, size_t 
                         nb_read += bytes_read;
                     } else {
                         /* No need to check for EOF, since we know the length of the file */
-#ifdef _WINDOWS
+#ifndef _WINDOWS
                         ferror(F);
                         printf("File %s stops after %zu bytes, err=%x\n", file_name, nb_read, errno);
 #endif
@@ -650,7 +653,6 @@ int ptls_mbedtls_load_file(char const * file_name, unsigned char ** buf, size_t 
                         free(*buf);
                         *buf = NULL;
                         *n = 0;
-                        printf("File %s stops after %zu bytes\n", file_name, nb_read);
                         break;
                     }
                 }
