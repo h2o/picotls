@@ -621,13 +621,13 @@ int ptls_mbedtls_load_file(char const * file_name, unsigned char ** buf, size_t 
         fseek(F, 0, SEEK_END);
         sz = ftell(F);
         if (sz > 0) {
-            *buf = (unsigned char *)malloc(sz);
+            *buf = (unsigned char *)malloc(sz + 1);
             if (*buf == NULL){
                 ret = PTLS_ERROR_NO_MEMORY;
             }
             else {
                 size_t nb_read = 0;
-                *n = sz;
+                *n = sz + 1;
 
                 fseek(F, 0, SEEK_SET);
                 while(nb_read < sz){
@@ -652,7 +652,10 @@ int ptls_mbedtls_load_file(char const * file_name, unsigned char ** buf, size_t 
     else {
         ret = PTLS_ERROR_NOT_AVAILABLE;
     }
-    if (ret != 0){
+    if (ret == 0){
+        (*buf)[(*n) - 1] = 0;
+    }
+    else {
         if (*buf != NULL){
             free(*buf);
             *buf = NULL;
