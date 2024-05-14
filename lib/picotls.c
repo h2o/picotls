@@ -169,7 +169,7 @@ struct st_decoded_ech_config_t {
 };
 
 /**
- * Properties for ECH. Iff ECH is used and not rejected, `aead` is non-NULL.
+ * Properties for ECH. If ECH is used and not rejected, `aead` is non-NULL.
  */
 struct st_ptls_ech_t {
     uint8_t offered : 1;
