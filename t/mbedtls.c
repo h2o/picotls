@@ -189,7 +189,7 @@ static void test_load_file_cert()
 
 void test_load_file()
 {
-    subtest("load file key", test_load_file_key());
+    subtest("load file key", test_load_file_key);
     subtest("load file cert", test_load_file_cert);
 }
 
