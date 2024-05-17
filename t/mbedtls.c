@@ -144,7 +144,6 @@ Output buffer is already partially filled.
 #define ASSET_SECP256R1_PKCS8_CERT "t/assets/secp256r1-pkcs8/cert.pem"
 #define ASSET_ED25519_CERT "t/assets/ed25519/cert.pem"
 #define ASSET_TEST_CA "data/test-ca.crt"
-#endif
 
 int test_load_one_file(char const* path)
 {
@@ -170,7 +169,7 @@ int test_load_one_file(char const* path)
 
 static void test_load_file_key()
 {
-    int ret = test_load_file_key(ASSET_RSA_KEY);
+    int ret = test_load_one_file(ASSET_RSA_KEY);
     if (ret != 0) {
         ok(!"fail");
         return;
@@ -180,7 +179,7 @@ static void test_load_file_key()
 
 static void test_load_file_cert()
 {
-    int ret = test_load_file_key(ASSET_SECP256R1_PKCS8_CERT);
+    int ret = test_load_one_file(ASSET_SECP256R1_PKCS8_CERT);
     if (ret != 0) {
         ok(!"fail");
         return;
@@ -635,16 +634,6 @@ static void test_sign_verify_rsa_mbedtls_mbedtls()
     ok(!!"success");
 }
 
-static void test_sign_verify_rsa_mbedtls_mbedtls()
-{
-    int ret = test_sign_verify_one(ASSET_RSA_KEY, ASSET_RSA_CERT, ASSET_TEST_CA, 0, 0);
-    if (ret != 0){
-        ok(!"fail");
-        return;
-    }
-    ok(!!"success");
-}
-
 static void test_sign_verify_secp256r1_mbedtls_mbedtls()
 {
     ret = test_sign_verify_one(ASSET_SECP256R1_KEY, ASSET_SECP256R1_CERT, ASSET_SECP256R1_CERT, 0, 0);
@@ -694,7 +683,7 @@ static void test_sign_verify_secp256r1_pkcs8_mbedtls_mbedtls()
 * TODO: add negative testing.
  */
 
-static void test_sign_verify()
+static void test_sign_verify_end_to_end()
 {
     subtest("sign verify rsa mbedtls mbedtls", test_sign_verify_rsa_mbedtls_mbedtls);
     subtest("sign verify secp256r1 mbedtls mbedtls", test_sign_verify_secp256r1_mbedtls_mbedtls);
@@ -770,7 +759,7 @@ int main(int argc, char **argv)
     subtest("test load key failures", test_load_key_fail);
 
     /* End to end test of signing and verifying certicates */
-    subtest("test sign verify certiciates", test_load_key_fail);
+    subtest("test sign verify end to end", test_sign_verify_end_to_end);
 
     /* Deinitialize the PSA crypto library. */
     mbedtls_psa_crypto_free();
