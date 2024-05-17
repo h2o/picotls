@@ -636,7 +636,7 @@ static void test_sign_verify_rsa_mbedtls_mbedtls()
 
 static void test_sign_verify_secp256r1_mbedtls_mbedtls()
 {
-    ret = test_sign_verify_one(ASSET_SECP256R1_KEY, ASSET_SECP256R1_CERT, ASSET_SECP256R1_CERT, 0, 0);
+    int ret = test_sign_verify_one(ASSET_SECP256R1_KEY, ASSET_SECP256R1_CERT, ASSET_SECP256R1_CERT, 0, 0);
     if (ret != 0){
         ok(!"fail");
         return;
@@ -656,7 +656,7 @@ static void test_sign_verify_secp384r1_mbedtls_mbedtls()
 
 static void test_sign_verify_secp521r1_mbedtls_mbedtls()
 {
-    ret = test_sign_verify_one(ASSET_SECP521R1_KEY, ASSET_SECP521R1_CERT, ASSET_SECP521R1_CERT, 0, 0);
+    int ret = test_sign_verify_one(ASSET_SECP521R1_KEY, ASSET_SECP521R1_CERT, ASSET_SECP521R1_CERT, 0, 0);
     if (ret != 0){
         ok(!"fail");
         return;
@@ -666,7 +666,7 @@ static void test_sign_verify_secp521r1_mbedtls_mbedtls()
 
 static void test_sign_verify_secp256r1_pkcs8_mbedtls_mbedtls()
 {
-    ret = test_sign_verify_one(ASSET_SECP256R1_PKCS8_KEY, ASSET_SECP256R1_PKCS8_CERT, ASSET_SECP256R1_PKCS8_CERT, 0, 0);
+    int ret = test_sign_verify_one(ASSET_SECP256R1_PKCS8_KEY, ASSET_SECP256R1_PKCS8_CERT, ASSET_SECP256R1_PKCS8_CERT, 0, 0);
     if (ret != 0){
         ok(!"fail");
         return;
@@ -690,8 +690,6 @@ static void test_sign_verify_end_to_end()
     subtest("sign verify secp384r1 mbedtls mbedtls", test_sign_verify_secp384r1_mbedtls_mbedtls);
     subtest("sign verify secp521r1 mbedtls mbedtls", test_sign_verify_secp521r1_mbedtls_mbedtls);
     subtest("sign verify secp256r1 pkcs8 mbedtls mbedtls", test_sign_verify_secp256r1_pkcs8_mbedtls_mbedtls);
-
-    return ret;
 }
 
 
