@@ -33,7 +33,7 @@
 #include <mbedtls/pk.h>
 #include <mbedtls/pem.h>
 #include <mbedtls/error.h>
-#include "mbedtls/x509_crt.h"
+#include <mbedtls/x509_crt.h>
 #include <psa/crypto.h>
 #include <psa/crypto_struct.h>
 #include <psa/crypto_values.h>
@@ -422,9 +422,12 @@ int ptls_mbedtls_set_available_schemes(ptls_mbedtls_sign_certificate_t *signer)
             break;
         }
         break;
+#if 0
+    /* Commenting out as MbedTLS does not support ED25519 yet */
     case PSA_ALG_ED25519PH:
         signer->schemes = ed25519_signature_schemes;
         break;
+#endif
     default:
         printf("Unknown algo: %x\n", algo);
         ret = -1;
