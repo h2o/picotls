@@ -311,7 +311,7 @@ static void aead_encrypt_v(struct st_ptls_aead_context_t *_ctx, void *output, pt
     for (size_t i = 0; i < incnt; i++) {
         inlen += input[i].len;
     }
-    outlen_max = PSA_AEAD_UPDATE_OUTPUT_MAX_SIZE(input_length);
+    outlen_max = PSA_AEAD_UPDATE_OUTPUT_MAX_SIZE(inlen);
     /* setup op */
     CALL_WITH_CHECK(psa_aead_encrypt_setup, &op, ctx->key, ctx->alg);
     ptls_aead__build_iv(ctx->super.algo, iv, ctx->static_iv, seq);
