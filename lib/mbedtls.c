@@ -305,20 +305,27 @@ static void aead_encrypt_v(struct st_ptls_aead_context_t *_ctx, void *output, pt
     struct ptls_mbedtls_aead_context_t *ctx = (struct ptls_mbedtls_aead_context_t *)_ctx;
     psa_aead_operation_t op = psa_aead_operation_init();
     uint8_t *dst = output, iv[PTLS_MAX_IV_SIZE], tag[PSA_AEAD_TAG_MAX_SIZE];
-    size_t outlen, taglen;
+    size_t outlen, taglen, inlen = 0, outlen_max;
 
+    /* Compute the complete input length, so we can call */
+    for (size_t i = 0; i < incnt; i++) {
+        inlen += input[i].len;
+    }
+    outlen_max = PSA_AEAD_UPDATE_OUTPUT_MAX_SIZE(input_length);
     /* setup op */
     CALL_WITH_CHECK(psa_aead_encrypt_setup, &op, ctx->key, ctx->alg);
     ptls_aead__build_iv(ctx->super.algo, iv, ctx->static_iv, seq);
     CALL_WITH_CHECK(psa_aead_set_nonce, &op, iv, ctx->super.algo->iv_size);
+    CALL_WITH_CHECK(psa_aead_set_lengths, &op, aadlen, inlen);
     CALL_WITH_CHECK(psa_aead_update_ad, &op, aad, aadlen);
 
     /* encrypt */
     for (size_t i = 0; i < incnt; i++) {
-        CALL_WITH_CHECK(psa_aead_update, &op, input[i].base, input[i].len, dst, SIZE_MAX, &outlen);
+        CALL_WITH_CHECK(psa_aead_update, &op, input[i].base, input[i].len, dst, outlen_max, &outlen);
         dst += outlen;
+        outlen_max -= outlen;
     }
-    CALL_WITH_CHECK(psa_aead_finish, &op, dst, SIZE_MAX, &outlen, tag, sizeof(tag), &taglen);
+    CALL_WITH_CHECK(psa_aead_finish, &op, dst, outlen_max, &outlen, tag, sizeof(tag), &taglen);
     dst += outlen;
     memcpy(dst, tag, taglen);
 
