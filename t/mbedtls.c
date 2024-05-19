@@ -33,6 +33,12 @@
 #include "picotls/minicrypto.h"
 #include "../deps/picotest/picotest.h"
 #include "test.h"
+#include "mbedtls/build_info.h"
+#include "ptls_mbedtls.h"
+#include "picotls/minicrypto.h"
+#include "mbedtls/pk.h"
+#include "mbedtls/pem.h"
+#include "mbedtls/error.h"
 
 typedef struct st_ptls_mbedtls_signature_scheme_t {
     uint16_t scheme_id;
@@ -193,10 +199,17 @@ void test_load_file()
     subtest("load file cert", test_load_file_cert);
 }
 
+typedef struct st_mbedtls_message_verify_ctx_t {
+    psa_key_id_t key_id;
+} mbedtls_message_verify_ctx_t;
+
+int mbedtls_verify_sign(void* verify_ctx, uint16_t algo, ptls_iovec_t data, ptls_iovec_t signature);
+psa_algorithm_t mbedtls_get_psa_alg_from_tls_number(uint16_t tls_algo);
+
 int test_load_one_der_key(char const *path)
 {
     int ret = -1;
-    const unsigned char test_message[32] = {1,  2,  3,  4,  5,  6,  7,  8,  9,  10, 11, 12, 13, 14, 15, 16,
+    unsigned char test_message[32] = {1,  2,  3,  4,  5,  6,  7,  8,  9,  10, 11, 12, 13, 14, 15, 16,
                                   17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32};
     ptls_context_t ctx = {0};
 
