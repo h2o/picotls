@@ -34,7 +34,6 @@
 #include "../deps/picotest/picotest.h"
 #include "test.h"
 #include "mbedtls/build_info.h"
-#include "ptls_mbedtls.h"
 #include "picotls/minicrypto.h"
 #include "mbedtls/pk.h"
 #include "mbedtls/pem.h"
