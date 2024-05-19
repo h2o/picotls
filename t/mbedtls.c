@@ -214,10 +214,10 @@ int test_load_one_der_key(char const *path)
 
     ret = ptls_mbedtls_load_private_key(&ctx, path);
     if (ret != 0) {
-        printf("Cannot create sign_certificate from: %s\n", path);
+        /* Cannot create sign_certificate */
         ret = -1;
     } else if (ctx.sign_certificate == NULL) {
-        printf("Sign_certificate not set in ptls context for: %s\n", path);
+       /* Sign_certificate not set in ptls context */
         ret = -1;
     } else {
         /* Try to sign something */
@@ -241,11 +241,6 @@ int test_load_one_der_key(char const *path)
 
         ret = ptls_mbedtls_sign_certificate(ctx.sign_certificate, NULL, NULL, &selected_algorithm, &outbuf, input, algorithms,
                                             num_algorithms);
-        if (ret == 0) {
-            printf("Signed a message, key: %s, scheme: %x, signature size: %zu\n", path, selected_algorithm, outbuf.off);
-        } else {
-            printf("Sign failed, key: %s, scheme: %x, signature size: %zu\n", path, selected_algorithm, outbuf.off);
-        }
 
         if (ret == 0) {
             /* Create a verifier context and attempt to check the key */
@@ -256,7 +251,7 @@ int test_load_one_der_key(char const *path)
             psa_key_attributes_t public_attributes = psa_key_attributes_init();
 
             if ((psa_status = psa_export_public_key(signer->key_id, pubkey_data, sizeof(pubkey_data), &pubkey_len)) != 0) {
-                printf("Cannot export public key, status = %d\n", psa_status);
+                /* Cannot export public key */
                 ret = -1;
             }
 
@@ -270,7 +265,7 @@ int test_load_one_der_key(char const *path)
                     break;
                 default:
                     /* TODO: add ED25519 when supported by MbedTLS */
-                    printf("Cannot derive public key from key type.\n");
+                    /* Cannot derive public key from key type */
                     ret = -1;
                     break;
                 }
@@ -288,7 +283,7 @@ int test_load_one_der_key(char const *path)
                     psa_set_key_algorithm(&public_attributes, sign_alg /* psa_get_key_algorithm(&signer->attributes) */);
 
                     if ((psa_status = psa_import_key(&public_attributes, pubkey_data, pubkey_len, &verify_ctx->key_id)) != 0) {
-                        printf("Cannot import public key, status = %d\n", psa_status);
+                        /* Cannot import public key */
                         free(verify_ctx);
                         ret = -1;
                     }
@@ -297,12 +292,7 @@ int test_load_one_der_key(char const *path)
                         sig.len = outbuf.off;
 
                         ret = mbedtls_verify_sign(verify_ctx, selected_algorithm, input, sig);
-                        if (ret == 0) {
-                            printf("Verified message signature.\n");
-                        }
-                        else {
-                            printf("Failed to verify signature, ret = %d\n", ret);
-                        }
+                        /* ret != 0 => Failed to verify signature */
                     }
                 }
             }
