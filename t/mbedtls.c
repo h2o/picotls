@@ -213,6 +213,7 @@ int test_load_one_der_key(char const *path)
     ptls_context_t ctx = {0};
 
     ret = ptls_mbedtls_load_private_key(&ctx, path);
+    ok(ret == 0);
     if (ret != 0) {
         /* Cannot create sign_certificate */
         ret = -1;
@@ -241,6 +242,7 @@ int test_load_one_der_key(char const *path)
 
         ret = ptls_mbedtls_sign_certificate(ctx.sign_certificate, NULL, NULL, &selected_algorithm, &outbuf, input, algorithms,
                                             num_algorithms);
+        ok(ret == 0);
 
         if (ret == 0) {
             /* Create a verifier context and attempt to check the key */
@@ -254,7 +256,7 @@ int test_load_one_der_key(char const *path)
                 /* Cannot export public key */
                 ret = -1;
             }
-
+            ok(ret == 0);
             if (ret == 0) {
                 switch (psa_get_key_type(&signer->attributes)) {
                 case PSA_KEY_TYPE_RSA_KEY_PAIR:
@@ -270,9 +272,10 @@ int test_load_one_der_key(char const *path)
                     break;
                 }
             }
-
+            ok(ret == 0);
             if (ret == 0) {
                 mbedtls_message_verify_ctx_t* verify_ctx = (mbedtls_message_verify_ctx_t*)malloc(sizeof(mbedtls_message_verify_ctx_t));
+                ok(verify_ctx != NULL);
                 if (verify_ctx == NULL) {
                     ret = -1;
                 }
@@ -283,15 +286,17 @@ int test_load_one_der_key(char const *path)
 
                     if ((psa_status = psa_import_key(&public_attributes, pubkey_data, pubkey_len, &verify_ctx->key_id)) != 0) {
                         /* Cannot import public key */
+                        ok(psa_status == 0);
                         free(verify_ctx);
                         ret = -1;
                     }
                     else {
+                        ok(psa_status == 0);
                         sig.base = outbuf.base;
                         sig.len = outbuf.off;
 
                         ret = mbedtls_verify_sign(verify_ctx, selected_algorithm, input, sig);
-                        /* ret != 0 => Failed to verify signature */
+                        ok(ret == 0);
                     }
                 }
             }
