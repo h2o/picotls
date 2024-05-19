@@ -278,9 +278,8 @@ int test_load_one_der_key(char const *path)
                 }
                 else {
                     psa_algorithm_t sign_alg = mbedtls_get_psa_alg_from_tls_number(selected_algorithm);
-
                     psa_set_key_usage_flags(&public_attributes, PSA_KEY_USAGE_VERIFY_MESSAGE | PSA_KEY_USAGE_VERIFY_HASH);
-                    psa_set_key_algorithm(&public_attributes, sign_alg /* psa_get_key_algorithm(&signer->attributes) */);
+                    psa_set_key_algorithm(&public_attributes, sign_alg);
 
                     if ((psa_status = psa_import_key(&public_attributes, pubkey_data, pubkey_len, &verify_ctx->key_id)) != 0) {
                         /* Cannot import public key */
@@ -698,7 +697,7 @@ static void test_sign_verify_rsa_mbedtls_mbedtls()
 
 static void test_sign_verify_secp256r1_mbedtls_mbedtls()
 {
-    int ret = test_sign_verify_one(ASSET_SECP256R1_KEY, ASSET_SECP256R1_CERT, ASSET_SECP256R1_CERT, 0, 0);
+    int ret = test_sign_verify_one(ASSET_SECP256R1_KEY, ASSET_SECP256R1_CERT, ASSET_TEST_CA, 0, 0);
     if (ret != 0){
         ok(!"fail");
         return;
@@ -708,7 +707,7 @@ static void test_sign_verify_secp256r1_mbedtls_mbedtls()
 
 static void test_sign_verify_secp384r1_mbedtls_mbedtls()
 {
-    int ret = test_sign_verify_one(ASSET_SECP384R1_KEY, ASSET_SECP384R1_CERT, ASSET_SECP384R1_CERT, 0, 0);
+    int ret = test_sign_verify_one(ASSET_SECP384R1_KEY, ASSET_SECP384R1_CERT, ASSET_TEST_CA, 0, 0);
     if (ret != 0){
         ok(!"fail");
         return;
@@ -718,7 +717,7 @@ static void test_sign_verify_secp384r1_mbedtls_mbedtls()
 
 static void test_sign_verify_secp521r1_mbedtls_mbedtls()
 {
-    int ret = test_sign_verify_one(ASSET_SECP521R1_KEY, ASSET_SECP521R1_CERT, ASSET_SECP521R1_CERT, 0, 0);
+    int ret = test_sign_verify_one(ASSET_SECP521R1_KEY, ASSET_SECP521R1_CERT, ASSET_TEST_CA, 0, 0);
     if (ret != 0){
         ok(!"fail");
         return;
@@ -728,7 +727,7 @@ static void test_sign_verify_secp521r1_mbedtls_mbedtls()
 
 static void test_sign_verify_secp256r1_pkcs8_mbedtls_mbedtls()
 {
-    int ret = test_sign_verify_one(ASSET_SECP256R1_PKCS8_KEY, ASSET_SECP256R1_PKCS8_CERT, ASSET_SECP256R1_PKCS8_CERT, 0, 0);
+    int ret = test_sign_verify_one(ASSET_SECP256R1_PKCS8_KEY, ASSET_SECP256R1_PKCS8_CERT, ASSET_TEST_CA, 0, 0);
     if (ret != 0){
         ok(!"fail");
         return;
