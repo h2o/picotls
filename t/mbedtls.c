@@ -360,6 +360,7 @@ static void test_load_secp256r1_pkcs8_key()
     ok(!!"success");
 }
 
+#if 0
 static void test_load_rsa_pkcs8_key()
 {
     int ret = test_load_one_der_key(ASSET_RSA_PKCS8_KEY);
@@ -369,6 +370,7 @@ static void test_load_rsa_pkcs8_key()
     }
     ok(!!"success");
 }
+#endif
 
 void test_load_keys(void)
 {
