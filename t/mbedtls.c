@@ -253,7 +253,6 @@ int test_load_one_der_key(char const *path)
             uint8_t pubkey_data[1024];
             size_t pubkey_len = 0;
             psa_status_t  psa_status;
-            psa_key_attributes_t attr;
             psa_key_attributes_t public_attributes = psa_key_attributes_init();
 
             if ((psa_status = psa_export_public_key(signer->key_id, pubkey_data, sizeof(pubkey_data), &pubkey_len)) != 0) {

@@ -375,7 +375,7 @@ const ptls_mbedtls_signature_scheme_t *ptls_mbedtls_select_signature_scheme(cons
 {
     const ptls_mbedtls_signature_scheme_t *scheme;
 
-    /* select the algorithm, driven by server-isde preference of `available` */
+    /* select the algorithm, driven by server preference of `available` */
     for (scheme = available; scheme->scheme_id != UINT16_MAX; ++scheme) {
         for (size_t i = 0; i != num_algorithms; ++i) {
             if (algorithms[i] == scheme->scheme_id) {
@@ -915,7 +915,68 @@ uint16_t mbedtls_verify_sign_algos[] = {
     0xFFFF
 };
 
-static int mbedtls_verify_sign(void *verify_ctx, uint16_t algo, ptls_iovec_t data, ptls_iovec_t signature)
+
+/* Find the psa_algorithm_t values corresponding to the 16 bit TLS signature scheme */
+psa_algorithm_t mbedtls_get_psa_alg_from_tls_number(uint16_t tls_algo)
+{
+    psa_algorithm_t alg = PSA_ALG_NONE;
+    switch (tls_algo) {
+    case 0x0201: /* PTLS_SIGNATURE_RSA_PKCS1_SHA1 */
+        alg = PSA_ALG_RSA_PKCS1V15_SIGN(PSA_ALG_SHA_1);
+        break;
+    case 0x0203: /*	ecdsa_sha1 */
+        alg = PSA_ALG_ECDSA(PSA_ALG_SHA_1);
+        break;
+    case 0x401: /* PTLS_SIGNATURE_RSA_PKCS1_SHA256 */
+        alg = PSA_ALG_RSA_PKCS1V15_SIGN(PSA_ALG_SHA_256);
+        break;
+    case 0x0403: /*  PTLS_SIGNATURE_ECDSA_SECP256R1_SHA256 */
+        alg = PSA_ALG_ECDSA(PSA_ALG_SHA_256);
+        break;
+#if 0
+        /* For further study. These two algorithms might be available in MbedTLS */
+    case 0x0420: /* rsa_pkcs1_sha256_legacy */
+        break;
+    case 0x0520: /* rsa_pkcs1_sha384_legacy */
+        break;
+#endif
+    case 0x501: /* rsa_pkcs1_sha384 */
+        alg = PSA_ALG_RSA_PKCS1V15_SIGN(PSA_ALG_SHA_384);
+        break;
+    case 0x0503: /* PTLS_SIGNATURE_ECDSA_SECP384R1_SHA384 */
+        alg = PSA_ALG_ECDSA(PSA_ALG_SHA_384);
+        break;
+    case 0x0601: /* rsa_pkcs1_sha512  */
+        alg = PSA_ALG_RSA_PKCS1V15_SIGN(PSA_ALG_SHA_512);
+        break;
+    case 0x0603: /* PTLS_SIGNATURE_ECDSA_SECP521R1_SHA512 */
+        alg = PSA_ALG_ECDSA(PSA_ALG_SHA_512);
+        break;
+    case 0x0804: /* PTLS_SIGNATURE_RSA_PSS_RSAE_SHA256 */
+        alg = PSA_ALG_RSA_PSS(PSA_ALG_SHA_256);
+        break;
+    case 0x0805: /* PTLS_SIGNATURE_RSA_PSS_RSAE_SHA384 */
+        alg = PSA_ALG_RSA_PSS(PSA_ALG_SHA_384);
+        break;
+    case 0x0806: /* PTLS_SIGNATURE_RSA_PSS_RSAE_SHA512 */
+        alg = PSA_ALG_RSA_PSS(PSA_ALG_SHA_512);
+        break;
+#if 0
+        /* Commented out, as EDDSA is not supported yet in MbedTLS*/
+    case 0x0807: /* PTLS_SIGNATURE_ED25519 */
+        alg = PSA_ALG_ED25519PH;
+        break;
+    case 0x0808: /* PTLS_SIGNATURE_ED448 */
+        alg = PSA_ALG_ED448PH;
+        break;
+#endif
+    default:
+        break;
+    }
+    return alg;
+}
+
+int mbedtls_verify_sign(void *verify_ctx, uint16_t algo, ptls_iovec_t data, ptls_iovec_t signature)
 {
     /* Obtain the key parameters, etc. */
     int ret = 0;
@@ -924,63 +985,13 @@ static int mbedtls_verify_sign(void *verify_ctx, uint16_t algo, ptls_iovec_t dat
 
     if (message_verify_ctx == NULL) {
         ret = PTLS_ERROR_LIBRARY;
-    } else if (data.base != NULL) {
+    }
+    else if (data.base != NULL) {
         /* Picotls will call verify_sign with data.base == NULL when it
         * only wants to clear the memory. This is not an error condition. */
-        /* Find the PSA_ALG for the signature scheme is supported */
-        switch (algo) {
-        case 0x0201: /* PTLS_SIGNATURE_RSA_PKCS1_SHA1 */
-            alg = PSA_ALG_RSA_PKCS1V15_SIGN(PSA_ALG_SHA_1);
-            break;
-        case 0x0203: /*	ecdsa_sha1 */
-            alg = PSA_ALG_ECDSA(PSA_ALG_SHA_1);
-            break;
-        case 0x401: /* PTLS_SIGNATURE_RSA_PKCS1_SHA256 */
-            alg = PSA_ALG_RSA_PKCS1V15_SIGN(PSA_ALG_SHA_256);
-            break;
-        case 0x0403: /*  PTLS_SIGNATURE_ECDSA_SECP256R1_SHA256 */
-            alg = PSA_ALG_ECDSA(PSA_ALG_SHA_256);
-            break;
-#if 0
-            /* For further study. These two algorithms might be available in MbedTLS */
-        case 0x0420: /* rsa_pkcs1_sha256_legacy */
-            break;
-        case 0x0520: /* rsa_pkcs1_sha384_legacy */
-            break;
-#endif
-        case 0x501: /* rsa_pkcs1_sha384 */
-            alg = PSA_ALG_RSA_PKCS1V15_SIGN(PSA_ALG_SHA_384);
-            break;
-        case 0x0503: /* PTLS_SIGNATURE_ECDSA_SECP384R1_SHA384 */
-            alg = PSA_ALG_ECDSA(PSA_ALG_SHA_384);
-            break;
-        case 0x0601: /* rsa_pkcs1_sha512  */
-            alg = PSA_ALG_RSA_PKCS1V15_SIGN(PSA_ALG_SHA_512);
-            break;
-        case 0x0603: /* PTLS_SIGNATURE_ECDSA_SECP521R1_SHA512 */
-            alg = PSA_ALG_ECDSA(PSA_ALG_SHA_512);
-            break;
-        case 0x0804: /* PTLS_SIGNATURE_RSA_PSS_RSAE_SHA256 */
-            alg = PSA_ALG_RSA_PSS(PSA_ALG_SHA_256);
-            break;
-        case 0x0805: /* PTLS_SIGNATURE_RSA_PSS_RSAE_SHA384 */
-            alg = PSA_ALG_RSA_PSS(PSA_ALG_SHA_384);
-            break;
-        case 0x0806: /* PTLS_SIGNATURE_RSA_PSS_RSAE_SHA512 */
-            alg = PSA_ALG_RSA_PSS(PSA_ALG_SHA_512);
-            break;
-#if 0
-            /* Commented out, as EDDSA is not supported yet in MbedTLS*/
-        case 0x0807: /* PTLS_SIGNATURE_ED25519 */
-            alg = PSA_ALG_ED25519PH;
-            break;
-        case 0x0808: /* PTLS_SIGNATURE_ED448 */
-            alg = PSA_ALG_ED448PH;
-            break;
-#endif
-        default:
-            break;
-        }
+
+        /* Find the PSA_ALG for the signature scheme */
+        alg = mbedtls_get_psa_alg_from_tls_number(algo);
 
         if (alg == PSA_ALG_NONE) {
             ret = PTLS_ALERT_ILLEGAL_PARAMETER;
@@ -1009,7 +1020,7 @@ static int mbedtls_verify_sign(void *verify_ctx, uint16_t algo, ptls_iovec_t dat
             }
         }
     }
-    /* destroy the key because it is used only once. */
+    /* destroy the key because it is used only once.*/
     if (message_verify_ctx != NULL) {
         psa_destroy_key(message_verify_ctx->key_id);
         free(message_verify_ctx);
