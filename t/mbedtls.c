@@ -196,8 +196,7 @@ void test_load_file()
 int test_load_one_der_key(char const *path)
 {
     int ret = -1;
-    unsigned char hash[32];
-    const unsigned char h0[32] = {1,  2,  3,  4,  5,  6,  7,  8,  9,  10, 11, 12, 13, 14, 15, 16,
+    const unsigned char test_message[32] = {1,  2,  3,  4,  5,  6,  7,  8,  9,  10, 11, 12, 13, 14, 15, 16,
                                   17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32};
     ptls_context_t ctx = {0};
 
@@ -217,11 +216,10 @@ int test_load_one_der_key(char const *path)
         /* get the key algorithm */
         ptls_buffer_t outbuf;
         uint8_t outbuf_smallbuf[256];
-        ptls_iovec_t input = {hash, sizeof(hash)};
+        ptls_iovec_t input = {test_message, sizeof(test_message)};
         uint16_t selected_algorithm = 0;
         int num_algorithms = 0;
         uint16_t algorithms[16];
-        memcpy(hash, h0, 32);
         while (signer->schemes[num_algorithms].scheme_id != UINT16_MAX && num_algorithms < 16) {
             algorithms[num_algorithms] = signer->schemes[num_algorithms].scheme_id;
             num_algorithms++;
@@ -236,6 +234,69 @@ int test_load_one_der_key(char const *path)
         } else {
             printf("Sign failed, key: %s, scheme: %x, signature size: %zu\n", path, selected_algorithm, outbuf.off);
         }
+
+        if (ret == 0) {
+            /* Create a verifier context and attempt to check the key */
+            ptls_iovec_t sig;
+            uint8_t pubkey_data[1024];
+            size_t pubkey_len = 0;
+            psa_status_t  psa_status;
+            psa_key_attributes_t attr;
+            psa_key_attributes_t public_attributes = psa_key_attributes_init();
+
+            if ((psa_status = psa_export_public_key(signer->key_id, pubkey_data, sizeof(pubkey_data), &pubkey_len)) != 0) {
+                printf("Cannot export public key, status = %d\n", psa_status);
+                ret = -1;
+            }
+
+            if (ret == 0) {
+                switch (psa_get_key_type(&signer->attributes)) {
+                case PSA_KEY_TYPE_RSA_KEY_PAIR:
+                    psa_set_key_type(&public_attributes, PSA_KEY_TYPE_RSA_PUBLIC_KEY);
+                    break;
+                case PSA_KEY_TYPE_ECC_KEY_PAIR(PSA_ECC_FAMILY_SECP_R1):
+                    psa_set_key_type(&public_attributes, PSA_KEY_TYPE_ECC_PUBLIC_KEY(PSA_ECC_FAMILY_SECP_R1));
+                    break;
+                default:
+                    /* TODO: add ED25519 when supported by MbedTLS */
+                    printf("Cannot derive public key from key type.\n");
+                    ret = -1;
+                    break;
+                }
+            }
+
+            if (ret == 0) {
+                mbedtls_message_verify_ctx_t* verify_ctx = (mbedtls_message_verify_ctx_t*)malloc(sizeof(mbedtls_message_verify_ctx_t));
+                if (verify_ctx == NULL) {
+                    ret = -1;
+                }
+                else {
+                    psa_algorithm_t sign_alg = mbedtls_get_psa_alg_from_tls_number(selected_algorithm);
+
+                    psa_set_key_usage_flags(&public_attributes, PSA_KEY_USAGE_VERIFY_MESSAGE | PSA_KEY_USAGE_VERIFY_HASH);
+                    psa_set_key_algorithm(&public_attributes, sign_alg /* psa_get_key_algorithm(&signer->attributes) */);
+
+                    if ((psa_status = psa_import_key(&public_attributes, pubkey_data, pubkey_len, &verify_ctx->key_id)) != 0) {
+                        printf("Cannot import public key, status = %d\n", psa_status);
+                        free(verify_ctx);
+                        ret = -1;
+                    }
+                    else {
+                        sig.base = outbuf.base;
+                        sig.len = outbuf.off;
+
+                        ret = mbedtls_verify_sign(verify_ctx, selected_algorithm, input, sig);
+                        if (ret == 0) {
+                            printf("Verified message signature.\n");
+                        }
+                        else {
+                            printf("Failed to verify signature, ret = %d\n", ret);
+                        }
+                    }
+                }
+            }
+        }
+
         ptls_buffer_dispose(&outbuf);
         ptls_mbedtls_dispose_sign_certificate(&signer->super);
     }
