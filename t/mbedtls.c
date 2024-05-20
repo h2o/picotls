@@ -515,6 +515,7 @@ static int test_sign_verify_one(char const* key_path, char const * cert_path, ch
     ptls_buffer_init(&signature, signature_smallbuf, sizeof(signature_smallbuf));
 
     if (server_ctx == NULL || client_ctx == NULL) {
+        ok(server_ctx != NULL && client_ctx != NULL);
         ret = -1;
     }
 
@@ -522,6 +523,7 @@ static int test_sign_verify_one(char const* key_path, char const * cert_path, ch
         /* Then, create a tls context for the server. */
         server_tls = ptls_new(server_ctx, 1);
         if (server_tls == NULL) {
+            ok(server_tls != NULL)
             ret = -1;
         }
     }
@@ -560,9 +562,7 @@ static int test_sign_verify_one(char const* key_path, char const * cert_path, ch
             sig.len = signature.off;
 
             ret = certificate_verify.cb(certificate_verify.verify_ctx, selected_algorithm, input, sig);
-            if (ret != 0) {
-                ok(ret == 0);
-            }
+            ok(ret == 0);
         }
         else if (certificate_verify.cb != NULL) {
             ptls_iovec_t empty;
@@ -587,57 +587,7 @@ static int test_sign_verify_one(char const* key_path, char const * cert_path, ch
     ok(ret == 0);
     return ret;
 }
-#if 0
-static void test_sign_verify_rsa_mbedtls_mbedtls()
-{
-    int ret = test_sign_verify_one(ASSET_RSA_KEY, ASSET_RSA_CERT, ASSET_TEST_CA, 0, 0);
-    if (ret != 0){
-        ok(!"fail");
-        return;
-    }
-    ok(!!"success");
-}
 
-static void test_sign_verify_secp256r1_mbedtls_mbedtls()
-{
-    int ret = test_sign_verify_one(ASSET_SECP256R1_KEY, ASSET_SECP256R1_CERT, ASSET_TEST_CA, 0, 0);
-    if (ret != 0){
-        ok(!"fail");
-        return;
-    }
-    ok(!!"success");
-}
-
-static void test_sign_verify_secp384r1_mbedtls_mbedtls()
-{
-    int ret = test_sign_verify_one(ASSET_SECP384R1_KEY, ASSET_SECP384R1_CERT, ASSET_TEST_CA, 0, 0);
-    if (ret != 0){
-        ok(!"fail");
-        return;
-    }
-    ok(!!"success");
-}
-
-static void test_sign_verify_secp521r1_mbedtls_mbedtls()
-{
-    int ret = test_sign_verify_one(ASSET_SECP521R1_KEY, ASSET_SECP521R1_CERT, ASSET_TEST_CA, 0, 0);
-    if (ret != 0){
-        ok(!"fail");
-        return;
-    }
-    ok(!!"success");
-}
-
-static void test_sign_verify_secp256r1_pkcs8_mbedtls_mbedtls()
-{
-    int ret = test_sign_verify_one(ASSET_SECP256R1_PKCS8_KEY, ASSET_SECP256R1_PKCS8_CERT, ASSET_TEST_CA, 0, 0);
-    if (ret != 0){
-        ok(!"fail");
-        return;
-    }
-    ok(!!"success");
-}
-#endif
 /* TODO: all these tests are failing, because we do not have the 
 * proper combination of hostname and certificate. Fix that, then
 * enable the test.
@@ -719,12 +669,9 @@ int main(int argc, char **argv)
     /* Test loading file in memory */
     subtest("test load file", test_load_file);
 
-    /* test loading of keys in memory and capability to sign  */
+    /* test loading of keys in memory and capability to sign,
+     * and also verify failure modes. */
     subtest("test load keys", test_load_keys);
-#if 0
-    /* Test that loading bad files or bad keys fails */
-    subtest("test load key failures", test_load_key_fail);
-#endif
 
     /* End to end test of signing and verifying certicates */
     subtest("test sign verify end to end", test_sign_verify_end_to_end);
