@@ -147,7 +147,7 @@ Output buffer is already partially filled.
 #define ASSET_SECP521R1_CERT "t/assets/secp521r1/cert.pem"
 #define ASSET_SECP256R1_PKCS8_CERT "t/assets/secp256r1-pkcs8/cert.pem"
 #define ASSET_ED25519_CERT "t/assets/ed25519/cert.pem"
-#define ASSET_TEST_CA "data/test-ca.crt"
+#define ASSET_TEST_CA "t/assets/test-ca.crt"
 
 #define ASSET_RSA_NAME "rsa.test.example.com"
 #define ASSET_RSA_PKCS8_NAME "rsa.test.example.com"
@@ -255,7 +255,7 @@ int test_load_one_der_key(char const *path, int expect_failure)
             ptls_iovec_t sig;
             uint8_t pubkey_data[1024];
             size_t pubkey_len = 0;
-            psa_status_t  psa_status;
+            psa_status_t psa_status;
             psa_key_attributes_t public_attributes = psa_key_attributes_init();
 
             if ((psa_status = psa_export_public_key(signer->key_id, pubkey_data, sizeof(pubkey_data), &pubkey_len)) != 0) {
@@ -446,7 +446,7 @@ static ptls_context_t* test_sign_set_ptls_context(char const* key_path, char con
     int ret = 0;
     ptls_context_t* ctx = (ptls_context_t*)malloc(sizeof(ptls_context_t));
     if (ctx == NULL) {
-        ok(ctx != 0);
+        ok(ctx != NULL);
         return NULL;
     }
 
@@ -466,15 +466,19 @@ static ptls_context_t* test_sign_set_ptls_context(char const* key_path, char con
         switch (config) {
         case 0: /* MbedTLS */
             ret = test_sign_init_server_mbedtls(ctx, key_path, cert_path);
-            ok(ret == 0);
+            if (ret != 0) {
+                ok(ret == 0);
+            }
             break;
         case 1: /* Minicrypto */
             ret = test_sign_init_server_minicrypto(ctx, key_path, cert_path);
-            ok(ret == 0);
+            if (ret != 0) {
+                ok(ret == 0);
+            }
             break;
         default:
-            ok(ret == 0);
             ret = -1;
+            ok(ret == 0);
             break;
         }
     }
@@ -483,11 +487,13 @@ static ptls_context_t* test_sign_set_ptls_context(char const* key_path, char con
         switch (config) {
         case 0: /* MbedTLS */
             ret = ptls_mbedtls_init_verify_certificate(ctx, trusted_path);
-            ok(ret == 0);
+            if (ret != 0) {
+                ok(ret == 0);
+            }
             break;
         default:
-            ok(ret == 0);
             ret = -1;
+            ok(ret == 0);
             break;
         }
     }
