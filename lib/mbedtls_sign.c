@@ -1,24 +1,24 @@
 /*
- * Copyright (c) 2023, Christian Huitema
- *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to
- * deal in the Software without restriction, including without limitation the
- * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
- * sell copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
- * IN THE SOFTWARE.
- */
+* Copyright (c) 2023, Christian Huitema
+*
+* Permission is hereby granted, free of charge, to any person obtaining a copy
+* of this software and associated documentation files (the "Software"), to
+* deal in the Software without restriction, including without limitation the
+* rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+* sell copies of the Software, and to permit persons to whom the Software is
+* furnished to do so, subject to the following conditions:
+*
+* The above copyright notice and this permission notice shall be included in
+* all copies or substantial portions of the Software.
+*
+* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+* IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+* FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+* AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+* LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+* FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+* IN THE SOFTWARE.
+*/
 
 #ifdef _WINDOWS
 #include "wincompat.h"
@@ -51,7 +51,6 @@ typedef struct st_ptls_mbedtls_sign_certificate_t {
     const ptls_mbedtls_signature_scheme_t *schemes;
 } ptls_mbedtls_sign_certificate_t;
 
-
 typedef struct st_ptls_mbedtls_verify_certificate_t {
     ptls_verify_certificate_t super;
     mbedtls_x509_crt *trust_ca;
@@ -67,10 +66,14 @@ static const unsigned char ptls_mbedtls_oid_rsa_key[] = {0x2a, 0x86, 0x48, 0x86,
 static const unsigned char ptls_mbedtls_oid_ed25519[] = {0x2b, 0x65, 0x70};
 #endif
 
-static const ptls_mbedtls_signature_scheme_t rsa_signature_schemes[] = {{PTLS_SIGNATURE_RSA_PSS_RSAE_SHA256, PSA_ALG_SHA_256},
-                                                                        {PTLS_SIGNATURE_RSA_PSS_RSAE_SHA384, PSA_ALG_SHA_384},
-                                                                        {PTLS_SIGNATURE_RSA_PSS_RSAE_SHA512, PSA_ALG_SHA_512},
-                                                                        {UINT16_MAX, PSA_ALG_NONE}};
+static const ptls_mbedtls_signature_scheme_t rsa_signature_schemes[] = {
+    {PTLS_SIGNATURE_RSA_PKCS1_SHA256, PSA_ALG_SHA_256},
+    {PTLS_SIGNATURE_RSA_PSS_RSAE_SHA256, PSA_ALG_SHA_256},
+    {PTLS_SIGNATURE_RSA_PSS_RSAE_SHA384, PSA_ALG_SHA_384},
+    {PTLS_SIGNATURE_RSA_PSS_RSAE_SHA512, PSA_ALG_SHA_512},
+    {PTLS_SIGNATURE_RSA_PKCS1_SHA1, PSA_ALG_SHA_1},
+    {UINT16_MAX, PSA_ALG_NONE}
+};
 
 static const ptls_mbedtls_signature_scheme_t secp256r1_signature_schemes[] = {
     {PTLS_SIGNATURE_ECDSA_SECP256R1_SHA256, PSA_ALG_SHA_256}, {UINT16_MAX, PSA_ALG_NONE}};
@@ -81,7 +84,7 @@ static const ptls_mbedtls_signature_scheme_t secp521r1_signature_schemes[] = {
 #if 0
 /* Commented out for now, as EDDSA is not yet supported by MbedTLS */
 static const ptls_mbedtls_signature_scheme_t ed25519_signature_schemes[] = {{PTLS_SIGNATURE_ED25519, PSA_ALG_NONE},
-                                                                            {UINT16_MAX, PSA_ALG_NONE}};
+    {UINT16_MAX, PSA_ALG_NONE}};
 #endif
 
 #if defined(MBEDTLS_PEM_PARSE_C)
@@ -166,13 +169,13 @@ static int ptls_mbedtls_parse_ecdsa_field(const unsigned char *pem_buf, size_t p
 }
 
 #if 0
-/* Commenting out, as EDDSA is no yet supported in MbedTLS */
+/* Code commented out for now, as EDDSA is not supported yet in MbedTLS */
 
 /* On input, key_index points at the "key information" in a
- * "private key" message. For EDDSA, this contains an
- * octet string carrying the key itself. On return, key index
- * and key length are updated to point at the key field.
- */
+* "private key" message. For EDDSA, this contains an
+* octet string carrying the key itself. On return, key index
+* and key length are updated to point at the key field.
+*/
 static int ptls_mbedtls_parse_eddsa_key(const unsigned char *pem_buf, size_t pem_len, size_t *key_index, size_t *key_length)
 {
     int ret = 0;
@@ -196,10 +199,10 @@ static int ptls_mbedtls_parse_eddsa_key(const unsigned char *pem_buf, size_t pem
 #endif
 
 /* If using PKCS8 encoding, the "private key" field contains the
- * same "ecdsa field" found in PEM "EC PRIVATE KEY" files. We
- * use the same parser, but we need to reset indices so they
- * reflect the unwrapped key.
- */
+* same "ecdsa field" found in PEM "EC PRIVATE KEY" files. We
+* use the same parser, but we need to reset indices so they
+* reflect the unwrapped key.
+*/
 int ptls_mbedtls_parse_ec_private_key(const unsigned char *pem_buf, size_t pem_len, size_t *key_index, size_t *key_length)
 {
     size_t x_offset = 0;
@@ -214,7 +217,7 @@ int ptls_mbedtls_parse_ec_private_key(const unsigned char *pem_buf, size_t pem_l
 }
 
 int test_parse_private_key_field(const unsigned char *pem_buf, size_t pem_len, size_t *oid_index, size_t *oid_length,
-                                 size_t *key_index, size_t *key_length)
+    size_t *key_index, size_t *key_length)
 {
     int ret = 0;
     size_t l_oid = 0;
@@ -240,8 +243,8 @@ int test_parse_private_key_field(const unsigned char *pem_buf, size_t pem_len, s
             ret = -1;
         } else {
             /* the sequence contains the OID and optional key attributes,
-             * which we ignore for now.
-             */
+            * which we ignore for now.
+            */
             size_t l_seq = 0;
             size_t x_seq;
             ret = ptls_mbedtls_parse_der_length(pem_buf, pem_len, &x, &l_seq);
@@ -261,8 +264,8 @@ int test_parse_private_key_field(const unsigned char *pem_buf, size_t pem_len, s
     }
     if (ret == 0) {
         /* At that point the oid has been identified.
-         * The next parameter is an octet string containing the key info.
-         */
+        * The next parameter is an octet string containing the key info.
+        */
         if (x + 2 > pem_len || pem_buf[x++] != 0x04) {
             ret = -1;
         } else {
@@ -283,7 +286,7 @@ int test_parse_private_key_field(const unsigned char *pem_buf, size_t pem_len, s
 }
 
 int ptls_mbedtls_get_der_key(mbedtls_pem_context *pem, mbedtls_pk_type_t *pk_type, const unsigned char *key, size_t keylen,
-                             const unsigned char *pwd, size_t pwdlen, int (*f_rng)(void *, unsigned char *, size_t), void *p_rng)
+    const unsigned char *pwd, size_t pwdlen, int (*f_rng)(void *, unsigned char *, size_t), void *p_rng)
 {
     int ret = MBEDTLS_ERR_ERROR_CORRUPTION_DETECTED;
 #if defined(MBEDTLS_PEM_PARSE_C)
@@ -298,11 +301,11 @@ int ptls_mbedtls_get_der_key(mbedtls_pem_context *pem, mbedtls_pk_type_t *pk_typ
 
 #if defined(MBEDTLS_RSA_C)
     /* Avoid calling mbedtls_pem_read_buffer() on non-null-terminated string */
-    if (key[keylen - 1] != '\0') {
+    if (key[keylen] != '\0') {
         ret = MBEDTLS_ERR_PEM_NO_HEADER_FOOTER_PRESENT;
     } else {
         ret = mbedtls_pem_read_buffer(pem, "-----BEGIN RSA PRIVATE KEY-----", "-----END RSA PRIVATE KEY-----", key, pwd, pwdlen,
-                                      &len);
+            &len);
     }
 
     if (ret == 0) {
@@ -313,14 +316,13 @@ int ptls_mbedtls_get_der_key(mbedtls_pem_context *pem, mbedtls_pk_type_t *pk_typ
     } else if (ret == MBEDTLS_ERR_PEM_PASSWORD_REQUIRED) {
         return MBEDTLS_ERR_PK_PASSWORD_REQUIRED;
     } else if (ret != MBEDTLS_ERR_PEM_NO_HEADER_FOOTER_PRESENT) {
-
         return ret;
     }
 #endif /* MBEDTLS_RSA_C */
 
 #if defined(MBEDTLS_PK_HAVE_ECC_KEYS)
     /* Avoid calling mbedtls_pem_read_buffer() on non-null-terminated string */
-    if (key[keylen - 1] != '\0') {
+    if (key[keylen] != '\0') {
         ret = MBEDTLS_ERR_PEM_NO_HEADER_FOOTER_PRESENT;
     } else {
         ret =
@@ -339,7 +341,7 @@ int ptls_mbedtls_get_der_key(mbedtls_pem_context *pem, mbedtls_pk_type_t *pk_typ
 #endif /* MBEDTLS_PK_HAVE_ECC_KEYS */
 
     /* Avoid calling mbedtls_pem_read_buffer() on non-null-terminated string */
-    if (key[keylen - 1] != '\0') {
+    if (key[keylen] != '\0') {
         ret = MBEDTLS_ERR_PEM_NO_HEADER_FOOTER_PRESENT;
     } else {
         ret = mbedtls_pem_read_buffer(pem, "-----BEGIN PRIVATE KEY-----", "-----END PRIVATE KEY-----", key, NULL, 0, &len);
@@ -353,11 +355,11 @@ int ptls_mbedtls_get_der_key(mbedtls_pem_context *pem, mbedtls_pk_type_t *pk_typ
 
 #if defined(MBEDTLS_PKCS12_C) || defined(MBEDTLS_PKCS5_C)
     /* Avoid calling mbedtls_pem_read_buffer() on non-null-terminated string */
-    if (key[keylen - 1] != '\0') {
+    if (key[keylen] != '\0') {
         ret = MBEDTLS_ERR_PEM_NO_HEADER_FOOTER_PRESENT;
     } else {
         ret = mbedtls_pem_read_buffer(pem, "-----BEGIN ENCRYPTED PRIVATE KEY-----", "-----END ENCRYPTED PRIVATE KEY-----", key,
-                                      NULL, 0, &len);
+            NULL, 0, &len);
     }
     if (ret == 0) {
         /* infor is unknown */
@@ -371,7 +373,7 @@ int ptls_mbedtls_get_der_key(mbedtls_pem_context *pem, mbedtls_pk_type_t *pk_typ
 #endif
 
 const ptls_mbedtls_signature_scheme_t *ptls_mbedtls_select_signature_scheme(const ptls_mbedtls_signature_scheme_t *available,
-                                                                            const uint16_t *algorithms, size_t num_algorithms)
+    const uint16_t *algorithms, size_t num_algorithms, uint16_t * selected_algorithm)
 {
     const ptls_mbedtls_signature_scheme_t *scheme;
 
@@ -379,11 +381,60 @@ const ptls_mbedtls_signature_scheme_t *ptls_mbedtls_select_signature_scheme(cons
     for (scheme = available; scheme->scheme_id != UINT16_MAX; ++scheme) {
         for (size_t i = 0; i != num_algorithms; ++i) {
             if (algorithms[i] == scheme->scheme_id) {
+                *selected_algorithm = scheme->scheme_id;
                 return scheme;
             }
         }
     }
     return NULL;
+}
+
+/* Find whether the signature scheme is supported */
+int ptls_mbedtls_set_schemes_from_key_params(psa_algorithm_t key_algo, size_t key_nb_bits, const ptls_mbedtls_signature_scheme_t** schemes)
+{
+    int ret = 0;
+
+    switch (key_algo) {
+    case PSA_ALG_RSA_PKCS1V15_SIGN_RAW:
+        *schemes = rsa_signature_schemes;
+        break;
+    case PSA_ALG_DETERMINISTIC_ECDSA(PSA_ALG_SHA_256):
+        *schemes = secp256r1_signature_schemes;
+        break;
+    case PSA_ALG_DETERMINISTIC_ECDSA(PSA_ALG_SHA_384):
+        *schemes = secp384r1_signature_schemes;
+        break;
+    case PSA_ALG_DETERMINISTIC_ECDSA(PSA_ALG_SHA_512):
+        *schemes = secp521r1_signature_schemes;
+        break;
+    case PSA_ALG_ECDSA_BASE:
+        switch (key_nb_bits) {
+        case 521:
+            *schemes = secp521r1_signature_schemes;
+            break;
+        case 384:
+            *schemes = secp384r1_signature_schemes;
+            break;
+        case 256:
+            *schemes = secp256r1_signature_schemes;
+            break;
+        default:
+            *schemes = secp256r1_signature_schemes;
+            ret = -1;
+            break;
+        }
+        break;
+#if 0
+    case PSA_ALG_ED25519PH:
+        *schemes = ed25519_signature_schemes;
+        break;
+#endif
+    default:
+        /* printf("Unknown algo: %x\n", key_algo); */
+        ret = -1;
+    }
+
+    return ret;
 }
 
 int ptls_mbedtls_set_available_schemes(ptls_mbedtls_sign_certificate_t *signer)
@@ -392,79 +443,41 @@ int ptls_mbedtls_set_available_schemes(ptls_mbedtls_sign_certificate_t *signer)
     psa_algorithm_t algo = psa_get_key_algorithm(&signer->attributes);
     size_t nb_bits = psa_get_key_bits(&signer->attributes);
 
-    switch (algo) {
-    case PSA_ALG_RSA_PKCS1V15_SIGN_RAW:
-        signer->schemes = rsa_signature_schemes;
-        break;
-    case PSA_ALG_DETERMINISTIC_ECDSA(PSA_ALG_SHA_256):
-        signer->schemes = secp256r1_signature_schemes;
-        break;
-    case PSA_ALG_DETERMINISTIC_ECDSA(PSA_ALG_SHA_384):
-        signer->schemes = secp384r1_signature_schemes;
-        break;
-    case PSA_ALG_DETERMINISTIC_ECDSA(PSA_ALG_SHA_512):
-        signer->schemes = secp521r1_signature_schemes;
-        break;
-    case PSA_ALG_ECDSA_BASE:
-        switch (nb_bits) {
-        case 521:
-            signer->schemes = secp521r1_signature_schemes;
-            break;
-        case 384:
-            signer->schemes = secp384r1_signature_schemes;
-            break;
-        case 256:
-            signer->schemes = secp256r1_signature_schemes;
-            break;
-        default:
-            signer->schemes = secp256r1_signature_schemes;
-            ret = -1;
-            break;
-        }
-        break;
-#if 0
-    /* Commenting out as MbedTLS does not support ED25519 yet */
-    case PSA_ALG_ED25519PH:
-        signer->schemes = ed25519_signature_schemes;
-        break;
-#endif
-    default:
-        printf("Unknown algo: %x\n", algo);
-        ret = -1;
-    }
+    ret = ptls_mbedtls_set_schemes_from_key_params(algo, nb_bits, &signer->schemes);
 
     return ret;
 }
 
+
 /*
- * Sign a certificate
- * - step1, selected a signature algorithm compatible with the public key algorithm
- *   and with the list specified by the application.
- * - step2, compute the hash with the specified algorithm.
- * - step3, compute the signature of the hash using psa_sign_hash.
- *
- * In the case of RSA, we use the algorithm PSA_ALG_RSA_PKCS1V15_SIGN_RAW, which
- * pads the hash according to PKCS1V15 before doing the private key operation.
- * The implementation of RSA/PKCS1V15 also includes a verification step to protect
- * against key attacks through partial faults.
- *
- * MBEDTLS has a "psa_sign_message" that combines step2 and step3. However, it
- * requires specifying an algorithm type that exactly specifies the signature
- * algorithm, such as "RSA with SHA384". This is not compatible with the
- * "RSA sign raw" algorithm. Instead, we decompose the operation in two steps.
- * There is no performance penalty doing so, as "psa_sign_message" is only
- * a convenience API.
- */
+* Sign a certificate
+* - step1, selected a signature algorithm compatible with the public key algorithm
+*   and with the list specified by the application.
+* - step2, compute the hash with the specified algorithm.
+* - step3, compute the signature of the hash using psa_sign_hash.
+*
+* In the case of RSA, we use the algorithm PSA_ALG_RSA_PKCS1V15_SIGN_RAW, which
+* pads the hash according to PKCS1V15 before doing the private key operation.
+* The implementation of RSA/PKCS1V15 also includes a verification step to protect
+* against key attacks through partial faults.
+*
+* MBEDTLS has a "psa_sign_message" that combines step2 and step3. However, it
+* requires specifying an algorithm type that exactly specifies the signature
+* algorithm, such as "RSA with SHA384". This is not compatible with the
+* "RSA sign raw" algorithm. Instead, we decompose the operation in two steps.
+* There is no performance penalty doing so, as "psa_sign_message" is only
+* a convenience API.
+*/
 
 int ptls_mbedtls_sign_certificate(ptls_sign_certificate_t *_self, ptls_t *tls, ptls_async_job_t **async,
-                                  uint16_t *selected_algorithm, ptls_buffer_t *outbuf, ptls_iovec_t input,
-                                  const uint16_t *algorithms, size_t num_algorithms)
+    uint16_t *selected_algorithm, ptls_buffer_t *outbuf, ptls_iovec_t input,
+    const uint16_t *algorithms, size_t num_algorithms)
 {
     int ret = 0;
     ptls_mbedtls_sign_certificate_t *self =
         (ptls_mbedtls_sign_certificate_t *)(((unsigned char *)_self) - offsetof(struct st_ptls_mbedtls_sign_certificate_t, super));
     /* First, find the set of compatible algorithms */
-    const ptls_mbedtls_signature_scheme_t *scheme = ptls_mbedtls_select_signature_scheme(self->schemes, algorithms, num_algorithms);
+    const ptls_mbedtls_signature_scheme_t *scheme = ptls_mbedtls_select_signature_scheme(self->schemes, algorithms, num_algorithms, selected_algorithm);
 
     if (scheme == NULL) {
         ret = PTLS_ERROR_INCOMPATIBLE_KEY;
@@ -474,8 +487,6 @@ int ptls_mbedtls_sign_certificate(ptls_sign_certificate_t *_self, ptls_t *tls, p
         unsigned char *hash_value = NULL;
 
         size_t hash_length = 0;
-
-        *selected_algorithm = scheme->scheme_id;
 
         if (scheme->hash_algo == PSA_ALG_NONE) {
             hash_value = input.base;
@@ -506,7 +517,7 @@ int ptls_mbedtls_sign_certificate(ptls_sign_certificate_t *_self, ptls_t *tls, p
             if ((ret = ptls_buffer_reserve(outbuf, nb_bytes)) == 0) {
                 size_t signature_length = 0;
                 if (psa_sign_hash(self->key_id, sign_algo, hash_value, hash_length, outbuf->base + outbuf->off, nb_bytes,
-                                  &signature_length) != 0) {
+                    &signature_length) != 0) {
                     ret = PTLS_ERROR_INCOMPATIBLE_KEY;
                 } else {
                     outbuf->off += signature_length;
@@ -522,7 +533,7 @@ void ptls_mbedtls_dispose_sign_certificate(ptls_sign_certificate_t *_self)
     if (_self != NULL) {
         ptls_mbedtls_sign_certificate_t *self =
             (ptls_mbedtls_sign_certificate_t *)(((unsigned char *)_self) -
-                                                offsetof(struct st_ptls_mbedtls_sign_certificate_t, super));
+                offsetof(struct st_ptls_mbedtls_sign_certificate_t, super));
         /* Destroy the key */
         psa_destroy_key(self->key_id);
         psa_reset_key_attributes(&self->attributes);
@@ -531,23 +542,23 @@ void ptls_mbedtls_dispose_sign_certificate(ptls_sign_certificate_t *_self)
     }
 }
 /*
- * An RSa key is encoded in DER as:
- * RSAPrivateKey ::= SEQUENCE {
- *   version             INTEGER,  -- must be 0
- *   modulus             INTEGER,  -- n
- *   publicExponent      INTEGER,  -- e
- *   privateExponent     INTEGER,  -- d
- *   prime1              INTEGER,  -- p
- *   prime2              INTEGER,  -- q
- *   exponent1           INTEGER,  -- d mod (p-1)
- *   exponent2           INTEGER,  -- d mod (q-1)
- *   coefficient         INTEGER,  -- (inverse of q) mod p
- * }
- *
- * The number of key bits is the size in bits of the integer N.
- * We must decode the length in octets of the integer representation,
- * then subtract the number of zeros at the beginning of the data.
- */
+* An RSa key is encoded in DER as:
+* RSAPrivateKey ::= SEQUENCE {
+*   version             INTEGER,  -- must be 0
+*   modulus             INTEGER,  -- n
+*   publicExponent      INTEGER,  -- e
+*   privateExponent     INTEGER,  -- d
+*   prime1              INTEGER,  -- p
+*   prime2              INTEGER,  -- q
+*   exponent1           INTEGER,  -- d mod (p-1)
+*   exponent2           INTEGER,  -- d mod (q-1)
+*   coefficient         INTEGER,  -- (inverse of q) mod p
+* }
+*
+* The number of key bits is the size in bits of the integer N.
+* We must decode the length in octets of the integer representation,
+* then subtract the number of zeros at the beginning of the data.
+*/
 int ptls_mbedtls_rsa_get_key_bits(const unsigned char *key_value, size_t key_length, size_t *p_nb_bits)
 {
     int ret = 0;
@@ -641,51 +652,41 @@ int ptls_mbedtls_load_file(char const * file_name, unsigned char ** buf, size_t 
     F = fopen(file_name, "rb");
 #endif
 
+
     if (F == NULL) {
         ret = PTLS_ERROR_NOT_AVAILABLE;
-    }
-    else {
+    } else {
         long sz;
         fseek(F, 0, SEEK_END);
         sz = ftell(F);
-        if (sz <= 0) {
-            ret = PTLS_ERROR_NOT_AVAILABLE;
-        }
-        else {
-            *buf = (unsigned char *)malloc(sz + 1);
+
+        if (sz > 0) {
+            *buf = (unsigned char *)malloc(sz+1);
             if (*buf == NULL){
                 ret = PTLS_ERROR_NO_MEMORY;
             }
             else {
                 size_t nb_read = 0;
-                *n = (size_t)sz + 1;
-
                 fseek(F, 0, SEEK_SET);
                 while(nb_read < (size_t)sz){
-                    size_t bytes_read = fread((*buf) + nb_read, 1, sz - nb_read, F);
-                    if (bytes_read > 0){
-                        nb_read += bytes_read;
+                    *n = sz;
+                    size_t ret = fread((*buf) + nb_read, 1, sz - nb_read, F);
+                    if (ret > 0){
+                        nb_read += ret;
+                        (*buf)[nb_read] = 0;
                     } else {
                         /* No need to check for EOF, since we know the length of the file */
                         ret = PTLS_ERROR_NOT_AVAILABLE;
+                        free(*buf);
+                        *buf = NULL;
+                        *n = 0;
                         break;
                     }
                 }
             }
+            (void)fclose(F);
         }
-        (void)fclose(F);
     }
-    if (ret == 0){
-        (*buf)[(*n) - 1] = 0;
-    }
-    else {
-        if (*buf != NULL){
-            free(*buf);
-            *buf = NULL;
-        }
-        *n = 0;
-    }
-
     return ret;
 }
 
@@ -708,11 +709,7 @@ int ptls_mbedtls_load_private_key(ptls_context_t *ctx, char const *pem_fname)
     signer->attributes = psa_key_attributes_init();
 
     if ((ret = ptls_mbedtls_load_file(pem_fname, &buf, &n)) != 0) {
-        if (ret == MBEDTLS_ERR_PK_ALLOC_FAILED) {
-            return (PTLS_ERROR_NO_MEMORY);
-        } else {
-            return (PTLS_ERROR_NOT_AVAILABLE);
-        }
+        return ret;
     }
     ret = ptls_mbedtls_get_der_key(&pem, &pk_type, buf, n, NULL, 0, NULL, NULL);
 
@@ -733,8 +730,6 @@ int ptls_mbedtls_load_private_key(ptls_context_t *ctx, char const *pem_fname)
                 ret = ptls_mbedtls_set_ec_key_attributes(signer, key_length);
             }
         } else if (pk_type == MBEDTLS_PK_NONE) {
-            /* TODO: not clear whether MBDED TLS supports ED25519 yet. Probably not. */
-            /* Should have option to encode RSA or ECDSA using PKCS8 */
             size_t oid_index = 0;
             size_t oid_length = 0;
 
@@ -751,20 +746,21 @@ int ptls_mbedtls_load_private_key(ptls_context_t *ctx, char const *pem_fname)
                         ret = ptls_mbedtls_set_ec_key_attributes(signer, key_length);
                     }
 #if 0
-                /* Commenting out, as EDDSA is no yet supported in MbedTLS */
+                    /* Commenting out as MbedTLS does not support 25519 yet */
                 } else if (oid_length == sizeof(ptls_mbedtls_oid_ed25519) &&
-                           memcmp(pem.private_buf + oid_index, ptls_mbedtls_oid_ed25519, sizeof(ptls_mbedtls_oid_ed25519)) == 0) {
+                    memcmp(pem.private_buf + oid_index, ptls_mbedtls_oid_ed25519, sizeof(ptls_mbedtls_oid_ed25519)) == 0) {
+                    /* This code looks correct, but EDDSA is not supported yet by MbedTLS,
+                    * and attempts to import the key will result in an error, so commenting out for now. */
                     /* We recognized ED25519 -- PSA_ECC_FAMILY_TWISTED_EDWARDS -- PSA_ALG_ED25519PH */
-                    psa_set_key_algorithm(&signer->attributes, PSA_ALG_PURE_EDDSA);
+                    psa_set_key_algorithm(&signer->attributes, PSA_ALG_ED25519PH);
                     psa_set_key_type(&signer->attributes, PSA_ECC_FAMILY_TWISTED_EDWARDS);
                     ret = ptls_mbedtls_parse_eddsa_key(pem.private_buf, pem.private_buflen, &key_index, &key_length);
                     psa_set_key_bits(&signer->attributes, 256);
 #endif
                 } else if (oid_length == sizeof(ptls_mbedtls_oid_rsa_key) &&
-                           memcmp(pem.private_buf + oid_index, ptls_mbedtls_oid_rsa_key, sizeof(ptls_mbedtls_oid_rsa_key)) == 0) {
+                    memcmp(pem.private_buf + oid_index, ptls_mbedtls_oid_rsa_key, sizeof(ptls_mbedtls_oid_rsa_key)) == 0) {
                     /* We recognized RSA */
-                    key_length = pem.private_buflen;
-                    ptls_mbedtls_set_rsa_key_attributes(signer, pem.private_buf, key_length);
+                    ptls_mbedtls_set_rsa_key_attributes(signer, pem.private_buf + key_index, key_length);
                 } else {
                     ret = PTLS_ERROR_NOT_AVAILABLE;
                 }
@@ -795,7 +791,6 @@ int ptls_mbedtls_load_private_key(ptls_context_t *ctx, char const *pem_fname)
     }
     return ret;
 }
-
 
 /* Handling of certificates.
 * Certificates in picotls are used both at the client and the server side.
@@ -915,7 +910,6 @@ uint16_t mbedtls_verify_sign_algos[] = {
     0xFFFF
 };
 
-
 /* Find the psa_algorithm_t values corresponding to the 16 bit TLS signature scheme */
 psa_algorithm_t mbedtls_get_psa_alg_from_tls_number(uint16_t tls_algo)
 {
@@ -973,6 +967,7 @@ psa_algorithm_t mbedtls_get_psa_alg_from_tls_number(uint16_t tls_algo)
     default:
         break;
     }
+
     return alg;
 }
 
@@ -996,31 +991,31 @@ int mbedtls_verify_sign(void *verify_ctx, uint16_t algo, ptls_iovec_t data, ptls
         if (alg == PSA_ALG_NONE) {
             ret = PTLS_ALERT_ILLEGAL_PARAMETER;
         }
-        else {
-            psa_status_t status = psa_verify_message(message_verify_ctx->key_id, alg, data.base, data.len, signature.base, signature.len);
+    }
+    else {
+        psa_status_t status = psa_verify_message(message_verify_ctx->key_id, alg, data.base, data.len, signature.base, signature.len);
 
-            if (status != PSA_SUCCESS) {
-                switch (status) {
-                case PSA_ERROR_NOT_PERMITTED: /* The key does not have the PSA_KEY_USAGE_SIGN_MESSAGE flag, or it does not permit the requested algorithm. */
-                    ret = PTLS_ERROR_INCOMPATIBLE_KEY;
-                    break;
-                case PSA_ERROR_INVALID_SIGNATURE: /* The calculation was performed successfully, but the passed signature is not a valid signature. */
-                    ret = PTLS_ALERT_DECRYPT_ERROR;
-                    break;
-                case PSA_ERROR_NOT_SUPPORTED:
-                    ret = PTLS_ALERT_ILLEGAL_PARAMETER;
-                    break;
-                case PSA_ERROR_INSUFFICIENT_MEMORY:
-                    ret = PTLS_ERROR_NO_MEMORY;
-                    break;
-                default:
-                    ret = PTLS_ERROR_LIBRARY;
-                    break;
-                }
+        if (status != PSA_SUCCESS) {
+            switch (status) {
+            case PSA_ERROR_NOT_PERMITTED: /* The key does not have the PSA_KEY_USAGE_SIGN_MESSAGE flag, or it does not permit the requested algorithm. */
+                ret = PTLS_ERROR_INCOMPATIBLE_KEY;
+                break;
+            case PSA_ERROR_INVALID_SIGNATURE: /* The calculation was performed successfully, but the passed signature is not a valid signature. */
+                ret = PTLS_ALERT_DECRYPT_ERROR;
+                break;
+            case PSA_ERROR_NOT_SUPPORTED:
+                ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+                break;
+            case PSA_ERROR_INSUFFICIENT_MEMORY:
+                ret = PTLS_ERROR_NO_MEMORY;
+                break;
+            default:
+                ret = PTLS_ERROR_LIBRARY;
+                break;
             }
         }
     }
-    /* destroy the key because it is used only once.*/
+    /* destroy the key because it is used only once. */
     if (message_verify_ctx != NULL) {
         psa_destroy_key(message_verify_ctx->key_id);
         free(message_verify_ctx);
@@ -1034,84 +1029,91 @@ static int mbedtls_verify_certificate(ptls_verify_certificate_t *_self, ptls_t *
 {
     size_t i;
     int ret = 0;
-    ptls_mbedtls_verify_certificate_t *self = (ptls_mbedtls_verify_certificate_t *)_self;
-    mbedtls_x509_crt chain_head = { 0 };
+    mbedtls_x509_crt* chain_head = (mbedtls_x509_crt*)malloc(sizeof(mbedtls_x509_crt));
 
-    *verifier = NULL;
-    *verify_data = NULL;
+    if (chain_head == NULL) {
+        ret = PTLS_ERROR_NO_MEMORY;
+    }
+    else {
+        ptls_mbedtls_verify_certificate_t* self = (ptls_mbedtls_verify_certificate_t*)_self;
+        *verifier = NULL;
+        *verify_data = NULL;
+        mbedtls_x509_crt_init(chain_head);
 
-    /* If any certs are given, convert them to MbedTLS representation, then verify the cert chain. If no certs are given, just give
-    * the override_callback to see if we want to stay fail open. */
-    if (num_certs == 0) {
-        ret = PTLS_ALERT_CERTIFICATE_REQUIRED;
-    } else {
-        mbedtls_x509_crt* previous_chain = &chain_head;
-        mbedtls_x509_crt_init(&chain_head);
-
-        for (i = 0; i != num_certs; ++i) {
-            ret = mbedtls_x509_crt_parse_der(previous_chain, certs[i].base, certs[i].len);
-            if (i != 0) {
-                if (previous_chain->next == NULL) {
-                    ret = PTLS_ALERT_BAD_CERTIFICATE;
-                    break;
-                }
-                previous_chain = previous_chain->next;
-            }
+        /* If any certs are given, convert them to MbedTLS representation, then verify the cert chain. If no certs are given, just give
+        * the override_callback to see if we want to stay fail open. */
+        if (num_certs == 0) {
+            ret = PTLS_ALERT_CERTIFICATE_REQUIRED;
         }
+        else {
+            mbedtls_x509_crt* previous_chain = chain_head;
+            mbedtls_x509_crt_init(chain_head);
 
-        if (ret == 0) {
-            uint32_t flags = 0;
-
-            int verify_ret = mbedtls_x509_crt_verify(&chain_head, self->trust_ca, self->trust_crl, server_name, &flags,
-                self->f_vrfy, self->p_vrfy);
-
-            if (verify_ret != 0) {
-                switch (verify_ret) {
-                case MBEDTLS_ERR_X509_CERT_VERIFY_FAILED: 
-                    /* if the chain was verified but found to be invalid, in which case
-                    * flags will have one or more MBEDTLS_X509_BADCERT_XXX
-                    * or MBEDTLS_X509_BADCRL_XXX flags set, or another 
-                    * error(and flags set to 0xffffffff) in case of a fatal error
-                    * encountered during the verification process. */
-                    ret = PTLS_ALERT_BAD_CERTIFICATE;
-                    break;
-                default:
-                    ret = PTLS_ERROR_LIBRARY;
-                    break;
+            for (i = 0; i != num_certs; ++i) {
+                ret = mbedtls_x509_crt_parse_der(previous_chain, certs[i].base, certs[i].len);
+                if (i != 0) {
+                    if (previous_chain->next == NULL) {
+                        ret = PTLS_ALERT_BAD_CERTIFICATE;
+                        break;
+                    }
+                    previous_chain = previous_chain->next;
                 }
             }
-        }
 
-        if (ret == 0) {
-            mbedtls_message_verify_ctx_t* message_verify_ctx = (mbedtls_message_verify_ctx_t*)
-                malloc(sizeof(mbedtls_message_verify_ctx_t));
-            if (message_verify_ctx == NULL) {
-                ret = PTLS_ERROR_NO_MEMORY;
-            }
-            else {
-                psa_status_t status;
-                psa_key_attributes_t attributes;
-                memset(&attributes, 0, sizeof(attributes));
-                memset(message_verify_ctx, 0, sizeof(mbedtls_message_verify_ctx_t));
+            if (ret == 0) {
+                uint32_t flags = 0;
 
-                status = mbedtls_pk_get_psa_attributes(&chain_head.next->pk, PSA_KEY_USAGE_VERIFY_MESSAGE, &attributes);
-                if (status == PSA_SUCCESS) {
-                    status = mbedtls_pk_import_into_psa(&chain_head.next->pk, &attributes, &message_verify_ctx->key_id);
+                int verify_ret = mbedtls_x509_crt_verify(chain_head, self->trust_ca, self->trust_crl, server_name, &flags,
+                    self->f_vrfy, self->p_vrfy);
+
+                if (verify_ret != 0) {
+                    switch (verify_ret) {
+                    case MBEDTLS_ERR_X509_CERT_VERIFY_FAILED:
+                        /* if the chain was verified but found to be invalid, in which case
+                        * flags will have one or more MBEDTLS_X509_BADCERT_XXX
+                        * or MBEDTLS_X509_BADCRL_XXX flags set, or another
+                        * error(and flags set to 0xffffffff) in case of a fatal error
+                        * encountered during the verification process. */
+                        ret = PTLS_ALERT_BAD_CERTIFICATE;
+                        break;
+                    default:
+                        ret = PTLS_ERROR_LIBRARY;
+                        break;
+                    }
                 }
-                if (status != PSA_SUCCESS) {
-                    ret = PTLS_ERROR_LIBRARY;
-                    free(message_verify_ctx);
+            }
+
+            if (ret == 0) {
+                mbedtls_message_verify_ctx_t* message_verify_ctx = (mbedtls_message_verify_ctx_t*)
+                    malloc(sizeof(mbedtls_message_verify_ctx_t));
+                if (message_verify_ctx == NULL) {
+                    ret = PTLS_ERROR_NO_MEMORY;
                 }
                 else {
-                    *verifier = mbedtls_verify_sign;
-                    *verify_data = message_verify_ctx;
+                    psa_status_t status;
+                    psa_key_attributes_t attributes;
+                    memset(&attributes, 0, sizeof(attributes));
+                    memset(message_verify_ctx, 0, sizeof(mbedtls_message_verify_ctx_t));
+
+                    status = mbedtls_pk_get_psa_attributes(&chain_head->pk, PSA_KEY_USAGE_VERIFY_MESSAGE, &attributes);
+                    if (status == PSA_SUCCESS) {
+                        status = mbedtls_pk_import_into_psa(&chain_head->pk, &attributes, &message_verify_ctx->key_id);
+                    }
+                    if (status != PSA_SUCCESS) {
+                        ret = PTLS_ERROR_LIBRARY;
+                        free(message_verify_ctx);
+                    }
+                    else {
+                        *verifier = mbedtls_verify_sign;
+                        *verify_data = message_verify_ctx;
+                    }
                 }
             }
         }
     }
 
-    if (chain_head.next != NULL) {
-        mbedtls_x509_crt_free(chain_head.next);
+    if (chain_head != NULL) {
+        mbedtls_x509_crt_free(chain_head);
     }
     return ret;
 }

@@ -212,7 +212,6 @@ int test_load_one_der_key(char const *path)
     ptls_context_t ctx = {0};
 
     ret = ptls_mbedtls_load_private_key(&ctx, path);
-    ok(ret == 0);
     if (ret != 0) {
         /* Cannot create sign_certificate */
         ok(ret == 0);
@@ -223,7 +222,6 @@ int test_load_one_der_key(char const *path)
         ret = -1;
     } else {
         /* Try to sign something */
-        int ret;
         ptls_mbedtls_sign_certificate_t *signer =
             (ptls_mbedtls_sign_certificate_t *)(((unsigned char *)ctx.sign_certificate) -
                                                 offsetof(struct st_ptls_mbedtls_sign_certificate_t, super));
@@ -256,8 +254,8 @@ int test_load_one_der_key(char const *path)
             if ((psa_status = psa_export_public_key(signer->key_id, pubkey_data, sizeof(pubkey_data), &pubkey_len)) != 0) {
                 /* Cannot export public key */
                 ret = -1;
+                ok(ret == 0);
             }
-            ok(ret == 0);
             if (ret == 0) {
                 switch (psa_get_key_type(&signer->attributes)) {
                 case PSA_KEY_TYPE_RSA_KEY_PAIR:
@@ -276,8 +274,8 @@ int test_load_one_der_key(char const *path)
             ok(ret == 0);
             if (ret == 0) {
                 mbedtls_message_verify_ctx_t* verify_ctx = (mbedtls_message_verify_ctx_t*)malloc(sizeof(mbedtls_message_verify_ctx_t));
-                ok(verify_ctx != NULL);
                 if (verify_ctx == NULL) {
+                    ok(verify_ctx != NULL);
                     ret = -1;
                 }
                 else {
@@ -292,7 +290,6 @@ int test_load_one_der_key(char const *path)
                         ret = -1;
                     }
                     else {
-                        ok(psa_status == 0);
                         sig.base = outbuf.base;
                         sig.len = outbuf.off;
 
