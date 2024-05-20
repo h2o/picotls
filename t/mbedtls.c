@@ -149,6 +149,13 @@ Output buffer is already partially filled.
 #define ASSET_ED25519_CERT "t/assets/ed25519/cert.pem"
 #define ASSET_TEST_CA "data/test-ca.crt"
 
+#define ASSET_RSA_NAME "rsa.test.example.com"
+#define ASSET_RSA_PKCS8_NAME "rsa.test.example.com"
+#define ASSET_SECP256R1_NAME "test.example.com"
+#define ASSET_SECP384R1_NAME "secp384r1.test.example.com"
+#define ASSET_SECP521R1_NAME "secp521r1.test.example.com"
+#define ASSET_SECP256R1_PKCS8_NAME "test.example.com"
+
 int test_load_one_file(char const* path)
 {
     size_t n;
@@ -312,72 +319,9 @@ int test_load_one_der_key(char const *path, int expect_failure)
             ret = 0;
         }
     }
+    ok(ret == 0);
     return ret;
 }
-#if 0
-static void test_load_rsa_key()
-{
-    int ret = test_load_one_der_key(ASSET_RSA_KEY);
-
-    if (ret != 0) {
-        ok(!"fail");
-        return;
-    }
-    ok(!!"success");
-}
-
-static void test_load_secp256r1_key()
-{
-    int ret = test_load_one_der_key(ASSET_SECP256R1_KEY);
-    if (ret != 0) {
-        ok(!"fail");
-        return;
-    }
-    ok(!!"success");
-}
-
-static void test_load_secp384r1_key()
-{
-    int ret = test_load_one_der_key(ASSET_SECP384R1_KEY);
-    if (ret != 0) {
-        ok(!"fail");
-        return;
-    }
-    ok(!!"success");
-}
-
-static void test_load_secp521r1_key()
-{
-    int ret = test_load_one_der_key(ASSET_SECP521R1_KEY);
-    if (ret != 0) {
-        ok(!"fail");
-        return;
-    }
-    ok(!!"success");
-}
-
-static void test_load_secp256r1_pkcs8_key()
-{
-    int ret = test_load_one_der_key(ASSET_SECP256R1_PKCS8_KEY);
-    if (ret != 0) {
-        ok(!"fail");
-        return;
-    }
-    ok(!!"success");
-}
-
-#if 0
-static void test_load_rsa_pkcs8_key()
-{
-    int ret = test_load_one_der_key(ASSET_RSA_PKCS8_KEY);
-    if (ret != 0) {
-        ok(!"fail");
-        return;
-    }
-    ok(!!"success");
-}
-#endif
-#endif
 
 void test_load_keys(void)
 {
@@ -386,78 +330,15 @@ void test_load_keys(void)
     subtest("load secp384r1 key", test_load_one_der_key, ASSET_SECP384R1_KEY, 0);
     subtest("load secp521r1 key", test_load_one_der_key, ASSET_SECP521R1_KEY, 0);
     subtest("load secp521r1-pkcs8 key", test_load_one_der_key, ASSET_RSA_PKCS8_KEY, 0);
-#if 1
-    /* disabling for now, need to debug. */
     subtest("load rsa-pkcs8 key", test_load_one_der_key, ASSET_RSA_PKCS8_KEY, 0);
-#endif
 
-    /* we do not test EDDSA keys, because they are not yet supported */
-    /* add tests for failure modes */
+    /* add tests for failure modes, including EDDSA which is not supported */
 
     subtest("load key no such file", test_load_one_der_key, ASSET_NO_SUCH_FILE, 1);
     subtest("load key not a PEM file", test_load_one_der_key, ASSET_NOT_A_PEM_FILE, 1);
     subtest("load key not a key file", test_load_one_der_key, ASSET_RSA_CERT, 1);
     subtest("load key not supported", test_load_one_der_key, ASSET_ED25519_KEY, 1);
 }
-#if 0
-static void test_load_key_no_such_file()
-{
-    int ret = test_load_one_der_key(ASSET_NO_SUCH_FILE);
-    if (ret == 0){
-        ok(!"fail");
-        return;
-    }
-    ok(!!"success");
-}
-
-static void test_load_key_not_a_pem_file()
-{
-    int ret = test_load_one_der_key(ASSET_NOT_A_PEM_FILE);
-    if (ret == 0){
-        ok(!"fail");
-        return;
-    }
-    ok(!!"success");
-}
-
-static void test_load_key_not_a_key_file()
-{
-    int ret = test_load_one_der_key(ASSET_RSA_CERT);
-    if (ret == 0){
-        ok(!"fail");
-        return;
-    }
-    ok(!!"success");
-}
-
-static void test_load_key_not_supported()
-{
-    int ret = test_load_one_der_key(ASSET_ED25519_KEY);
-    if (ret == 0){
-        ok(!"fail");
-        return;
-    }
-    ok(!!"success");
-}
-
-/*
-* Testing of failure modes.
-* 
-* Testing the various reasons why loading of key should fail:
-* - key file does not exist
-* - key file is empty, no PEM keyword
-* - key file does not contain a key (we use a cert file for that)
-* - key file is for ED25559, which is not supported
-*/
-
-static void test_load_key_fail()
-{
-    subtest("load key no such file", test_load_key_no_such_file);
-    subtest("load key not a PEM file", test_load_key_not_a_pem_file);
-    subtest("load key not a key file", test_load_key_not_a_key_file);
-    subtest("load key not supported", test_load_key_not_supported);
-}
-#endif 
 
 /*
 * End to end testing of signature and verifiers:
@@ -497,8 +378,6 @@ static uint16_t test_sign_signature_algorithms[] = {
 };
 
 static size_t num_test_sign_signature_algorithms = sizeof(test_sign_signature_algorithms) / sizeof(uint16_t);
-
-char const* test_sign_server_name = "test.example.com";
 
 static int test_sign_init_server_mbedtls(ptls_context_t* ctx, char const* key_path, char const* cert_path)
 {
@@ -615,7 +494,7 @@ static ptls_context_t* test_sign_set_ptls_context(char const* key_path, char con
     return ctx;
 }
 
-static int test_sign_verify_one(char const* key_path, char const * cert_path, char const * trusted_path, int server_config, int client_config)
+static int test_sign_verify_one(char const* key_path, char const * cert_path, char const * trusted_path, char const * server_name, int server_config, int client_config)
 {
     int ret = 0;
     ptls_context_t* server_ctx = test_sign_set_ptls_context(key_path, cert_path, trusted_path, 1, server_config); 
@@ -653,7 +532,7 @@ static int test_sign_verify_one(char const* key_path, char const * cert_path, ch
             &selected_algorithm, &signature, input,
             test_sign_signature_algorithms, num_test_sign_signature_algorithms);
         if (ret != 0) {
-            printf("sign_certificate (%s) returns 0x%x\n", key_path, ret);
+            ok(ret == 0);
         }
     }
 
@@ -661,17 +540,18 @@ static int test_sign_verify_one(char const* key_path, char const * cert_path, ch
         /* Then, create a tls context for the client. */
         client_tls = ptls_new(client_ctx, 0);
         if (client_tls == NULL) {
+            ok(client_tls != NULL);
             ret = -1;
         }
     }
 
     if (ret == 0) {
         /* verify the certificates */
-        ret = client_ctx->verify_certificate->cb(client_ctx->verify_certificate, client_tls, test_sign_server_name,
+        ret = client_ctx->verify_certificate->cb(client_ctx->verify_certificate, client_tls, server_name,
             &certificate_verify.cb, &certificate_verify.verify_ctx,
             server_ctx->certificates.list, server_ctx->certificates.count);
         if (ret != 0) {
-            printf("verify_certificate (%s) returns 0x%x\n", cert_path, ret);
+            ok(ret == 0);
         }
         /* verify the signature */
         if (ret == 0) {
@@ -681,7 +561,7 @@ static int test_sign_verify_one(char const* key_path, char const * cert_path, ch
 
             ret = certificate_verify.cb(certificate_verify.verify_ctx, selected_algorithm, input, sig);
             if (ret != 0) {
-                printf("verify_signature (%s) returns 0x%x\n", key_path, ret);
+                ok(ret == 0);
             }
         }
         else if (certificate_verify.cb != NULL) {
@@ -690,9 +570,6 @@ static int test_sign_verify_one(char const* key_path, char const * cert_path, ch
             empty.len = 0;
             (void)certificate_verify.cb(certificate_verify.verify_ctx, 0, empty, empty);
         }
-    }
-    if (ret == 0) {
-        printf("verify_signature (%s) and cert (%s) succeeds\n", key_path, cert_path);
     }
 
     ptls_buffer_dispose(&signature);
@@ -707,9 +584,10 @@ static int test_sign_verify_one(char const* key_path, char const * cert_path, ch
     test_sign_free_context(server_ctx, server_config);
     test_sign_free_context(client_ctx, client_config);
 
+    ok(ret == 0);
     return ret;
 }
-
+#if 0
 static void test_sign_verify_rsa_mbedtls_mbedtls()
 {
     int ret = test_sign_verify_one(ASSET_RSA_KEY, ASSET_RSA_CERT, ASSET_TEST_CA, 0, 0);
@@ -759,7 +637,7 @@ static void test_sign_verify_secp256r1_pkcs8_mbedtls_mbedtls()
     }
     ok(!!"success");
 }
-
+#endif
 /* TODO: all these tests are failing, because we do not have the 
 * proper combination of hostname and certificate. Fix that, then
 * enable the test.
@@ -771,11 +649,16 @@ static void test_sign_verify_secp256r1_pkcs8_mbedtls_mbedtls()
 
 static void test_sign_verify_end_to_end()
 {
-    subtest("sign verify rsa mbedtls mbedtls", test_sign_verify_rsa_mbedtls_mbedtls);
-    subtest("sign verify secp256r1 mbedtls mbedtls", test_sign_verify_secp256r1_mbedtls_mbedtls);
-    subtest("sign verify secp384r1 mbedtls mbedtls", test_sign_verify_secp384r1_mbedtls_mbedtls);
-    subtest("sign verify secp521r1 mbedtls mbedtls", test_sign_verify_secp521r1_mbedtls_mbedtls);
-    subtest("sign verify secp256r1 pkcs8 mbedtls mbedtls", test_sign_verify_secp256r1_pkcs8_mbedtls_mbedtls);
+    subtest("verify rsa mbedtls mbedtls", test_sign_verify_one,
+        ASSET_RSA_KEY, ASSET_RSA_CERT, ASSET_TEST_CA, ASSET_RSA_NAME, 0, 0);
+    subtest("verify secp256r1 mbedtls mbedtls", test_sign_verify_one,
+        ASSET_SECP256R1_KEY, ASSET_SECP256R1_CERT, ASSET_TEST_CA, ASSET_SECP256R1_NAME, 0, 0);
+    subtest("verify secp384r1 mbedtls mbedtls", test_sign_verify_one,
+        ASSET_SECP384R1_KEY, ASSET_SECP384R1_CERT, ASSET_TEST_CA, ASSET_SECP384R1_NAME, 0, 0);
+    subtest("verify secp521r1 mbedtls mbedtls", test_sign_verify_one,
+        ASSET_SECP521R1_KEY, ASSET_SECP521R1_CERT, ASSET_TEST_CA, ASSET_SECP521R1_NAME, 0, 0);
+    subtest("verify secp256r1 pkcs8 mbedtls mbedtls", test_sign_verify_one,
+        ASSET_SECP256R1_PKCS8_KEY, ASSET_SECP256R1_PKCS8_CERT, ASSET_TEST_CA, ASSET_SECP256R1_PKCS8_NAME, 0, 0);
 }
 
 
