@@ -446,6 +446,7 @@ static ptls_context_t* test_sign_set_ptls_context(char const* key_path, char con
     int ret = 0;
     ptls_context_t* ctx = (ptls_context_t*)malloc(sizeof(ptls_context_t));
     if (ctx == NULL) {
+        ok(ctx != 0);
         return NULL;
     }
 
@@ -465,11 +466,14 @@ static ptls_context_t* test_sign_set_ptls_context(char const* key_path, char con
         switch (config) {
         case 0: /* MbedTLS */
             ret = test_sign_init_server_mbedtls(ctx, key_path, cert_path);
+            ok(ret == 0);
             break;
         case 1: /* Minicrypto */
             ret = test_sign_init_server_minicrypto(ctx, key_path, cert_path);
+            ok(ret == 0);
             break;
         default:
+            ok(ret == 0);
             ret = -1;
             break;
         }
@@ -479,8 +483,10 @@ static ptls_context_t* test_sign_set_ptls_context(char const* key_path, char con
         switch (config) {
         case 0: /* MbedTLS */
             ret = ptls_mbedtls_init_verify_certificate(ctx, trusted_path);
+            ok(ret == 0);
             break;
         default:
+            ok(ret == 0);
             ret = -1;
             break;
         }
