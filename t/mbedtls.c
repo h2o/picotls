@@ -523,7 +523,7 @@ static int test_sign_verify_one(char const* key_path, char const * cert_path, ch
         /* Then, create a tls context for the server. */
         server_tls = ptls_new(server_ctx, 1);
         if (server_tls == NULL) {
-            ok(server_tls != NULL)
+            ok(server_tls != NULL);
             ret = -1;
         }
     }
