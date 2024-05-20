@@ -204,7 +204,7 @@ typedef struct st_mbedtls_message_verify_ctx_t {
 int mbedtls_verify_sign(void* verify_ctx, uint16_t algo, ptls_iovec_t data, ptls_iovec_t signature);
 psa_algorithm_t mbedtls_get_psa_alg_from_tls_number(uint16_t tls_algo);
 
-int test_load_one_der_key(char const *path)
+int test_load_one_der_key(char const *path, int expect_failure)
 {
     int ret = -1;
     unsigned char test_message[32] = {1,  2,  3,  4,  5,  6,  7,  8,  9,  10, 11, 12, 13, 14, 15, 16,
@@ -212,13 +212,13 @@ int test_load_one_der_key(char const *path)
     ptls_context_t ctx = {0};
 
     ret = ptls_mbedtls_load_private_key(&ctx, path);
-    if (ret != 0) {
+    if (ret != 0 || expect_failure) {
         /* Cannot create sign_certificate */
         ok(ret == 0);
         ret = -1;
     } else if (ctx.sign_certificate == NULL) {
        /* Sign_certificate not set in ptls context */
-        ok(ctx.sign_certificate != NULL);
+        ok(ctx.sign_certificate != NULL || expect_failure);
         ret = -1;
     } else {
         /* Try to sign something */
@@ -241,7 +241,7 @@ int test_load_one_der_key(char const *path)
 
         ret = ptls_mbedtls_sign_certificate(ctx.sign_certificate, NULL, NULL, &selected_algorithm, &outbuf, input, algorithms,
                                             num_algorithms);
-        ok(ret == 0);
+        ok(ret == 0 || expect_failure);
 
         if (ret == 0) {
             /* Create a verifier context and attempt to check the key */
@@ -254,7 +254,7 @@ int test_load_one_der_key(char const *path)
             if ((psa_status = psa_export_public_key(signer->key_id, pubkey_data, sizeof(pubkey_data), &pubkey_len)) != 0) {
                 /* Cannot export public key */
                 ret = -1;
-                ok(ret == 0);
+                ok(ret == 0 || expect_failure);
             }
             if (ret == 0) {
                 switch (psa_get_key_type(&signer->attributes)) {
@@ -271,11 +271,11 @@ int test_load_one_der_key(char const *path)
                     break;
                 }
             }
-            ok(ret == 0);
+            ok(ret == 0 || expect_failure);
             if (ret == 0) {
                 mbedtls_message_verify_ctx_t* verify_ctx = (mbedtls_message_verify_ctx_t*)malloc(sizeof(mbedtls_message_verify_ctx_t));
                 if (verify_ctx == NULL) {
-                    ok(verify_ctx != NULL);
+                    ok(verify_ctx != NULL || expect_failure);
                     ret = -1;
                 }
                 else {
@@ -285,7 +285,7 @@ int test_load_one_der_key(char const *path)
 
                     if ((psa_status = psa_import_key(&public_attributes, pubkey_data, pubkey_len, &verify_ctx->key_id)) != 0) {
                         /* Cannot import public key */
-                        ok(psa_status == 0);
+                        ok(psa_status == 0 || expect_failure);
                         free(verify_ctx);
                         ret = -1;
                     }
@@ -294,7 +294,7 @@ int test_load_one_der_key(char const *path)
                         sig.len = outbuf.off;
 
                         ret = mbedtls_verify_sign(verify_ctx, selected_algorithm, input, sig);
-                        ok(ret == 0);
+                        ok(ret == 0 || expect_failure);
                     }
                 }
             }
@@ -303,9 +303,18 @@ int test_load_one_der_key(char const *path)
         ptls_buffer_dispose(&outbuf);
         ptls_mbedtls_dispose_sign_certificate(&signer->super);
     }
+    if (expect_failure){
+        ok(ret != 0);
+        if (ret == 0) {
+            ret = -1;
+        }
+        else {
+            ret = 0;
+        }
+    }
     return ret;
 }
-
+#if 0
 static void test_load_rsa_key()
 {
     int ret = test_load_one_der_key(ASSET_RSA_KEY);
@@ -368,22 +377,29 @@ static void test_load_rsa_pkcs8_key()
     ok(!!"success");
 }
 #endif
+#endif
 
 void test_load_keys(void)
 {
-    subtest("load rsa key", test_load_rsa_key);
-    subtest("load secp256r1 key", test_load_secp256r1_key);
-    subtest("load secp384r1 key", test_load_secp384r1_key);
-    subtest("load secp521r1 key", test_load_secp521r1_key);
-    subtest("load secp521r1-pkcs8 key", test_load_secp256r1_pkcs8_key);
-#if 0
+    subtest("load rsa key", test_load_one_der_key, ASSET_RSA_KEY, 0);
+    subtest("load secp256r1 key", test_load_one_der_key, ASSET_SECP256R1_KEY, 0);
+    subtest("load secp384r1 key", test_load_one_der_key, ASSET_SECP384R1_KEY, 0);
+    subtest("load secp521r1 key", test_load_one_der_key, ASSET_SECP521R1_KEY, 0);
+    subtest("load secp521r1-pkcs8 key", test_load_one_der_key, ASSET_RSA_PKCS8_KEY, 0);
+#if 1
     /* disabling for now, need to debug. */
-    subtest("load rsa-pkcs8 key", test_load_rsa_pkcs8_key);
+    subtest("load rsa-pkcs8 key", test_load_one_der_key, ASSET_RSA_PKCS8_KEY, 0);
 #endif
 
     /* we do not test EDDSA keys, because they are not yet supported */
-}
+    /* add tests for failure modes */
 
+    subtest("load key no such file", test_load_one_der_key, ASSET_NO_SUCH_FILE, 1);
+    subtest("load key not a PEM file", test_load_one_der_key, ASSET_NOT_A_PEM_FILE, 1);
+    subtest("load key not a key file", test_load_one_der_key, ASSET_RSA_CERT, 1);
+    subtest("load key not supported", test_load_one_der_key, ASSET_ED25519_KEY, 1);
+}
+#if 0
 static void test_load_key_no_such_file()
 {
     int ret = test_load_one_der_key(ASSET_NO_SUCH_FILE);
@@ -441,6 +457,7 @@ static void test_load_key_fail()
     subtest("load key not a key file", test_load_key_not_a_key_file);
     subtest("load key not supported", test_load_key_not_supported);
 }
+#endif 
 
 /*
 * End to end testing of signature and verifiers:
@@ -821,9 +838,10 @@ int main(int argc, char **argv)
 
     /* test loading of keys in memory and capability to sign  */
     subtest("test load keys", test_load_keys);
-
+#if 0
     /* Test that loading bad files or bad keys fails */
     subtest("test load key failures", test_load_key_fail);
+#endif
 
     /* End to end test of signing and verifying certicates */
     subtest("test sign verify end to end", test_sign_verify_end_to_end);
