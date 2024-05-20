@@ -212,9 +212,9 @@ int test_load_one_der_key(char const *path, int expect_failure)
     ptls_context_t ctx = {0};
 
     ret = ptls_mbedtls_load_private_key(&ctx, path);
-    if (ret != 0 || expect_failure) {
+    if (ret != 0) {
         /* Cannot create sign_certificate */
-        ok(ret == 0);
+        ok(ret == 0 || expect_failure);
         ret = -1;
     } else if (ctx.sign_certificate == NULL) {
        /* Sign_certificate not set in ptls context */
