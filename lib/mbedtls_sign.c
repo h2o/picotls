@@ -216,7 +216,14 @@ int ptls_mbedtls_parse_ec_private_key(const unsigned char *pem_buf, size_t pem_l
     return ret;
 }
 
-int test_parse_private_key_field(const unsigned char *pem_buf, size_t pem_len, size_t *oid_index, size_t *oid_length,
+/* Parsing the private key field in a PEM key object.
+* The syntax is similar to the "public key info", but there
+* are differences, such as encoding the key as an octet
+* string instead of a bit field.
+* TODO: look at unifying the common parts for making the
+* code a bit smaller.
+*/
+int ptls_parse_private_key_field(const unsigned char *pem_buf, size_t pem_len, size_t *oid_index, size_t *oid_length,
     size_t *key_index, size_t *key_length)
 {
     int ret = 0;
@@ -372,12 +379,128 @@ int ptls_mbedtls_get_der_key(mbedtls_pem_context *pem, mbedtls_pk_type_t *pk_typ
 }
 #endif
 
+/* When finding public keys in a certificate, we expect the syntax to be:
+* SubjectPublicKeyInfo  ::=  SEQUENCE  {
+*       algorithm         AlgorithmIdentifier,
+*       subjectPublicKey  BIT STRING
+* }
+* AlgorithmIdentifier  ::=  SEQUENCE  {
+*        algorithm   OBJECT IDENTIFIER,
+*        parameters  ANY DEFINED BY algorithm OPTIONAL
+* }
+*/
+static int ptls_mbedtls_parse_public_key_info(const unsigned char *pem_buf, size_t pem_len,
+    size_t *oid_index, size_t *oid_length,
+    size_t *param_index, size_t *param_length,
+    size_t *key_index, size_t *key_length)
+{
+    int ret = 0;
+    size_t x = 0;
+
+    if (ret == 0) {
+        if (pem_buf[x++] != 0x30 /* sequence */) {
+            ret = PTLS_ERROR_INCORRECT_ASN1_SYNTAX;
+        }
+        else {
+            size_t l_seq1 = 0;
+            size_t x_seq1;
+            ret = ptls_mbedtls_parse_der_length(pem_buf, pem_len, &x, &l_seq1);
+            x_seq1 = x;
+            if (x + l_seq1 > pem_len || pem_buf[x++] != 0x30) {
+                ret = PTLS_ERROR_INCORRECT_ASN1_SYNTAX;
+            }
+            else {
+                size_t l_seq = 0;
+                size_t x_seq;
+                ret = ptls_mbedtls_parse_der_length(pem_buf, pem_len, &x, &l_seq);
+                x_seq = x;
+                if (x + l_seq > pem_len || pem_buf[x++] != 0x06) {
+                    ret = PTLS_ERROR_INCORRECT_ASN1_SYNTAX;
+                }
+                else {
+                    /* Sequence contains the OID and optional key attributes */
+                    *oid_length = pem_buf[x++];
+                    *oid_index = x;
+                    *param_index = x + *oid_length;
+                    x = x_seq + l_seq;
+                    if (*param_index > x) {
+                        ret = PTLS_ERROR_INCORRECT_ASN1_SYNTAX;
+                    }
+                    else {
+                        *param_length = x - *param_index;
+                    }
+                }
+            }
+
+            if (ret == 0) {
+                /* At that point the oid has been identified.
+                * The next parameter is an octet string containing the key info.
+                */
+                if (x + 2 > pem_len || pem_buf[x++] != 0x03) {
+                    ret = PTLS_ERROR_INCORRECT_ASN1_SYNTAX;
+                }
+                else {
+                    ret = ptls_mbedtls_parse_der_length(pem_buf, pem_len, &x, key_length);
+                    *key_index = x;
+                    x += *key_length;
+                    if (x > pem_len) {
+                        ret = PTLS_ERROR_INCORRECT_ASN1_SYNTAX;
+                    }
+                }
+            }
+        }
+    }
+
+    return ret;
+}
+
+/* Obtain the public key bits and the public key attributes from the
+* subject public key info in a certificate.
+*/
+int ptls_mbedtls_get_public_key_info(const unsigned char* pk_raw, size_t pk_raw_len,
+    psa_key_attributes_t* attributes,
+    size_t* key_index, size_t* key_length)
+{
+    size_t oid_index, oid_length, param_index, param_length;
+    int ret = ptls_mbedtls_parse_public_key_info(pk_raw, pk_raw_len,
+        &oid_index, &oid_length, &param_index, &param_length, key_index, key_length);
+
+    if (ret == 0) {
+        /* find the key type from the OID. Use key type to derive
+        * further attributes from parameter, or update the value
+        * of the key index to skip unused version field, etc.
+        */
+        if (oid_length == sizeof(ptls_mbedtls_oid_rsa_key) &&
+            memcmp(pk_raw + oid_index, ptls_mbedtls_oid_rsa_key, sizeof(ptls_mbedtls_oid_rsa_key)) == 0) {
+            /* We recognized RSA */
+            psa_set_key_type(attributes, PSA_KEY_TYPE_RSA_PUBLIC_KEY);
+            if (*key_length > 0 && pk_raw[*key_index] == 0) {
+                (*key_index)++;
+                (*key_length)--;
+            }
+        }
+        else if (oid_length == sizeof(ptls_mbedtls_oid_ec_key) &&
+            memcmp(pk_raw + oid_index, ptls_mbedtls_oid_ec_key, sizeof(ptls_mbedtls_oid_ec_key)) == 0) {
+            /* We recognized ECDSA */
+            psa_set_key_type(attributes, PSA_KEY_TYPE_ECC_PUBLIC_KEY(PSA_ECC_FAMILY_SECP_R1));
+            if (*key_length > 0 && pk_raw[*key_index] == 0) {
+                (*key_index)++;
+                (*key_length)--;
+            }
+        } else {
+            ret = PTLS_ERROR_NOT_AVAILABLE;
+        }
+    }
+    return ret;
+}
+
+
 const ptls_mbedtls_signature_scheme_t *ptls_mbedtls_select_signature_scheme(const ptls_mbedtls_signature_scheme_t *available,
     const uint16_t *algorithms, size_t num_algorithms, uint16_t * selected_algorithm)
 {
     const ptls_mbedtls_signature_scheme_t *scheme;
 
-    /* select the algorithm, driven by server preference of `available` */
+    /* select the algorithm, driven by server-isde preference of `available` */
     for (scheme = available; scheme->scheme_id != UINT16_MAX; ++scheme) {
         for (size_t i = 0; i != num_algorithms; ++i) {
             if (algorithms[i] == scheme->scheme_id) {
@@ -652,7 +775,6 @@ int ptls_mbedtls_load_file(char const * file_name, unsigned char ** buf, size_t 
     F = fopen(file_name, "rb");
 #endif
 
-
     if (F == NULL) {
         ret = PTLS_ERROR_NOT_AVAILABLE;
     } else {
@@ -735,7 +857,7 @@ int ptls_mbedtls_load_private_key(ptls_context_t *ctx, char const *pem_fname)
 
             psa_set_key_usage_flags(&signer->attributes, PSA_KEY_USAGE_SIGN_HASH);
             ret =
-                test_parse_private_key_field(pem.private_buf, pem.private_buflen, &oid_index, &oid_length, &key_index, &key_length);
+                ptls_parse_private_key_field(pem.private_buf, pem.private_buflen, &oid_index, &oid_length, &key_index, &key_length);
             if (ret == 0) {
                 /* need to parse the OID in order to set the parameters */
 
@@ -1090,7 +1212,22 @@ static int mbedtls_verify_certificate(ptls_verify_certificate_t *_self, ptls_t *
                     ret = PTLS_ERROR_NO_MEMORY;
                 }
                 else {
-                    psa_status_t status;
+#if 1
+                    /* Obtain the key bits from the certificate */
+                    size_t key_index;
+                    size_t key_length;
+                    psa_key_attributes_t attributes = psa_key_attributes_init();
+
+                    ret = ptls_mbedtls_get_public_key_info(chain_head->pk_raw.p, chain_head->pk_raw.len,
+                        &attributes, &key_index, &key_length);
+
+                    if (ret == 0) {
+                        if (psa_import_key(&attributes, chain_head->pk_raw.p + key_index, key_length, &message_verify_ctx->key_id) != 0) {
+                            ret = PTLS_ERROR_LIBRARY;
+                        }
+                    }
+#else
+                    psa_status_t status = 0;
                     psa_key_attributes_t attributes;
                     memset(&attributes, 0, sizeof(attributes));
                     memset(message_verify_ctx, 0, sizeof(mbedtls_message_verify_ctx_t));
@@ -1101,6 +1238,9 @@ static int mbedtls_verify_certificate(ptls_verify_certificate_t *_self, ptls_t *
                     }
                     if (status != PSA_SUCCESS) {
                         ret = PTLS_ERROR_LIBRARY;
+                    }
+#endif
+                    if (ret != 0) {
                         free(message_verify_ctx);
                     }
                     else {

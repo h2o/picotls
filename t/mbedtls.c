@@ -211,7 +211,7 @@ typedef struct st_mbedtls_message_verify_ctx_t {
 int mbedtls_verify_sign(void* verify_ctx, uint16_t algo, ptls_iovec_t data, ptls_iovec_t signature);
 psa_algorithm_t mbedtls_get_psa_alg_from_tls_number(uint16_t tls_algo);
 
-int test_load_one_der_key(char const *path, int expect_failure)
+int test_load_one_key(char const *path, int expect_failure)
 {
     int ret = -1;
     unsigned char test_message[32] = {1,  2,  3,  4,  5,  6,  7,  8,  9,  10, 11, 12, 13, 14, 15, 16,
@@ -325,19 +325,125 @@ int test_load_one_der_key(char const *path, int expect_failure)
 
 void test_load_keys(void)
 {
-    subtest("load rsa key", test_load_one_der_key, ASSET_RSA_KEY, 0);
-    subtest("load secp256r1 key", test_load_one_der_key, ASSET_SECP256R1_KEY, 0);
-    subtest("load secp384r1 key", test_load_one_der_key, ASSET_SECP384R1_KEY, 0);
-    subtest("load secp521r1 key", test_load_one_der_key, ASSET_SECP521R1_KEY, 0);
-    subtest("load secp521r1-pkcs8 key", test_load_one_der_key, ASSET_RSA_PKCS8_KEY, 0);
-    subtest("load rsa-pkcs8 key", test_load_one_der_key, ASSET_RSA_PKCS8_KEY, 0);
+    subtest("load rsa key", test_load_one_key, ASSET_RSA_KEY, 0);
+    subtest("load secp256r1 key", test_load_one_key, ASSET_SECP256R1_KEY, 0);
+    subtest("load secp384r1 key", test_load_one_key, ASSET_SECP384R1_KEY, 0);
+    subtest("load secp521r1 key", test_load_one_key, ASSET_SECP521R1_KEY, 0);
+    subtest("load secp521r1-pkcs8 key", test_load_one_key, ASSET_RSA_PKCS8_KEY, 0);
+    subtest("load rsa-pkcs8 key", test_load_one_key, ASSET_RSA_PKCS8_KEY, 0);
 
     /* add tests for failure modes, including EDDSA which is not supported */
 
-    subtest("load key no such file", test_load_one_der_key, ASSET_NO_SUCH_FILE, 1);
-    subtest("load key not a PEM file", test_load_one_der_key, ASSET_NOT_A_PEM_FILE, 1);
-    subtest("load key not a key file", test_load_one_der_key, ASSET_RSA_CERT, 1);
-    subtest("load key not supported", test_load_one_der_key, ASSET_ED25519_KEY, 1);
+    subtest("load key no such file", test_load_one_key, ASSET_NO_SUCH_FILE, 1);
+    subtest("load key not a PEM file", test_load_one_key, ASSET_NOT_A_PEM_FILE, 1);
+    subtest("load key not a key file", test_load_one_key, ASSET_RSA_CERT, 1);
+    subtest("load key not supported", test_load_one_key, ASSET_ED25519_KEY, 1);
+}
+
+/* testing of public key export.
+* The API to export a public key directly from the certificate is not present
+* in older versions of MbedTLS, which might be installed by default in
+* old versions of operating systems. Instead, we develop a robust way to
+* export the key bits from the "raw public key" bytes in the certificate.
+* But we need to test that this work properly, and we do that by
+* comparing to the export of key bits from the private key, because for
+* these tests we know the private key.
+*/
+int ptls_mbedtls_get_public_key_info(const unsigned char* pk_raw, size_t pk_raw_len,
+    psa_key_attributes_t* attributes,
+    size_t* key_index, size_t* key_length);
+
+static int test_retrieve_pubkey_one(char const* key_path, char const* cert_path)
+{
+    int ret = 0;
+    ptls_context_t ctx = { 0 };
+    mbedtls_x509_crt* chain_head = (mbedtls_x509_crt*)malloc(sizeof(mbedtls_x509_crt));
+    uint8_t pubkey_ref[1024];
+    uint8_t pubkey_val[1024];
+    size_t pubkey_ref_len = 0;
+    size_t pubkey_val_len = 0;
+
+    /* Preparation: load the certificate and the private key */
+    if (chain_head == NULL) {
+        ret = PTLS_ERROR_NO_MEMORY;
+        ok(ret == 0);
+    }
+    if (ret == 0) {
+        mbedtls_x509_crt_init(chain_head);
+
+        if (mbedtls_x509_crt_parse_file(chain_head, cert_path) != 0) {
+            ret = -1;
+            ok(ret == 0);
+        }
+    }
+    if (ret == 0) {
+        ret = ptls_mbedtls_load_private_key(&ctx, key_path);
+        if (ret != 0) {
+            ok(ret == 0);
+        }
+    }
+    /* Export the pubkey bits from the private key, for reference */
+    if (ret == 0) {
+        ptls_mbedtls_sign_certificate_t* signer = (ptls_mbedtls_sign_certificate_t*)
+            (((unsigned char*)ctx.sign_certificate) - offsetof(struct st_ptls_mbedtls_sign_certificate_t, super));
+        if (psa_export_public_key(signer->key_id, pubkey_ref, sizeof(pubkey_ref), &pubkey_ref_len) != 0) {
+            ret = -1;
+            ok(ret == 0);
+        }
+    }
+    /* Obtain the key bits from the certificate */
+    if (ret == 0) {
+        uint8_t * pk_raw = chain_head->pk_raw.p;
+        size_t pk_raw_len = chain_head->pk_raw.len;
+        size_t key_index;
+        size_t key_length;
+        psa_key_attributes_t attributes = psa_key_attributes_init();
+
+        ret = ptls_mbedtls_get_public_key_info(pk_raw, pk_raw_len,
+            &attributes, &key_index, &key_length);
+
+        if (ret == 0) {
+            if (key_length > sizeof(pubkey_val)) {
+                ret = -1;
+                ok(ret == 0);
+            }
+            else {
+                mbedtls_svc_key_id_t pub_key_id;
+                memcpy(pubkey_val, pk_raw + key_index, key_length);
+                pubkey_val_len = key_length;
+            }
+        }
+        else {
+            ok(ret == 0);
+        }
+    }
+
+    /* Compare key bits */
+    if (ret == 0) {
+        if (pubkey_ref_len != pubkey_val_len ||
+            memcmp(pubkey_ref, pubkey_val, pubkey_ref_len) != 0) {
+            ret = -1;
+            ok(ret == 0);
+        }
+    }
+    /* Clean up */
+    if (ctx.sign_certificate != NULL) {
+        ptls_mbedtls_dispose_sign_certificate(ctx.sign_certificate);
+    }
+    if (chain_head != NULL) {
+        mbedtls_x509_crt_free(chain_head);
+    }
+    ok(ret == 0);
+
+    return ret;
+}
+
+static int test_retrieve_pubkey()
+{
+    subtest("retrieve pubkey RSA", test_retrieve_pubkey_one, ASSET_RSA_KEY, ASSET_RSA_CERT);
+    subtest("retrieve pubkey secp256r1", test_retrieve_pubkey_one, ASSET_SECP256R1_KEY, ASSET_SECP256R1_CERT);
+    subtest("retrieve pubkey secp384r1", test_retrieve_pubkey_one, ASSET_SECP384R1_KEY, ASSET_SECP384R1_CERT);
+    subtest("retrieve pubkey secp521r1", test_retrieve_pubkey_one, ASSET_SECP521R1_KEY, ASSET_SECP521R1_CERT);
 }
 
 /*
@@ -679,14 +785,17 @@ int main(int argc, char **argv)
     subtest("minicrypto vs.", test_picotls);
 
     /* Test loading file in memory */
-    subtest("test load file", test_load_file);
+    subtest("load file", test_load_file);
 
     /* test loading of keys in memory and capability to sign,
      * and also verify failure modes. */
-    subtest("test load keys", test_load_keys);
+    subtest("load keys", test_load_keys);
+
+    /* Check that the bits of the public key are correctly retrieved from a certificate */
+    subtest("retrieve public key from cert", test_retrieve_pubkey);
 
     /* End to end test of signing and verifying certicates */
-    subtest("test sign verify end to end", test_sign_verify_end_to_end);
+    subtest("sign verify end to end", test_sign_verify_end_to_end);
 
     /* Deinitialize the PSA crypto library. */
     mbedtls_psa_crypto_free();
