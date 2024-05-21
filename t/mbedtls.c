@@ -360,9 +360,7 @@ static void test_retrieve_pubkey_one(char const* key_path, char const* cert_path
     ptls_context_t ctx = { 0 };
     mbedtls_x509_crt* chain_head = (mbedtls_x509_crt*)malloc(sizeof(mbedtls_x509_crt));
     uint8_t pubkey_ref[1024];
-    uint8_t pubkey_val[1024];
     size_t pubkey_ref_len = 0;
-    size_t pubkey_val_len = 0;
 
     /* Preparation: load the certificate and the private key */
     if (chain_head == NULL) {
