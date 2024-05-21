@@ -37,6 +37,7 @@
 #include "picotls/minicrypto.h"
 #include "mbedtls/pk.h"
 #include "mbedtls/pem.h"
+#include "mbedtls/x509_crt.h"
 #include "mbedtls/error.h"
 
 typedef struct st_ptls_mbedtls_signature_scheme_t {
@@ -353,7 +354,7 @@ int ptls_mbedtls_get_public_key_info(const unsigned char* pk_raw, size_t pk_raw_
     psa_key_attributes_t* attributes,
     size_t* key_index, size_t* key_length);
 
-static int test_retrieve_pubkey_one(char const* key_path, char const* cert_path)
+static void test_retrieve_pubkey_one(char const* key_path, char const* cert_path)
 {
     int ret = 0;
     ptls_context_t ctx = { 0 };
@@ -403,14 +404,10 @@ static int test_retrieve_pubkey_one(char const* key_path, char const* cert_path)
             &attributes, &key_index, &key_length);
 
         if (ret == 0) {
-            if (key_length > sizeof(pubkey_val)) {
-                ret = -1;
+            /* Compare key bits */
+            if (pubkey_ref_len != key_length ||
+                memcmp(pubkey_ref, chain_head->pk_raw.p + key_index, key_length) != 0) {
                 ok(ret == 0);
-            }
-            else {
-                mbedtls_svc_key_id_t pub_key_id;
-                memcpy(pubkey_val, pk_raw + key_index, key_length);
-                pubkey_val_len = key_length;
             }
         }
         else {
@@ -418,14 +415,6 @@ static int test_retrieve_pubkey_one(char const* key_path, char const* cert_path)
         }
     }
 
-    /* Compare key bits */
-    if (ret == 0) {
-        if (pubkey_ref_len != pubkey_val_len ||
-            memcmp(pubkey_ref, pubkey_val, pubkey_ref_len) != 0) {
-            ret = -1;
-            ok(ret == 0);
-        }
-    }
     /* Clean up */
     if (ctx.sign_certificate != NULL) {
         ptls_mbedtls_dispose_sign_certificate(ctx.sign_certificate);
@@ -434,11 +423,9 @@ static int test_retrieve_pubkey_one(char const* key_path, char const* cert_path)
         mbedtls_x509_crt_free(chain_head);
     }
     ok(ret == 0);
-
-    return ret;
 }
 
-static int test_retrieve_pubkey()
+static void test_retrieve_pubkey()
 {
     subtest("retrieve pubkey RSA", test_retrieve_pubkey_one, ASSET_RSA_KEY, ASSET_RSA_CERT);
     subtest("retrieve pubkey secp256r1", test_retrieve_pubkey_one, ASSET_SECP256R1_KEY, ASSET_SECP256R1_CERT);
