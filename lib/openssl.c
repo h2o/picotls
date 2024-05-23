@@ -434,14 +434,14 @@ static int x9_62_key_exchange(EC_GROUP *group, ptls_iovec_t *pubkey, ptls_iovec_
         goto Exit;
     }
 
-    /* calc secret */
+    /* allocate space for secret */
     secret->len = (EC_GROUP_get_degree(group) + 7) / 8;
     if ((secret->base = malloc(secret->len)) == NULL) {
         ret = PTLS_ERROR_NO_MEMORY;
         goto Exit;
     }
 
-    /* ecdh! */
+    /* calc secret */
     if (ECDH_compute_key(secret->base, secret->len, peer_point, privkey, NULL) <= 0) {
         ret = PTLS_ALERT_HANDSHAKE_FAILURE; /* ??? */
         goto Exit;
