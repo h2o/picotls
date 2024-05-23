@@ -345,7 +345,7 @@ typedef struct st_ptls_key_exchange_context_t {
     ptls_iovec_t pubkey;
     /**
      * This function can be used for deriving a shared secret or for destroying the context.
-     * When `secret` is non-NULL, this callback derives the shared secret using the public key of the context and the peer key being
+     * When `secret` is non-NULL, this callback derives the shared secret using the private key of the context and the peer key being
      * given, and sets the value in `secret`. The memory pointed to by `secret->base` must be freed by the caller by calling `free`.
      * When `release` is set, the callee frees resources allocated to the context and set *keyex to NULL.
      */
@@ -366,9 +366,9 @@ typedef const struct st_ptls_key_exchange_algorithm_t {
      */
     int (*create)(const struct st_ptls_key_exchange_algorithm_t *algo, ptls_key_exchange_context_t **ctx);
     /**
-     * Implements synchronous key exchange. Called when receiving a ServerHello.
-     * Given a public key provided by the peer (`peerkey`), this callback returns a empheral public key (`pubkey`) and a secret
-     * (`secret) `derived from the two public keys.
+     * Implements synchronous key exchange. Called when ServerHello is generated.
+     * Given a public key provided by the peer (`peerkey`), this callback generates an ephemeral private and public key, and returns
+     * the public key (`pubkey`) and a secret (`secret`) derived from the peerkey and private key.
      */
     int (*exchange)(const struct st_ptls_key_exchange_algorithm_t *algo, ptls_iovec_t *pubkey, ptls_iovec_t *secret,
                     ptls_iovec_t peerkey);
