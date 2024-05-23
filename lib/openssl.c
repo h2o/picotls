@@ -201,7 +201,7 @@ void ptls_openssl_random_bytes(void *buf, size_t len)
     }
 }
 
-static EC_KEY *ecdh_gerenate_key(EC_GROUP *group)
+static EC_KEY *ecdh_generate_key(EC_GROUP *group)
 {
     EC_KEY *key;
 
@@ -362,7 +362,7 @@ static int x9_62_create_key_exchange(ptls_key_exchange_algorithm_t *algo, ptls_k
     }
     if ((ret = x9_62_create_context(algo, &ctx)) != 0)
         goto Exit;
-    if ((ctx->privkey = ecdh_gerenate_key(group)) == NULL) {
+    if ((ctx->privkey = ecdh_generate_key(group)) == NULL) {
         ret = PTLS_ERROR_LIBRARY;
         goto Exit;
     }
@@ -423,7 +423,7 @@ static int x9_62_key_exchange(EC_GROUP *group, ptls_iovec_t *pubkey, ptls_iovec_
     }
 
     /* create private key */
-    if ((privkey = ecdh_gerenate_key(group)) == NULL) {
+    if ((privkey = ecdh_generate_key(group)) == NULL) {
         ret = PTLS_ERROR_NO_MEMORY;
         goto Exit;
     }
