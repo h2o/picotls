@@ -649,6 +649,7 @@ int main(int argc, char **argv)
         }
 #endif
         setup_session_cache(&ctx);
+        ech_setup_retry_configs(&ctx);
     } else {
         /* client */
         if (use_early_data) {
