@@ -2848,8 +2848,10 @@ static int client_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
     ptls__key_schedule_update_hash(tls->key_schedule, message.base, message.len, 0);
 
     if (sh.peerkey.base != NULL) {
-        if ((ret = tls->client.key_share_ctx->on_exchange(&tls->client.key_share_ctx, 1, &ecdh_secret, sh.peerkey)) != 0)
+        if ((ret = tls->client.key_share_ctx->on_exchange(&tls->client.key_share_ctx, 1, &ecdh_secret, sh.peerkey)) != 0) {
+            assert(ecdh_secret.base == NULL);
             goto Exit;
+        }
     }
 
     if ((ret = key_schedule_extract(tls->key_schedule, ecdh_secret)) != 0)
@@ -4677,8 +4679,11 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
             ret = ch->key_shares.base != NULL ? PTLS_ALERT_HANDSHAKE_FAILURE : PTLS_ALERT_MISSING_EXTENSION;
             goto Exit;
         }
-        if ((ret = key_share.algorithm->exchange(key_share.algorithm, &pubkey, &ecdh_secret, key_share.peer_key)) != 0)
+        if ((ret = key_share.algorithm->exchange(key_share.algorithm, &pubkey, &ecdh_secret, key_share.peer_key)) != 0) {
+            assert(pubkey.base == NULL);
+            assert(ecdh_secret.base == NULL);
             goto Exit;
+        }
         tls->key_share = key_share.algorithm;
     }
 
