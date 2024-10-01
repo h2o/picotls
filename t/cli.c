@@ -96,7 +96,10 @@ static int handle_connection(int sockfd, ptls_context_t *ctx, const char *server
     ptls_buffer_init(&encbuf, "", 0);
     ptls_buffer_init(&ptbuf, "", 0);
 
-    fcntl(sockfd, F_SETFL, O_NONBLOCK);
+    if (fcntl(sockfd, F_SETFL, O_NONBLOCK) == -1) {
+        perror("fcntl");
+        goto Exit;
+    }
 
     if (input_file == input_file_is_benchmark) {
         if (!ptls_is_server(tls))
@@ -311,14 +314,17 @@ static int run_server(struct sockaddr *sa, socklen_t salen, ptls_context_t *ctx,
     }
     if (setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)) != 0) {
         perror("setsockopt(SO_REUSEADDR) failed");
+        close(listen_fd);
         return 1;
     }
     if (bind(listen_fd, sa, salen) != 0) {
         perror("bind(2) failed");
+        close(listen_fd);
         return 1;
     }
     if (listen(listen_fd, SOMAXCONN) != 0) {
         perror("listen(2) failed");
+        close(listen_fd);
         return 1;
     }
 
@@ -337,12 +343,13 @@ static int run_client(struct sockaddr *sa, socklen_t salen, ptls_context_t *ctx,
 {
     int fd;
 
-    if ((fd = socket(sa->sa_family, SOCK_STREAM, 0)) == 1) {
+    if ((fd = socket(sa->sa_family, SOCK_STREAM, 0)) == -1) {
         perror("socket(2) failed");
         return 1;
     }
     if (connect(fd, sa, salen) != 0) {
         perror("connect(2) failed");
+        close(fd);
         return 1;
     }
 
