@@ -516,7 +516,7 @@ static int evp_keyex_on_exchange(ptls_key_exchange_context_t **_ctx, int release
         goto Exit;
     }
 
-    secret->base = NULL;
+    *secret = ptls_iovec_init(NULL, 0);
 
     if (peerkey.len != ctx->super.pubkey.len) {
         ret = PTLS_ALERT_DECRYPT_ERROR;
@@ -598,8 +598,10 @@ Exit:
         EVP_PKEY_CTX_free(evpctx);
     if (evppeer != NULL)
         EVP_PKEY_free(evppeer);
-    if (ret != 0)
+    if (ret != 0) {
         free(secret->base);
+        *secret = ptls_iovec_init(NULL, 0);
+    }
     if (release) {
         evp_keyex_free(ctx);
         *_ctx = NULL;
@@ -679,7 +681,7 @@ static int evp_keyex_exchange(ptls_key_exchange_algorithm_t *algo, ptls_iovec_t 
     ptls_key_exchange_context_t *ctx = NULL;
     int ret;
 
-    outpubkey->base = NULL;
+    *outpubkey = ptls_iovec_init(NULL, 0);
 
     if ((ret = evp_keyex_create(algo, &ctx)) != 0)
         goto Exit;
@@ -695,8 +697,10 @@ static int evp_keyex_exchange(ptls_key_exchange_algorithm_t *algo, ptls_iovec_t 
 Exit:
     if (ctx != NULL)
         evp_keyex_on_exchange(&ctx, 1, NULL, ptls_iovec_init(NULL, 0));
-    if (ret != 0)
+    if (ret != 0) {
         free(outpubkey->base);
+        *outpubkey = ptls_iovec_init(NULL, 0);
+    }
     return ret;
 }
 

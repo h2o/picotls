@@ -348,6 +348,7 @@ typedef struct st_ptls_key_exchange_context_t {
      * When `secret` is non-NULL, this callback derives the shared secret using the private key of the context and the peer key being
      * given, and sets the value in `secret`. The memory pointed to by `secret->base` must be freed by the caller by calling `free`.
      * When `release` is set, the callee frees resources allocated to the context and set *keyex to NULL.
+     * Upon failure (i.e., when an PTLS error code is returned), `*pubkey` and `*secret` either remain unchanged or are zero-cleared.
      */
     int (*on_exchange)(struct st_ptls_key_exchange_context_t **keyex, int release, ptls_iovec_t *secret, ptls_iovec_t peerkey);
 } ptls_key_exchange_context_t;
@@ -369,6 +370,7 @@ typedef const struct st_ptls_key_exchange_algorithm_t {
      * Implements synchronous key exchange. Called when ServerHello is generated.
      * Given a public key provided by the peer (`peerkey`), this callback generates an ephemeral private and public key, and returns
      * the public key (`pubkey`) and a secret (`secret`) derived from the peerkey and private key.
+     * Upon failure (i.e., when an PTLS error code is returned), `*pubkey` and `*secret` either remain unchanged or are zero-cleared.
      */
     int (*exchange)(const struct st_ptls_key_exchange_algorithm_t *algo, ptls_iovec_t *pubkey, ptls_iovec_t *secret,
                     ptls_iovec_t peerkey);
