@@ -96,7 +96,10 @@ static int handle_connection(int sockfd, ptls_context_t *ctx, const char *server
     ptls_buffer_init(&encbuf, "", 0);
     ptls_buffer_init(&ptbuf, "", 0);
 
-    fcntl(sockfd, F_SETFL, O_NONBLOCK);
+    if (fcntl(sockfd, F_SETFL, O_NONBLOCK) == -1) {
+        perror("fcntl");
+        goto Exit;
+    }
 
     if (input_file == input_file_is_benchmark) {
         if (!ptls_is_server(tls))
