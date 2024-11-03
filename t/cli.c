@@ -459,7 +459,7 @@ int main(int argc, char **argv)
     int family = 0;
     const char *raw_pub_key_file = NULL, *cert_location = NULL;
 
-    while ((ch = getopt(argc, argv, "46abBC:c:i:Ij:k:nN:es:Sr:p:P:E:K:l:y:vV:h")) != -1) {
+    while ((ch = getopt(argc, argv, "46abBC:c:i:Ij:k:nN:es:Sr:p:P:E:K:l:uy:vV:h")) != -1) {
         switch (ch) {
         case '4':
             family = AF_INET;
