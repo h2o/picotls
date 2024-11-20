@@ -409,6 +409,9 @@ static void usage(const char *cmd)
 #if PTLS_OPENSSL_HAVE_X25519
            ", X25519"
 #endif
+#if PTLS_OPENSSL_HAVE_X25519MLKEM768
+           ", X5519MLKEM768"
+#endif
            "\n"
            "Supported signature algorithms: rsa, secp256r1"
 #if PTLS_OPENSSL_HAVE_SECP384R1
@@ -558,6 +561,9 @@ int main(int argc, char **argv)
 #endif
 #if PTLS_OPENSSL_HAVE_X25519
                 MATCH(x25519);
+#endif
+#if PTLS_OPENSSL_HAVE_X25519MLKEM768
+                MATCH(x25519mlkem768);
 #endif
 #undef MATCH
                 if (algo == NULL) {
