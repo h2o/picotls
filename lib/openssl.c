@@ -2202,6 +2202,20 @@ ptls_key_exchange_algorithm_t ptls_openssl_x25519mlkem768 = {.id = PTLS_GROUP_X2
                                                              .exchange = x25519mlkem768_exchange};
 #endif
 ptls_key_exchange_algorithm_t *ptls_openssl_key_exchanges[] = {&ptls_openssl_secp256r1, NULL};
+ptls_key_exchange_algorithm_t *ptls_openssl_key_exchanges_all[] = {
+#if PTLS_OPENSSL_HAVE_X25519MLKEM768
+    &ptls_openssl_x25519mlkem768,
+#endif
+#if PTLS_OPENSSL_HAVE_SECP521R1
+    &ptls_openssl_secp521r1,
+#endif
+#if PTLS_OPENSSL_HAVE_SECP384R1
+    &ptls_openssl_secp384r1,
+#endif
+#if PTLS_OPENSSL_HAVE_X25519
+    &ptls_openssl_x25519,
+#endif
+    &ptls_openssl_secp256r1,      NULL};
 ptls_cipher_algorithm_t ptls_openssl_aes128ecb = {
     "AES128-ECB",          PTLS_AES128_KEY_SIZE, PTLS_AES_BLOCK_SIZE, 0 /* iv size */, sizeof(struct cipher_context_t),
     aes128ecb_setup_crypto};
