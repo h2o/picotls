@@ -104,18 +104,15 @@ static const char ech_info_prefix[8] = "tls ech";
 #endif
 
 #if PICOTLS_USE_DTRACE
-#define PTLS_SHOULD_PROBE(LABEL, tls) (PTLS_UNLIKELY(PICOTLS_##LABEL##_ENABLED()) && !(tls)->skip_tracing)
 #define PTLS_PROBE0(LABEL, tls)                                                                                                    \
     do {                                                                                                                           \
-        ptls_t *_tls = (tls);                                                                                                      \
-        if (PTLS_SHOULD_PROBE(LABEL, _tls))                                                                                        \
-            PICOTLS_##LABEL(_tls);                                                                                                 \
+        if (PTLS_UNLIKELY(PICOTLS_##LABEL##_ENABLED()))                                                                            \
+            PICOTLS_##LABEL(tls);                                                                                                  \
     } while (0)
 #define PTLS_PROBE(LABEL, tls, ...)                                                                                                \
     do {                                                                                                                           \
-        ptls_t *_tls = (tls);                                                                                                      \
-        if (PTLS_SHOULD_PROBE(LABEL, _tls))                                                                                        \
-            PICOTLS_##LABEL(_tls, __VA_ARGS__);                                                                                    \
+        if (PTLS_UNLIKELY(PICOTLS_##LABEL##_ENABLED()))                                                                            \
+            PICOTLS_##LABEL((tls), __VA_ARGS__);                                                                                   \
     } while (0)
 #else
 #define PTLS_PROBE0(LABEL, tls)
