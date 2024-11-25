@@ -1386,35 +1386,40 @@ uint64_t ptls_decode_quicint(const uint8_t **src, const uint8_t *end);
         ptls_decode_assert_block_close((src), end);                                                                                \
     } while (0)
 
-#define PTLS_LOG__DO_LOG(module, type, block)                                                                                      \
+#define PTLS_LOG__DO_LOG(module, name, block)                                                                                      \
     do {                                                                                                                           \
         int ptlslog_skip = 0;                                                                                                      \
         char smallbuf[128];                                                                                                        \
         ptls_buffer_t ptlslogbuf;                                                                                                  \
         ptls_buffer_init(&ptlslogbuf, smallbuf, sizeof(smallbuf));                                                                 \
-        PTLS_LOG__DO_PUSH_SAFESTR("{\"module\":\"" PTLS_TO_STR(module) "\",\"type\":\"" PTLS_TO_STR(type) "\"");                   \
+        PTLS_LOG__DO_PUSH_SAFESTR("{\"module\":\"" PTLS_TO_STR(module) "\",\"type\":\"" PTLS_TO_STR(name) "\"");                   \
         do {                                                                                                                       \
             block                                                                                                                  \
         } while (0);                                                                                                               \
         PTLS_LOG__DO_PUSH_SAFESTR("}\n");                                                                                          \
         if (!ptlslog_skip)                                                                                                         \
-            ptls_log__do_write(&ptlslogbuf);                                                                                       \
+            ptls_log__do_write(&logpoint, &ptlslogbuf);                                                                            \
         ptls_buffer_dispose(&ptlslogbuf);                                                                                          \
     } while (0)
 
-#define PTLS_LOG(module, type, block)                                                                                              \
+#define PTLS_LOG_DEFINE_POINT(_module, _name, _var)                                                                                \
+    static struct st_ptls_log_point_t _var = {.name = PTLS_TO_STR(_module) ":" PTLS_TO_STR(_name)}
+
+#define PTLS_LOG(module, name, block)                                                                                              \
     do {                                                                                                                           \
-        if (!ptls_log.is_active)                                                                                                   \
+        PTLS_LOG_DEFINE_POINT(module, name);                                                                                       \
+        if (ptls_log__active_connections(&logpoint) == 0)                                                                          \
             break;                                                                                                                 \
         PTLS_LOG__DO_LOG((module), (type), (block));                                                                               \
     } while (0)
 
-#define PTLS_LOG_CONN(type, tls, block)                                                                                            \
+#define PTLS_LOG_CONN(name, tls, block)                                                                                            \
     do {                                                                                                                           \
+        PTLS_LOG_DEFINE_POINT(picotls, name, logpoint);                                                                            \
         ptls_t *_tls = (tls);                                                                                                      \
-        if (!ptls_log.is_active || ptls_skip_tracing(_tls))                                                                        \
+        if (!ptls_log_point_is_active(&logpoint) || ptls_skip_tracing(_tls))                                                       \
             break;                                                                                                                 \
-        PTLS_LOG__DO_LOG(picotls, type, {                                                                                          \
+        PTLS_LOG__DO_LOG(picotls, name, {                                                                                          \
             PTLS_LOG_ELEMENT_PTR(tls, _tls);                                                                                       \
             do {                                                                                                                   \
                 block                                                                                                              \
@@ -1461,14 +1466,14 @@ uint64_t ptls_decode_quicint(const uint8_t **src, const uint8_t *end);
 #define PTLS_LOG_APPDATA_ELEMENT_UNSAFESTR(name, value, value_len)                                                                 \
     do {                                                                                                                           \
         size_t _len = (value_len);                                                                                                 \
-        if (ptls_log.include_appdata)                                                                                              \
+        if (ptls_log_include_appdata)                                                                                              \
             PTLS_LOG_ELEMENT_UNSAFESTR(name, value, _len);                                                                         \
         PTLS_LOG_ELEMENT__DO_UNSIGNED(name, "_len", _len);                                                                         \
     } while (0)
 #define PTLS_LOG_APPDATA_ELEMENT_HEXDUMP(name, value, value_len)                                                                   \
     do {                                                                                                                           \
         size_t _len = (value_len);                                                                                                 \
-        if (ptls_log.include_appdata)                                                                                              \
+        if (ptls_log_include_appdata)                                                                                              \
             PTLS_LOG_ELEMENT_HEXDUMP(name, value, _len);                                                                           \
         PTLS_LOG_ELEMENT__DO_UNSIGNED(name, "_len", _len);                                                                         \
     } while (0)
@@ -1513,26 +1518,40 @@ uint64_t ptls_decode_quicint(const uint8_t **src, const uint8_t *end);
         }                                                                                                                          \
     } while (0)
 
-/**
- * User API is exposed only when logging is supported by the platform.
- */
-typedef struct st_ptls_log_t {
-    unsigned is_active : 1;
-    unsigned include_appdata : 1;
-} ptls_log_t;
+struct st_ptls_log_point_t {
+    /**
+     * name of the log point (`module:type`)
+     */
+    const char *name;
+    /**
+     * bit array of connections (1 is active)
+     */
+    uint32_t active_conns;
+    /**
+     * link list of log points, see `logctx::points`
+     */
+    struct st_ptls_log_point_t *next;
+};
+
+extern volatile unsigned ptls_log_include_appdata;
+
+void ptls_log__init_point(struct st_ptls_log_point_t *point);
+static int ptls_log_point_is_active(struct st_ptls_log_point_t *point);
 
 #if PTLS_HAVE_LOG
-extern volatile ptls_log_t ptls_log;
 /**
  * Returns the number of log events that were unable to be emitted.
  */
 size_t ptls_log_num_lost(void);
 /**
- * Registers an fd to the logger. A registered fd is automatically closed and removed if it is invalidated.
+ *
  */
-int ptls_log_add_fd(int fd);
-#else
-static const ptls_log_t ptls_log = {0};
+/**
+ * Registers an fd to the logger. A registered fd is automatically closed and removed when it is closed by the peer.
+ * @param points list of points being logged, in the form of p1\0p2\0\0 (i.e., concatenated list of C strings with an empty string
+ *               marking the end). An empty list means attach to all.
+ */
+int ptls_log_add_fd(int fd, const char *points);
 #endif
 
 static int ptls_log__do_push_safestr(ptls_buffer_t *buf, const char *s);
@@ -1543,7 +1562,7 @@ int ptls_log__do_push_signed32(ptls_buffer_t *buf, int32_t v);
 int ptls_log__do_push_signed64(ptls_buffer_t *buf, int64_t v);
 int ptls_log__do_push_unsigned32(ptls_buffer_t *buf, uint32_t v);
 int ptls_log__do_push_unsigned64(ptls_buffer_t *buf, uint64_t v);
-void ptls_log__do_write(const ptls_buffer_t *buf);
+void ptls_log__do_write(struct st_ptls_log_point_t *point, const ptls_buffer_t *buf);
 
 /**
  * create a client object to handle new TLS connection
@@ -1917,6 +1936,13 @@ inline int ptls_log__do_push_safestr(ptls_buffer_t *buf, const char *s)
 inline ptls_t *ptls_new(ptls_context_t *ctx, int is_server)
 {
     return is_server ? ptls_server_new(ctx) : ptls_client_new(ctx);
+}
+
+inline int ptls_log_point_is_active(struct st_ptls_log_point_t *point)
+{
+    if (point->next == NULL)
+        ptls_log__init_point(point);
+    return point->active_conns > 0;
 }
 
 inline ptls_iovec_t ptls_iovec_init(const void *p, size_t len)

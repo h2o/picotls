@@ -6820,12 +6820,33 @@ int ptls_log__do_push_unsigned64(ptls_buffer_t *buf, uint64_t v)
 
 #if PTLS_HAVE_LOG
 
-volatile ptls_log_t ptls_log = {};
+volatile unsigned ptls_log_include_appdata = 0;
 
 static struct {
-    int *fds;
-    size_t num_fds;
+    /**
+     * list of connections; the slot is connected if points != NULL
+     */
+    struct {
+        /**
+         * file descriptor
+         */
+        int fd;
+        /**
+         * see `ptls_log_add_fd`
+         */
+        char *points;
+    } conns[sizeof(((struct st_ptls_log_point_t *)NULL)->active_conns) * 8];
+    /**
+     * counts the number of writes that failed
+     */
     size_t num_lost;
+    /**
+     * anchor of the single-linked list of log points; the tail refers to itself (i.e., point->next == point)
+     */
+    struct st_ptls_log_point_t *points;
+    /**
+     *
+     */
     pthread_mutex_t mutex;
 } logctx = {.mutex = PTHREAD_MUTEX_INITIALIZER};
 
@@ -6834,53 +6855,116 @@ size_t ptls_log_num_lost(void)
     return logctx.num_lost;
 }
 
-int ptls_log_add_fd(int fd)
+static int is_traced(struct st_ptls_log_point_t *point, const char *list)
 {
+    if (list[0] == '\0')
+        return 1;
+
+    for (const char *s = list; s[0] != '\0'; s += strlen(s) + 1)
+        if (strcmp(point->name, s) == 0)
+            return 1;
+    return 0;
+}
+
+void ptls_log__init_point(struct st_ptls_log_point_t *point)
+{
+    pthread_mutex_lock(&logctx.mutex);
+
+    /* setup active bitmap */
+    for (size_t slot = 0; slot < PTLS_ELEMENTSOF(logctx.conns); ++slot)
+        if (logctx.conns[slot].points != NULL && is_traced(point, logctx.conns[slot].points))
+            point->active_conns = (uint32_t)1 << slot;
+
+    /* register to the linked list */
+    point->next = logctx.points != NULL ? logctx.points : point;
+    logctx.points = point;
+
+    pthread_mutex_unlock(&logctx.mutex);
+}
+
+int ptls_log_add_fd(int fd, const char *_points)
+{
+    char *points;
+
+    { /* duplicate the list of log points */
+        const char *in_tail;
+        for (in_tail = _points; in_tail[0] != '\0'; in_tail += strlen(in_tail) + 1)
+            ;
+        ++in_tail;
+        if ((points = malloc(in_tail - _points)) == NULL)
+            return PTLS_ERROR_NO_MEMORY;
+        memcpy(points, _points, in_tail - _points);
+    }
+
     int ret;
 
     pthread_mutex_lock(&logctx.mutex);
 
-    int *newfds;
-    if ((newfds = realloc(logctx.fds, sizeof(logctx.fds[0]) * (logctx.num_fds + 1))) == NULL) {
+    /* find slot, or return if not available */
+    size_t slot_index;
+    for (slot_index = 0; slot_index < PTLS_ELEMENTSOF(logctx.conns); ++slot_index)
+        if (logctx.conns[slot_index].points == NULL)
+            break;
+    if (slot_index == PTLS_ELEMENTSOF(logctx.conns)) {
         ret = PTLS_ERROR_NO_MEMORY;
         goto Exit;
     }
-    logctx.fds = newfds;
-    logctx.fds[logctx.num_fds++] = fd;
-    ptls_log.is_active = 1;
+
+    /* setup the slot */
+    logctx.conns[slot_index].fd = fd;
+    logctx.conns[slot_index].points = points;
+
+    /* update the known event slots */
+    for (struct st_ptls_log_point_t *point = logctx.points;; point = point->next) {
+        if (is_traced(point, points))
+            point->active_conns |= (uint32_t)1 << slot_index;
+        if (point->next == point)
+            break;
+    }
 
     ret = 0; /* success */
 
 Exit:
     pthread_mutex_unlock(&logctx.mutex);
+    if (ret != 0)
+        free(points);
     return ret;
 }
 
 #endif
 
-void ptls_log__do_write(const ptls_buffer_t *buf)
+void ptls_log__do_write(struct st_ptls_log_point_t *point, const ptls_buffer_t *buf)
 {
 #if PTLS_HAVE_LOG
     pthread_mutex_lock(&logctx.mutex);
 
-    for (size_t fd_index = 0; fd_index < logctx.num_fds;) {
-        ssize_t ret;
-        while ((ret = write(logctx.fds[fd_index], buf->base, buf->off)) == -1 && errno == EINTR)
+    uint32_t conns = point->active_conns;
+
+    for (size_t slot = 0; conns != 0; ++slot, conns >>= 1) {
+        if ((conns & 1) == 0)
+            continue;
+        conns &= ~1;
+
+        assert(logctx.conns[slot].fd != -1);
+        ssize_t wret;
+        while ((wret = write(logctx.conns[slot].fd, buf->base, buf->off)) == -1 && errno == EINTR)
             ;
-        if (ret == buf->off) {
+        if (wret == buf->off) {
             /* success */
-            ++fd_index;
-        } else if (ret > 0 || (ret == -1 && (errno == EAGAIN || errno == EWOULDBLOCK))) {
+        } else if (wret > 0 || (wret == -1 && (errno == EAGAIN || errno == EWOULDBLOCK))) {
             /* partial write or buffer full */
             ++logctx.num_lost;
-            ++fd_index;
         } else {
-            /* write error; close and remove that fd from array */
-            close(logctx.fds[fd_index]);
-            logctx.fds[fd_index] = logctx.fds[logctx.num_fds - 1];
-            --logctx.num_fds;
-            if (logctx.num_fds == 0)
-                ptls_log.is_active = 0;
+            /* write error; close and unregister the connection */
+            close(logctx.conns[slot].fd);
+            logctx.conns[slot].fd = -1;
+            free(logctx.conns[slot].points);
+            logctx.conns[slot].points = NULL;
+            for (struct st_ptls_log_point_t *point = logctx.points;; point = point->next) {
+                point->active_conns &= ~((uint32_t)1 << slot);
+                if (point == point->next)
+                    break;
+            }
         }
     }
 
