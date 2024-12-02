@@ -6824,6 +6824,8 @@ struct st_ptls_log_t ptls_log = {
 };
 PTLS_THREADLOCAL ptls_log_conn_state_t *ptls_log_conn_state_override = NULL;
 
+#if PTLS_HAVE_LOG
+
 static struct {
     /**
      * list of connections; the slot is connected if points != NULL
@@ -6868,20 +6870,23 @@ static struct {
     pthread_mutex_t mutex;
 } logctx = {.mutex = PTHREAD_MUTEX_INITIALIZER};
 
-void ptls_log_init_conn_state(ptls_log_conn_state_t *state, void (*random_bytes)(void *, size_t))
+static void close_log_fd(size_t slot)
 {
-    uint32_t r;
-    random_bytes(&r, sizeof(r));
+    assert(logctx.conns[slot].fd >= 0 && logctx.conns[slot].points != NULL);
 
-    *state = (ptls_log_conn_state_t){
-        .random_ = (float)r / ((uint64_t)UINT32_MAX + 1), /* [0..1), so that any(r) < sample_ratio where sample_ratio is [0..1] */
-        .address = in6addr_any,
-    };
-}
+    close(logctx.conns[slot].fd);
 
-size_t ptls_log_num_lost(void)
-{
-    return logctx.num_lost;
+    /* clear the connection information */
+    logctx.conns[slot].fd = -1;
+    logctx.conns[slot].sample_ratio = 0;
+    free(logctx.conns[slot].points);
+    logctx.conns[slot].points = NULL;
+    free(logctx.conns[slot].snis);
+    logctx.conns[slot].snis = NULL;
+    free(logctx.conns[slot].addresses);
+    logctx.conns[slot].addresses = NULL;
+    logctx.conns[slot].appdata = 0;
+    ++ptls_log._generation;
 }
 
 static char *duplicate_stringlist(const char *input)
@@ -6930,8 +6935,31 @@ static int is_in_addresslist(const struct in6_addr *list, const struct in6_addr 
 #undef IS_EQUAL
 }
 
+#endif
+
+void ptls_log_init_conn_state(ptls_log_conn_state_t *state, void (*random_bytes)(void *, size_t))
+{
+    uint32_t r;
+    random_bytes(&r, sizeof(r));
+
+    *state = (ptls_log_conn_state_t){
+        .random_ = (float)r / ((uint64_t)UINT32_MAX + 1), /* [0..1), so that any(r) < sample_ratio where sample_ratio is [0..1] */
+        .address = in6addr_any,
+    };
+}
+
+size_t ptls_log_num_lost(void)
+{
+#if PTLS_HAVE_LOG
+    return logctx.num_lost;
+#else
+    return 0;
+#endif
+}
+
 void ptls_log__recalc_point(int caller_locked, struct st_ptls_log_point_t *point)
 {
+#if PTLS_HAVE_LOG
     if (!caller_locked)
         pthread_mutex_lock(&logctx.mutex);
 
@@ -6947,11 +6975,13 @@ void ptls_log__recalc_point(int caller_locked, struct st_ptls_log_point_t *point
 
     if (!caller_locked)
         pthread_mutex_unlock(&logctx.mutex);
+#endif
 }
 
 void ptls_log__recalc_conn(int caller_locked, struct st_ptls_log_conn_state_t *conn, const char *(*get_sni)(void *),
                            void *get_sni_arg)
 {
+#if PTLS_HAVE_LOG
     if (!caller_locked)
         pthread_mutex_lock(&logctx.mutex);
 
@@ -6972,31 +7002,13 @@ void ptls_log__recalc_conn(int caller_locked, struct st_ptls_log_conn_state_t *c
 
     if (!caller_locked)
         pthread_mutex_unlock(&logctx.mutex);
-}
-
-#if PTLS_HAVE_LOG
-
-static void close_log_fd(size_t slot)
-{
-    assert(logctx.conns[slot].fd >= 0 && logctx.conns[slot].points != NULL);
-
-    close(logctx.conns[slot].fd);
-
-    /* clear the connection information */
-    logctx.conns[slot].fd = -1;
-    logctx.conns[slot].sample_ratio = 0;
-    free(logctx.conns[slot].points);
-    logctx.conns[slot].points = NULL;
-    free(logctx.conns[slot].snis);
-    logctx.conns[slot].snis = NULL;
-    free(logctx.conns[slot].addresses);
-    logctx.conns[slot].addresses = NULL;
-    logctx.conns[slot].appdata = 0;
-    ++ptls_log._generation;
+#endif
 }
 
 int ptls_log_add_fd(int fd, float sample_ratio, const char *_points, const char *_snis, const char *_addresses, int appdata)
 {
+#if PTLS_HAVE_LOG
+
     char *points = NULL, *snis = NULL;
     struct in6_addr *addresses = NULL;
     int ret;
@@ -7065,9 +7077,11 @@ Exit:
         free(addresses);
     }
     return ret;
-}
 
+#else
+    return PTLS_ERROR_NOT_AVAILABLE;
 #endif
+}
 
 int ptls_log__do_write(struct st_ptls_log_point_t *point, struct st_ptls_log_conn_state_t *conn, const char *(*get_sni)(void *),
                        void *get_sni_arg, const ptls_buffer_t *buf, int includes_appdata)
@@ -7116,10 +7130,12 @@ int ptls_log__do_write(struct st_ptls_log_point_t *point, struct st_ptls_log_con
     }
 
     pthread_mutex_unlock(&logctx.mutex);
-#endif
 
     if (includes_appdata)
         assert(!needs_appdata);
 
     return needs_appdata;
+#else
+    return 0;
+#endif
 }

@@ -1612,8 +1612,6 @@ static uint32_t ptls_log_conn_maybe_active(ptls_log_conn_state_t *conn, const ch
  * Returns the number of log events that were unable to be emitted.
  */
 size_t ptls_log_num_lost(void);
-
-#if PTLS_HAVE_LOG
 /**
  * Registers an fd to the logger. A registered fd is automatically closed and removed when it is closed by the peer.
  * @param sample_ratio  sampling ratio between 0 and 1
@@ -1623,7 +1621,6 @@ size_t ptls_log_num_lost(void);
  * @param addresses     list of IPv4/v6 addresses to log, using the same form as points
  */
 int ptls_log_add_fd(int fd, float sample_ratio, const char *points, const char *snis, const char *addresses, int appdata);
-#endif
 
 void ptls_log__recalc_point(int caller_locked, struct st_ptls_log_point_t *point);
 void ptls_log__recalc_conn(int caller_locked, struct st_ptls_log_conn_state_t *conn, const char *(*get_sni)(void *),
