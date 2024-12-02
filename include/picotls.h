@@ -34,6 +34,8 @@ extern "C" {
 #include <inttypes.h>
 #include <string.h>
 #include <sys/types.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 
 #if __GNUC__ >= 3
 #define PTLS_LIKELY(x) __builtin_expect(!!(x), 1)
@@ -1554,6 +1556,10 @@ typedef struct st_ptls_log_conn_state_t {
      * `ptls_add_fd'`. To disable logging entirely, use `ptls_log.dummy_conn_state`, or set the value exactly to 1.
      */
     float random_;
+    /**
+     * represents peer address; ipv4 addresses are stored using the mapped form (::ffff:192.0.2.1)
+     */
+    struct in6_addr address;
     struct st_ptls_log_state_t state;
 } ptls_log_conn_state_t;
 
@@ -1606,11 +1612,12 @@ size_t ptls_log_num_lost(void);
 /**
  * Registers an fd to the logger. A registered fd is automatically closed and removed when it is closed by the peer.
  * @param sample_ratio sampling ratio between 0 and 1
- * @param points list of points being logged, in the form of p1\0p2\0\0 (i.e., concatenated list of C strings with an empty string
- *               marking the end). An empty list means attach to all.
- * @param snis   list of SNIs being logged, using the same form as points
+ * @param points list of points to log, in the form of p1\0p2\0\0 (i.e., concatenated list of C strings with an empty string marking
+ *               the end). An empty list means attach to all.
+ * @param snis   list of SNIs to log, using the same form as points
+ * @param snis   list of IPv4/v6 addresses to log, using the same form as points
  */
-int ptls_log_add_fd(int fd, float sample_ratio, const char *points, const char *snis);
+int ptls_log_add_fd(int fd, float sample_ratio, const char *points, const char *snis, const char *addresses);
 #endif
 
 void ptls_log__recalc_point(int caller_locked, struct st_ptls_log_point_t *point);
@@ -1971,6 +1978,11 @@ char *ptls_hexdump(char *dst, const void *src, size_t len);
  */
 char *ptls_jsonescape(char *buf, const char *s, size_t len);
 /**
+ * builds a v4-mapped address (i.e., ::ffff:192.0.2.1)
+ */
+static void ptls_build_mapped_v4_address(struct in6_addr *v6, const struct in_addr *v4);
+
+/**
  * the default get_time callback
  */
 extern ptls_get_time_t ptls_get_time;
@@ -2143,6 +2155,12 @@ inline size_t ptls_aead_decrypt(ptls_aead_context_t *ctx, void *output, const vo
                                 const void *aad, size_t aadlen)
 {
     return ctx->do_decrypt(ctx, output, input, inlen, seq, aad, aadlen);
+}
+
+inline void ptls_build_mapped_v4_address(struct in6_addr *v6, const struct in_addr *v4)
+{
+    *v6 = (struct in6_addr){.s6_addr[10] = 0xff, .s6_addr[11] = 0xff};
+    memcpy(&v6->s6_addr[12], &v4->s_addr, 4);
 }
 
 inline void ptls_hash_clone_memcpy(void *dst, const void *src, size_t size)

@@ -6842,6 +6842,10 @@ static struct {
          */
         char *snis;
         /**
+         * list of addresses terminated by ip6addr_any
+         */
+        struct in6_addr *addresses;
+        /**
          *
          */
         float sample_ratio;
@@ -6866,7 +6870,8 @@ void ptls_log_init_conn_state(ptls_log_conn_state_t *state, void (*random_bytes)
     random_bytes(&r, sizeof(r));
 
     *state = (ptls_log_conn_state_t){
-        .random_ = (float)r / ((uint64_t)UINT32_MAX + 1) /* [0..1), so that any(r) < sample_ratio where sample_ratio is [0..1] */
+        .random_ = (float)r / ((uint64_t)UINT32_MAX + 1), /* [0..1), so that any(r) < sample_ratio where sample_ratio is [0..1] */
+        .address = in6addr_any,
     };
 }
 
@@ -6903,6 +6908,24 @@ static int is_in_stringlist(const char *list, const char *search_for)
     return 0;
 }
 
+static int is_in_addresslist(const struct in6_addr *list, const struct in6_addr *search_for)
+{
+#define IS_EQUAL(x, y) (memcmp((x), (y), sizeof(struct in6_addr)) == 0)
+
+    if (IS_EQUAL(&list[0], &in6addr_any))
+        return 1;
+
+    if (IS_EQUAL(search_for, &in6addr_any))
+        return 0;
+
+    for (const struct in6_addr *element = list; !IS_EQUAL(element, &in6addr_any); ++element)
+        if (IS_EQUAL(element, search_for))
+            return 1;
+    return 0;
+
+#undef IS_EQUAL
+}
+
 void ptls_log__recalc_point(int caller_locked, struct st_ptls_log_point_t *point)
 {
     if (!caller_locked)
@@ -6934,7 +6957,8 @@ void ptls_log__recalc_conn(int caller_locked, struct st_ptls_log_conn_state_t *c
         const char *sni = get_sni != NULL ? get_sni(get_sni_arg) : NULL;
         for (size_t slot = 0; slot < PTLS_ELEMENTSOF(logctx.conns); ++slot) {
             if (logctx.conns[slot].points != NULL && conn->random_ < logctx.conns[slot].sample_ratio &&
-                is_in_stringlist(logctx.conns[slot].snis, sni)) {
+                is_in_stringlist(logctx.conns[slot].snis, sni) &&
+                is_in_addresslist(logctx.conns[slot].addresses, &conn->address)) {
                 new_active = (uint32_t)1 << slot;
             }
         }
@@ -6961,12 +6985,15 @@ static void close_log_fd(size_t slot)
     logctx.conns[slot].points = NULL;
     free(logctx.conns[slot].snis);
     logctx.conns[slot].snis = NULL;
+    free(logctx.conns[slot].addresses);
+    logctx.conns[slot].addresses = NULL;
     ++ptls_log._generation;
 }
 
-int ptls_log_add_fd(int fd, float sample_ratio, const char *_points, const char *_snis)
+int ptls_log_add_fd(int fd, float sample_ratio, const char *_points, const char *_snis, const char *_addresses)
 {
     char *points = NULL, *snis = NULL;
+    struct in6_addr *addresses = NULL;
     int ret;
 
     pthread_mutex_lock(&logctx.mutex);
@@ -6978,6 +7005,30 @@ int ptls_log_add_fd(int fd, float sample_ratio, const char *_points, const char 
     if ((snis = duplicate_stringlist(_snis)) == NULL) {
         ret = PTLS_ERROR_NO_MEMORY;
         goto Exit;
+    }
+    {
+        size_t num_addresses = 0;
+        for (const char *input = _addresses; *input != '\0'; input += strlen(input) + 1)
+            ++num_addresses;
+        if ((addresses = malloc(sizeof(*addresses) * (num_addresses + 1))) == NULL) {
+            ret = PTLS_ERROR_NO_MEMORY;
+            goto Exit;
+        }
+        size_t index = 0;
+        for (const char *input = _addresses; *input != '\0'; input += strlen(input) + 1) {
+            /* note: for consistency to the handling of points, erroneous input is ignored. V4 addresses will use the mapped form
+             * (::ffff:192.0.2.1) */
+            if (!inet_pton(AF_INET6, input, &addresses[index])) {
+                struct in_addr v4;
+                if (!inet_pton(AF_INET, input, &v4))
+                    continue;
+                ptls_build_mapped_v4_address(&addresses[index], &v4);
+            }
+            if (memcmp(&addresses[index], &in6addr_any, sizeof(struct in6_addr)) == 0)
+                continue;
+            ++index;
+        }
+        addresses[index] = in6addr_any;
     }
 
     /* find slot, or return if not available */
@@ -6994,6 +7045,7 @@ int ptls_log_add_fd(int fd, float sample_ratio, const char *_points, const char 
     logctx.conns[slot_index].fd = fd;
     logctx.conns[slot_index].points = points;
     logctx.conns[slot_index].snis = snis;
+    logctx.conns[slot_index].addresses = addresses;
     logctx.conns[slot_index].sample_ratio = sample_ratio;
     ++ptls_log._generation;
 
@@ -7004,6 +7056,7 @@ Exit:
     if (ret != 0) {
         free(points);
         free(snis);
+        free(addresses);
     }
     return ret;
 }
