@@ -6901,6 +6901,9 @@ static void close_log_fd(size_t slot)
 
 static char *duplicate_stringlist(const char *input)
 {
+    if (input == NULL)
+        return strdup("");
+
     char *result;
     const char *in_tail;
 
@@ -7035,14 +7038,14 @@ int ptls_log_add_fd(int fd, float sample_ratio, const char *_points, const char 
     }
     {
         size_t num_addresses = 0;
-        for (const char *input = _addresses; *input != '\0'; input += strlen(input) + 1)
+        for (const char *input = _addresses; input != NULL && *input != '\0'; input += strlen(input) + 1)
             ++num_addresses;
         if ((addresses = malloc(sizeof(*addresses) * (num_addresses + 1))) == NULL) {
             ret = PTLS_ERROR_NO_MEMORY;
             goto Exit;
         }
         size_t index = 0;
-        for (const char *input = _addresses; *input != '\0'; input += strlen(input) + 1) {
+        for (const char *input = _addresses; input != NULL && *input != '\0'; input += strlen(input) + 1) {
             /* note: for consistency to the handling of points, erroneous input is ignored. V4 addresses will use the mapped form
              * (::ffff:192.0.2.1) */
             if (!inet_pton(AF_INET6, input, &addresses[index])) {
