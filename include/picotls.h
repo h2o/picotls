@@ -1386,11 +1386,14 @@ uint64_t ptls_decode_quicint(const uint8_t **src, const uint8_t *end);
         ptls_decode_assert_block_close((src), end);                                                                                \
     } while (0)
 
-#define PTLS_LOG__DO_LOG(module, name, block)                                                                                      \
+#define PTLS_LOG__DO_LOG(module, name, random_, block)                                                                             \
     do {                                                                                                                           \
         int ptlslog_skip = 0;                                                                                                      \
         char smallbuf[128];                                                                                                        \
         ptls_buffer_t ptlslogbuf;                                                                                                  \
+        float r_ = (random_);                                                                                                      \
+        if (r_ >= ptls_log__max_sample_ratio)                                                                                      \
+            break;                                                                                                                 \
         ptls_buffer_init(&ptlslogbuf, smallbuf, sizeof(smallbuf));                                                                 \
         PTLS_LOG__DO_PUSH_SAFESTR("{\"module\":\"" PTLS_TO_STR(module) "\",\"type\":\"" PTLS_TO_STR(name) "\"");                   \
         do {                                                                                                                       \
@@ -1398,7 +1401,7 @@ uint64_t ptls_decode_quicint(const uint8_t **src, const uint8_t *end);
         } while (0);                                                                                                               \
         PTLS_LOG__DO_PUSH_SAFESTR("}\n");                                                                                          \
         if (!ptlslog_skip)                                                                                                         \
-            ptls_log__do_write(&logpoint, &ptlslogbuf);                                                                            \
+            ptls_log__do_write(&logpoint, &ptlslogbuf, r_);                                                                        \
         ptls_buffer_dispose(&ptlslogbuf);                                                                                          \
     } while (0)
 
@@ -1417,9 +1420,9 @@ uint64_t ptls_decode_quicint(const uint8_t **src, const uint8_t *end);
     do {                                                                                                                           \
         PTLS_LOG_DEFINE_POINT(picotls, name, logpoint);                                                                            \
         ptls_t *_tls = (tls);                                                                                                      \
-        if (!ptls_log_point_is_active(&logpoint) || ptls_skip_tracing(_tls))                                                       \
+        if (!ptls_log_point_is_active(&logpoint))                                                                                  \
             break;                                                                                                                 \
-        PTLS_LOG__DO_LOG(picotls, name, {                                                                                          \
+        PTLS_LOG__DO_LOG(picotls, name, ptls_log_random(tls), {                                                                    \
             PTLS_LOG_ELEMENT_PTR(tls, _tls);                                                                                       \
             do {                                                                                                                   \
                 block                                                                                                              \
@@ -1534,6 +1537,7 @@ struct st_ptls_log_point_t {
 };
 
 extern volatile unsigned ptls_log_include_appdata;
+extern volatile float ptls_log__max_sample_ratio;
 
 void ptls_log__init_point(struct st_ptls_log_point_t *point);
 static int ptls_log_point_is_active(struct st_ptls_log_point_t *point);
@@ -1548,10 +1552,11 @@ size_t ptls_log_num_lost(void);
  */
 /**
  * Registers an fd to the logger. A registered fd is automatically closed and removed when it is closed by the peer.
+ * @param sample_ratio sampling ratio between 0 and 1
  * @param points list of points being logged, in the form of p1\0p2\0\0 (i.e., concatenated list of C strings with an empty string
  *               marking the end). An empty list means attach to all.
  */
-int ptls_log_add_fd(int fd, const char *points);
+int ptls_log_add_fd(int fd, float sample_ratio, const char *points);
 #endif
 
 static int ptls_log__do_push_safestr(ptls_buffer_t *buf, const char *s);
@@ -1562,7 +1567,7 @@ int ptls_log__do_push_signed32(ptls_buffer_t *buf, int32_t v);
 int ptls_log__do_push_signed64(ptls_buffer_t *buf, int64_t v);
 int ptls_log__do_push_unsigned32(ptls_buffer_t *buf, uint32_t v);
 int ptls_log__do_push_unsigned64(ptls_buffer_t *buf, uint64_t v);
-void ptls_log__do_write(struct st_ptls_log_point_t *point, const ptls_buffer_t *buf);
+void ptls_log__do_write(struct st_ptls_log_point_t *point, const ptls_buffer_t *buf, float random_);
 
 /**
  * create a client object to handle new TLS connection
@@ -1667,13 +1672,16 @@ int ptls_is_ech_handshake(ptls_t *tls, uint8_t *config_id, ptls_hpke_kem_t **kem
  */
 void **ptls_get_data_ptr(ptls_t *tls);
 /**
- *
+ * When a new connection is created, a ramdom value between 0 (inclusive) and 1 (exclusive) is assigned to each connection, to allow
+ * ptls log clients to collect traces using sampling. Traces are collected only for the connections with a log-random value less
+ * than the ratio declared by the ptls log client.
+ * This value can be changed by setting `ptls_log_random_override` or by calling `ptls_set_log_random`.
  */
-int ptls_skip_tracing(ptls_t *tls);
+float ptls_log_random(ptls_t *tls);
 /**
- *
+ * Changes the log random to the specified value. When set to 1, traces for the connection will never be collected.
  */
-void ptls_set_skip_tracing(ptls_t *tls, int skip_tracing);
+void ptls_set_log_random(ptls_t *tls, float r);
 /**
  * proceeds with the handshake, optionally taking some input from peer. The function returns zero in case the handshake completed
  * successfully. PTLS_ERROR_IN_PROGRESS is returned in case the handshake is incomplete. Otherwise, an error value is returned. The
@@ -1917,14 +1925,15 @@ extern ptls_get_time_t ptls_get_time;
  * default hash clone function that calls memcpy
  */
 static void ptls_hash_clone_memcpy(void *dst, const void *src, size_t size);
-#if defined(PICOTLS_USE_DTRACE) && PICOTLS_USE_DTRACE
+
 /**
- *
+ * by setting this pointer, callers of `ptls_new` can specify the log-random value being assigned to the connections being created
  */
-extern PTLS_THREADLOCAL unsigned ptls_default_skip_tracing;
-#else
-#define ptls_default_skip_tracing 0
-#endif
+extern PTLS_THREADLOCAL float *ptls_log_random_override;
+/**
+ * utility function for generating the default log random value
+ */
+float ptls_generate_log_random(void (*random_bytes)(void *, size_t));
 
 /* inline functions */
 

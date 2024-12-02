@@ -273,7 +273,10 @@ struct st_ptls_t {
     unsigned send_change_cipher_spec : 1;
     unsigned needs_key_update : 1;
     unsigned key_update_send_request : 1;
-    unsigned skip_tracing : 1;
+    /**
+     * see ptls_log
+     */
+    float log_random;
     /**
      * misc.
      */
@@ -5133,7 +5136,7 @@ static ptls_t *new_instance(ptls_context_t *ctx, int is_server)
     *tls = (ptls_t){ctx};
     tls->is_server = is_server;
     tls->send_change_cipher_spec = ctx->send_change_cipher_spec;
-    tls->skip_tracing = ptls_default_skip_tracing;
+    tls->log_random = ptls_log_random_override != NULL ? *ptls_log_random_override : ptls_generate_log_random(ctx->random_bytes);
     return tls;
 }
 
@@ -5579,14 +5582,14 @@ void **ptls_get_data_ptr(ptls_t *tls)
     return &tls->data_ptr;
 }
 
-int ptls_skip_tracing(ptls_t *tls)
+float ptls_log_random(ptls_t *tls)
 {
-    return tls->skip_tracing;
+    return tls->log_random;
 }
 
-void ptls_set_skip_tracing(ptls_t *tls, int skip_tracing)
+void ptls_set_log_random(ptls_t *tls, float r)
 {
-    tls->skip_tracing = skip_tracing;
+    tls->log_random = r;
 }
 
 static int handle_client_handshake_message(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_iovec_t message, int is_end_of_record,
@@ -6531,9 +6534,16 @@ static uint64_t get_time(ptls_get_time_t *self)
 }
 
 ptls_get_time_t ptls_get_time = {get_time};
-#if PICOTLS_USE_DTRACE
-PTLS_THREADLOCAL unsigned ptls_default_skip_tracing = 0;
-#endif
+PTLS_THREADLOCAL float *ptls_log_random_override = NULL;
+
+float ptls_generate_log_random(void (*random_bytes)(void *, size_t))
+{
+    uint32_t r;
+    random_bytes(&r, sizeof(r));
+
+    /* return r = [0..1), so that any(r) < sample_ratio where sample_ratio is [0..1] */
+    return (float)r / ((uint64_t)UINT32_MAX + 1);
+}
 
 int ptls_is_server(ptls_t *tls)
 {
@@ -6818,6 +6828,7 @@ int ptls_log__do_push_unsigned64(ptls_buffer_t *buf, uint64_t v)
 #if PTLS_HAVE_LOG
 
 volatile unsigned ptls_log_include_appdata = 0;
+volatile float ptls_log__max_sample_ratio = 0;
 
 static struct {
     /**
@@ -6832,6 +6843,10 @@ static struct {
          * see `ptls_log_add_fd`
          */
         char *points;
+        /**
+         *
+         */
+        float sample_ratio;
     } conns[sizeof(((struct st_ptls_log_point_t *)NULL)->active_conns) * 8];
     /**
      * counts the number of writes that failed
@@ -6863,6 +6878,43 @@ static int is_traced(struct st_ptls_log_point_t *point, const char *list)
     return 0;
 }
 
+static void recalc_max_sample_ratio(void)
+{
+    float max_ratio = 0;
+
+    for (size_t slot = 0; slot < PTLS_ELEMENTSOF(logctx.conns); ++slot) {
+        if (logctx.conns[slot].points == NULL)
+            continue;
+        if (max_ratio < logctx.conns[slot].sample_ratio)
+            max_ratio = logctx.conns[slot].sample_ratio;
+    }
+
+    ptls_log__max_sample_ratio = max_ratio;
+}
+
+static void close_log_fd(size_t slot)
+{
+    assert(logctx.conns[slot].fd >= 0 && logctx.conns[slot].points != NULL);
+
+    close(logctx.conns[slot].fd);
+
+    /* clear the connection information */
+    logctx.conns[slot].fd = -1;
+    logctx.conns[slot].sample_ratio = 0;
+    free(logctx.conns[slot].points);
+    logctx.conns[slot].points = NULL;
+
+    recalc_max_sample_ratio();
+
+    /* recalculate */
+    /* clear the bit flags on each log point */
+    for (struct st_ptls_log_point_t *point = logctx.points;; point = point->next) {
+        point->active_conns &= ~((uint32_t)1 << slot);
+        if (point == point->next)
+            break;
+    }
+}
+
 void ptls_log__init_point(struct st_ptls_log_point_t *point)
 {
     pthread_mutex_lock(&logctx.mutex);
@@ -6879,7 +6931,7 @@ void ptls_log__init_point(struct st_ptls_log_point_t *point)
     pthread_mutex_unlock(&logctx.mutex);
 }
 
-int ptls_log_add_fd(int fd, const char *_points)
+int ptls_log_add_fd(int fd, float sample_ratio, const char *_points)
 {
     char *points;
 
@@ -6909,7 +6961,10 @@ int ptls_log_add_fd(int fd, const char *_points)
 
     /* setup the slot */
     logctx.conns[slot_index].fd = fd;
+    logctx.conns[slot_index].sample_ratio = sample_ratio;
     logctx.conns[slot_index].points = points;
+
+    recalc_max_sample_ratio();
 
     /* update the known event slots */
     for (struct st_ptls_log_point_t *point = logctx.points;; point = point->next) {
@@ -6930,7 +6985,7 @@ Exit:
 
 #endif
 
-void ptls_log__do_write(struct st_ptls_log_point_t *point, const ptls_buffer_t *buf)
+void ptls_log__do_write(struct st_ptls_log_point_t *point, const ptls_buffer_t *buf, float random_)
 {
 #if PTLS_HAVE_LOG
     pthread_mutex_lock(&logctx.mutex);
@@ -6943,6 +6998,9 @@ void ptls_log__do_write(struct st_ptls_log_point_t *point, const ptls_buffer_t *
         conns &= ~1;
 
         assert(logctx.conns[slot].fd != -1);
+        if (random_ >= logctx.conns[slot].sample_ratio)
+            continue;
+
         ssize_t wret;
         while ((wret = write(logctx.conns[slot].fd, buf->base, buf->off)) == -1 && errno == EINTR)
             ;
@@ -6953,15 +7011,7 @@ void ptls_log__do_write(struct st_ptls_log_point_t *point, const ptls_buffer_t *
             ++logctx.num_lost;
         } else {
             /* write error; close and unregister the connection */
-            close(logctx.conns[slot].fd);
-            logctx.conns[slot].fd = -1;
-            free(logctx.conns[slot].points);
-            logctx.conns[slot].points = NULL;
-            for (struct st_ptls_log_point_t *point = logctx.points;; point = point->next) {
-                point->active_conns &= ~((uint32_t)1 << slot);
-                if (point == point->next)
-                    break;
-            }
+            close_log_fd(slot);
         }
     }
 
