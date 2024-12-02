@@ -2004,6 +2004,8 @@ static void ptls_hash_clone_memcpy(void *dst, const void *src, size_t size);
 
 inline uint32_t ptls_log_point_maybe_active(struct st_ptls_log_point_t *point)
 {
+    if (!PTLS_HAVE_LOG)
+        return 0;
     if (PTLS_UNLIKELY(point->state.generation != ptls_log._generation))
         ptls_log__recalc_point(0, point);
     return point->state.active_conns;
@@ -2016,6 +2018,8 @@ inline void ptls_log_recalc_conn_state(ptls_log_conn_state_t *state)
 
 inline uint32_t ptls_log_conn_maybe_active(ptls_log_conn_state_t *conn, const char *(*get_sni)(void *), void *get_sni_arg)
 {
+    if (!PTLS_HAVE_LOG)
+        return 0;
     if (PTLS_UNLIKELY(conn->state.generation != ptls_log._generation))
         ptls_log__recalc_conn(0, conn, get_sni, get_sni_arg);
     return conn->state.active_conns;
