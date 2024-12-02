@@ -7027,7 +7027,7 @@ int ptls_log_add_fd(int fd, float sample_ratio, const char *_points, const char 
                 struct in_addr v4;
                 if (!inet_pton(AF_INET, input, &v4))
                     continue;
-                ptls_build_mapped_v4_address(&addresses[index], &v4);
+                ptls_build_v4_mapped_v6_address(&addresses[index], &v4);
             }
             if (memcmp(&addresses[index], &in6addr_any, sizeof(struct in6_addr)) == 0)
                 continue;
