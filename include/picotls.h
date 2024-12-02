@@ -34,8 +34,10 @@ extern "C" {
 #include <inttypes.h>
 #include <string.h>
 #include <sys/types.h>
+#ifndef _WINDOWS
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#endif
 
 #if __GNUC__ >= 3
 #define PTLS_LIKELY(x) __builtin_expect(!!(x), 1)
