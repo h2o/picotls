@@ -276,7 +276,11 @@ struct st_ptls_t {
     /**
      * see ptls_log
      */
-    float log_random;
+    ptls_log_conn_state_t log_state;
+    struct {
+        uint32_t active_conns;
+        uint32_t generation;
+    } log_sni;
     /**
      * misc.
      */
@@ -5136,7 +5140,11 @@ static ptls_t *new_instance(ptls_context_t *ctx, int is_server)
     *tls = (ptls_t){ctx};
     tls->is_server = is_server;
     tls->send_change_cipher_spec = ctx->send_change_cipher_spec;
-    tls->log_random = ptls_log_random_override != NULL ? *ptls_log_random_override : ptls_generate_log_random(ctx->random_bytes);
+    if (ptls_log_conn_state_override != NULL) {
+        tls->log_state = *ptls_log_conn_state_override;
+    } else {
+        ptls_log_init_conn_state(&tls->log_state, ctx->random_bytes);
+    }
     return tls;
 }
 
@@ -5582,14 +5590,9 @@ void **ptls_get_data_ptr(ptls_t *tls)
     return &tls->data_ptr;
 }
 
-float ptls_log_random(ptls_t *tls)
+ptls_log_conn_state_t *ptls_get_log_state(ptls_t *tls)
 {
-    return tls->log_random;
-}
-
-void ptls_set_log_random(ptls_t *tls, float r)
-{
-    tls->log_random = r;
+    return &tls->log_state;
 }
 
 static int handle_client_handshake_message(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_iovec_t message, int is_end_of_record,
@@ -6534,16 +6537,6 @@ static uint64_t get_time(ptls_get_time_t *self)
 }
 
 ptls_get_time_t ptls_get_time = {get_time};
-PTLS_THREADLOCAL float *ptls_log_random_override = NULL;
-
-float ptls_generate_log_random(void (*random_bytes)(void *, size_t))
-{
-    uint32_t r;
-    random_bytes(&r, sizeof(r));
-
-    /* return r = [0..1), so that any(r) < sample_ratio where sample_ratio is [0..1] */
-    return (float)r / ((uint64_t)UINT32_MAX + 1);
-}
 
 int ptls_is_server(ptls_t *tls)
 {
@@ -6825,10 +6818,11 @@ int ptls_log__do_push_unsigned64(ptls_buffer_t *buf, uint64_t v)
     return ptls_log__do_pushv(buf, s, (size_t)len);
 }
 
-#if PTLS_HAVE_LOG
-
-volatile unsigned ptls_log_include_appdata = 0;
-volatile float ptls_log__max_sample_ratio = 0;
+struct st_ptls_log_t ptls_log = {
+    .dummy_conn_state = {.random_ = 1 /* never log */},
+    ._generation = 1, /* starts from 1 so that recalc can be forced by setting to zero (i.e., the initial) */
+};
+PTLS_THREADLOCAL ptls_log_conn_state_t *ptls_log_conn_state_override = NULL;
 
 static struct {
     /**
@@ -6846,8 +6840,12 @@ static struct {
         /**
          *
          */
+        char *snis;
+        /**
+         *
+         */
         float sample_ratio;
-    } conns[sizeof(((struct st_ptls_log_point_t *)NULL)->active_conns) * 8];
+    } conns[sizeof(((struct st_ptls_log_state_t *)NULL)->active_conns) * 8];
     /**
      * counts the number of writes that failed
      */
@@ -6862,35 +6860,93 @@ static struct {
     pthread_mutex_t mutex;
 } logctx = {.mutex = PTHREAD_MUTEX_INITIALIZER};
 
+void ptls_log_init_conn_state(ptls_log_conn_state_t *state, void (*random_bytes)(void *, size_t))
+{
+    uint32_t r;
+    random_bytes(&r, sizeof(r));
+
+    *state = (ptls_log_conn_state_t){
+        .random_ = (float)r / ((uint64_t)UINT32_MAX + 1) /* [0..1), so that any(r) < sample_ratio where sample_ratio is [0..1] */
+    };
+}
+
 size_t ptls_log_num_lost(void)
 {
     return logctx.num_lost;
 }
 
-static int is_traced(struct st_ptls_log_point_t *point, const char *list)
+static char *duplicate_stringlist(const char *input)
+{
+    char *result;
+    const char *in_tail;
+
+    for (in_tail = input; in_tail[0] != '\0'; in_tail += strlen(in_tail) + 1)
+        ;
+    ++in_tail;
+    if ((result = malloc(in_tail - input)) == NULL)
+        return NULL;
+    memcpy(result, input, in_tail - input);
+    return result;
+}
+
+static int is_in_stringlist(const char *list, const char *search_for)
 {
     if (list[0] == '\0')
         return 1;
 
-    for (const char *s = list; s[0] != '\0'; s += strlen(s) + 1)
-        if (strcmp(point->name, s) == 0)
+    if (search_for == NULL)
+        return 0;
+
+    for (const char *element = list; element[0] != '\0'; element += strlen(element) + 1)
+        if (strcmp(element, search_for) == 0)
             return 1;
     return 0;
 }
 
-static void recalc_max_sample_ratio(void)
+void ptls_log__recalc_point(int caller_locked, struct st_ptls_log_point_t *point)
 {
-    float max_ratio = 0;
+    if (!caller_locked)
+        pthread_mutex_lock(&logctx.mutex);
 
-    for (size_t slot = 0; slot < PTLS_ELEMENTSOF(logctx.conns); ++slot) {
-        if (logctx.conns[slot].points == NULL)
-            continue;
-        if (max_ratio < logctx.conns[slot].sample_ratio)
-            max_ratio = logctx.conns[slot].sample_ratio;
+    if (point->state.generation != ptls_log._generation) {
+        /* update active bitmap */
+        uint32_t new_active = 0;
+        for (size_t slot = 0; slot < PTLS_ELEMENTSOF(logctx.conns); ++slot)
+            if (logctx.conns[slot].points != NULL && is_in_stringlist(logctx.conns[slot].points, point->name))
+                new_active = (uint32_t)1 << slot;
+        point->state.active_conns = new_active;
+        point->state.generation = ptls_log._generation;
     }
 
-    ptls_log__max_sample_ratio = max_ratio;
+    if (!caller_locked)
+        pthread_mutex_unlock(&logctx.mutex);
 }
+
+void ptls_log__recalc_conn(int caller_locked, struct st_ptls_log_conn_state_t *conn, const char *(*get_sni)(void *),
+                           void *get_sni_arg)
+{
+    if (!caller_locked)
+        pthread_mutex_lock(&logctx.mutex);
+
+    if (conn->state.generation != ptls_log._generation) {
+        /* update active bitmap */
+        uint32_t new_active = 0;
+        const char *sni = get_sni != NULL ? get_sni(get_sni_arg) : NULL;
+        for (size_t slot = 0; slot < PTLS_ELEMENTSOF(logctx.conns); ++slot) {
+            if (logctx.conns[slot].points != NULL && conn->random_ < logctx.conns[slot].sample_ratio &&
+                is_in_stringlist(logctx.conns[slot].snis, sni)) {
+                new_active = (uint32_t)1 << slot;
+            }
+        }
+        conn->state.active_conns = new_active;
+        conn->state.generation = ptls_log._generation;
+    }
+
+    if (!caller_locked)
+        pthread_mutex_unlock(&logctx.mutex);
+}
+
+#if PTLS_HAVE_LOG
 
 static void close_log_fd(size_t slot)
 {
@@ -6903,51 +6959,26 @@ static void close_log_fd(size_t slot)
     logctx.conns[slot].sample_ratio = 0;
     free(logctx.conns[slot].points);
     logctx.conns[slot].points = NULL;
-
-    recalc_max_sample_ratio();
-
-    /* recalculate */
-    /* clear the bit flags on each log point */
-    for (struct st_ptls_log_point_t *point = logctx.points;; point = point->next) {
-        point->active_conns &= ~((uint32_t)1 << slot);
-        if (point == point->next)
-            break;
-    }
+    free(logctx.conns[slot].snis);
+    logctx.conns[slot].snis = NULL;
+    ++ptls_log._generation;
 }
 
-void ptls_log__init_point(struct st_ptls_log_point_t *point)
+int ptls_log_add_fd(int fd, float sample_ratio, const char *_points, const char *_snis)
 {
-    pthread_mutex_lock(&logctx.mutex);
-
-    /* setup active bitmap */
-    for (size_t slot = 0; slot < PTLS_ELEMENTSOF(logctx.conns); ++slot)
-        if (logctx.conns[slot].points != NULL && is_traced(point, logctx.conns[slot].points))
-            point->active_conns = (uint32_t)1 << slot;
-
-    /* register to the linked list */
-    point->next = logctx.points != NULL ? logctx.points : point;
-    logctx.points = point;
-
-    pthread_mutex_unlock(&logctx.mutex);
-}
-
-int ptls_log_add_fd(int fd, float sample_ratio, const char *_points)
-{
-    char *points;
-
-    { /* duplicate the list of log points */
-        const char *in_tail;
-        for (in_tail = _points; in_tail[0] != '\0'; in_tail += strlen(in_tail) + 1)
-            ;
-        ++in_tail;
-        if ((points = malloc(in_tail - _points)) == NULL)
-            return PTLS_ERROR_NO_MEMORY;
-        memcpy(points, _points, in_tail - _points);
-    }
-
+    char *points = NULL, *snis = NULL;
     int ret;
 
     pthread_mutex_lock(&logctx.mutex);
+
+    if ((points = duplicate_stringlist(_points)) == NULL) {
+        ret = PTLS_ERROR_NO_MEMORY;
+        goto Exit;
+    }
+    if ((snis = duplicate_stringlist(_snis)) == NULL) {
+        ret = PTLS_ERROR_NO_MEMORY;
+        goto Exit;
+    }
 
     /* find slot, or return if not available */
     size_t slot_index;
@@ -6961,46 +6992,49 @@ int ptls_log_add_fd(int fd, float sample_ratio, const char *_points)
 
     /* setup the slot */
     logctx.conns[slot_index].fd = fd;
-    logctx.conns[slot_index].sample_ratio = sample_ratio;
     logctx.conns[slot_index].points = points;
-
-    recalc_max_sample_ratio();
-
-    /* update the known event slots */
-    for (struct st_ptls_log_point_t *point = logctx.points;; point = point->next) {
-        if (is_traced(point, points))
-            point->active_conns |= (uint32_t)1 << slot_index;
-        if (point->next == point)
-            break;
-    }
+    logctx.conns[slot_index].snis = snis;
+    logctx.conns[slot_index].sample_ratio = sample_ratio;
+    ++ptls_log._generation;
 
     ret = 0; /* success */
 
 Exit:
     pthread_mutex_unlock(&logctx.mutex);
-    if (ret != 0)
+    if (ret != 0) {
         free(points);
+        free(snis);
+    }
     return ret;
 }
 
 #endif
 
-void ptls_log__do_write(struct st_ptls_log_point_t *point, const ptls_buffer_t *buf, float random_)
+void ptls_log__do_write(struct st_ptls_log_point_t *point, struct st_ptls_log_conn_state_t *conn, const char *(*get_sni)(void *),
+                        void *get_sni_arg, const ptls_buffer_t *buf)
 {
 #if PTLS_HAVE_LOG
+    uint32_t active;
+
     pthread_mutex_lock(&logctx.mutex);
 
-    uint32_t conns = point->active_conns;
+    /* calc the active conn bits, updating stale information if necessary */
+    if (point->state.generation != ptls_log._generation)
+        ptls_log__recalc_point(1, point);
+    active = point->state.active_conns;
+    if (conn != NULL && conn->state.generation != ptls_log._generation) {
+        ptls_log__recalc_conn(1, conn, get_sni, get_sni_arg);
+        active &= conn->state.active_conns;
+    }
 
-    for (size_t slot = 0; conns != 0; ++slot, conns >>= 1) {
-        if ((conns & 1) == 0)
+    /* iterate through the active connctions */
+    for (size_t slot = 0; active != 0; ++slot, active >>= 1) {
+        if ((active & 1) == 0)
             continue;
-        conns &= ~1;
 
-        assert(logctx.conns[slot].fd != -1);
-        if (random_ >= logctx.conns[slot].sample_ratio)
-            continue;
+        assert(logctx.conns[slot].points != NULL);
 
+        /* write */
         ssize_t wret;
         while ((wret = write(logctx.conns[slot].fd, buf->base, buf->off)) == -1 && errno == EINTR)
             ;

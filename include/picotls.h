@@ -1386,14 +1386,11 @@ uint64_t ptls_decode_quicint(const uint8_t **src, const uint8_t *end);
         ptls_decode_assert_block_close((src), end);                                                                                \
     } while (0)
 
-#define PTLS_LOG__DO_LOG(module, name, random_, block)                                                                             \
+#define PTLS_LOG__DO_LOG(module, name, conn_state, get_sni, get_sni_arg, block)                                                    \
     do {                                                                                                                           \
         int ptlslog_skip = 0;                                                                                                      \
         char smallbuf[128];                                                                                                        \
         ptls_buffer_t ptlslogbuf;                                                                                                  \
-        float r_ = (random_);                                                                                                      \
-        if (r_ >= ptls_log__max_sample_ratio)                                                                                      \
-            break;                                                                                                                 \
         ptls_buffer_init(&ptlslogbuf, smallbuf, sizeof(smallbuf));                                                                 \
         PTLS_LOG__DO_PUSH_SAFESTR("{\"module\":\"" PTLS_TO_STR(module) "\",\"type\":\"" PTLS_TO_STR(name) "\"");                   \
         do {                                                                                                                       \
@@ -1401,7 +1398,7 @@ uint64_t ptls_decode_quicint(const uint8_t **src, const uint8_t *end);
         } while (0);                                                                                                               \
         PTLS_LOG__DO_PUSH_SAFESTR("}\n");                                                                                          \
         if (!ptlslog_skip)                                                                                                         \
-            ptls_log__do_write(&logpoint, &ptlslogbuf, r_);                                                                        \
+            ptls_log__do_write(&logpoint, (conn_state), (get_sni), (get_sni_arg), &ptlslogbuf);                                    \
         ptls_buffer_dispose(&ptlslogbuf);                                                                                          \
     } while (0)
 
@@ -1419,10 +1416,15 @@ uint64_t ptls_decode_quicint(const uint8_t **src, const uint8_t *end);
 #define PTLS_LOG_CONN(name, tls, block)                                                                                            \
     do {                                                                                                                           \
         PTLS_LOG_DEFINE_POINT(picotls, name, logpoint);                                                                            \
-        ptls_t *_tls = (tls);                                                                                                      \
-        if (!ptls_log_point_is_active(&logpoint))                                                                                  \
+        uint32_t active = ptls_log_point_maybe_active(&logpoint);                                                                  \
+        if (active == 0)                                                                                                           \
             break;                                                                                                                 \
-        PTLS_LOG__DO_LOG(picotls, name, ptls_log_random(tls), {                                                                    \
+        ptls_t *_tls = (tls);                                                                                                      \
+        ptls_log_conn_state_t *conn_state = ptls_get_log_state(_tls);                                                              \
+        active &= ptls_log_conn_maybe_active(conn_state, (const char *(*)(void *))ptls_get_server_name, _tls);                     \
+        if (active == 0)                                                                                                           \
+            break;                                                                                                                 \
+        PTLS_LOG__DO_LOG(picotls, name, conn_state, (const char *(*)(void *))ptls_get_server_name, _tls, {                         \
             PTLS_LOG_ELEMENT_PTR(tls, _tls);                                                                                       \
             do {                                                                                                                   \
                 block                                                                                                              \
@@ -1469,14 +1471,14 @@ uint64_t ptls_decode_quicint(const uint8_t **src, const uint8_t *end);
 #define PTLS_LOG_APPDATA_ELEMENT_UNSAFESTR(name, value, value_len)                                                                 \
     do {                                                                                                                           \
         size_t _len = (value_len);                                                                                                 \
-        if (ptls_log_include_appdata)                                                                                              \
+        if (ptls_log.include_appdata)                                                                                              \
             PTLS_LOG_ELEMENT_UNSAFESTR(name, value, _len);                                                                         \
         PTLS_LOG_ELEMENT__DO_UNSIGNED(name, "_len", _len);                                                                         \
     } while (0)
 #define PTLS_LOG_APPDATA_ELEMENT_HEXDUMP(name, value, value_len)                                                                   \
     do {                                                                                                                           \
         size_t _len = (value_len);                                                                                                 \
-        if (ptls_log_include_appdata)                                                                                              \
+        if (ptls_log.include_appdata)                                                                                              \
             PTLS_LOG_ELEMENT_HEXDUMP(name, value, _len);                                                                           \
         PTLS_LOG_ELEMENT__DO_UNSIGNED(name, "_len", _len);                                                                         \
     } while (0)
@@ -1521,44 +1523,99 @@ uint64_t ptls_decode_quicint(const uint8_t **src, const uint8_t *end);
         }                                                                                                                          \
     } while (0)
 
-struct st_ptls_log_point_t {
-    /**
-     * name of the log point (`module:type`)
-     */
-    const char *name;
+/**
+ * retains a list of connections that are bound to the object
+ */
+struct st_ptls_log_state_t {
     /**
      * bit array of connections (1 is active)
      */
     uint32_t active_conns;
     /**
-     * link list of log points, see `logctx::points`
+     * generation counter used for staleness check; see `ptls_log._generation`
      */
-    struct st_ptls_log_point_t *next;
+    uint64_t generation;
 };
 
-extern volatile unsigned ptls_log_include_appdata;
-extern volatile float ptls_log__max_sample_ratio;
+/**
+ * represents a log point identified by name (`module:type`)
+ */
+struct st_ptls_log_point_t {
+    const char *name;
+    struct st_ptls_log_state_t state;
+};
 
-void ptls_log__init_point(struct st_ptls_log_point_t *point);
-static int ptls_log_point_is_active(struct st_ptls_log_point_t *point);
+/**
+ * represents a logging state of each connection
+ */
+typedef struct st_ptls_log_conn_state_t {
+    /**
+     * random value between 0 (inclusive) and 1 (non-inclusive) used to determine the ratio of sampling-based logging; see
+     * `ptls_add_fd'`. To disable logging entirely, use `ptls_log.dummy_conn_state`, or set the value exactly to 1.
+     */
+    float random_;
+    struct st_ptls_log_state_t state;
+} ptls_log_conn_state_t;
 
-#if PTLS_HAVE_LOG
+/**
+ * see `ptls_get_log_state`
+ */
+extern PTLS_THREADLOCAL ptls_log_conn_state_t *ptls_log_conn_state_override;
+
+/**
+ * global variables exposed
+ */
+extern struct st_ptls_log_t {
+    /**
+     * if application-data (e.g., payload) should be emitted as well
+     */
+    volatile unsigned include_appdata : 1;
+    /**
+     * endpoints that want to disable logging entirely can provide this value to the loggers
+     */
+    ptls_log_conn_state_t dummy_conn_state;
+    /**
+     * generation counter that is incremented whenever the state of loggers change; see `st_ptls_log_state_t::generation`
+     */
+    volatile uint64_t _generation;
+} ptls_log;
+
+/**
+ * initializes a ptls_log_conn_state_t
+ */
+void ptls_log_init_conn_state(ptls_log_conn_state_t *state, void (*random_bytes)(void *, size_t));
+/**
+ * forces recalculation of the log state (should be called when SNI is determined)
+ */
+static void ptls_log_recalc_conn_state(ptls_log_conn_state_t *state);
+/**
+ * returns a bitmap indicating the loggers active for given log point
+ */
+static uint32_t ptls_log_point_maybe_active(struct st_ptls_log_point_t *point);
+/**
+ * returns a bitmap indicating the loggers active for given connection
+ */
+static uint32_t ptls_log_conn_maybe_active(ptls_log_conn_state_t *conn, const char *(*get_sni)(void *), void *get_sni_arg);
+
 /**
  * Returns the number of log events that were unable to be emitted.
  */
 size_t ptls_log_num_lost(void);
-/**
- *
- */
+
+#if PTLS_HAVE_LOG
 /**
  * Registers an fd to the logger. A registered fd is automatically closed and removed when it is closed by the peer.
  * @param sample_ratio sampling ratio between 0 and 1
  * @param points list of points being logged, in the form of p1\0p2\0\0 (i.e., concatenated list of C strings with an empty string
  *               marking the end). An empty list means attach to all.
+ * @param snis   list of SNIs being logged, using the same form as points
  */
-int ptls_log_add_fd(int fd, float sample_ratio, const char *points);
+int ptls_log_add_fd(int fd, float sample_ratio, const char *points, const char *snis);
 #endif
 
+void ptls_log__recalc_point(int caller_locked, struct st_ptls_log_point_t *point);
+void ptls_log__recalc_conn(int caller_locked, struct st_ptls_log_conn_state_t *conn, const char *(*get_sni)(void *),
+                           void *get_sni_arg);
 static int ptls_log__do_push_safestr(ptls_buffer_t *buf, const char *s);
 int ptls_log__do_push_unsafestr(ptls_buffer_t *buf, const char *s, size_t l);
 int ptls_log__do_push_hexdump(ptls_buffer_t *buf, const void *s, size_t l);
@@ -1567,7 +1624,8 @@ int ptls_log__do_push_signed32(ptls_buffer_t *buf, int32_t v);
 int ptls_log__do_push_signed64(ptls_buffer_t *buf, int64_t v);
 int ptls_log__do_push_unsigned32(ptls_buffer_t *buf, uint32_t v);
 int ptls_log__do_push_unsigned64(ptls_buffer_t *buf, uint64_t v);
-void ptls_log__do_write(struct st_ptls_log_point_t *point, const ptls_buffer_t *buf, float random_);
+void ptls_log__do_write(struct st_ptls_log_point_t *point, struct st_ptls_log_conn_state_t *conn, const char *(*get_sni)(void *),
+                        void *get_sni_arg, const ptls_buffer_t *buf);
 
 /**
  * create a client object to handle new TLS connection
@@ -1672,16 +1730,11 @@ int ptls_is_ech_handshake(ptls_t *tls, uint8_t *config_id, ptls_hpke_kem_t **kem
  */
 void **ptls_get_data_ptr(ptls_t *tls);
 /**
- * When a new connection is created, a ramdom value between 0 (inclusive) and 1 (exclusive) is assigned to each connection, to allow
- * ptls log clients to collect traces using sampling. Traces are collected only for the connections with a log-random value less
- * than the ratio declared by the ptls log client.
+ * Returns `ptls_log_conn_state_t` of `ptls_t`. By default, the state is initialized by calling `ptls_log_init_conn_state`, but the
+ * behavior can be overidden by setting `ptls_log_conn_state_override`.
  * This value can be changed by setting `ptls_log_random_override` or by calling `ptls_set_log_random`.
  */
-float ptls_log_random(ptls_t *tls);
-/**
- * Changes the log random to the specified value. When set to 1, traces for the connection will never be collected.
- */
-void ptls_set_log_random(ptls_t *tls, float r);
+ptls_log_conn_state_t *ptls_get_log_state(ptls_t *tls);
 /**
  * proceeds with the handshake, optionally taking some input from peer. The function returns zero in case the handshake completed
  * successfully. PTLS_ERROR_IN_PROGRESS is returned in case the handshake is incomplete. Otherwise, an error value is returned. The
@@ -1926,16 +1979,26 @@ extern ptls_get_time_t ptls_get_time;
  */
 static void ptls_hash_clone_memcpy(void *dst, const void *src, size_t size);
 
-/**
- * by setting this pointer, callers of `ptls_new` can specify the log-random value being assigned to the connections being created
- */
-extern PTLS_THREADLOCAL float *ptls_log_random_override;
-/**
- * utility function for generating the default log random value
- */
-float ptls_generate_log_random(void (*random_bytes)(void *, size_t));
-
 /* inline functions */
+
+inline uint32_t ptls_log_point_maybe_active(struct st_ptls_log_point_t *point)
+{
+    if (PTLS_UNLIKELY(point->state.generation != ptls_log._generation))
+        ptls_log__recalc_point(0, point);
+    return point->state.active_conns;
+}
+
+inline void ptls_log_recalc_conn_state(ptls_log_conn_state_t *state)
+{
+    state->state.generation = 0;
+}
+
+inline uint32_t ptls_log_conn_maybe_active(ptls_log_conn_state_t *conn, const char *(*get_sni)(void *), void *get_sni_arg)
+{
+    if (PTLS_UNLIKELY(conn->state.generation != ptls_log._generation))
+        ptls_log__recalc_conn(0, conn, get_sni, get_sni_arg);
+    return conn->state.active_conns;
+}
 
 inline int ptls_log__do_push_safestr(ptls_buffer_t *buf, const char *s)
 {
@@ -1945,13 +2008,6 @@ inline int ptls_log__do_push_safestr(ptls_buffer_t *buf, const char *s)
 inline ptls_t *ptls_new(ptls_context_t *ctx, int is_server)
 {
     return is_server ? ptls_server_new(ctx) : ptls_client_new(ctx);
-}
-
-inline int ptls_log_point_is_active(struct st_ptls_log_point_t *point)
-{
-    if (point->next == NULL)
-        ptls_log__init_point(point);
-    return point->active_conns > 0;
 }
 
 inline ptls_iovec_t ptls_iovec_init(const void *p, size_t len)
