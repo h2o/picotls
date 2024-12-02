@@ -6849,6 +6849,10 @@ static struct {
          *
          */
         float sample_ratio;
+        /**
+         *
+         */
+        unsigned appdata : 1;
     } conns[sizeof(((struct st_ptls_log_state_t *)NULL)->active_conns) * 8];
     /**
      * counts the number of writes that failed
@@ -6987,10 +6991,11 @@ static void close_log_fd(size_t slot)
     logctx.conns[slot].snis = NULL;
     free(logctx.conns[slot].addresses);
     logctx.conns[slot].addresses = NULL;
+    logctx.conns[slot].appdata = 0;
     ++ptls_log._generation;
 }
 
-int ptls_log_add_fd(int fd, float sample_ratio, const char *_points, const char *_snis, const char *_addresses)
+int ptls_log_add_fd(int fd, float sample_ratio, const char *_points, const char *_snis, const char *_addresses, int appdata)
 {
     char *points = NULL, *snis = NULL;
     struct in6_addr *addresses = NULL;
@@ -7047,6 +7052,7 @@ int ptls_log_add_fd(int fd, float sample_ratio, const char *_points, const char 
     logctx.conns[slot_index].snis = snis;
     logctx.conns[slot_index].addresses = addresses;
     logctx.conns[slot_index].sample_ratio = sample_ratio;
+    logctx.conns[slot_index].appdata = appdata;
     ++ptls_log._generation;
 
     ret = 0; /* success */
@@ -7063,11 +7069,12 @@ Exit:
 
 #endif
 
-void ptls_log__do_write(struct st_ptls_log_point_t *point, struct st_ptls_log_conn_state_t *conn, const char *(*get_sni)(void *),
-                        void *get_sni_arg, const ptls_buffer_t *buf)
+int ptls_log__do_write(struct st_ptls_log_point_t *point, struct st_ptls_log_conn_state_t *conn, const char *(*get_sni)(void *),
+                       void *get_sni_arg, const ptls_buffer_t *buf, int includes_appdata)
 {
 #if PTLS_HAVE_LOG
     uint32_t active;
+    int needs_appdata = 0;
 
     pthread_mutex_lock(&logctx.mutex);
 
@@ -7087,6 +7094,12 @@ void ptls_log__do_write(struct st_ptls_log_point_t *point, struct st_ptls_log_co
 
         assert(logctx.conns[slot].points != NULL);
 
+        if (logctx.conns[slot].appdata != includes_appdata) {
+            if (!includes_appdata && ptls_log.may_include_appdata)
+                needs_appdata = 1;
+            continue;
+        }
+
         /* write */
         ssize_t wret;
         while ((wret = write(logctx.conns[slot].fd, buf->base, buf->off)) == -1 && errno == EINTR)
@@ -7104,4 +7117,9 @@ void ptls_log__do_write(struct st_ptls_log_point_t *point, struct st_ptls_log_co
 
     pthread_mutex_unlock(&logctx.mutex);
 #endif
+
+    if (includes_appdata)
+        assert(!needs_appdata);
+
+    return needs_appdata;
 }

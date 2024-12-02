@@ -1390,18 +1390,21 @@ uint64_t ptls_decode_quicint(const uint8_t **src, const uint8_t *end);
 
 #define PTLS_LOG__DO_LOG(module, name, conn_state, get_sni, get_sni_arg, block)                                                    \
     do {                                                                                                                           \
-        int ptlslog_skip = 0;                                                                                                      \
-        char smallbuf[128];                                                                                                        \
-        ptls_buffer_t ptlslogbuf;                                                                                                  \
-        ptls_buffer_init(&ptlslogbuf, smallbuf, sizeof(smallbuf));                                                                 \
-        PTLS_LOG__DO_PUSH_SAFESTR("{\"module\":\"" PTLS_TO_STR(module) "\",\"type\":\"" PTLS_TO_STR(name) "\"");                   \
+        int ptlslog_skip = 0, ptlslog_include_appdata = 0;                                                                         \
         do {                                                                                                                       \
-            block                                                                                                                  \
-        } while (0);                                                                                                               \
-        PTLS_LOG__DO_PUSH_SAFESTR("}\n");                                                                                          \
-        if (!ptlslog_skip)                                                                                                         \
-            ptls_log__do_write(&logpoint, (conn_state), (get_sni), (get_sni_arg), &ptlslogbuf);                                    \
-        ptls_buffer_dispose(&ptlslogbuf);                                                                                          \
+            char smallbuf[128];                                                                                                    \
+            ptls_buffer_t ptlslogbuf;                                                                                              \
+            ptls_buffer_init(&ptlslogbuf, smallbuf, sizeof(smallbuf));                                                             \
+            PTLS_LOG__DO_PUSH_SAFESTR("{\"module\":\"" PTLS_TO_STR(module) "\",\"type\":\"" PTLS_TO_STR(name) "\"");               \
+            do {                                                                                                                   \
+                block                                                                                                              \
+            } while (0);                                                                                                           \
+            PTLS_LOG__DO_PUSH_SAFESTR("}\n");                                                                                      \
+            if (!ptlslog_skip)                                                                                                     \
+                ptlslog_include_appdata =                                                                                          \
+                    ptls_log__do_write(&logpoint, (conn_state), (get_sni), (get_sni_arg), &ptlslogbuf, ptlslog_include_appdata);   \
+            ptls_buffer_dispose(&ptlslogbuf);                                                                                      \
+        } while (!ptlslog_skip && ptlslog_include_appdata);                                                                        \
     } while (0)
 
 #define PTLS_LOG_DEFINE_POINT(_module, _name, _var)                                                                                \
@@ -1473,14 +1476,14 @@ uint64_t ptls_decode_quicint(const uint8_t **src, const uint8_t *end);
 #define PTLS_LOG_APPDATA_ELEMENT_UNSAFESTR(name, value, value_len)                                                                 \
     do {                                                                                                                           \
         size_t _len = (value_len);                                                                                                 \
-        if (ptls_log.include_appdata)                                                                                              \
+        if (ptlslog_include_appdata)                                                                                               \
             PTLS_LOG_ELEMENT_UNSAFESTR(name, value, _len);                                                                         \
         PTLS_LOG_ELEMENT__DO_UNSIGNED(name, "_len", _len);                                                                         \
     } while (0)
 #define PTLS_LOG_APPDATA_ELEMENT_HEXDUMP(name, value, value_len)                                                                   \
     do {                                                                                                                           \
         size_t _len = (value_len);                                                                                                 \
-        if (ptls_log.include_appdata)                                                                                              \
+        if (ptlslog_include_appdata)                                                                                               \
             PTLS_LOG_ELEMENT_HEXDUMP(name, value, _len);                                                                           \
         PTLS_LOG_ELEMENT__DO_UNSIGNED(name, "_len", _len);                                                                         \
     } while (0)
@@ -1575,7 +1578,7 @@ extern struct st_ptls_log_t {
     /**
      * if application-data (e.g., payload) should be emitted as well
      */
-    volatile unsigned include_appdata : 1;
+    volatile unsigned may_include_appdata : 1;
     /**
      * endpoints that want to disable logging entirely can provide this value to the loggers
      */
@@ -1611,13 +1614,13 @@ size_t ptls_log_num_lost(void);
 #if PTLS_HAVE_LOG
 /**
  * Registers an fd to the logger. A registered fd is automatically closed and removed when it is closed by the peer.
- * @param sample_ratio sampling ratio between 0 and 1
- * @param points list of points to log, in the form of p1\0p2\0\0 (i.e., concatenated list of C strings with an empty string marking
- *               the end). An empty list means attach to all.
- * @param snis   list of SNIs to log, using the same form as points
- * @param snis   list of IPv4/v6 addresses to log, using the same form as points
+ * @param sample_ratio  sampling ratio between 0 and 1
+ * @param points        list of points to log, in the form of p1\0p2\0\0 (i.e., concatenated list of C strings with an empty string
+ *                      marking the end). An empty list means attach to all.
+ * @param snis          list of SNIs to log, using the same form as points
+ * @param addresses     list of IPv4/v6 addresses to log, using the same form as points
  */
-int ptls_log_add_fd(int fd, float sample_ratio, const char *points, const char *snis, const char *addresses);
+int ptls_log_add_fd(int fd, float sample_ratio, const char *points, const char *snis, const char *addresses, int appdata);
 #endif
 
 void ptls_log__recalc_point(int caller_locked, struct st_ptls_log_point_t *point);
@@ -1631,8 +1634,8 @@ int ptls_log__do_push_signed32(ptls_buffer_t *buf, int32_t v);
 int ptls_log__do_push_signed64(ptls_buffer_t *buf, int64_t v);
 int ptls_log__do_push_unsigned32(ptls_buffer_t *buf, uint32_t v);
 int ptls_log__do_push_unsigned64(ptls_buffer_t *buf, uint64_t v);
-void ptls_log__do_write(struct st_ptls_log_point_t *point, struct st_ptls_log_conn_state_t *conn, const char *(*get_sni)(void *),
-                        void *get_sni_arg, const ptls_buffer_t *buf);
+int ptls_log__do_write(struct st_ptls_log_point_t *point, struct st_ptls_log_conn_state_t *conn, const char *(*get_sni)(void *),
+                       void *get_sni_arg, const ptls_buffer_t *buf, int includes_appdata);
 
 /**
  * create a client object to handle new TLS connection
