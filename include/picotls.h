@@ -1989,7 +1989,7 @@ char *ptls_jsonescape(char *buf, const char *s, size_t len);
 /**
  * builds a v4-mapped address (i.e., ::ffff:192.0.2.1)
  */
-static void ptls_build_v4_mapped_v6_address(struct in6_addr *v6, const struct in_addr *v4);
+void ptls_build_v4_mapped_v6_address(struct in6_addr *v6, const struct in_addr *v4);
 
 /**
  * the default get_time callback
@@ -2168,12 +2168,6 @@ inline size_t ptls_aead_decrypt(ptls_aead_context_t *ctx, void *output, const vo
                                 const void *aad, size_t aadlen)
 {
     return ctx->do_decrypt(ctx, output, input, inlen, seq, aad, aadlen);
-}
-
-inline void ptls_build_v4_mapped_v6_address(struct in6_addr *v6, const struct in_addr *v4)
-{
-    *v6 = (struct in6_addr){.s6_addr[10] = 0xff, .s6_addr[11] = 0xff};
-    memcpy(&v6->s6_addr[12], &v4->s_addr, 4);
 }
 
 inline void ptls_hash_clone_memcpy(void *dst, const void *src, size_t size)

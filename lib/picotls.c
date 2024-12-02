@@ -6765,6 +6765,12 @@ char *ptls_jsonescape(char *buf, const char *unsafe_str, size_t len)
     return dst;
 }
 
+void ptls_build_v4_mapped_v6_address(struct in6_addr *v6, const struct in_addr *v4)
+{
+    *v6 = (struct in6_addr){.s6_addr[10] = 0xff, .s6_addr[11] = 0xff};
+    memcpy(&v6->s6_addr[12], &v4->s_addr, 4);
+}
+
 int ptls_log__do_pushv(ptls_buffer_t *buf, const void *p, size_t l)
 {
     if (ptls_buffer_reserve(buf, l) != 0)
