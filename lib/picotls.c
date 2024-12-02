@@ -273,10 +273,12 @@ struct st_ptls_t {
     unsigned send_change_cipher_spec : 1;
     unsigned needs_key_update : 1;
     unsigned key_update_send_request : 1;
+#if PTLS_HAVE_LOG
     /**
      * see ptls_log
      */
     ptls_log_conn_state_t log_state;
+#endif
     struct {
         uint32_t active_conns;
         uint32_t generation;
@@ -5140,11 +5142,15 @@ static ptls_t *new_instance(ptls_context_t *ctx, int is_server)
     *tls = (ptls_t){ctx};
     tls->is_server = is_server;
     tls->send_change_cipher_spec = ctx->send_change_cipher_spec;
+
+#if PTLS_HAVE_LOG
     if (ptls_log_conn_state_override != NULL) {
         tls->log_state = *ptls_log_conn_state_override;
     } else {
         ptls_log_init_conn_state(&tls->log_state, ctx->random_bytes);
     }
+#endif
+
     return tls;
 }
 
@@ -5592,7 +5598,11 @@ void **ptls_get_data_ptr(ptls_t *tls)
 
 ptls_log_conn_state_t *ptls_get_log_state(ptls_t *tls)
 {
+#if PTLS_HAVE_LOG
     return &tls->log_state;
+#else
+    return &ptls_log.dummy_conn_state;
+#endif
 }
 
 static int handle_client_handshake_message(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_iovec_t message, int is_end_of_record,

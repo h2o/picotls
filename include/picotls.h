@@ -68,7 +68,14 @@ extern "C" {
 #define PTLS_THREADLOCAL __declspec(thread)
 #else
 #define PTLS_THREADLOCAL __thread
+#endif
+
+#ifndef PTLS_HAVE_LOG
+#ifdef _WINDOWS
+#define PTLS_HAVE_LOG 0
+#else
 #define PTLS_HAVE_LOG 1
+#endif
 #endif
 
 #ifndef PTLS_FUZZ_HANDSHAKE
