@@ -7102,12 +7102,31 @@ Exit:
 #endif
 }
 
-int ptls_log__do_write(struct st_ptls_log_point_t *point, struct st_ptls_log_conn_state_t *conn, const char *(*get_sni)(void *),
-                       void *get_sni_arg, const ptls_buffer_t *buf, int includes_appdata)
+void ptls_log__do_write_start(struct st_ptls_log_point_t *point, ptls_buffer_t *buf, void *smallbuf, size_t smallbufsize)
 {
+    const char *colon_at = strchr(point->name, ':');
+
+    ptls_buffer_init(buf, smallbuf, smallbufsize);
+
+    int written = snprintf((char *)buf->base, buf->capacity, "{\"module\":\"%.*s\",\"type\":\"%s\"", (int)(colon_at - point->name),
+                           point->name, colon_at + 1);
+    assert(written > 0 && written < buf->capacity && "caller MUST provide smallbuf suffient to emit the prefix");
+    buf->off = (size_t)written;
+}
+
+int ptls_log__do_write_end(struct st_ptls_log_point_t *point, struct st_ptls_log_conn_state_t *conn, const char *(*get_sni)(void *),
+                           void *get_sni_arg, ptls_buffer_t *buf, int includes_appdata)
+{
+    int needs_appdata = 0;
+
 #if PTLS_HAVE_LOG
     uint32_t active;
-    int needs_appdata = 0;
+
+    /* point == NULL indicates skip */
+    if (point == NULL || ptls_buffer_reserve(buf, 2) != 0)
+        goto Exit;
+    buf->base[buf->off++] = '}';
+    buf->base[buf->off++] = '\n';
 
     pthread_mutex_lock(&logctx.mutex);
 
@@ -7152,9 +7171,9 @@ int ptls_log__do_write(struct st_ptls_log_point_t *point, struct st_ptls_log_con
 
     if (includes_appdata)
         assert(!needs_appdata);
-
-    return needs_appdata;
-#else
-    return 0;
 #endif
+
+Exit:
+    ptls_buffer_dispose(buf);
+    return needs_appdata;
 }
