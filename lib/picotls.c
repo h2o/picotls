@@ -7125,7 +7125,7 @@ void ptls_log__do_write_start(struct st_ptls_log_point_t *point, ptls_buffer_t *
         pthread_mutex_lock(&mutex);
         if (tid.len == 0) {
 #if defined(__linux__)
-            sprintf(tid.buf, ",\"tid\":%" PRId64, (int64_t)syscall(SYS_gettid));
+            int l = sprintf(tid.buf, ",\"tid\":%" PRId64, (int64_t)syscall(SYS_gettid));
 #elif defined(__APPLE__)
             uint64_t t = 0;
             (void)pthread_threadid_np(NULL, &t);
