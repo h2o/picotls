@@ -7108,43 +7108,45 @@ Exit:
 void ptls_log__do_write_start(struct st_ptls_log_point_t *point, ptls_buffer_t *buf, void *smallbuf, size_t smallbufsize,
                               int add_time)
 {
+    ptls_buffer_init(buf, smallbuf, smallbufsize);
+
+    /* add module and type name */
+    const char *colon_at = strchr(point->name, ':');
+    int written = snprintf((char *)buf->base, buf->capacity, "{\"module\":\"%.*s\",\"type\":\"%s\"", (int)(colon_at - point->name),
+                           point->name, colon_at + 1);
+
 #if defined(__linux__) || defined(__APPLE__)
-    static PTLS_THREADLOCAL char tid[sizeof(",\"tid\":-9223372036854775808")];
-    static PTLS_THREADLOCAL size_t tid_len;
-    if (tid_len == 0) {
+    /* obtain and stringify thread id once */
+    static PTLS_THREADLOCAL struct {
+        char buf[sizeof(",\"tid\":-9223372036854775808")];
+        size_t len;
+    } tid;
+    if (tid.len == 0) {
         static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
         pthread_mutex_lock(&mutex);
-        if (tid_len == 0) {
+        if (tid.len == 0) {
 #if defined(__linux__)
-            sprintf(tid, ",\"tid\":%" PRId64, (int64_t)syscall(SYS_gettid));
+            sprintf(tid.buf, ",\"tid\":%" PRId64, (int64_t)syscall(SYS_gettid));
 #elif defined(__APPLE__)
             uint64_t t = 0;
             (void)pthread_threadid_np(NULL, &t);
-            int l = sprintf(tid, ",\"tid\":%" PRIu64, t);
+            int l = sprintf(tid.buf, ",\"tid\":%" PRIu64, t);
 #else
 #error "unexpected platform"
 #endif
             __sync_synchronize();
-            tid_len = (size_t)l;
+            tid.len = (size_t)l;
         }
         pthread_mutex_unlock(&mutex);
     }
-#else
-    const char *tid = NULL;
-    const size_t tid_len = 0;
+    /* append tid */
+    assert(written > 0 && written + tid.len < buf->capacity);
+    memcpy((char *)buf->base + written, tid.buf, tid.len + 1);
+    written += tid.len;
 #endif
-    const char *colon_at = strchr(point->name, ':');
 
-    ptls_buffer_init(buf, smallbuf, smallbufsize);
-
-    int written = snprintf((char *)buf->base, buf->capacity, "{\"module\":\"%.*s\",\"type\":\"%s\"", (int)(colon_at - point->name),
-                           point->name, colon_at + 1);
-    if (tid != NULL) {
-        assert(written > 0 && written + tid_len < buf->capacity);
-        memcpy((char *)buf->base + written, tid, tid_len + 1);
-        written += tid_len;
-    }
-    if (add_time != 0) {
+    /* append time if requested */
+    if (add_time) {
         struct timeval tv;
         gettimeofday(&tv, NULL);
         written += snprintf((char *)buf->base + written, buf->capacity - written, ",\"time\":%" PRIu64,
