@@ -7105,39 +7105,53 @@ Exit:
 #endif
 }
 
-void ptls_log__do_write_start(struct st_ptls_log_point_t *point, ptls_buffer_t *buf, void *smallbuf, size_t smallbufsize)
+void ptls_log__do_write_start(struct st_ptls_log_point_t *point, ptls_buffer_t *buf, void *smallbuf, size_t smallbufsize,
+                              int add_time)
 {
 #if defined(__linux__) || defined(__APPLE__)
     static PTLS_THREADLOCAL char tid[sizeof(",\"tid\":-9223372036854775808")];
-    static PTLS_THREADLOCAL int tid_ready;
-    if (!tid_ready) {
+    static PTLS_THREADLOCAL size_t tid_len;
+    if (tid_len == 0) {
         static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
         pthread_mutex_lock(&mutex);
-        if (!tid_ready) {
+        if (tid_len == 0) {
 #if defined(__linux__)
             sprintf(tid, ",\"tid\":%" PRId64, (int64_t)syscall(SYS_gettid));
 #elif defined(__APPLE__)
             uint64_t t = 0;
             (void)pthread_threadid_np(NULL, &t);
-            sprintf(tid, ",\"tid\":%" PRIu64, t);
+            int l = sprintf(tid, ",\"tid\":%" PRIu64, t);
 #else
 #error "unexpected platform"
 #endif
             __sync_synchronize();
-            tid_ready = 1;
+            tid_len = (size_t)l;
         }
         pthread_mutex_unlock(&mutex);
     }
 #else
-    const char *tid = "";
+    const char *tid = NULL;
+    const size_t tid_len = 0;
 #endif
     const char *colon_at = strchr(point->name, ':');
 
     ptls_buffer_init(buf, smallbuf, smallbufsize);
 
-    int written = snprintf((char *)buf->base, buf->capacity, "{\"module\":\"%.*s\",\"type\":\"%s\"%s",
-                           (int)(colon_at - point->name), point->name, colon_at + 1, tid);
+    int written = snprintf((char *)buf->base, buf->capacity, "{\"module\":\"%.*s\",\"type\":\"%s\"", (int)(colon_at - point->name),
+                           point->name, colon_at + 1);
+    if (tid != NULL) {
+        assert(written > 0 && written + tid_len < buf->capacity);
+        memcpy((char *)buf->base + written, tid, tid_len + 1);
+        written += tid_len;
+    }
+    if (add_time != 0) {
+        struct timeval tv;
+        gettimeofday(&tv, NULL);
+        written += snprintf((char *)buf->base + written, buf->capacity - written, ",\"time\":%" PRIu64,
+                            (uint64_t)tv.tv_sec * 1000 + tv.tv_usec / 1000);
+    }
     assert(written > 0 && written < buf->capacity && "caller MUST provide smallbuf suffient to emit the prefix");
+
     buf->off = (size_t)written;
 }
 
