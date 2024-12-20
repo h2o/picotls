@@ -6775,6 +6775,58 @@ void ptls_build_v4_mapped_v6_address(struct in6_addr *v6, const struct in_addr *
     memcpy(&v6->s6_addr[12], &v4->s_addr, 4);
 }
 
+struct st_ptls_log_t ptls_log = {
+    .dummy_conn_state = {.random_ = 1 /* never log */},
+    ._generation = 1, /* starts from 1 so that recalc can be forced by setting to zero (i.e., the initial) */
+};
+PTLS_THREADLOCAL ptls_log_conn_state_t *ptls_log_conn_state_override = NULL;
+
+#if PTLS_HAVE_LOG
+
+static struct {
+    /**
+     * list of connections; the slot is connected if points != NULL
+     */
+    struct {
+        /**
+         * file descriptor
+         */
+        int fd;
+        /**
+         * see `ptls_log_add_fd`
+         */
+        char *points;
+        /**
+         *
+         */
+        char *snis;
+        /**
+         * list of addresses terminated by ip6addr_any
+         */
+        struct in6_addr *addresses;
+        /**
+         *
+         */
+        float sample_ratio;
+        /**
+         *
+         */
+        unsigned appdata : 1;
+    } conns[sizeof(((struct st_ptls_log_state_t *)NULL)->active_conns) * 8];
+    /**
+     * counts the number of writes that failed
+     */
+    size_t num_lost;
+    /**
+     * anchor of the single-linked list of log points; the tail refers to itself (i.e., point->next == point)
+     */
+    struct st_ptls_log_point_t *points;
+    /**
+     *
+     */
+    pthread_mutex_t mutex;
+} logctx = {.mutex = PTHREAD_MUTEX_INITIALIZER};
+
 static PTLS_THREADLOCAL struct {
     ptls_buffer_t buf; /* buf.base == NULL upon failre */
     char smallbuf[128];
@@ -6783,6 +6835,117 @@ static PTLS_THREADLOCAL struct {
         size_t len;
     } tid;
 } ptlslogbuf;
+
+static void close_log_fd(size_t slot)
+{
+    assert(logctx.conns[slot].fd >= 0 && logctx.conns[slot].points != NULL);
+
+    close(logctx.conns[slot].fd);
+
+    /* clear the connection information */
+    logctx.conns[slot].fd = -1;
+    logctx.conns[slot].sample_ratio = 0;
+    free(logctx.conns[slot].points);
+    logctx.conns[slot].points = NULL;
+    free(logctx.conns[slot].snis);
+    logctx.conns[slot].snis = NULL;
+    free(logctx.conns[slot].addresses);
+    logctx.conns[slot].addresses = NULL;
+    logctx.conns[slot].appdata = 0;
+    ++ptls_log._generation;
+}
+
+static char *duplicate_stringlist(const char *input)
+{
+    if (input == NULL)
+        return strdup("");
+
+    char *result;
+    const char *in_tail;
+
+    for (in_tail = input; in_tail[0] != '\0'; in_tail += strlen(in_tail) + 1)
+        ;
+    ++in_tail;
+    if ((result = malloc(in_tail - input)) == NULL)
+        return NULL;
+    memcpy(result, input, in_tail - input);
+    return result;
+}
+
+static int is_in_stringlist(const char *list, const char *search_for)
+{
+    if (list[0] == '\0')
+        return 1;
+
+    if (search_for == NULL)
+        return 0;
+
+    for (const char *element = list; element[0] != '\0'; element += strlen(element) + 1)
+        if (strcmp(element, search_for) == 0)
+            return 1;
+    return 0;
+}
+
+static int is_in_addresslist(const struct in6_addr *list, const struct in6_addr *search_for)
+{
+#define IS_EQUAL(x, y) (memcmp((x), (y), sizeof(struct in6_addr)) == 0)
+
+    if (IS_EQUAL(&list[0], &in6addr_any))
+        return 1;
+
+    if (IS_EQUAL(search_for, &in6addr_any))
+        return 0;
+
+    for (const struct in6_addr *element = list; !IS_EQUAL(element, &in6addr_any); ++element)
+        if (IS_EQUAL(element, search_for))
+            return 1;
+    return 0;
+
+#undef IS_EQUAL
+}
+
+void ptls_log__recalc_point(int caller_locked, struct st_ptls_log_point_t *point)
+{
+    if (!caller_locked)
+        pthread_mutex_lock(&logctx.mutex);
+
+    if (point->state.generation != ptls_log._generation) {
+        /* update active bitmap */
+        uint32_t new_active = 0;
+        for (size_t slot = 0; slot < PTLS_ELEMENTSOF(logctx.conns); ++slot)
+            if (logctx.conns[slot].points != NULL && is_in_stringlist(logctx.conns[slot].points, point->name))
+                new_active |= (uint32_t)1 << slot;
+        point->state.active_conns = new_active;
+        point->state.generation = ptls_log._generation;
+    }
+
+    if (!caller_locked)
+        pthread_mutex_unlock(&logctx.mutex);
+}
+
+void ptls_log__recalc_conn(int caller_locked, struct st_ptls_log_conn_state_t *conn, const char *(*get_sni)(void *),
+                           void *get_sni_arg)
+{
+    if (!caller_locked)
+        pthread_mutex_lock(&logctx.mutex);
+
+    if (conn->state.generation != ptls_log._generation) {
+        /* update active bitmap */
+        uint32_t new_active = 0;
+        const char *sni = get_sni != NULL ? get_sni(get_sni_arg) : NULL;
+        for (size_t slot = 0; slot < PTLS_ELEMENTSOF(logctx.conns); ++slot) {
+            if (logctx.conns[slot].points != NULL && conn->random_ < logctx.conns[slot].sample_ratio &&
+                is_in_stringlist(logctx.conns[slot].snis, sni) && is_in_addresslist(logctx.conns[slot].addresses, &conn->address)) {
+                new_active |= (uint32_t)1 << slot;
+            }
+        }
+        conn->state.active_conns = new_active;
+        conn->state.generation = ptls_log._generation;
+    }
+
+    if (!caller_locked)
+        pthread_mutex_unlock(&logctx.mutex);
+}
 
 static int expand_logbuf_or_invalidate(const char *prefix, size_t prefix_len, size_t capacity)
 {
@@ -6880,275 +7043,6 @@ void ptls_log__do_push_element_bool(const char *prefix, size_t prefix_len, int v
         }
     }
 }
-
-struct st_ptls_log_t ptls_log = {
-    .dummy_conn_state = {.random_ = 1 /* never log */},
-    ._generation = 1, /* starts from 1 so that recalc can be forced by setting to zero (i.e., the initial) */
-};
-PTLS_THREADLOCAL ptls_log_conn_state_t *ptls_log_conn_state_override = NULL;
-
-#if PTLS_HAVE_LOG
-
-static struct {
-    /**
-     * list of connections; the slot is connected if points != NULL
-     */
-    struct {
-        /**
-         * file descriptor
-         */
-        int fd;
-        /**
-         * see `ptls_log_add_fd`
-         */
-        char *points;
-        /**
-         *
-         */
-        char *snis;
-        /**
-         * list of addresses terminated by ip6addr_any
-         */
-        struct in6_addr *addresses;
-        /**
-         *
-         */
-        float sample_ratio;
-        /**
-         *
-         */
-        unsigned appdata : 1;
-    } conns[sizeof(((struct st_ptls_log_state_t *)NULL)->active_conns) * 8];
-    /**
-     * counts the number of writes that failed
-     */
-    size_t num_lost;
-    /**
-     * anchor of the single-linked list of log points; the tail refers to itself (i.e., point->next == point)
-     */
-    struct st_ptls_log_point_t *points;
-    /**
-     *
-     */
-    pthread_mutex_t mutex;
-} logctx = {.mutex = PTHREAD_MUTEX_INITIALIZER};
-
-static void close_log_fd(size_t slot)
-{
-    assert(logctx.conns[slot].fd >= 0 && logctx.conns[slot].points != NULL);
-
-    close(logctx.conns[slot].fd);
-
-    /* clear the connection information */
-    logctx.conns[slot].fd = -1;
-    logctx.conns[slot].sample_ratio = 0;
-    free(logctx.conns[slot].points);
-    logctx.conns[slot].points = NULL;
-    free(logctx.conns[slot].snis);
-    logctx.conns[slot].snis = NULL;
-    free(logctx.conns[slot].addresses);
-    logctx.conns[slot].addresses = NULL;
-    logctx.conns[slot].appdata = 0;
-    ++ptls_log._generation;
-}
-
-static char *duplicate_stringlist(const char *input)
-{
-    if (input == NULL)
-        return strdup("");
-
-    char *result;
-    const char *in_tail;
-
-    for (in_tail = input; in_tail[0] != '\0'; in_tail += strlen(in_tail) + 1)
-        ;
-    ++in_tail;
-    if ((result = malloc(in_tail - input)) == NULL)
-        return NULL;
-    memcpy(result, input, in_tail - input);
-    return result;
-}
-
-static int is_in_stringlist(const char *list, const char *search_for)
-{
-    if (list[0] == '\0')
-        return 1;
-
-    if (search_for == NULL)
-        return 0;
-
-    for (const char *element = list; element[0] != '\0'; element += strlen(element) + 1)
-        if (strcmp(element, search_for) == 0)
-            return 1;
-    return 0;
-}
-
-static int is_in_addresslist(const struct in6_addr *list, const struct in6_addr *search_for)
-{
-#define IS_EQUAL(x, y) (memcmp((x), (y), sizeof(struct in6_addr)) == 0)
-
-    if (IS_EQUAL(&list[0], &in6addr_any))
-        return 1;
-
-    if (IS_EQUAL(search_for, &in6addr_any))
-        return 0;
-
-    for (const struct in6_addr *element = list; !IS_EQUAL(element, &in6addr_any); ++element)
-        if (IS_EQUAL(element, search_for))
-            return 1;
-    return 0;
-
-#undef IS_EQUAL
-}
-
-#endif
-
-void ptls_log_init_conn_state(ptls_log_conn_state_t *state, void (*random_bytes)(void *, size_t))
-{
-    uint32_t r;
-    random_bytes(&r, sizeof(r));
-
-    *state = (ptls_log_conn_state_t){
-        .random_ = (float)r / ((uint64_t)UINT32_MAX + 1), /* [0..1), so that any(r) < sample_ratio where sample_ratio is [0..1] */
-        .address = in6addr_any,
-    };
-}
-
-size_t ptls_log_num_lost(void)
-{
-#if PTLS_HAVE_LOG
-    return logctx.num_lost;
-#else
-    return 0;
-#endif
-}
-
-void ptls_log__recalc_point(int caller_locked, struct st_ptls_log_point_t *point)
-{
-#if PTLS_HAVE_LOG
-    if (!caller_locked)
-        pthread_mutex_lock(&logctx.mutex);
-
-    if (point->state.generation != ptls_log._generation) {
-        /* update active bitmap */
-        uint32_t new_active = 0;
-        for (size_t slot = 0; slot < PTLS_ELEMENTSOF(logctx.conns); ++slot)
-            if (logctx.conns[slot].points != NULL && is_in_stringlist(logctx.conns[slot].points, point->name))
-                new_active |= (uint32_t)1 << slot;
-        point->state.active_conns = new_active;
-        point->state.generation = ptls_log._generation;
-    }
-
-    if (!caller_locked)
-        pthread_mutex_unlock(&logctx.mutex);
-#endif
-}
-
-void ptls_log__recalc_conn(int caller_locked, struct st_ptls_log_conn_state_t *conn, const char *(*get_sni)(void *),
-                           void *get_sni_arg)
-{
-#if PTLS_HAVE_LOG
-    if (!caller_locked)
-        pthread_mutex_lock(&logctx.mutex);
-
-    if (conn->state.generation != ptls_log._generation) {
-        /* update active bitmap */
-        uint32_t new_active = 0;
-        const char *sni = get_sni != NULL ? get_sni(get_sni_arg) : NULL;
-        for (size_t slot = 0; slot < PTLS_ELEMENTSOF(logctx.conns); ++slot) {
-            if (logctx.conns[slot].points != NULL && conn->random_ < logctx.conns[slot].sample_ratio &&
-                is_in_stringlist(logctx.conns[slot].snis, sni) && is_in_addresslist(logctx.conns[slot].addresses, &conn->address)) {
-                new_active |= (uint32_t)1 << slot;
-            }
-        }
-        conn->state.active_conns = new_active;
-        conn->state.generation = ptls_log._generation;
-    }
-
-    if (!caller_locked)
-        pthread_mutex_unlock(&logctx.mutex);
-#endif
-}
-
-int ptls_log_add_fd(int fd, float sample_ratio, const char *_points, const char *_snis, const char *_addresses, int appdata)
-{
-#if PTLS_HAVE_LOG
-
-    char *points = NULL, *snis = NULL;
-    struct in6_addr *addresses = NULL;
-    int ret;
-
-    pthread_mutex_lock(&logctx.mutex);
-
-    if ((points = duplicate_stringlist(_points)) == NULL) {
-        ret = PTLS_ERROR_NO_MEMORY;
-        goto Exit;
-    }
-    if ((snis = duplicate_stringlist(_snis)) == NULL) {
-        ret = PTLS_ERROR_NO_MEMORY;
-        goto Exit;
-    }
-    {
-        size_t num_addresses = 0;
-        for (const char *input = _addresses; input != NULL && *input != '\0'; input += strlen(input) + 1)
-            ++num_addresses;
-        if ((addresses = malloc(sizeof(*addresses) * (num_addresses + 1))) == NULL) {
-            ret = PTLS_ERROR_NO_MEMORY;
-            goto Exit;
-        }
-        size_t index = 0;
-        for (const char *input = _addresses; input != NULL && *input != '\0'; input += strlen(input) + 1) {
-            /* note: for consistency to the handling of points, erroneous input is ignored. V4 addresses will use the mapped form
-             * (::ffff:192.0.2.1) */
-            if (!inet_pton(AF_INET6, input, &addresses[index])) {
-                struct in_addr v4;
-                if (!inet_pton(AF_INET, input, &v4))
-                    continue;
-                ptls_build_v4_mapped_v6_address(&addresses[index], &v4);
-            }
-            if (memcmp(&addresses[index], &in6addr_any, sizeof(struct in6_addr)) == 0)
-                continue;
-            ++index;
-        }
-        addresses[index] = in6addr_any;
-    }
-
-    /* find slot, or return if not available */
-    size_t slot_index;
-    for (slot_index = 0; slot_index < PTLS_ELEMENTSOF(logctx.conns); ++slot_index)
-        if (logctx.conns[slot_index].points == NULL)
-            break;
-    if (slot_index == PTLS_ELEMENTSOF(logctx.conns)) {
-        ret = PTLS_ERROR_NO_MEMORY;
-        goto Exit;
-    }
-
-    /* setup the slot */
-    logctx.conns[slot_index].fd = fd;
-    logctx.conns[slot_index].points = points;
-    logctx.conns[slot_index].snis = snis;
-    logctx.conns[slot_index].addresses = addresses;
-    logctx.conns[slot_index].sample_ratio = sample_ratio;
-    logctx.conns[slot_index].appdata = appdata;
-    ++ptls_log._generation;
-
-    ret = 0; /* success */
-
-Exit:
-    pthread_mutex_unlock(&logctx.mutex);
-    if (ret != 0) {
-        free(points);
-        free(snis);
-        free(addresses);
-    }
-    return ret;
-
-#else
-    return PTLS_ERROR_NOT_AVAILABLE;
-#endif
-}
-
-#if PTLS_HAVE_LOG
 
 void ptls_log__do_write_start(struct st_ptls_log_point_t *point, int add_time)
 {
@@ -7249,3 +7143,101 @@ int ptls_log__do_write_end(struct st_ptls_log_point_t *point, struct st_ptls_log
 }
 
 #endif
+
+void ptls_log_init_conn_state(ptls_log_conn_state_t *state, void (*random_bytes)(void *, size_t))
+{
+    uint32_t r;
+    random_bytes(&r, sizeof(r));
+
+    *state = (ptls_log_conn_state_t){
+        .random_ = (float)r / ((uint64_t)UINT32_MAX + 1), /* [0..1), so that any(r) < sample_ratio where sample_ratio is [0..1] */
+        .address = in6addr_any,
+    };
+}
+
+size_t ptls_log_num_lost(void)
+{
+#if PTLS_HAVE_LOG
+    return logctx.num_lost;
+#else
+    return 0;
+#endif
+}
+
+int ptls_log_add_fd(int fd, float sample_ratio, const char *_points, const char *_snis, const char *_addresses, int appdata)
+{
+#if PTLS_HAVE_LOG
+
+    char *points = NULL, *snis = NULL;
+    struct in6_addr *addresses = NULL;
+    int ret;
+
+    pthread_mutex_lock(&logctx.mutex);
+
+    if ((points = duplicate_stringlist(_points)) == NULL) {
+        ret = PTLS_ERROR_NO_MEMORY;
+        goto Exit;
+    }
+    if ((snis = duplicate_stringlist(_snis)) == NULL) {
+        ret = PTLS_ERROR_NO_MEMORY;
+        goto Exit;
+    }
+    {
+        size_t num_addresses = 0;
+        for (const char *input = _addresses; input != NULL && *input != '\0'; input += strlen(input) + 1)
+            ++num_addresses;
+        if ((addresses = malloc(sizeof(*addresses) * (num_addresses + 1))) == NULL) {
+            ret = PTLS_ERROR_NO_MEMORY;
+            goto Exit;
+        }
+        size_t index = 0;
+        for (const char *input = _addresses; input != NULL && *input != '\0'; input += strlen(input) + 1) {
+            /* note: for consistency to the handling of points, erroneous input is ignored. V4 addresses will use the mapped form
+             * (::ffff:192.0.2.1) */
+            if (!inet_pton(AF_INET6, input, &addresses[index])) {
+                struct in_addr v4;
+                if (!inet_pton(AF_INET, input, &v4))
+                    continue;
+                ptls_build_v4_mapped_v6_address(&addresses[index], &v4);
+            }
+            if (memcmp(&addresses[index], &in6addr_any, sizeof(struct in6_addr)) == 0)
+                continue;
+            ++index;
+        }
+        addresses[index] = in6addr_any;
+    }
+
+    /* find slot, or return if not available */
+    size_t slot_index;
+    for (slot_index = 0; slot_index < PTLS_ELEMENTSOF(logctx.conns); ++slot_index)
+        if (logctx.conns[slot_index].points == NULL)
+            break;
+    if (slot_index == PTLS_ELEMENTSOF(logctx.conns)) {
+        ret = PTLS_ERROR_NO_MEMORY;
+        goto Exit;
+    }
+
+    /* setup the slot */
+    logctx.conns[slot_index].fd = fd;
+    logctx.conns[slot_index].points = points;
+    logctx.conns[slot_index].snis = snis;
+    logctx.conns[slot_index].addresses = addresses;
+    logctx.conns[slot_index].sample_ratio = sample_ratio;
+    logctx.conns[slot_index].appdata = appdata;
+    ++ptls_log._generation;
+
+    ret = 0; /* success */
+
+Exit:
+    pthread_mutex_unlock(&logctx.mutex);
+    if (ret != 0) {
+        free(points);
+        free(snis);
+        free(addresses);
+    }
+    return ret;
+
+#else
+    return PTLS_ERROR_NOT_AVAILABLE;
+#endif
+}
