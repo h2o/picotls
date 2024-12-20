@@ -7051,7 +7051,6 @@ void ptls_log__do_write_start(struct st_ptls_log_point_t *point, int add_time)
     int written = snprintf((char *)logbuf.buf.base, logbuf.buf.capacity, "{\"module\":\"%.*s\",\"type\":\"%s\"",
                            (int)(colon_at - point->name), point->name, colon_at + 1);
 
-#if defined(__linux__) || defined(__APPLE__)
     /* obtain and stringify thread id once */
     if (logbuf.tid.len == 0) {
 #if defined(__linux__)
@@ -7061,14 +7060,13 @@ void ptls_log__do_write_start(struct st_ptls_log_point_t *point, int add_time)
         (void)pthread_threadid_np(NULL, &t);
         logbuf.tid.len = sprintf(logbuf.tid.buf, ",\"tid\":%" PRIu64, t);
 #else
-#error "unexpected platform"
+        /* other platforms: skip emitting tid, by keeping logbuf.tid.len == 0 */
 #endif
     }
     /* append tid */
     assert(written > 0 && written + logbuf.tid.len < logbuf.buf.capacity);
     memcpy((char *)logbuf.buf.base + written, logbuf.tid.buf, logbuf.tid.len + 1);
     written += logbuf.tid.len;
-#endif
 
     /* append time if requested */
     if (add_time) {
