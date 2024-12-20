@@ -6958,10 +6958,8 @@ static int expand_logbuf_or_invalidate(const char *prefix, size_t prefix_len, si
         return 0;
     }
 
-    if (prefix_len != 0) {
-        memcpy(logbuf.buf.base + logbuf.buf.off, prefix, prefix_len);
-        logbuf.buf.off += prefix_len;
-    }
+    memcpy(logbuf.buf.base + logbuf.buf.off, prefix, prefix_len);
+    logbuf.buf.off += prefix_len;
 
     return 1;
 }
