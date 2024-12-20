@@ -6834,7 +6834,7 @@ static PTLS_THREADLOCAL struct {
         char buf[sizeof(",\"tid\":-9223372036854775808")];
         size_t len;
     } tid;
-} ptlslogbuf;
+} logbuf;
 
 static void close_log_fd(size_t slot)
 {
@@ -6949,18 +6949,18 @@ void ptls_log__recalc_conn(int caller_locked, struct st_ptls_log_conn_state_t *c
 
 static int expand_logbuf_or_invalidate(const char *prefix, size_t prefix_len, size_t capacity)
 {
-    if (ptlslogbuf.buf.base == NULL)
+    if (logbuf.buf.base == NULL)
         return 0;
 
-    if (ptls_buffer_reserve(&ptlslogbuf.buf, prefix_len + capacity) != 0) {
-        ptls_buffer_dispose(&ptlslogbuf.buf);
-        assert(ptlslogbuf.buf.base == NULL);
+    if (ptls_buffer_reserve(&logbuf.buf, prefix_len + capacity) != 0) {
+        ptls_buffer_dispose(&logbuf.buf);
+        assert(logbuf.buf.base == NULL);
         return 0;
     }
 
     if (prefix_len != 0) {
-        memcpy(ptlslogbuf.buf.base + ptlslogbuf.buf.off, prefix, prefix_len);
-        ptlslogbuf.buf.off += prefix_len;
+        memcpy(logbuf.buf.base + logbuf.buf.off, prefix, prefix_len);
+        logbuf.buf.off += prefix_len;
     }
 
     return 1;
@@ -6974,40 +6974,39 @@ __attribute__((format(printf, 4, 5))) static void pushf_logbuf_or_invalidate(con
 
     va_list args;
     va_start(args, fmt);
-    int l = vsnprintf((char *)ptlslogbuf.buf.base + ptlslogbuf.buf.off, ptlslogbuf.buf.capacity - ptlslogbuf.buf.off, fmt, args);
+    int l = vsnprintf((char *)logbuf.buf.base + logbuf.buf.off, logbuf.buf.capacity - logbuf.buf.off, fmt, args);
     va_end(args);
 
-    assert(l < ptlslogbuf.buf.capacity - ptlslogbuf.buf.off && "insufficent capacity");
-    ptlslogbuf.buf.off += l;
+    assert(l < logbuf.buf.capacity - logbuf.buf.off && "insufficent capacity");
+    logbuf.buf.off += l;
 }
 
 void ptls_log__do_push_element_safestr(const char *prefix, size_t prefix_len, const char *s, size_t l)
 {
     if (expand_logbuf_or_invalidate(prefix, prefix_len, l + 2)) {
-        ptlslogbuf.buf.base[ptlslogbuf.buf.off++] = '"';
-        memcpy(ptlslogbuf.buf.base + ptlslogbuf.buf.off, s, l);
-        ptlslogbuf.buf.off += l;
-        ptlslogbuf.buf.base[ptlslogbuf.buf.off++] = '"';
+        logbuf.buf.base[logbuf.buf.off++] = '"';
+        memcpy(logbuf.buf.base + logbuf.buf.off, s, l);
+        logbuf.buf.off += l;
+        logbuf.buf.base[logbuf.buf.off++] = '"';
     }
 }
 
 void ptls_log__do_push_element_unsafestr(const char *prefix, size_t prefix_len, const char *s, size_t l)
 {
     if (expand_logbuf_or_invalidate(prefix, prefix_len, l * (sizeof("\\uXXXX") - 1) + 2)) {
-        ptlslogbuf.buf.base[ptlslogbuf.buf.off++] = '"';
-        ptlslogbuf.buf.off =
-            (uint8_t *)ptls_jsonescape((char *)ptlslogbuf.buf.base + ptlslogbuf.buf.off, s, l) - ptlslogbuf.buf.base;
-        ptlslogbuf.buf.base[ptlslogbuf.buf.off++] = '"';
+        logbuf.buf.base[logbuf.buf.off++] = '"';
+        logbuf.buf.off = (uint8_t *)ptls_jsonescape((char *)logbuf.buf.base + logbuf.buf.off, s, l) - logbuf.buf.base;
+        logbuf.buf.base[logbuf.buf.off++] = '"';
     }
 }
 
 void ptls_log__do_push_element_hexdump(const char *prefix, size_t prefix_len, const void *s, size_t l)
 {
     if (expand_logbuf_or_invalidate(prefix, prefix_len, l * 2 + 2)) {
-        ptlslogbuf.buf.base[ptlslogbuf.buf.off++] = '"';
-        ptls_hexdump((char *)ptlslogbuf.buf.base + ptlslogbuf.buf.off, s, l);
-        ptlslogbuf.buf.off += l * 2;
-        ptlslogbuf.buf.base[ptlslogbuf.buf.off++] = '"';
+        logbuf.buf.base[logbuf.buf.off++] = '"';
+        ptls_hexdump((char *)logbuf.buf.base + logbuf.buf.off, s, l);
+        logbuf.buf.off += l * 2;
+        logbuf.buf.base[logbuf.buf.off++] = '"';
     }
 }
 
@@ -7035,54 +7034,54 @@ void ptls_log__do_push_element_bool(const char *prefix, size_t prefix_len, int v
 {
     if (expand_logbuf_or_invalidate(prefix, prefix_len, 5)) {
         if (v) {
-            memcpy(ptlslogbuf.buf.base + ptlslogbuf.buf.off, "true", 4);
-            ptlslogbuf.buf.off += 4;
+            memcpy(logbuf.buf.base + logbuf.buf.off, "true", 4);
+            logbuf.buf.off += 4;
         } else {
-            memcpy(ptlslogbuf.buf.base + ptlslogbuf.buf.off, "false", 5);
-            ptlslogbuf.buf.off += 5;
+            memcpy(logbuf.buf.base + logbuf.buf.off, "false", 5);
+            logbuf.buf.off += 5;
         }
     }
 }
 
 void ptls_log__do_write_start(struct st_ptls_log_point_t *point, int add_time)
 {
-    assert(ptlslogbuf.buf.base == NULL);
-    ptls_buffer_init(&ptlslogbuf.buf, ptlslogbuf.smallbuf, sizeof(ptlslogbuf.smallbuf));
+    assert(logbuf.buf.base == NULL);
+    ptls_buffer_init(&logbuf.buf, logbuf.smallbuf, sizeof(logbuf.smallbuf));
 
     /* add module and type name */
     const char *colon_at = strchr(point->name, ':');
-    int written = snprintf((char *)ptlslogbuf.buf.base, ptlslogbuf.buf.capacity, "{\"module\":\"%.*s\",\"type\":\"%s\"",
+    int written = snprintf((char *)logbuf.buf.base, logbuf.buf.capacity, "{\"module\":\"%.*s\",\"type\":\"%s\"",
                            (int)(colon_at - point->name), point->name, colon_at + 1);
 
 #if defined(__linux__) || defined(__APPLE__)
     /* obtain and stringify thread id once */
-    if (ptlslogbuf.tid.len == 0) {
+    if (logbuf.tid.len == 0) {
 #if defined(__linux__)
-        ptlslogbuf.tid.len = sprintf(ptlslogbuf.tid.buf, ",\"tid\":%" PRId64, (int64_t)syscall(SYS_gettid));
+        logbuf.tid.len = sprintf(logbuf.tid.buf, ",\"tid\":%" PRId64, (int64_t)syscall(SYS_gettid));
 #elif defined(__APPLE__)
         uint64_t t = 0;
         (void)pthread_threadid_np(NULL, &t);
-        ptlslogbuf.tid.len = sprintf(ptlslogbuf.tid.buf, ",\"tid\":%" PRIu64, t);
+        logbuf.tid.len = sprintf(logbuf.tid.buf, ",\"tid\":%" PRIu64, t);
 #else
 #error "unexpected platform"
 #endif
     }
     /* append tid */
-    assert(written > 0 && written + ptlslogbuf.tid.len < ptlslogbuf.buf.capacity);
-    memcpy((char *)ptlslogbuf.buf.base + written, ptlslogbuf.tid.buf, ptlslogbuf.tid.len + 1);
-    written += ptlslogbuf.tid.len;
+    assert(written > 0 && written + logbuf.tid.len < logbuf.buf.capacity);
+    memcpy((char *)logbuf.buf.base + written, logbuf.tid.buf, logbuf.tid.len + 1);
+    written += logbuf.tid.len;
 #endif
 
     /* append time if requested */
     if (add_time) {
         struct timeval tv;
         gettimeofday(&tv, NULL);
-        written += snprintf((char *)ptlslogbuf.buf.base + written, ptlslogbuf.buf.capacity - written, ",\"time\":%" PRIu64,
+        written += snprintf((char *)logbuf.buf.base + written, logbuf.buf.capacity - written, ",\"time\":%" PRIu64,
                             (uint64_t)tv.tv_sec * 1000 + tv.tv_usec / 1000);
     }
-    assert(written > 0 && written < ptlslogbuf.buf.capacity && "caller MUST provide smallbuf suffient to emit the prefix");
+    assert(written > 0 && written < logbuf.buf.capacity && "caller MUST provide smallbuf suffient to emit the prefix");
 
-    ptlslogbuf.buf.off = (size_t)written;
+    logbuf.buf.off = (size_t)written;
 }
 
 int ptls_log__do_write_end(struct st_ptls_log_point_t *point, struct st_ptls_log_conn_state_t *conn, const char *(*get_sni)(void *),
@@ -7119,9 +7118,9 @@ int ptls_log__do_write_end(struct st_ptls_log_point_t *point, struct st_ptls_log
 
         /* write */
         ssize_t wret;
-        while ((wret = write(logctx.conns[slot].fd, ptlslogbuf.buf.base, ptlslogbuf.buf.off)) == -1 && errno == EINTR)
+        while ((wret = write(logctx.conns[slot].fd, logbuf.buf.base, logbuf.buf.off)) == -1 && errno == EINTR)
             ;
-        if (wret == ptlslogbuf.buf.off) {
+        if (wret == logbuf.buf.off) {
             /* success */
         } else if (wret > 0 || (wret == -1 && (errno == EAGAIN || errno == EWOULDBLOCK))) {
             /* partial write or buffer full */
@@ -7137,8 +7136,8 @@ int ptls_log__do_write_end(struct st_ptls_log_point_t *point, struct st_ptls_log
     if (includes_appdata)
         assert(!needs_appdata);
 
-    ptls_buffer_dispose(&ptlslogbuf.buf);
-    assert(ptlslogbuf.buf.base == NULL);
+    ptls_buffer_dispose(&logbuf.buf);
+    assert(logbuf.buf.base == NULL);
     return needs_appdata;
 }
 
