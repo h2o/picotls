@@ -208,7 +208,7 @@ extern "C" {
 #define PTLS_ERROR_GET_CLASS(e) ((e) & ~0xff)
 #define PTLS_ALERT_TO_SELF_ERROR(e) ((e) + PTLS_ERROR_CLASS_SELF_ALERT)
 #define PTLS_ALERT_TO_PEER_ERROR(e) ((e) + PTLS_ERROR_CLASS_PEER_ALERT)
-#define PTLS_ERROR_TO_ALERT(e) ((e)&0xff)
+#define PTLS_ERROR_TO_ALERT(e) ((e) & 0xff)
 
 /* the HKDF prefix */
 #define PTLS_HKDF_EXPAND_LABEL_PREFIX "tls13 "
@@ -298,25 +298,19 @@ extern "C" {
 #define PTLS_CERTIFICATE_TYPE_RAW_PUBLIC_KEY 2
 
 #define PTLS_ZERO_DIGEST_SHA256                                                                                                    \
-    {                                                                                                                              \
-        0xe3, 0xb0, 0xc4, 0x42, 0x98, 0xfc, 0x1c, 0x14, 0x9a, 0xfb, 0xf4, 0xc8, 0x99, 0x6f, 0xb9, 0x24, 0x27, 0xae, 0x41, 0xe4,    \
-            0x64, 0x9b, 0x93, 0x4c, 0xa4, 0x95, 0x99, 0x1b, 0x78, 0x52, 0xb8, 0x55                                                 \
-    }
+    {0xe3, 0xb0, 0xc4, 0x42, 0x98, 0xfc, 0x1c, 0x14, 0x9a, 0xfb, 0xf4, 0xc8, 0x99, 0x6f, 0xb9, 0x24,                               \
+     0x27, 0xae, 0x41, 0xe4, 0x64, 0x9b, 0x93, 0x4c, 0xa4, 0x95, 0x99, 0x1b, 0x78, 0x52, 0xb8, 0x55}
 
 #define PTLS_ZERO_DIGEST_SHA384                                                                                                    \
-    {                                                                                                                              \
-        0x38, 0xb0, 0x60, 0xa7, 0x51, 0xac, 0x96, 0x38, 0x4c, 0xd9, 0x32, 0x7e, 0xb1, 0xb1, 0xe3, 0x6a, 0x21, 0xfd, 0xb7, 0x11,    \
-            0x14, 0xbe, 0x07, 0x43, 0x4c, 0x0c, 0xc7, 0xbf, 0x63, 0xf6, 0xe1, 0xda, 0x27, 0x4e, 0xde, 0xbf, 0xe7, 0x6f, 0x65,      \
-            0xfb, 0xd5, 0x1a, 0xd2, 0xf1, 0x48, 0x98, 0xb9, 0x5b                                                                   \
-    }
+    {0x38, 0xb0, 0x60, 0xa7, 0x51, 0xac, 0x96, 0x38, 0x4c, 0xd9, 0x32, 0x7e, 0xb1, 0xb1, 0xe3, 0x6a,                               \
+     0x21, 0xfd, 0xb7, 0x11, 0x14, 0xbe, 0x07, 0x43, 0x4c, 0x0c, 0xc7, 0xbf, 0x63, 0xf6, 0xe1, 0xda,                               \
+     0x27, 0x4e, 0xde, 0xbf, 0xe7, 0x6f, 0x65, 0xfb, 0xd5, 0x1a, 0xd2, 0xf1, 0x48, 0x98, 0xb9, 0x5b}
 
 #define PTLS_ZERO_DIGEST_SHA512                                                                                                    \
-    {                                                                                                                              \
-        0xcf, 0x83, 0xe1, 0x35, 0x7e, 0xef, 0xb8, 0xbd, 0xf1, 0x54, 0x28, 0x50, 0xd6, 0x6d, 0x80, 0x07, 0xd6, 0x20, 0xe4, 0x05,    \
-            0x0b, 0x57, 0x15, 0xdc, 0x83, 0xf4, 0xa9, 0x21, 0xd3, 0x6c, 0xe9, 0xce, 0x47, 0xd0, 0xd1, 0x3c, 0x5d, 0x85, 0xf2,      \
-            0xb0, 0xff, 0x83, 0x18, 0xd2, 0x87, 0x7e, 0xec, 0x2f, 0x63, 0xb9, 0x31, 0xbd, 0x47, 0x41, 0x7a, 0x81, 0xa5, 0x38,      \
-            0x32, 0x7a, 0xf9, 0x27, 0xda, 0x3e                                                                                     \
-    }
+    {0xcf, 0x83, 0xe1, 0x35, 0x7e, 0xef, 0xb8, 0xbd, 0xf1, 0x54, 0x28, 0x50, 0xd6, 0x6d, 0x80, 0x07,                               \
+     0xd6, 0x20, 0xe4, 0x05, 0x0b, 0x57, 0x15, 0xdc, 0x83, 0xf4, 0xa9, 0x21, 0xd3, 0x6c, 0xe9, 0xce,                               \
+     0x47, 0xd0, 0xd1, 0x3c, 0x5d, 0x85, 0xf2, 0xb0, 0xff, 0x83, 0x18, 0xd2, 0x87, 0x7e, 0xec, 0x2f,                               \
+     0x63, 0xb9, 0x31, 0xbd, 0x47, 0x41, 0x7a, 0x81, 0xa5, 0x38, 0x32, 0x7a, 0xf9, 0x27, 0xda, 0x3e}
 
 #define PTLS_TO__STR(n) #n
 #define PTLS_TO_STR(n) PTLS_TO__STR(n)
@@ -363,10 +357,10 @@ typedef struct st_ptls_key_exchange_context_t {
     ptls_iovec_t pubkey;
     /**
      * This function can be used for deriving a shared secret or for destroying the context.
-     * When `secret` is non-NULL, this callback derives the shared secret using the private key of the context and the peer key being
-     * given, and sets the value in `secret`. The memory pointed to by `secret->base` must be freed by the caller by calling `free`.
-     * When `release` is set, the callee frees resources allocated to the context and set *keyex to NULL.
-     * Upon failure (i.e., when an PTLS error code is returned), `*pubkey` and `*secret` either remain unchanged or are zero-cleared.
+     * When `secret` is non-NULL, this callback derives the shared secret using the private key of the context and the peer key
+     * being given, and sets the value in `secret`. The memory pointed to by `secret->base` must be freed by the caller by calling
+     * `free`. When `release` is set, the callee frees resources allocated to the context and set *keyex to NULL. Upon failure
+     * (i.e., when an PTLS error code is returned), `*pubkey` and `*secret` either remain unchanged or are zero-cleared.
      */
     int (*on_exchange)(struct st_ptls_key_exchange_context_t **keyex, int release, ptls_iovec_t *secret, ptls_iovec_t peerkey);
 } ptls_key_exchange_context_t;
@@ -388,7 +382,8 @@ typedef const struct st_ptls_key_exchange_algorithm_t {
      * Implements synchronous key exchange. Called when ServerHello is generated.
      * Given a public key provided by the peer (`peerkey`), this callback generates an ephemeral private and public key, and returns
      * the public key (`pubkey`) and a secret (`secret`) derived from the peerkey and private key.
-     * Upon failure (i.e., when an PTLS error code is returned), `*pubkey` and `*secret` either remain unchanged or are zero-cleared.
+     * Upon failure (i.e., when an PTLS error code is returned), `*pubkey` and `*secret` either remain unchanged or are
+     * zero-cleared.
      */
     int (*exchange)(const struct st_ptls_key_exchange_algorithm_t *algo, ptls_iovec_t *pubkey, ptls_iovec_t *secret,
                     ptls_iovec_t peerkey);
