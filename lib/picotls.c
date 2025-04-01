@@ -41,6 +41,9 @@
 #ifdef __linux__
 #include <sys/syscall.h>
 #endif
+#ifdef __APPLE__
+#include <AvailabilityMacros.h>
+#endif
 #include "picotls.h"
 #if PICOTLS_USE_DTRACE
 #include "picotls-probes.h"
@@ -7060,7 +7063,11 @@ void ptls_log__do_write_start(struct st_ptls_log_point_t *point, int add_time)
         logbuf.tid.len = sprintf(logbuf.tid.buf, ",\"tid\":%" PRId64, (int64_t)syscall(SYS_gettid));
 #elif defined(__APPLE__)
         uint64_t t = 0;
+    #if MAC_OS_X_VERSION_MAX_ALLOWED < 1060 || defined(__POWERPC__)
+        t = pthread_mach_thread_np(pthread_self());
+    #else
         (void)pthread_threadid_np(NULL, &t);
+    #endif
         logbuf.tid.len = sprintf(logbuf.tid.buf, ",\"tid\":%" PRIu64, t);
 #else
         /* other platforms: skip emitting tid, by keeping logbuf.tid.len == 0 */
