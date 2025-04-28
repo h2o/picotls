@@ -4,7 +4,7 @@ picotls
 [![CI](https://github.com/h2o/picotls/actions/workflows/ci.yml/badge.svg)](https://github.com/h2o/picotls/actions/workflows/ci.yml)
 
 Picotls is a [TLS 1.3 (RFC 8446)](https://tools.ietf.org/html/rfc8446) protocol stack written in C, with the following features:
-* support for three crypto engines
+* support for four crypto engines
   * "OpenSSL" backend using libcrypto for crypto and X.509 operations
   * "minicrypto" backend using [cifra](https://github.com/ctz/cifra) for most crypto and [micro-ecc](https://github.com/kmackay/micro-ecc) for secp256r1
   * ["fusion" AES-GCM engine, optimized for QUIC and other protocols that use short AEAD blocks](https://github.com/h2o/picotls/pull/310)
