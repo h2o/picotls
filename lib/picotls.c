@@ -3188,7 +3188,6 @@ static int send_certificate_verify(ptls_t *tls, ptls_message_emitter_t *emitter,
                 }
                 goto Exit;
             }
-            assert(tls->server.async_job == NULL);
             sendbuf->base[algo_off] = (uint8_t)(algo >> 8);
             sendbuf->base[algo_off + 1] = (uint8_t)algo;
         });
