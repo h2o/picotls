@@ -75,6 +75,18 @@ extern ptls_key_exchange_algorithm_t ptls_openssl_x25519mlkem768;
 #define PTLS_OPENSSL_HAVE_X25519MLKEM768 0
 #endif
 
+#if OPENSSL_VERSION_NUMBER >= 0x30500000L
+#define PTLS_OPENSSL_HAVE_MLKEM 1
+extern ptls_key_exchange_algorithm_t ptls_openssl_mlkem512;
+extern ptls_key_exchange_algorithm_t ptls_openssl_mlkem768;
+extern ptls_key_exchange_algorithm_t ptls_openssl_mlkem1024;
+extern ptls_key_exchange_algorithm_t ptls_openssl_x25519mlkem768;
+extern ptls_key_exchange_algorithm_t ptls_openssl_secp256r1mlkem768;
+extern ptls_key_exchange_algorithm_t ptls_openssl_secp384r1mlkem1024;
+#else
+#define PTLS_OPENSSL_HAVE_MLKEM 0
+#endif
+
 /* when boringssl is used, existence of libdecrepit is assumed */
 #if !defined(OPENSSL_NO_BF) || defined(OPENSSL_IS_BORINGSSL)
 #define PTLS_OPENSSL_HAVE_BF 1

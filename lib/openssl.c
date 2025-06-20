@@ -838,6 +838,240 @@ Exit:
 
 #endif
 
+#if PTLS_OPENSSL_HAVE_MLKEM
+static int evp_keykem_on_exchange(ptls_key_exchange_context_t **_ctx, int release, ptls_iovec_t *secret, ptls_iovec_t ciphertext)
+{
+    struct st_evp_keyex_context_t *ctx = (void *)*_ctx;
+    EVP_PKEY_CTX *evpctx = NULL;
+    int ret;
+
+    if (secret == NULL) {
+        ret = 0;
+        goto Exit;
+    }
+
+    *secret = ptls_iovec_init(NULL, 0);
+
+    evpctx = EVP_PKEY_CTX_new_from_pkey(NULL, ctx->privkey, NULL);
+
+    if ((evpctx = EVP_PKEY_CTX_new_from_pkey(NULL, ctx->privkey, NULL)) == NULL) {
+        ret = PTLS_ERROR_LIBRARY;
+        goto Exit;
+    }
+
+    if (EVP_PKEY_decapsulate_init(evpctx, NULL) <= 0) {
+        ret = PTLS_ERROR_LIBRARY;
+        goto Exit;
+    }
+
+    if (EVP_PKEY_decapsulate(evpctx, NULL, &secret->len, ciphertext.base, ciphertext.len) <= 0) {
+        ret = PTLS_ERROR_LIBRARY;
+        goto Exit;
+    }
+
+    if ((secret->base = malloc(secret->len)) == NULL) {
+        ret = PTLS_ERROR_NO_MEMORY;
+        goto Exit;
+    }
+
+    if (EVP_PKEY_decapsulate(evpctx, secret->base, &secret->len, ciphertext.base, ciphertext.len) <= 0) {
+        ret = PTLS_ERROR_LIBRARY;
+        goto Exit;
+    }
+    ret = 0;
+
+
+Exit:
+    if (evpctx != NULL)
+        EVP_PKEY_CTX_free(evpctx);
+    if (ret != 0) {
+        free(secret->base);
+        *secret = ptls_iovec_init(NULL, 0);
+    }
+    if (release) {
+        evp_keyex_free(ctx);
+        *_ctx = NULL;
+    }
+    return ret;
+}
+
+static int evp_keykem_init(ptls_key_exchange_algorithm_t *algo, ptls_key_exchange_context_t **_ctx, EVP_PKEY *pkey)
+{
+    struct st_evp_keyex_context_t *ctx = NULL;
+    int ret;
+
+    /* instantiate */
+    if ((ctx = malloc(sizeof(*ctx))) == NULL) {
+        ret = PTLS_ERROR_NO_MEMORY;
+        goto Exit;
+    }
+    *ctx = (struct st_evp_keyex_context_t){{algo, {NULL}, evp_keykem_on_exchange}, pkey};
+
+    /* set public key */
+    if ((ctx->super.pubkey.len = EVP_PKEY_get1_encoded_public_key(ctx->privkey, &ctx->super.pubkey.base)) == 0) {
+        ctx->super.pubkey.base = NULL;
+        ret = PTLS_ERROR_NO_MEMORY;
+        goto Exit;
+    }
+
+    *_ctx = &ctx->super;
+    ret = 0;
+Exit:
+    if (ret != 0 && ctx != NULL) {
+        ctx->privkey = NULL; /* do not decrement refcount of pkey in case of error */
+        evp_keyex_free(ctx);
+    }
+    return ret;
+}
+
+static int evp_keykem_create(ptls_key_exchange_algorithm_t *algo, ptls_key_exchange_context_t **ctx)
+{
+    EVP_PKEY_CTX *evpctx = NULL;
+    EVP_PKEY *pkey = NULL;
+    int ret;
+
+    if ((int)algo->data == PTLS_GROUP_X25519MLKEM768) {
+        if ((evpctx = EVP_PKEY_CTX_new_from_name(NULL, "X25519MLKEM768", NULL)) == NULL) {
+            ret = PTLS_ERROR_LIBRARY;
+            goto Exit;
+        }
+    } else if ((int)algo->data == PTLS_GROUP_SECP256R1MLKEM768) {
+        if ((evpctx = EVP_PKEY_CTX_new_from_name(NULL, "SecP256r1MLKEM768 ", NULL)) == NULL) {
+            ret = PTLS_ERROR_LIBRARY;
+            goto Exit;
+        }
+    } else if ((int)algo->data == PTLS_GROUP_SECP384R1MLKEM1024) {
+        if ((evpctx = EVP_PKEY_CTX_new_from_name(NULL, "SecP384r1MLKEM1024", NULL)) == NULL) {
+            ret = PTLS_ERROR_LIBRARY;
+            goto Exit;
+        }
+    } else {
+        if ((evpctx = EVP_PKEY_CTX_new_id((int)algo->data, NULL)) == NULL) {
+            ret = PTLS_ERROR_LIBRARY;
+            goto Exit;
+        }
+    }
+
+    if (EVP_PKEY_keygen_init(evpctx) <= 0) {
+        ret = PTLS_ERROR_LIBRARY;
+        goto Exit;
+    }
+    if (EVP_PKEY_generate(evpctx, &pkey) <= 0) {
+        ret = PTLS_ERROR_LIBRARY;
+        goto Exit;
+    }
+
+    /* setup */
+    if ((ret = evp_keykem_init(algo, ctx, pkey)) != 0)
+        goto Exit;
+    pkey = NULL;
+    ret = 0;
+
+Exit:
+    if (pkey != NULL)
+        EVP_PKEY_free(pkey);
+    if (evpctx != NULL)
+        EVP_PKEY_CTX_free(evpctx);
+    return ret;
+}
+
+static int evp_keykem_exchange(ptls_key_exchange_algorithm_t *algo, ptls_iovec_t *ciphertext, ptls_iovec_t *secret,
+                               ptls_iovec_t peerkey)
+{
+    EVP_PKEY_CTX *evpctx = NULL;
+    EVP_PKEY *key = NULL;
+    int ret;
+
+    *ciphertext = ptls_iovec_init(NULL, 0);
+    *secret = ptls_iovec_init(NULL, 0);
+
+    if ((int)algo->data == PTLS_GROUP_X25519MLKEM768) {
+        if ((evpctx = EVP_PKEY_CTX_new_from_name(NULL, "X25519MLKEM768", NULL)) == NULL) {
+            ret = PTLS_ERROR_LIBRARY;
+            goto Exit;
+        }
+    } else if ((int)algo->data == PTLS_GROUP_SECP256R1MLKEM768) {
+        if ((evpctx = EVP_PKEY_CTX_new_from_name(NULL, "SecP256r1MLKEM768 ", NULL)) == NULL) {
+            ret = PTLS_ERROR_LIBRARY;
+            goto Exit;
+        }
+    } else if ((int)algo->data == PTLS_GROUP_SECP384R1MLKEM1024) {
+        if ((evpctx = EVP_PKEY_CTX_new_from_name(NULL, "SecP384r1MLKEM1024", NULL)) == NULL) {
+            ret = PTLS_ERROR_LIBRARY;
+            goto Exit;
+        }
+    } else {
+        if ((evpctx = EVP_PKEY_CTX_new_id((int)algo->data, NULL)) == NULL) {
+            ret = PTLS_ERROR_LIBRARY;
+            goto Exit;
+        }
+    }
+
+    if (EVP_PKEY_paramgen_init(evpctx) <= 0) {
+        ret = PTLS_ERROR_LIBRARY;
+        goto Exit;
+    }
+
+    if (EVP_PKEY_paramgen(evpctx, &key) <= 0) {
+        ret = PTLS_ERROR_LIBRARY;
+        goto Exit;
+    }
+
+    if (EVP_PKEY_set1_encoded_public_key(key, peerkey.base, peerkey.len) <= 0) {
+        ret = PTLS_ERROR_LIBRARY;
+        goto Exit;
+    }
+
+    evpctx = EVP_PKEY_CTX_new_from_pkey(NULL, key, NULL);
+    if (evpctx == NULL) {
+        ret = PTLS_ERROR_LIBRARY;
+        goto Exit;
+    }
+
+    if (EVP_PKEY_encapsulate_init(evpctx, NULL) <= 0) {
+        ret = PTLS_ERROR_LIBRARY;
+        goto Exit;
+    }
+
+    if (EVP_PKEY_encapsulate(evpctx, NULL, &ciphertext->len, NULL, &secret->len) <= 0) {
+        ret = PTLS_ERROR_LIBRARY;
+        goto Exit;
+    }
+
+    if ((ciphertext->base = malloc(ciphertext->len)) == NULL) {
+        ret = PTLS_ERROR_NO_MEMORY;
+        goto Exit;
+    }
+    if ((secret->base = malloc(secret->len)) == NULL) {
+        ret = PTLS_ERROR_NO_MEMORY;
+        goto Exit;
+    }
+
+    if (EVP_PKEY_encapsulate(evpctx, ciphertext->base, &ciphertext->len, secret->base, &secret->len) <= 0) {
+        ret = PTLS_ERROR_LIBRARY;
+        goto Exit;
+    }
+    ret = 0;
+
+
+Exit:
+    if (evpctx != NULL)
+        EVP_PKEY_CTX_free(evpctx);
+    if (key != NULL)
+        EVP_PKEY_free(key);
+    if (ret != 0) {
+        free(secret->base);
+        *secret = ptls_iovec_init(NULL, 0);
+    }
+    if (ret != 0) {
+        free(ciphertext->base);
+        *ciphertext = ptls_iovec_init(NULL, 0);
+    }
+
+    return ret;
+}
+#endif
+
 int ptls_openssl_create_key_exchange(ptls_key_exchange_context_t **ctx, EVP_PKEY *pkey)
 {
     int ret, id;
@@ -2201,6 +2435,40 @@ ptls_key_exchange_algorithm_t ptls_openssl_x25519mlkem768 = {.id = PTLS_GROUP_X2
                                                              .create = x25519mlkem768_create,
                                                              .exchange = x25519mlkem768_exchange};
 #endif
+
+#if PTLS_OPENSSL_HAVE_MLKEM
+ptls_key_exchange_algorithm_t ptls_openssl_x25519mlkem768 = {.id = PTLS_GROUP_X25519MLKEM768,
+                                                             .name = PTLS_GROUP_NAME_X25519MLKEM768,
+                                                             .create = evp_keykem_create,
+                                                             .exchange = evp_keykem_exchange,
+                                                             .data = PTLS_GROUP_X25519MLKEM768};
+ptls_key_exchange_algorithm_t ptls_openssl_secp256r1mlkem768 = {.id = PTLS_GROUP_SECP256R1MLKEM768,
+                                                                .name = PTLS_GROUP_NAME_SECP256R1MLKEM768,
+                                                                .create = evp_keykem_create,
+                                                                .exchange = evp_keykem_exchange,
+                                                                .data = PTLS_GROUP_SECP256R1MLKEM768};
+ptls_key_exchange_algorithm_t ptls_openssl_secp384r1mlkem1024 = {.id = PTLS_GROUP_SECP384R1MLKEM1024,
+                                                                .name = PTLS_GROUP_NAME_SECP384R1MLKEM1024,
+                                                                .create = evp_keykem_create,
+                                                                .exchange = evp_keykem_exchange,
+                                                                .data = PTLS_GROUP_SECP384R1MLKEM1024};
+ptls_key_exchange_algorithm_t ptls_openssl_mlkem512 = {.id = PTLS_GROUP_ML_KEM_512,
+                                                         .name = PTLS_GROUP_NAME_ML_KEM_512,
+                                                         .create = evp_keykem_create,
+                                                         .exchange = evp_keykem_exchange,
+                                                         .data = NID_ML_KEM_512};
+ptls_key_exchange_algorithm_t ptls_openssl_mlkem768 = {.id = PTLS_GROUP_ML_KEM_768,
+                                                         .name = PTLS_GROUP_NAME_ML_KEM_768,
+                                                         .create = evp_keykem_create,
+                                                         .exchange = evp_keykem_exchange,
+                                                         .data = NID_ML_KEM_768};
+ptls_key_exchange_algorithm_t ptls_openssl_mlkem1024 = {.id = PTLS_GROUP_ML_KEM_1024,
+                                                           .name = PTLS_GROUP_NAME_ML_KEM_1024,
+                                                           .create = evp_keykem_create,
+                                                           .exchange = evp_keykem_exchange,
+                                                           .data = NID_ML_KEM_1024};
+#endif
+
 ptls_key_exchange_algorithm_t *ptls_openssl_key_exchanges[] = {&ptls_openssl_secp256r1, NULL};
 ptls_key_exchange_algorithm_t *ptls_openssl_key_exchanges_all[] = {
 #if PTLS_OPENSSL_HAVE_X25519MLKEM768
@@ -2214,6 +2482,14 @@ ptls_key_exchange_algorithm_t *ptls_openssl_key_exchanges_all[] = {
 #endif
 #if PTLS_OPENSSL_HAVE_X25519
     &ptls_openssl_x25519,
+#endif
+#if PTLS_OPENSSL_HAVE_MLKEM
+    &ptls_openssl_mlkem512,
+    &ptls_openssl_mlkem768,
+    &ptls_openssl_mlkem1024,
+    &ptls_openssl_x25519mlkem768,
+    &ptls_openssl_secp256r1mlkem768,
+    &ptls_openssl_secp384r1mlkem1024,
 #endif
     &ptls_openssl_secp256r1,      NULL};
 ptls_cipher_algorithm_t ptls_openssl_aes128ecb = {
