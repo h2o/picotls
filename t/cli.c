@@ -411,7 +411,10 @@ static void usage(const char *cmd)
            ", X25519"
 #endif
 #if PTLS_OPENSSL_HAVE_X25519MLKEM768
-           ", X5519MLKEM768"
+           ", X25519MLKEM768"
+#endif
+#if PTLS_OPENSSL_HAVE_MLKEM
+           ", ML-KEM-512, ML-KEM-768, ML-KEM-1024, secp256r1MLKEM768, secp384r1MLKEM1024, X25519MLKEM768"
 #endif
            "\n"
            "Supported signature algorithms: rsa, secp256r1"

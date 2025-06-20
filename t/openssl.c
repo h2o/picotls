@@ -145,6 +145,15 @@ static void test_key_exchanges(void)
 #if PTLS_OPENSSL_HAVE_X25519MLKEM768
     subtest("x25519mlkem768", test_key_exchange, &ptls_openssl_x25519mlkem768, &ptls_openssl_x25519mlkem768);
 #endif
+
+#if PTLS_OPENSSL_HAVE_MLKEM
+    subtest("ML-KEM-512", test_key_exchange, &ptls_openssl_mlkem512, &ptls_openssl_mlkem512);
+    subtest("ML-KEM-768", test_key_exchange, &ptls_openssl_mlkem768, &ptls_openssl_mlkem768);
+    subtest("ML-KEM-1024", test_key_exchange, &ptls_openssl_mlkem1024, &ptls_openssl_mlkem1024);
+    subtest("x25519mlkem768", test_key_exchange, &ptls_openssl_x25519mlkem768, &ptls_openssl_x25519mlkem768);
+    subtest("secp256r1mlkem768", test_key_exchange, &ptls_openssl_secp256r1mlkem768, &ptls_openssl_secp256r1mlkem768);
+    subtest("secp384r1mlkem1024", test_key_exchange, &ptls_openssl_secp384r1mlkem1024, &ptls_openssl_secp384r1mlkem1024);
+#endif
 }
 
 static void test_sign_verify(EVP_PKEY *key, const ptls_openssl_signature_scheme_t *schemes)
