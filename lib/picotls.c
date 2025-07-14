@@ -3176,18 +3176,17 @@ static int send_certificate_verify(ptls_t *tls, ptls_message_emitter_t *emitter,
             if ((ret = tls->ctx->sign_certificate->cb(
                      tls->ctx->sign_certificate, tls, tls->is_server ? &tls->server.async_job : NULL, &algo, sendbuf,
                      ptls_iovec_init(data, datalen), signature_algorithms != NULL ? signature_algorithms->list : NULL,
-                     signature_algorithms != NULL ? signature_algorithms->count : 0)) != 0) {
-                if (ret == PTLS_ERROR_ASYNC_OPERATION) {
-                    assert(tls->is_server || !"async operation only supported on the server-side");
-                    assert(tls->server.async_job != NULL);
-                    /* Reset the output to the end of the previous handshake message. CertificateVerify will be rebuilt when the
-                     * async operation completes. */
-                    emitter->buf->off = start_off;
-                } else {
-                    assert(tls->server.async_job == NULL);
-                }
+                     signature_algorithms != NULL ? signature_algorithms->count : 0)) == PTLS_ERROR_ASYNC_OPERATION) {
+                assert(tls->is_server || !"async operation only supported on the server-side");
+                assert(tls->server.async_job != NULL);
+                /* Reset the output to the end of the previous handshake message. CertificateVerify will be rebuilt when the
+                 * async operation completes. */
+                emitter->buf->off = start_off;
                 goto Exit;
             }
+            assert(!tls->is_server || tls->server.async_job == NULL);
+            if (ret != 0)
+                goto Exit;
             sendbuf->base[algo_off] = (uint8_t)(algo >> 8);
             sendbuf->base[algo_off + 1] = (uint8_t)algo;
         });
