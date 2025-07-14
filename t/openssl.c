@@ -124,22 +124,26 @@ static void test_bf(void)
 
 static void test_key_exchanges(void)
 {
-    test_key_exchange(&ptls_openssl_secp256r1, &ptls_openssl_secp256r1);
-    test_key_exchange(&ptls_openssl_secp256r1, &ptls_minicrypto_secp256r1);
-    test_key_exchange(&ptls_minicrypto_secp256r1, &ptls_openssl_secp256r1);
+    subtest("secp256r1-self", test_key_exchange, &ptls_openssl_secp256r1, &ptls_openssl_secp256r1);
+    subtest("secp256r1-to-minicrypto", test_key_exchange, &ptls_openssl_secp256r1, &ptls_minicrypto_secp256r1);
+    subtest("secp256r1-from-minicrypto", test_key_exchange, &ptls_minicrypto_secp256r1, &ptls_openssl_secp256r1);
 
 #if PTLS_OPENSSL_HAVE_SECP384R1
-    test_key_exchange(&ptls_openssl_secp384r1, &ptls_openssl_secp384r1);
+    subtest("secp384r1", test_key_exchange, &ptls_openssl_secp384r1, &ptls_openssl_secp384r1);
 #endif
 
 #if PTLS_OPENSSL_HAVE_SECP521R1
-    test_key_exchange(&ptls_openssl_secp521r1, &ptls_openssl_secp521r1);
+    subtest("secp521r1", test_key_exchange, &ptls_openssl_secp521r1, &ptls_openssl_secp521r1);
 #endif
 
 #if PTLS_OPENSSL_HAVE_X25519
-    test_key_exchange(&ptls_openssl_x25519, &ptls_openssl_x25519);
-    test_key_exchange(&ptls_openssl_x25519, &ptls_minicrypto_x25519);
-    test_key_exchange(&ptls_minicrypto_x25519, &ptls_openssl_x25519);
+    subtest("x25519-self", test_key_exchange, &ptls_openssl_x25519, &ptls_openssl_x25519);
+    subtest("x25519-to-minicrypto", test_key_exchange, &ptls_openssl_x25519, &ptls_minicrypto_x25519);
+    subtest("x25519-from-minicrypto", test_key_exchange, &ptls_minicrypto_x25519, &ptls_openssl_x25519);
+#endif
+
+#if PTLS_OPENSSL_HAVE_X25519MLKEM768
+    subtest("x25519mlkem768", test_key_exchange, &ptls_openssl_x25519mlkem768, &ptls_openssl_x25519mlkem768);
 #endif
 }
 
