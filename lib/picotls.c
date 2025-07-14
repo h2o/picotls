@@ -3206,8 +3206,8 @@ static int send_certificate_verify(ptls_t *tls, ptls_message_emitter_t *emitter,
                      signature_algorithms != NULL ? signature_algorithms->count : 0)) == PTLS_ERROR_ASYNC_OPERATION) {
                 assert(tls->is_server || !"async operation only supported on the server-side");
                 assert(tls->server.async_job != NULL);
-                /* Reset the output to the end of the previous handshake message. CertificateVerify will be rebuilt when the
-                 * async operation completes. */
+                /* Reset the output to the end of the previous handshake message. CertificateVerify will be rebuilt when the async
+                 * operation completes. */
                 emitter->buf->off = start_off;
                 goto Exit;
             }
