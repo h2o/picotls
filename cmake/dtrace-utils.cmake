@@ -32,7 +32,8 @@ FUNCTION (DEFINE_DTRACE_DEPENDENCIES d_file prefix)
     IF (DTRACE_USES_OBJFILE)
         ADD_CUSTOM_COMMAND(
             OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${prefix}-probes.o
-            COMMAND dtrace -o ${CMAKE_CURRENT_BINARY_DIR}/${prefix}-probes.o -s ${d_file} -G
+            # /usr/bin/dtrace uses deterministic temporary files, do not let make parallelize
+            COMMAND flock /tmp/dtrace.lock dtrace -o ${CMAKE_CURRENT_BINARY_DIR}/${prefix}-probes.o -s ${d_file} -G
             DEPENDS ${d_file})
         ADD_DEPENDENCIES(generate-${prefix}-probes ${CMAKE_CURRENT_BINARY_DIR}/${prefix}-probes.o)
         SET_SOURCE_FILES_PROPERTIES(${CMAKE_CURRENT_BINARY_DIR}/${prefix}-probes.o PROPERTIES GENERATED TRUE)
