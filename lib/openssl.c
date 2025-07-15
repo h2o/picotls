@@ -853,28 +853,22 @@ static int evp_keykem_on_exchange(ptls_key_exchange_context_t **_ctx, int releas
 
     *secret = ptls_iovec_init(NULL, 0);
 
-    evpctx = EVP_PKEY_CTX_new_from_pkey(NULL, ctx->privkey, NULL);
-
     if ((evpctx = EVP_PKEY_CTX_new_from_pkey(NULL, ctx->privkey, NULL)) == NULL) {
         ret = PTLS_ERROR_LIBRARY;
         goto Exit;
     }
-
     if (EVP_PKEY_decapsulate_init(evpctx, NULL) <= 0) {
         ret = PTLS_ERROR_LIBRARY;
         goto Exit;
     }
-
     if (EVP_PKEY_decapsulate(evpctx, NULL, &secret->len, ciphertext.base, ciphertext.len) <= 0) {
         ret = PTLS_ERROR_LIBRARY;
         goto Exit;
     }
-
     if ((secret->base = malloc(secret->len)) == NULL) {
         ret = PTLS_ERROR_NO_MEMORY;
         goto Exit;
     }
-
     if (EVP_PKEY_decapsulate(evpctx, secret->base, &secret->len, ciphertext.base, ciphertext.len) <= 0) {
         ret = PTLS_ERROR_LIBRARY;
         goto Exit;
