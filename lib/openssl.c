@@ -891,11 +891,18 @@ Exit:
 
 static int evp_keykem_create(ptls_key_exchange_algorithm_t *algo, ptls_key_exchange_context_t **_ctx)
 {
-    EVP_PKEY_CTX *evpctx = NULL;
-    EVP_PKEY *pkey = NULL;
     struct st_evp_keyex_context_t *ctx = NULL;
+    EVP_PKEY_CTX *evpctx = NULL;
     int ret;
 
+    /* instantiate */
+    if ((ctx = malloc(sizeof(*ctx))) == NULL) {
+        ret = PTLS_ERROR_NO_MEMORY;
+        goto Exit;
+    }
+    *ctx = (struct st_evp_keyex_context_t){{algo, {NULL}, evp_keykem_on_exchange}, NULL};
+
+    /* generate private key */
     if ((evpctx = EVP_PKEY_CTX_new_from_name(NULL, (const char *)algo->data, NULL)) == NULL) {
         ret = PTLS_ERROR_LIBRARY;
         goto Exit;
@@ -904,18 +911,10 @@ static int evp_keykem_create(ptls_key_exchange_algorithm_t *algo, ptls_key_excha
         ret = PTLS_ERROR_LIBRARY;
         goto Exit;
     }
-    if (EVP_PKEY_generate(evpctx, &pkey) <= 0) {
+    if (EVP_PKEY_generate(evpctx, &ctx->privkey) <= 0) {
         ret = PTLS_ERROR_LIBRARY;
         goto Exit;
     }
-
-    /* instantiate */
-    if ((ctx = malloc(sizeof(*ctx))) == NULL) {
-        ret = PTLS_ERROR_NO_MEMORY;
-        goto Exit;
-    }
-    *ctx = (struct st_evp_keyex_context_t){{algo, {NULL}, evp_keykem_on_exchange}, pkey};
-    pkey = NULL;
 
     /* set public key */
     if ((ctx->super.pubkey.len = EVP_PKEY_get1_encoded_public_key(ctx->privkey, &ctx->super.pubkey.base)) == 0) {
@@ -928,12 +927,10 @@ static int evp_keykem_create(ptls_key_exchange_algorithm_t *algo, ptls_key_excha
     ret = 0;
 
 Exit:
-    if (pkey != NULL)
-        EVP_PKEY_free(pkey);
-    if (evpctx != NULL)
-        EVP_PKEY_CTX_free(evpctx);
     if (ret != 0 && ctx != NULL)
         evp_keyex_free(ctx);
+    if (evpctx != NULL)
+        EVP_PKEY_CTX_free(evpctx);
     return ret;
 }
 
