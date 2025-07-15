@@ -881,7 +881,6 @@ static int evp_keykem_on_exchange(ptls_key_exchange_context_t **_ctx, int releas
     }
     ret = 0;
 
-
 Exit:
     if (evpctx != NULL)
         EVP_PKEY_CTX_free(evpctx);
@@ -972,17 +971,14 @@ static int evp_keykem_exchange(ptls_key_exchange_algorithm_t *algo, ptls_iovec_t
         ret = PTLS_ERROR_LIBRARY;
         goto Exit;
     }
-
     if (EVP_PKEY_paramgen_init(evpctx) <= 0) {
         ret = PTLS_ERROR_LIBRARY;
         goto Exit;
     }
-
     if (EVP_PKEY_paramgen(evpctx, &key) <= 0) {
         ret = PTLS_ERROR_LIBRARY;
         goto Exit;
     }
-
     if (EVP_PKEY_set1_encoded_public_key(key, peerkey.base, peerkey.len) <= 0) {
         ret = PTLS_ERROR_LIBRARY;
         goto Exit;
@@ -993,17 +989,14 @@ static int evp_keykem_exchange(ptls_key_exchange_algorithm_t *algo, ptls_iovec_t
         ret = PTLS_ERROR_LIBRARY;
         goto Exit;
     }
-
     if (EVP_PKEY_encapsulate_init(evpctx, NULL) <= 0) {
         ret = PTLS_ERROR_LIBRARY;
         goto Exit;
     }
-
     if (EVP_PKEY_encapsulate(evpctx, NULL, &ciphertext->len, NULL, &secret->len) <= 0) {
         ret = PTLS_ERROR_LIBRARY;
         goto Exit;
     }
-
     if ((ciphertext->base = malloc(ciphertext->len)) == NULL) {
         ret = PTLS_ERROR_NO_MEMORY;
         goto Exit;
@@ -1012,13 +1005,11 @@ static int evp_keykem_exchange(ptls_key_exchange_algorithm_t *algo, ptls_iovec_t
         ret = PTLS_ERROR_NO_MEMORY;
         goto Exit;
     }
-
     if (EVP_PKEY_encapsulate(evpctx, ciphertext->base, &ciphertext->len, secret->base, &secret->len) <= 0) {
         ret = PTLS_ERROR_LIBRARY;
         goto Exit;
     }
     ret = 0;
-
 
 Exit:
     if (evpctx != NULL)
@@ -1028,12 +1019,9 @@ Exit:
     if (ret != 0) {
         free(secret->base);
         *secret = ptls_iovec_init(NULL, 0);
-    }
-    if (ret != 0) {
         free(ciphertext->base);
         *ciphertext = ptls_iovec_init(NULL, 0);
     }
-
     return ret;
 }
 
@@ -2439,7 +2427,8 @@ ptls_key_exchange_algorithm_t *ptls_openssl_key_exchanges_all[] = {
     &ptls_openssl_mlkem768,
     &ptls_openssl_mlkem512,
 #endif
-    &ptls_openssl_secp256r1,      NULL};
+    &ptls_openssl_secp256r1,
+    NULL};
 ptls_cipher_algorithm_t ptls_openssl_aes128ecb = {
     "AES128-ECB",          PTLS_AES128_KEY_SIZE, PTLS_AES_BLOCK_SIZE, 0 /* iv size */, sizeof(struct cipher_context_t),
     aes128ecb_setup_crypto};
