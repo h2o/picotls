@@ -840,7 +840,7 @@ Exit:
 
 #if PTLS_OPENSSL_HAVE_MLKEM
 
-static int evp_keykem_on_exchange(ptls_key_exchange_context_t **_ctx, int release, ptls_iovec_t *secret, ptls_iovec_t ciphertext)
+static int evp_kem_on_exchange(ptls_key_exchange_context_t **_ctx, int release, ptls_iovec_t *secret, ptls_iovec_t ciphertext)
 {
     struct st_evp_keyex_context_t *ctx = (void *)*_ctx;
     EVP_PKEY_CTX *evpctx = NULL;
@@ -889,7 +889,7 @@ Exit:
     return ret;
 }
 
-static int evp_keykem_create(ptls_key_exchange_algorithm_t *algo, ptls_key_exchange_context_t **_ctx)
+static int evp_kem_create(ptls_key_exchange_algorithm_t *algo, ptls_key_exchange_context_t **_ctx)
 {
     struct st_evp_keyex_context_t *ctx = NULL;
     EVP_PKEY_CTX *evpctx = NULL;
@@ -900,7 +900,7 @@ static int evp_keykem_create(ptls_key_exchange_algorithm_t *algo, ptls_key_excha
         ret = PTLS_ERROR_NO_MEMORY;
         goto Exit;
     }
-    *ctx = (struct st_evp_keyex_context_t){{algo, {NULL}, evp_keykem_on_exchange}, NULL};
+    *ctx = (struct st_evp_keyex_context_t){{algo, {NULL}, evp_kem_on_exchange}, NULL};
 
     /* generate private key */
     if ((evpctx = EVP_PKEY_CTX_new_from_name(NULL, (const char *)algo->data, NULL)) == NULL) {
@@ -922,7 +922,7 @@ static int evp_keykem_create(ptls_key_exchange_algorithm_t *algo, ptls_key_excha
         ret = PTLS_ERROR_NO_MEMORY;
         goto Exit;
     }
-    
+
     *_ctx = &ctx->super;
     ret = 0;
 
@@ -934,8 +934,8 @@ Exit:
     return ret;
 }
 
-static int evp_keykem_exchange(ptls_key_exchange_algorithm_t *algo, ptls_iovec_t *ciphertext, ptls_iovec_t *secret,
-                               ptls_iovec_t peerkey)
+static int evp_kem_exchange(ptls_key_exchange_algorithm_t *algo, ptls_iovec_t *ciphertext, ptls_iovec_t *secret,
+                            ptls_iovec_t peerkey)
 {
     EVP_PKEY_CTX *evpctx = NULL;
     EVP_PKEY *key = NULL;
@@ -2371,8 +2371,8 @@ ptls_key_exchange_algorithm_t ptls_openssl_x25519mlkem768 = {.id = PTLS_GROUP_X2
 #define DEFINE_MLKEM_KEYEX(lowcase, upcase)                                                                                        \
     ptls_key_exchange_algorithm_t ptls_openssl_##lowcase = {.id = PTLS_GROUP_##upcase,                                             \
                                                             .name = PTLS_GROUP_NAME_##upcase,                                      \
-                                                            .create = evp_keykem_create,                                           \
-                                                            .exchange = evp_keykem_exchange,                                       \
+                                                            .create = evp_kem_create,                                              \
+                                                            .exchange = evp_kem_exchange,                                          \
                                                             .data = (intptr_t)PTLS_GROUP_NAME_##upcase}
 DEFINE_MLKEM_KEYEX(x25519mlkem768, X25519MLKEM768);
 DEFINE_MLKEM_KEYEX(secp256r1mlkem768, SECP256R1MLKEM768);
