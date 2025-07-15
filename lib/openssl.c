@@ -51,9 +51,9 @@
 #include "picotls/openssl.h"
 #ifdef OPENSSL_IS_BORINGSSL
 #include "./chacha20poly1305.h"
-#endif
 #if PTLS_OPENSSL_HAVE_X25519MLKEM768
 #include <openssl/mlkem.h>
+#endif
 #endif
 #ifdef PTLS_HAVE_AEGIS
 #include "./libaegis.h"
