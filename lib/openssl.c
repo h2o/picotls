@@ -889,39 +889,11 @@ Exit:
     return ret;
 }
 
-static int evp_keykem_init(ptls_key_exchange_algorithm_t *algo, ptls_key_exchange_context_t **_ctx, EVP_PKEY *pkey)
-{
-    struct st_evp_keyex_context_t *ctx = NULL;
-    int ret;
-
-    /* instantiate */
-    if ((ctx = malloc(sizeof(*ctx))) == NULL) {
-        ret = PTLS_ERROR_NO_MEMORY;
-        goto Exit;
-    }
-    *ctx = (struct st_evp_keyex_context_t){{algo, {NULL}, evp_keykem_on_exchange}, pkey};
-
-    /* set public key */
-    if ((ctx->super.pubkey.len = EVP_PKEY_get1_encoded_public_key(ctx->privkey, &ctx->super.pubkey.base)) == 0) {
-        ctx->super.pubkey.base = NULL;
-        ret = PTLS_ERROR_NO_MEMORY;
-        goto Exit;
-    }
-
-    *_ctx = &ctx->super;
-    ret = 0;
-Exit:
-    if (ret != 0 && ctx != NULL) {
-        ctx->privkey = NULL; /* do not decrement refcount of pkey in case of error */
-        evp_keyex_free(ctx);
-    }
-    return ret;
-}
-
-static int evp_keykem_create(ptls_key_exchange_algorithm_t *algo, ptls_key_exchange_context_t **ctx)
+static int evp_keykem_create(ptls_key_exchange_algorithm_t *algo, ptls_key_exchange_context_t **_ctx)
 {
     EVP_PKEY_CTX *evpctx = NULL;
     EVP_PKEY *pkey = NULL;
+    struct st_evp_keyex_context_t *ctx = NULL;
     int ret;
 
     if ((evpctx = EVP_PKEY_CTX_new_from_name(NULL, (const char *)algo->data, NULL)) == NULL) {
@@ -937,10 +909,22 @@ static int evp_keykem_create(ptls_key_exchange_algorithm_t *algo, ptls_key_excha
         goto Exit;
     }
 
-    /* setup */
-    if ((ret = evp_keykem_init(algo, ctx, pkey)) != 0)
+    /* instantiate */
+    if ((ctx = malloc(sizeof(*ctx))) == NULL) {
+        ret = PTLS_ERROR_NO_MEMORY;
         goto Exit;
+    }
+    *ctx = (struct st_evp_keyex_context_t){{algo, {NULL}, evp_keykem_on_exchange}, pkey};
     pkey = NULL;
+
+    /* set public key */
+    if ((ctx->super.pubkey.len = EVP_PKEY_get1_encoded_public_key(ctx->privkey, &ctx->super.pubkey.base)) == 0) {
+        ctx->super.pubkey.base = NULL;
+        ret = PTLS_ERROR_NO_MEMORY;
+        goto Exit;
+    }
+    
+    *_ctx = &ctx->super;
     ret = 0;
 
 Exit:
@@ -948,6 +932,8 @@ Exit:
         EVP_PKEY_free(pkey);
     if (evpctx != NULL)
         EVP_PKEY_CTX_free(evpctx);
+    if (ret != 0 && ctx != NULL)
+        evp_keyex_free(ctx);
     return ret;
 }
 
