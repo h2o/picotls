@@ -70,7 +70,15 @@ extern ptls_key_exchange_algorithm_t ptls_openssl_x25519;
 #endif
 
 #ifdef OPENSSL_IS_BORINGSSL
+/**
+ * this flag is set when the various post-quantum key encapsulation algorithms are available; note however that, unlike the non-PQC
+ * key exchange methods above that test availability using using macros, the availability of these PQ algorithms can tested only by
+ * actually instantiating the key exchange objects
+ */
 #define PTLS_OPENSSL_HAVE_MLKEM 0
+/**
+ * this flag is set when either openssl or boringssl provides the algorithm
+ */
 #define PTLS_OPENSSL_HAVE_X25519MLKEM768 1
 #elif OPENSSL_VERSION_NUMBER >= 0x30500000L
 #define PTLS_OPENSSL_HAVE_MLKEM 1
