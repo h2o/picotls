@@ -2485,12 +2485,11 @@ ptls_key_exchange_algorithm_t *ptls_openssl_key_exchanges_all[] = {
     &ptls_openssl_x25519,
 #endif
 #if PTLS_OPENSSL_HAVE_MLKEM
-    &ptls_openssl_mlkem512,
-    &ptls_openssl_mlkem768,
-    &ptls_openssl_mlkem1024,
-    &ptls_openssl_x25519mlkem768,
-    &ptls_openssl_secp256r1mlkem768,
     &ptls_openssl_secp384r1mlkem1024,
+    &ptls_openssl_secp256r1mlkem768,
+    &ptls_openssl_mlkem1024,
+    &ptls_openssl_mlkem768,
+    &ptls_openssl_mlkem512,
 #endif
     &ptls_openssl_secp256r1,      NULL};
 ptls_cipher_algorithm_t ptls_openssl_aes128ecb = {
