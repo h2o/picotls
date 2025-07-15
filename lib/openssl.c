@@ -51,7 +51,7 @@
 #include "picotls/openssl.h"
 #ifdef OPENSSL_IS_BORINGSSL
 #include "./chacha20poly1305.h"
-#if PTLS_OPENSSL_HAVE_X25519MLKEM768
+#if defined(OPENSSL_IS_BORINGSSL) && PTLS_OPENSSL_HAVE_X25519MLKEM768
 #include <openssl/mlkem.h>
 #endif
 #endif
@@ -709,7 +709,7 @@ Exit:
 
 #endif
 
-#if PTLS_OPENSSL_HAVE_X25519MLKEM768
+#if defined(OPENSSL_IS_BORINGSSL) && PTLS_OPENSSL_HAVE_X25519MLKEM768
 
 struct st_x25519mlkem768_context_t {
     ptls_key_exchange_context_t super;
@@ -839,6 +839,7 @@ Exit:
 #endif
 
 #if PTLS_OPENSSL_HAVE_MLKEM
+
 static int evp_keykem_on_exchange(ptls_key_exchange_context_t **_ctx, int release, ptls_iovec_t *secret, ptls_iovec_t ciphertext)
 {
     struct st_evp_keyex_context_t *ctx = (void *)*_ctx;
@@ -1070,6 +1071,7 @@ Exit:
 
     return ret;
 }
+
 #endif
 
 int ptls_openssl_create_key_exchange(ptls_key_exchange_context_t **ctx, EVP_PKEY *pkey)
@@ -2429,13 +2431,12 @@ ptls_key_exchange_algorithm_t ptls_openssl_x25519 = {.id = PTLS_GROUP_X25519,
                                                      .exchange = evp_keyex_exchange,
                                                      .data = NID_X25519};
 #endif
-#if PTLS_OPENSSL_HAVE_X25519MLKEM768
+#if defined(OPENSSL_IS_BORINGSSL) && PTLS_OPENSSL_HAVE_X25519MLKEM768
 ptls_key_exchange_algorithm_t ptls_openssl_x25519mlkem768 = {.id = PTLS_GROUP_X25519MLKEM768,
                                                              .name = PTLS_GROUP_NAME_X25519MLKEM768,
                                                              .create = x25519mlkem768_create,
                                                              .exchange = x25519mlkem768_exchange};
 #endif
-
 #if PTLS_OPENSSL_HAVE_MLKEM
 ptls_key_exchange_algorithm_t ptls_openssl_x25519mlkem768 = {.id = PTLS_GROUP_X25519MLKEM768,
                                                              .name = PTLS_GROUP_NAME_X25519MLKEM768,
