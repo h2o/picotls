@@ -1461,7 +1461,7 @@ static uint32_t aes64ecb_one_round(ptls_cipher_context_t *ctx, uint32_t left, ui
     union {
         uint8_t bytes[PTLS_AES_BLOCK_SIZE];
         uint32_t u32;
-    } tmp = {.bytes = {}};
+    } tmp = {.bytes = {0}};
     tmp.u32 = right;
 
     ptls_cipher_encrypt(ctx, tmp.bytes, tmp.bytes, sizeof(tmp.bytes));
