@@ -124,9 +124,12 @@ static void test_bf(void)
 
 static void test_aes64(void)
 {
-    static const uint8_t key[PTLS_AES64_KEY_SIZE] = {0},
+    static const uint8_t key[PTLS_AES64_KEY_SIZE] = {0xf1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+                                                     0xf2, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+                                                     0xf3, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+                                                     0xf4, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15},
                          plaintext[PTLS_AES64_BLOCK_SIZE] = {0x4e, 0xf9, 0x97, 0x45, 0x61, 0x98, 0xdd, 0x78},
-                         expected[PTLS_AES64_BLOCK_SIZE] = {0xe8, 0x98, 0x30, 0x1b, 0xf0, 0xfa, 0x80, 0xf3};
+                         expected[PTLS_AES64_BLOCK_SIZE] = {0xc6, 0x8c, 0xac, 0x61, 0xfc, 0x8d, 0xb7, 0x5a};
     uint8_t encrypted[PTLS_AES64_BLOCK_SIZE], decrypted[PTLS_AES64_BLOCK_SIZE];
 
     /* encrypt */
