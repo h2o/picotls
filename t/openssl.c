@@ -122,6 +122,27 @@ static void test_bf(void)
 #endif
 }
 
+static void test_aes64(void)
+{
+    static const uint8_t key[PTLS_AES64_KEY_SIZE] = {0},
+                         plaintext[PTLS_AES64_BLOCK_SIZE] = {0x4e, 0xf9, 0x97, 0x45, 0x61, 0x98, 0xdd, 0x78},
+                         expected[PTLS_AES64_BLOCK_SIZE] = {0xe8, 0x98, 0x30, 0x1b, 0xf0, 0xfa, 0x80, 0xf3};
+    uint8_t encrypted[PTLS_AES64_BLOCK_SIZE], decrypted[PTLS_AES64_BLOCK_SIZE];
+
+    /* encrypt */
+    ptls_cipher_context_t *ctx = ptls_cipher_new(&ptls_openssl_aes64ecb, 1, key);
+    ptls_cipher_encrypt(ctx, encrypted, plaintext, PTLS_AES64_BLOCK_SIZE);
+    ptls_cipher_free(ctx);
+    ok(memcmp(encrypted, expected, PTLS_AES64_BLOCK_SIZE) == 0);
+
+    /* decrypt */
+    ctx = ptls_cipher_new(&ptls_openssl_aes64ecb, 0, key);
+    ptls_cipher_encrypt(ctx, decrypted, "deadbeef", PTLS_AES64_BLOCK_SIZE);
+    ptls_cipher_encrypt(ctx, decrypted, encrypted, PTLS_AES64_BLOCK_SIZE);
+    ptls_cipher_free(ctx);
+    ok(memcmp(decrypted, plaintext, PTLS_AES64_BLOCK_SIZE) == 0);
+}
+
 static void test_key_exchanges(void)
 {
     subtest("secp256r1-self", test_key_exchange, &ptls_openssl_secp256r1, &ptls_openssl_secp256r1);
@@ -553,6 +574,7 @@ int main(int argc, char **argv)
 #endif
 
     subtest("bf", test_bf);
+    subtest("aes64", test_aes64);
 
     subtest("key-exchange", test_key_exchanges);
 

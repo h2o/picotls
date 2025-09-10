@@ -117,6 +117,9 @@ extern "C" {
 #define PTLS_BLOWFISH_KEY_SIZE 16
 #define PTLS_BLOWFISH_BLOCK_SIZE 8
 
+#define PTLS_AES64_KEY_SIZE 64 /* a 64-bit block cipher build as a 4-round Feistel network on top of AES128 */
+#define PTLS_AES64_BLOCK_SIZE 8
+
 #define PTLS_SHA256_BLOCK_SIZE 64
 #define PTLS_SHA256_DIGEST_SIZE 32
 

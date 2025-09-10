@@ -1436,6 +1436,105 @@ static int bfecb_setup_crypto(ptls_cipher_context_t *ctx, int is_enc, const void
 
 #endif
 
+struct aes64ecb_context_t {
+    ptls_cipher_context_t super;
+    ptls_cipher_context_t *ecb[4];
+};
+
+static void aes64ecb_dispose(ptls_cipher_context_t *_ctx)
+{
+    struct aes64ecb_context_t *ctx = (struct aes64ecb_context_t *)_ctx;
+    for (size_t i = 0; i < PTLS_ELEMENTSOF(ctx->ecb); ++i)
+        ptls_cipher_free(ctx->ecb[i]);
+}
+
+static void aes64ecb_do_init(ptls_cipher_context_t *ctx, const void *iv)
+{
+    /* no-op */
+}
+
+/**
+ * Given left and right of a Feistel network, returns Left XOR F(Right, Key)
+ */
+static uint32_t aes64ecb_one_round(ptls_cipher_context_t *ctx, uint32_t left, uint32_t right)
+{
+    union {
+        uint8_t bytes[PTLS_AES_BLOCK_SIZE];
+        uint32_t u32;
+    } tmp = {.bytes = {}};
+    tmp.u32 = right;
+
+    ptls_cipher_encrypt(ctx, tmp.bytes, tmp.bytes, sizeof(tmp.bytes));
+
+    return left ^ tmp.u32;
+}
+
+static void aes64ecb_encrypt(ptls_cipher_context_t *_ctx, void *output, const void *input, size_t len)
+{
+    struct aes64ecb_context_t *ctx = (struct aes64ecb_context_t *)_ctx;
+    uint32_t l0, r0;
+
+    assert(len == 8);
+    memcpy(&l0, input, 4);
+    memcpy(&r0, (const uint8_t *)input + 4, 4);
+
+#define ROUND(cur, prev) uint32_t l##cur = r##prev, r##cur = aes64ecb_one_round(ctx->ecb[prev], l##prev, r##prev)
+    ROUND(1, 0);
+    ROUND(2, 1);
+    ROUND(3, 2);
+    ROUND(4, 3);
+#undef ROUND
+
+    memcpy(output, &l4, 4);
+    memcpy((uint8_t *)output + 4, &r4, 4);
+}
+
+static void aes64ecb_decrypt(ptls_cipher_context_t *_ctx, void *output, const void *input, size_t len)
+{
+    struct aes64ecb_context_t *ctx = (struct aes64ecb_context_t *)_ctx;
+    uint32_t l4, r4;
+
+    assert(len == 8);
+    memcpy(&l4, input, 4);
+    memcpy(&r4, (const uint8_t *)input + 4, 4);
+
+#define ROUND(cur, prev) uint32_t r##cur = l##prev, l##cur = aes64ecb_one_round(ctx->ecb[cur], r##prev, l##prev)
+    ROUND(3, 4);
+    ROUND(2, 3);
+    ROUND(1, 2);
+    ROUND(0, 1);
+#undef ROUND
+
+    memcpy(output, &l0, 4);
+    memcpy((uint8_t *)output + 4, &r0, 4);
+}
+
+static int aes64ecb_setup_crypto(ptls_cipher_context_t *_ctx, int is_enc, const void *_key)
+{
+    struct aes64ecb_context_t *ctx = (struct aes64ecb_context_t *)_ctx;
+    const uint8_t *key = _key;
+
+    *ctx = (struct aes64ecb_context_t){
+        .super.do_dispose = aes64ecb_dispose,
+        .super.do_init = aes64ecb_do_init,
+        .super.do_transform = is_enc ? aes64ecb_encrypt : aes64ecb_decrypt,
+    };
+
+    for (size_t i = 0; i < PTLS_ELEMENTSOF(ctx->ecb); ++i) {
+        if ((ctx->ecb[i] = ptls_cipher_new(&ptls_openssl_aes128ecb, 1, key + i * PTLS_AES128_KEY_SIZE)) == NULL)
+            goto Fail;
+    }
+
+    return 0;
+
+Fail:
+    for (size_t i = 0; i < PTLS_ELEMENTSOF(ctx->ecb); ++i) {
+        if (ctx->ecb[i] != NULL)
+            ptls_cipher_free(ctx->ecb[i]);
+    }
+    return PTLS_ERROR_LIBRARY;
+}
+
 struct aead_crypto_context_t {
     ptls_aead_context_t super;
     EVP_CIPHER_CTX *evp_ctx;
@@ -2609,6 +2708,15 @@ ptls_cipher_suite_t *ptls_openssl_tls12_cipher_suites[] = {&ptls_openssl_tls12_e
 ptls_cipher_algorithm_t ptls_openssl_bfecb = {"BF-ECB",        PTLS_BLOWFISH_KEY_SIZE,          PTLS_BLOWFISH_BLOCK_SIZE,
                                               0 /* iv size */, sizeof(struct cipher_context_t), bfecb_setup_crypto};
 #endif
+
+ptls_cipher_algorithm_t ptls_openssl_aes64ecb = {
+    .name = "AES64-ECB",
+    .key_size = PTLS_AES128_KEY_SIZE * PTLS_ELEMENTSOF(((struct aes64ecb_context_t *)NULL)->ecb),
+    .block_size = 8,
+    .iv_size = 0,
+    .context_size = sizeof(struct aes64ecb_context_t),
+    .setup_crypto = aes64ecb_setup_crypto,
+};
 
 ptls_hpke_kem_t ptls_openssl_hpke_kem_p256sha256 = {PTLS_HPKE_KEM_P256_SHA256, &ptls_openssl_secp256r1, &ptls_openssl_sha256};
 ptls_hpke_kem_t ptls_openssl_hpke_kem_p384sha384 = {PTLS_HPKE_KEM_P384_SHA384, &ptls_openssl_secp384r1, &ptls_openssl_sha384};
