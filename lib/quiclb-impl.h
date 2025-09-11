@@ -36,9 +36,18 @@ union picotls_quiclb_block {
 };
 
 /**
- * calculates X ^ AES(mask_and_expand(Y)), assuming the first argument is to a context of ptls_foo_aes128ecb
+ * encrypts one block of AES, assuming the context is `ptls_cipher_context_t` backed by ptls_foo_aes128ecb
  */
-static inline void picotls_quiclb_one_round(void *aesecb, union picotls_quiclb_block *dest, const union picotls_quiclb_block *x,
+static inline void picotls_quiclb_cipher_aes(void *aesecb, union picotls_quiclb_block *block)
+{
+    ptls_cipher_encrypt(aesecb, block->bytes, block->bytes, PTLS_AES_BLOCK_SIZE);
+}
+
+/**
+ * calculates X ^ AES(mask_and_expand(Y))
+ */
+static inline void picotls_quiclb_one_round(void (*aesecb_func)(void *aesecb, union picotls_quiclb_block *), void *aesecb_ctx,
+                                            union picotls_quiclb_block *dest, const union picotls_quiclb_block *x,
                                             const union picotls_quiclb_block *y, const union picotls_quiclb_block *mask,
                                             const union picotls_quiclb_block *len_pass)
 {
@@ -49,7 +58,7 @@ static inline void picotls_quiclb_one_round(void *aesecb, union picotls_quiclb_b
         dest->u64[i] = (y->u64[i] & mask->u64[i]) | len_pass->u64[i];
 #endif
 
-    ptls_cipher_encrypt(aesecb, dest->bytes, dest->bytes, PTLS_AES_BLOCK_SIZE);
+    aesecb_func(aesecb_ctx, dest);
 
 #if PICOTLS_QUICLB_HAVE_AVX128
     dest->m128 ^= x->m128;
@@ -96,11 +105,8 @@ static inline void picotls_quiclb_do_init(ptls_cipher_context_t *ctx, const void
     /* no-op */
 }
 
-static inline void
-picotls_quiclb_transform(void *aesecb, void *output, const void *input, size_t len, int encrypt,
-                         void (*one_round)(void *aesecb, union picotls_quiclb_block *dest, const union picotls_quiclb_block *x,
-                                           const union picotls_quiclb_block *y, const union picotls_quiclb_block *mask,
-                                           const union picotls_quiclb_block *len_pass))
+static inline void picotls_quiclb_transform(void (*aesecb_func)(void *aesecb, union picotls_quiclb_block *), void *aesecb_ctx,
+                                            void *output, const void *input, size_t len, int encrypt)
 {
     static const struct quiclb_mask_t {
         union picotls_quiclb_block l, r;
@@ -133,7 +139,7 @@ picotls_quiclb_transform(void *aesecb, void *output, const void *input, size_t l
 #define ROUND(rnd, dest, x, y, mask_side)                                                                                          \
     do {                                                                                                                           \
         len_pass.bytes[15] = (rnd);                                                                                                \
-        one_round(aesecb, &dest, &x, &y, &mask->mask_side, &len_pass);                                                             \
+        picotls_quiclb_one_round(aesecb_func, aesecb_ctx, &dest, &x, &y, &mask->mask_side, &len_pass);                             \
     } while (0)
 
     if (encrypt) {
