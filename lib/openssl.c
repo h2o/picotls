@@ -1436,103 +1436,156 @@ static int bfecb_setup_crypto(ptls_cipher_context_t *ctx, int is_enc, const void
 
 #endif
 
-struct aes64ecb_context_t {
+struct quiclb_context_t {
     ptls_cipher_context_t super;
-    ptls_cipher_context_t *ecb[4];
+    ptls_cipher_context_t *aesecb;
 };
 
-static void aes64ecb_dispose(ptls_cipher_context_t *_ctx)
+struct quiclb_mask_t {
+    union {
+        uint8_t bytes[PTLS_AES_BLOCK_SIZE];
+        uint64_t u64[PTLS_AES_BLOCK_SIZE / sizeof(uint64_t)];
+    } l, r;
+};
+
+static const struct quiclb_mask_t quiclb_mask[] = {
+    {{{0xff, 0xff, 0xff, 0xf0}}, {{0x0f, 0xff, 0xff, 0xff}}},                                                 /* 7 (MIN_LEN) */
+    {{{0xff, 0xff, 0xff, 0xff}}, {{0xff, 0xff, 0xff, 0xff}}},                                                 /* 8 */
+    {{{0xff, 0xff, 0xff, 0xff, 0xf0}}, {{0x0f, 0xff, 0xff, 0xff, 0xff}}},                                     /* 9 */
+    {{{0xff, 0xff, 0xff, 0xff, 0xff}}, {{0xff, 0xff, 0xff, 0xff, 0xff}}},                                     /* 10 */
+    {{{0xff, 0xff, 0xff, 0xff, 0xff, 0xf0}}, {{0x0f, 0xff, 0xff, 0xff, 0xff, 0xff}}},                         /* 11 */
+    {{{0xff, 0xff, 0xff, 0xff, 0xff, 0xff}}, {{0xff, 0xff, 0xff, 0xff, 0xff, 0xff}}},                         /* 12 */
+    {{{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xf0}}, {{0x0f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}}},             /* 13 */
+    {{{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}}, {{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}}},             /* 14 */
+    {{{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xf0}}, {{0x0f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}}}, /* 15 */
+    {{{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}}, {{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}}}, /* 16 */
+    {{{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xf0}}, {{0x0f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}}}, /* 17 */
+    {{{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}}, {{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}}}, /* 18 */
+    {{{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xf0}},
+     {{0x0f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}}} /* 19 */
+};
+
+static void quiclb_dispose(ptls_cipher_context_t *_ctx)
 {
-    struct aes64ecb_context_t *ctx = (struct aes64ecb_context_t *)_ctx;
-    for (size_t i = 0; i < PTLS_ELEMENTSOF(ctx->ecb); ++i)
-        ptls_cipher_free(ctx->ecb[i]);
+    struct quiclb_context_t *ctx = (struct quiclb_context_t *)_ctx;
+    ptls_cipher_free(ctx->aesecb);
 }
 
-static void aes64ecb_do_init(ptls_cipher_context_t *ctx, const void *iv)
+static void quiclb_do_init(ptls_cipher_context_t *ctx, const void *iv)
 {
     /* no-op */
 }
 
 /**
- * Given left and right of a Feistel network, returns Left XOR F(Right, Key)
+ * calculates X ^ AES(mask_and_expand(Y))
  */
-static uint32_t aes64ecb_one_round(ptls_cipher_context_t *ctx, uint32_t left, uint32_t right)
+static void quiclb_one_round(ptls_cipher_context_t *aesecb, uint64_t *dest, const uint64_t *x, const uint64_t *y,
+                             const uint64_t *mask, const uint64_t len_pass)
 {
+    for (size_t i = 0; i < PTLS_AES_BLOCK_SIZE / sizeof(dest[0]); ++i)
+        dest[i] = y[i] & mask[i];
+    dest[PTLS_AES_BLOCK_SIZE / sizeof(dest[0]) - 1] |= len_pass;
+
+    ptls_cipher_encrypt(aesecb, dest, dest, PTLS_AES_BLOCK_SIZE);
+
+    for (size_t i = 0; i < PTLS_AES_BLOCK_SIZE / sizeof(dest[0]); ++i)
+        dest[i] ^= x[i];
+}
+
+static inline void quiclb_split_input(uint8_t *l, uint8_t *r, const uint8_t *input, size_t len)
+{
+    size_t i;
+    for (i = 0; i < (len + 1) / 2; ++i)
+        l[i] = input[i];
+    for (; i < PTLS_AES_BLOCK_SIZE; ++i)
+        l[i] = 0;
+    for (i = 0; i < (len + 1) / 2; ++i)
+        r[i] = input[i + len / 2];
+    for (; i < PTLS_AES_BLOCK_SIZE; ++i)
+        r[i] = 0;
+}
+
+static inline void quiclb_merge_output(uint8_t *output, size_t len, const uint8_t *l, const uint8_t *r)
+{
+    uint8_t *outp = output;
+
+    for (size_t i = 0; i < len / 2; ++i)
+        *outp++ = l[i];
+
+    if (len % 2 == 0) {
+        for (size_t i = 0; i < len / 2; ++i)
+            *outp++ = r[i];
+    } else {
+        *outp++ = (l[len / 2] & 0xf0) | (r[0] & 0x0f);
+        for (size_t i = 0; i < len / 2; ++i)
+            *outp++ = r[i + 1];
+    }
+}
+
+static void quiclb_transform(struct quiclb_context_t *ctx, void *output, const void *input, size_t len, int encrypt)
+{
+    assert(PTLS_QUICLB_MIN_BLOCK_SIZE <= len && len <= PTLS_QUICLB_MAX_BLOCK_SIZE);
+    PTLS_BUILD_ASSERT(PTLS_QUICLB_MAX_BLOCK_SIZE == PTLS_QUICLB_MIN_BLOCK_SIZE + PTLS_ELEMENTSOF(quiclb_mask) - 1);
+
+    const struct quiclb_mask_t *mask = &quiclb_mask[len - PTLS_QUICLB_MIN_BLOCK_SIZE];
     union {
         uint8_t bytes[PTLS_AES_BLOCK_SIZE];
-        uint32_t u32;
-    } tmp = {.bytes = {0}};
-    tmp.u32 = right;
+        uint64_t u64[PTLS_AES_BLOCK_SIZE / sizeof(uint64_t)];
+    } l0, r0, r1, l1, r2, l2;
+    union {
+        uint8_t bytes[sizeof(uint64_t)];
+        uint64_t u64;
+    } len_pass = {{0, 0, 0, 0, 0, 0, (uint8_t)len}};
 
-    ptls_cipher_encrypt(ctx, tmp.bytes, tmp.bytes, sizeof(tmp.bytes));
+#define ROUND(rnd, dest, x, y, mask_side)                                                                                          \
+    do {                                                                                                                           \
+        len_pass.bytes[7] = (rnd);                                                                                                 \
+        quiclb_one_round(ctx->aesecb, (dest).u64, (x).u64, (y).u64, mask->mask_side.u64, len_pass.u64);                            \
+    } while (0)
 
-    return left ^ tmp.u32;
-}
+    if (encrypt) {
+        quiclb_split_input(l0.bytes, r0.bytes, input, len);
+        ROUND(1, r1, r0, l0, l);
+        ROUND(2, l1, l0, r1, r);
+        ROUND(3, r2, r1, l1, l);
+        ROUND(4, l2, l1, r2, r);
+        quiclb_merge_output(output, len, l2.bytes, r2.bytes);
+    } else {
+        quiclb_split_input(l2.bytes, r2.bytes, input, len);
+        ROUND(4, l1, l2, r2, r);
+        ROUND(3, r1, r2, l1, l);
+        ROUND(2, l0, l1, r1, r);
+        ROUND(1, r0, r1, l0, l);
+        quiclb_merge_output(output, len, l0.bytes, r0.bytes);
+    }
 
-static void aes64ecb_encrypt(ptls_cipher_context_t *_ctx, void *output, const void *input, size_t len)
-{
-    struct aes64ecb_context_t *ctx = (struct aes64ecb_context_t *)_ctx;
-    uint32_t l0, r0;
-
-    assert(len == 8);
-    memcpy(&l0, input, 4);
-    memcpy(&r0, (const uint8_t *)input + 4, 4);
-
-#define ROUND(cur, prev) uint32_t l##cur = r##prev, r##cur = aes64ecb_one_round(ctx->ecb[prev], l##prev, r##prev)
-    ROUND(1, 0);
-    ROUND(2, 1);
-    ROUND(3, 2);
-    ROUND(4, 3);
 #undef ROUND
-
-    memcpy(output, &l4, 4);
-    memcpy((uint8_t *)output + 4, &r4, 4);
 }
 
-static void aes64ecb_decrypt(ptls_cipher_context_t *_ctx, void *output, const void *input, size_t len)
+static void quiclb_encrypt(ptls_cipher_context_t *_ctx, void *output, const void *input, size_t len)
 {
-    struct aes64ecb_context_t *ctx = (struct aes64ecb_context_t *)_ctx;
-    uint32_t l4, r4;
-
-    assert(len == 8);
-    memcpy(&l4, input, 4);
-    memcpy(&r4, (const uint8_t *)input + 4, 4);
-
-#define ROUND(cur, prev) uint32_t r##cur = l##prev, l##cur = aes64ecb_one_round(ctx->ecb[cur], r##prev, l##prev)
-    ROUND(3, 4);
-    ROUND(2, 3);
-    ROUND(1, 2);
-    ROUND(0, 1);
-#undef ROUND
-
-    memcpy(output, &l0, 4);
-    memcpy((uint8_t *)output + 4, &r0, 4);
+    struct quiclb_context_t *ctx = (struct quiclb_context_t *)_ctx;
+    return quiclb_transform(ctx, output, input, len, 1);
 }
 
-static int aes64ecb_setup_crypto(ptls_cipher_context_t *_ctx, int is_enc, const void *_key)
+static void quiclb_decrypt(ptls_cipher_context_t *_ctx, void *output, const void *input, size_t len)
 {
-    struct aes64ecb_context_t *ctx = (struct aes64ecb_context_t *)_ctx;
-    const uint8_t *key = _key;
+    struct quiclb_context_t *ctx = (struct quiclb_context_t *)_ctx;
+    return quiclb_transform(ctx, output, input, len, 0);
+}
 
-    *ctx = (struct aes64ecb_context_t){
-        .super.do_dispose = aes64ecb_dispose,
-        .super.do_init = aes64ecb_do_init,
-        .super.do_transform = is_enc ? aes64ecb_encrypt : aes64ecb_decrypt,
+static int quiclb_setup_crypto(ptls_cipher_context_t *_ctx, int is_enc, const void *key)
+{
+    struct quiclb_context_t *ctx = (struct quiclb_context_t *)_ctx;
+
+    *ctx = (struct quiclb_context_t){
+        .super.do_dispose = quiclb_dispose,
+        .super.do_init = quiclb_do_init,
+        .super.do_transform = is_enc ? quiclb_encrypt : quiclb_decrypt,
     };
-
-    for (size_t i = 0; i < PTLS_ELEMENTSOF(ctx->ecb); ++i) {
-        if ((ctx->ecb[i] = ptls_cipher_new(&ptls_openssl_aes128ecb, 1, key + i * PTLS_AES128_KEY_SIZE)) == NULL)
-            goto Fail;
-    }
-
+    if ((ctx->aesecb = ptls_cipher_new(&ptls_openssl_aes128ecb, 1, key)) == NULL)
+        return PTLS_ERROR_LIBRARY;
     return 0;
-
-Fail:
-    for (size_t i = 0; i < PTLS_ELEMENTSOF(ctx->ecb); ++i) {
-        if (ctx->ecb[i] != NULL)
-            ptls_cipher_free(ctx->ecb[i]);
-    }
-    return PTLS_ERROR_LIBRARY;
 }
 
 struct aead_crypto_context_t {
@@ -2709,13 +2762,13 @@ ptls_cipher_algorithm_t ptls_openssl_bfecb = {"BF-ECB",        PTLS_BLOWFISH_KEY
                                               0 /* iv size */, sizeof(struct cipher_context_t), bfecb_setup_crypto};
 #endif
 
-ptls_cipher_algorithm_t ptls_openssl_aes64ecb = {
-    .name = "AES64-ECB",
-    .key_size = PTLS_AES128_KEY_SIZE * PTLS_ELEMENTSOF(((struct aes64ecb_context_t *)NULL)->ecb),
+ptls_cipher_algorithm_t ptls_openssl_quiclb = {
+    .name = "QUICLB",
+    .key_size = PTLS_QUICLB_KEY_SIZE,
     .block_size = 8,
     .iv_size = 0,
-    .context_size = sizeof(struct aes64ecb_context_t),
-    .setup_crypto = aes64ecb_setup_crypto,
+    .context_size = sizeof(struct quiclb_context_t),
+    .setup_crypto = quiclb_setup_crypto,
 };
 
 ptls_hpke_kem_t ptls_openssl_hpke_kem_p256sha256 = {PTLS_HPKE_KEM_P256_SHA256, &ptls_openssl_secp256r1, &ptls_openssl_sha256};

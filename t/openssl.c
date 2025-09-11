@@ -122,28 +122,28 @@ static void test_bf(void)
 #endif
 }
 
-static void test_aes64(void)
+static void test_quiclb(void)
 {
-    static const uint8_t key[PTLS_AES64_KEY_SIZE] = {0xf1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
-                                                     0xf2, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
-                                                     0xf3, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
-                                                     0xf4, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15},
-                         plaintext[PTLS_AES64_BLOCK_SIZE] = {0x4e, 0xf9, 0x97, 0x45, 0x61, 0x98, 0xdd, 0x78},
-                         expected[PTLS_AES64_BLOCK_SIZE] = {0xc6, 0x8c, 0xac, 0x61, 0xfc, 0x8d, 0xb7, 0x5a};
-    uint8_t encrypted[PTLS_AES64_BLOCK_SIZE], decrypted[PTLS_AES64_BLOCK_SIZE];
+    static const uint8_t key[PTLS_QUICLB_KEY_SIZE] = {0xfd, 0xf7, 0x26, 0xa9, 0x89, 0x3e, 0xc0, 0x5c,
+                                                      0x06, 0x32, 0xd3, 0x95, 0x66, 0x80, 0xba, 0xf0},
+                         plaintext[PTLS_QUICLB_MAX_BLOCK_SIZE] = {0x31, 0x44, 0x1a, 0x9c, 0x69, 0xc2, 0x75},
+                         test_vector_encrypted[] = {0x67, 0x94, 0x7d, 0x29, 0xbe, 0x05, 0x4a};
+    uint8_t tmp[PTLS_QUICLB_MAX_BLOCK_SIZE];
 
-    /* encrypt */
-    ptls_cipher_context_t *ctx = ptls_cipher_new(&ptls_openssl_aes64ecb, 1, key);
-    ptls_cipher_encrypt(ctx, encrypted, plaintext, PTLS_AES64_BLOCK_SIZE);
-    ptls_cipher_free(ctx);
-    ok(memcmp(encrypted, expected, PTLS_AES64_BLOCK_SIZE) == 0);
-
-    /* decrypt */
-    ctx = ptls_cipher_new(&ptls_openssl_aes64ecb, 0, key);
-    ptls_cipher_encrypt(ctx, decrypted, "deadbeef", PTLS_AES64_BLOCK_SIZE);
-    ptls_cipher_encrypt(ctx, decrypted, encrypted, PTLS_AES64_BLOCK_SIZE);
-    ptls_cipher_free(ctx);
-    ok(memcmp(decrypted, plaintext, PTLS_AES64_BLOCK_SIZE) == 0);
+    /* round-trip test; also check the result when the input vector is exactly that of draft-ietf-quic-load-balancers-21 */
+    for (size_t len = PTLS_QUICLB_MIN_BLOCK_SIZE; len <= PTLS_QUICLB_MAX_BLOCK_SIZE; ++len) {
+        /* encrypt */
+        ptls_cipher_context_t *ctx = ptls_cipher_new(&ptls_openssl_quiclb, 1, key);
+        ptls_cipher_encrypt(ctx, tmp, plaintext, len);
+        ptls_cipher_free(ctx);
+        if (len == sizeof(test_vector_encrypted))
+            ok(memcmp(tmp, test_vector_encrypted, len) == 0);
+        /* decrypt */
+        ctx = ptls_cipher_new(&ptls_openssl_quiclb, 0, key);
+        ptls_cipher_encrypt(ctx, tmp, tmp, len);
+        ptls_cipher_free(ctx);
+        ok(memcmp(tmp, plaintext, len) == 0);
+    }
 }
 
 static void test_key_exchanges(void)
@@ -577,7 +577,7 @@ int main(int argc, char **argv)
 #endif
 
     subtest("bf", test_bf);
-    subtest("aes64", test_aes64);
+    subtest("quiclb", test_quiclb);
 
     subtest("key-exchange", test_key_exchanges);
 
