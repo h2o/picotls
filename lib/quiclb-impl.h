@@ -22,60 +22,67 @@
 #ifndef picotls_quiclb_h
 #define picotls_quiclb_h
 
+union picotls_quiclb_block {
+    uint8_t bytes[PTLS_AES_BLOCK_SIZE];
+    uint64_t u64[PTLS_AES_BLOCK_SIZE / sizeof(uint64_t)];
+};
+
 /**
  * calculates X ^ AES(mask_and_expand(Y)), assuming the first argument is to a context of ptls_foo_aes128ecb
  */
-static inline void picotls_quiclb_one_round(void *aesecb, uint64_t *dest, const uint64_t *x, const uint64_t *y,
-                                            const uint64_t *mask, const uint64_t *len_pass)
+static inline void picotls_quiclb_one_round(void *aesecb, union picotls_quiclb_block *dest, const union picotls_quiclb_block *x,
+                                            const union picotls_quiclb_block *y, const union picotls_quiclb_block *mask,
+                                            const union picotls_quiclb_block *len_pass)
 {
-    for (size_t i = 0; i < PTLS_AES_BLOCK_SIZE / sizeof(dest[0]); ++i)
-        dest[i] = (y[i] & mask[i]) | len_pass[i];
+    for (size_t i = 0; i < PTLS_ELEMENTSOF(dest->u64); ++i)
+        dest->u64[i] = (y->u64[i] & mask->u64[i]) | len_pass->u64[i];
 
-    ptls_cipher_encrypt(aesecb, dest, dest, PTLS_AES_BLOCK_SIZE);
+    ptls_cipher_encrypt(aesecb, dest->bytes, dest->bytes, PTLS_AES_BLOCK_SIZE);
 
-    for (size_t i = 0; i < PTLS_AES_BLOCK_SIZE / sizeof(dest[0]); ++i)
-        dest[i] ^= x[i];
+    for (size_t i = 0; i < PTLS_ELEMENTSOF(dest->u64); ++i)
+        dest->u64[i] ^= x->u64[i];
 }
 
-static inline void picotls_quiclb_split_input(uint8_t *l, uint8_t *r, const uint8_t *input, size_t len)
+static inline void picotls_quiclb_split_input(union picotls_quiclb_block *l, union picotls_quiclb_block *r, const uint8_t *input,
+                                              size_t len)
 {
     size_t i;
     for (i = 0; i < (len + 1) / 2; ++i)
-        l[i] = input[i];
-    for (; i < PTLS_AES_BLOCK_SIZE; ++i)
-        l[i] = 0;
+        l->bytes[i] = input[i];
+    for (; i < PTLS_ELEMENTSOF(l->bytes); ++i)
+        l->bytes[i] = 0;
     for (i = 0; i < (len + 1) / 2; ++i)
-        r[i] = input[i + len / 2];
-    for (; i < PTLS_AES_BLOCK_SIZE; ++i)
-        r[i] = 0;
+        r->bytes[i] = input[i + len / 2];
+    for (; i < PTLS_ELEMENTSOF(r->bytes); ++i)
+        r->bytes[i] = 0;
 }
 
-static inline void picotls_quiclb_merge_output(uint8_t *output, size_t len, const uint8_t *l, const uint8_t *r)
+static inline void picotls_quiclb_merge_output(uint8_t *output, size_t len, const union picotls_quiclb_block *l,
+                                               const union picotls_quiclb_block *r)
 {
     uint8_t *outp = output;
 
     for (size_t i = 0; i < len / 2; ++i)
-        *outp++ = l[i];
+        *outp++ = l->bytes[i];
 
     if (len % 2 == 0) {
         for (size_t i = 0; i < len / 2; ++i)
-            *outp++ = r[i];
+            *outp++ = r->bytes[i];
     } else {
-        *outp++ = (l[len / 2] & 0xf0) | (r[0] & 0x0f);
+        *outp++ = (l->bytes[len / 2] & 0xf0) | (r->bytes[0] & 0x0f);
         for (size_t i = 0; i < len / 2; ++i)
-            *outp++ = r[i + 1];
+            *outp++ = r->bytes[i + 1];
     }
 }
 
-static inline void picotls_quiclb_transform(void *aesecb, void *output, const void *input, size_t len, int encrypt,
-                                            void (*one_round)(void *aesecb, uint64_t *dest, const uint64_t *x, const uint64_t *y,
-                                                              const uint64_t *mask, const uint64_t *len_pass))
+static inline void
+picotls_quiclb_transform(void *aesecb, void *output, const void *input, size_t len, int encrypt,
+                         void (*one_round)(void *aesecb, union picotls_quiclb_block *dest, const union picotls_quiclb_block *x,
+                                           const union picotls_quiclb_block *y, const union picotls_quiclb_block *mask,
+                                           const union picotls_quiclb_block *len_pass))
 {
     static const struct quiclb_mask_t {
-        union {
-            uint8_t bytes[PTLS_AES_BLOCK_SIZE];
-            uint64_t u64[PTLS_AES_BLOCK_SIZE / sizeof(uint64_t)];
-        } l, r;
+        union picotls_quiclb_block l, r;
     } masks[] = {
         {{{0xff, 0xff, 0xff, 0xf0}}, {{0x0f, 0xff, 0xff, 0xff}}},                                                 /* 7 (MIN_LEN) */
         {{{0xff, 0xff, 0xff, 0xff}}, {{0xff, 0xff, 0xff, 0xff}}},                                                 /* 8 */
@@ -99,32 +106,29 @@ static inline void picotls_quiclb_transform(void *aesecb, void *output, const vo
     PTLS_BUILD_ASSERT(PTLS_QUICLB_MAX_BLOCK_SIZE == PTLS_QUICLB_MIN_BLOCK_SIZE + PTLS_ELEMENTSOF(masks) - 1);
 
     const struct quiclb_mask_t *mask = &masks[len - PTLS_QUICLB_MIN_BLOCK_SIZE];
-    union {
-        uint8_t bytes[PTLS_AES_BLOCK_SIZE];
-        uint64_t u64[PTLS_AES_BLOCK_SIZE / sizeof(uint64_t)];
-    } l0, r0, r1, l1, r2, l2, len_pass = {{0}};
+    union picotls_quiclb_block l0, r0, r1, l1, r2, l2, len_pass = {{0}};
     len_pass.bytes[14] = (uint8_t)len;
 
 #define ROUND(rnd, dest, x, y, mask_side)                                                                                          \
     do {                                                                                                                           \
         len_pass.bytes[15] = (rnd);                                                                                                \
-        one_round(aesecb, (dest).u64, (x).u64, (y).u64, mask->mask_side.u64, len_pass.u64);                                        \
+        one_round(aesecb, &dest, &x, &y, &mask->mask_side, &len_pass);                                                             \
     } while (0)
 
     if (encrypt) {
-        picotls_quiclb_split_input(l0.bytes, r0.bytes, input, len);
+        picotls_quiclb_split_input(&l0, &r0, input, len);
         ROUND(1, r1, r0, l0, l);
         ROUND(2, l1, l0, r1, r);
         ROUND(3, r2, r1, l1, l);
         ROUND(4, l2, l1, r2, r);
-        picotls_quiclb_merge_output(output, len, l2.bytes, r2.bytes);
+        picotls_quiclb_merge_output(output, len, &l2, &r2);
     } else {
-        picotls_quiclb_split_input(l2.bytes, r2.bytes, input, len);
+        picotls_quiclb_split_input(&l2, &r2, input, len);
         ROUND(4, l1, l2, r2, r);
         ROUND(3, r1, r2, l1, l);
         ROUND(2, l0, l1, r1, r);
         ROUND(1, r0, r1, l0, l);
-        picotls_quiclb_merge_output(output, len, l0.bytes, r0.bytes);
+        picotls_quiclb_merge_output(output, len, &l0, &r0);
     }
 
 #undef ROUND
