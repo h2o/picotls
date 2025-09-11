@@ -22,9 +22,17 @@
 #ifndef picotls_quiclb_h
 #define picotls_quiclb_h
 
+#if defined(__x86_64__) || defined(_M_X64)
+#include <xmmintrin.h>
+#define PICOTLS_QUICLB_HAVE_AVX128 1
+#endif
+
 union picotls_quiclb_block {
     uint8_t bytes[PTLS_AES_BLOCK_SIZE];
     uint64_t u64[PTLS_AES_BLOCK_SIZE / sizeof(uint64_t)];
+#if PICOTLS_QUICLB_HAVE_AVX128
+    __m128i m128;
+#endif
 };
 
 /**
@@ -34,13 +42,21 @@ static inline void picotls_quiclb_one_round(void *aesecb, union picotls_quiclb_b
                                             const union picotls_quiclb_block *y, const union picotls_quiclb_block *mask,
                                             const union picotls_quiclb_block *len_pass)
 {
+#if PICOTLS_QUICLB_HAVE_AVX128
+    dest->m128 = (y->m128 & mask->m128) | len_pass->m128;
+#else
     for (size_t i = 0; i < PTLS_ELEMENTSOF(dest->u64); ++i)
         dest->u64[i] = (y->u64[i] & mask->u64[i]) | len_pass->u64[i];
+#endif
 
     ptls_cipher_encrypt(aesecb, dest->bytes, dest->bytes, PTLS_AES_BLOCK_SIZE);
 
+#if PICOTLS_QUICLB_HAVE_AVX128
+    dest->m128 ^= x->m128;
+#else
     for (size_t i = 0; i < PTLS_ELEMENTSOF(dest->u64); ++i)
         dest->u64[i] ^= x->u64[i];
+#endif
 }
 
 static inline void picotls_quiclb_split_input(union picotls_quiclb_block *l, union picotls_quiclb_block *r, const uint8_t *input,
