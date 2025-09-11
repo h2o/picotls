@@ -1455,12 +1455,11 @@ static void quiclb_do_init(ptls_cipher_context_t *ctx, const void *iv)
 /**
  * calculates X ^ AES(mask_and_expand(Y))
  */
-static void quiclb_one_round(ptls_cipher_context_t *aesecb, uint64_t *dest, const uint64_t *x, const uint64_t *y,
-                             const uint64_t *mask, const uint64_t len_pass)
+static inline void quiclb_one_round(ptls_cipher_context_t *aesecb, uint64_t *dest, const uint64_t *x, const uint64_t *y,
+                                    const uint64_t *mask, const uint64_t *len_pass)
 {
     for (size_t i = 0; i < PTLS_AES_BLOCK_SIZE / sizeof(dest[0]); ++i)
-        dest[i] = y[i] & mask[i];
-    dest[PTLS_AES_BLOCK_SIZE / sizeof(dest[0]) - 1] |= len_pass;
+        dest[i] = (y[i] & mask[i]) | len_pass[i];
 
     ptls_cipher_encrypt(aesecb, dest, dest, PTLS_AES_BLOCK_SIZE);
 
@@ -1531,15 +1530,12 @@ static void quiclb_transform(struct quiclb_context_t *ctx, void *output, const v
     union {
         uint8_t bytes[PTLS_AES_BLOCK_SIZE];
         uint64_t u64[PTLS_AES_BLOCK_SIZE / sizeof(uint64_t)];
-    } l0, r0, r1, l1, r2, l2;
-    union {
-        uint8_t bytes[sizeof(uint64_t)];
-        uint64_t u64;
-    } len_pass = {{0, 0, 0, 0, 0, 0, (uint8_t)len}};
+    } l0, r0, r1, l1, r2, l2, len_pass = {{0}};
+    len_pass.bytes[14] = (uint8_t)len;
 
 #define ROUND(rnd, dest, x, y, mask_side)                                                                                          \
     do {                                                                                                                           \
-        len_pass.bytes[7] = (rnd);                                                                                                 \
+        len_pass.bytes[15] = (rnd);                                                                                                 \
         quiclb_one_round(ctx->aesecb, (dest).u64, (x).u64, (y).u64, mask->mask_side.u64, len_pass.u64);                            \
     } while (0)
 
