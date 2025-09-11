@@ -1448,11 +1448,6 @@ static void quiclb_dispose(ptls_cipher_context_t *_ctx)
     ptls_cipher_free(ctx->aesecb);
 }
 
-static void quiclb_do_init(ptls_cipher_context_t *ctx, const void *iv)
-{
-    /* no-op */
-}
-
 static void quiclb_encrypt(ptls_cipher_context_t *_ctx, void *output, const void *input, size_t len)
 {
     struct quiclb_context_t *ctx = (struct quiclb_context_t *)_ctx;
@@ -1471,7 +1466,7 @@ static int quiclb_setup_crypto(ptls_cipher_context_t *_ctx, int is_enc, const vo
 
     *ctx = (struct quiclb_context_t){
         .super.do_dispose = quiclb_dispose,
-        .super.do_init = quiclb_do_init,
+        .super.do_init = picotls_quiclb_do_init,
         .super.do_transform = is_enc ? quiclb_encrypt : quiclb_decrypt,
     };
     if ((ctx->aesecb = ptls_cipher_new(&ptls_openssl_aes128ecb, 1, key)) == NULL)

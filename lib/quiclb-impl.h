@@ -75,6 +75,11 @@ static inline void picotls_quiclb_merge_output(uint8_t *output, size_t len, cons
     }
 }
 
+static inline void picotls_quiclb_do_init(ptls_cipher_context_t *ctx, const void *iv)
+{
+    /* no-op */
+}
+
 static inline void
 picotls_quiclb_transform(void *aesecb, void *output, const void *input, size_t len, int encrypt,
                          void (*one_round)(void *aesecb, union picotls_quiclb_block *dest, const union picotls_quiclb_block *x,
