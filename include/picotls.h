@@ -117,6 +117,10 @@ extern "C" {
 #define PTLS_BLOWFISH_KEY_SIZE 16
 #define PTLS_BLOWFISH_BLOCK_SIZE 8
 
+#define PTLS_QUICLB_KEY_SIZE 16 /* same as the underlying aes128ecb */
+#define PTLS_QUICLB_MIN_BLOCK_SIZE 7
+#define PTLS_QUICLB_MAX_BLOCK_SIZE 19 /* inclusive */
+
 #define PTLS_SHA256_BLOCK_SIZE 64
 #define PTLS_SHA256_DIGEST_SIZE 32
 
