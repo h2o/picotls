@@ -185,7 +185,8 @@ IF (WITH_FUSION)
     ADD_EXECUTABLE(test-fusion.t
         deps/picotest/picotest.c
         lib/picotls.c
-        t/fusion.c)
+        t/fusion.c
+        t/quiclb.c)
     TARGET_LINK_LIBRARIES(test-fusion.t picotls-minicrypto)
     SET_TARGET_PROPERTIES(test-fusion.t PROPERTIES COMPILE_FLAGS "-mavx2 -maes -mpclmul -mvaes -mvpclmulqdq")
     IF (WITH_DTRACE)
