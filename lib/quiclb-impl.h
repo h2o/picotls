@@ -52,7 +52,7 @@ static inline void picotls_quiclb_one_round(void (*aesecb_func)(void *aesecb, un
                                             const union picotls_quiclb_block *len_pass)
 {
 #if PICOTLS_QUICLB_HAVE_SSE2
-    dest->m128 = (y->m128 & mask->m128) | len_pass->m128;
+    dest->m128 = _mm_or_si128(_mm_and_si128(y->m128, mask->m128), len_pass->m128);
 #else
     for (size_t i = 0; i < PTLS_ELEMENTSOF(dest->u64); ++i)
         dest->u64[i] = (y->u64[i] & mask->u64[i]) | len_pass->u64[i];
@@ -61,7 +61,7 @@ static inline void picotls_quiclb_one_round(void (*aesecb_func)(void *aesecb, un
     aesecb_func(aesecb_ctx, dest);
 
 #if PICOTLS_QUICLB_HAVE_SSE2
-    dest->m128 ^= x->m128;
+    dest->m128 = _mm_xor_si128(dest->m128, x->m128);
 #else
     for (size_t i = 0; i < PTLS_ELEMENTSOF(dest->u64); ++i)
         dest->u64[i] ^= x->u64[i];
