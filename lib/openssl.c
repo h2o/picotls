@@ -1451,13 +1451,13 @@ static void quiclb_dispose(ptls_cipher_context_t *_ctx)
 static void quiclb_encrypt(ptls_cipher_context_t *_ctx, void *output, const void *input, size_t len)
 {
     struct quiclb_context_t *ctx = (struct quiclb_context_t *)_ctx;
-    return picotls_quiclb_transform(picotls_quiclb_cipher_aes, ctx->aesecb, output, input, len, 1);
+    picotls_quiclb_transform(picotls_quiclb_cipher_aes, ctx->aesecb, output, input, len, 1);
 }
 
 static void quiclb_decrypt(ptls_cipher_context_t *_ctx, void *output, const void *input, size_t len)
 {
     struct quiclb_context_t *ctx = (struct quiclb_context_t *)_ctx;
-    return picotls_quiclb_transform(picotls_quiclb_cipher_aes, ctx->aesecb, output, input, len, 0);
+    picotls_quiclb_transform(picotls_quiclb_cipher_aes, ctx->aesecb, output, input, len, 0);
 }
 
 static int quiclb_setup_crypto(ptls_cipher_context_t *_ctx, int is_enc, const void *key)
