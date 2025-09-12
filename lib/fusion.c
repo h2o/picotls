@@ -2211,11 +2211,9 @@ static int fusion_quiclb_setup_crypto(ptls_cipher_context_t *_ctx, int is_enc, c
 {
     struct fusion_quiclb_context *ctx = (struct fusion_quiclb_context *)_ctx;
 
-    *ctx = (struct fusion_quiclb_context){
-        .super.do_dispose = fusion_quiclb_dispose,
-        .super.do_init = picotls_quiclb_do_init,
-        .super.do_transform = is_enc ? fusion_quiclb_encrypt : fusion_quiclb_decrypt,
-    };
+    ctx->super.do_dispose = fusion_quiclb_dispose;
+    ctx->super.do_init = picotls_quiclb_do_init;
+    ctx->super.do_transform = is_enc ? fusion_quiclb_encrypt : fusion_quiclb_decrypt;
     ptls_fusion_aesecb_init(&ctx->aesecb, 1, key, PTLS_AES128_KEY_SIZE, 0);
 
     return 0;
