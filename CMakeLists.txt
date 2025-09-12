@@ -58,7 +58,8 @@ SET(CORE_FILES
     lib/pembase64.c)
 SET(CORE_TEST_FILES
     t/hpke.c
-    t/picotls.c)
+    t/picotls.c
+    t/quiclb.c)
 IF (WITH_DTRACE)
     SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DPICOTLS_USE_DTRACE=1")
     DEFINE_DTRACE_DEPENDENCIES(${PROJECT_SOURCE_DIR}/picotls-probes.d picotls)

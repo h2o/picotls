@@ -122,30 +122,6 @@ static void test_bf(void)
 #endif
 }
 
-static void test_quiclb(void)
-{
-    static const uint8_t key[PTLS_QUICLB_KEY_SIZE] = {0xfd, 0xf7, 0x26, 0xa9, 0x89, 0x3e, 0xc0, 0x5c,
-                                                      0x06, 0x32, 0xd3, 0x95, 0x66, 0x80, 0xba, 0xf0},
-                         plaintext[PTLS_QUICLB_MAX_BLOCK_SIZE] = {0x31, 0x44, 0x1a, 0x9c, 0x69, 0xc2, 0x75},
-                         test_vector_encrypted[] = {0x67, 0x94, 0x7d, 0x29, 0xbe, 0x05, 0x4a};
-    uint8_t tmp[PTLS_QUICLB_MAX_BLOCK_SIZE];
-
-    /* round-trip test; also check the result when the input vector is exactly that of draft-ietf-quic-load-balancers-21 */
-    for (size_t len = PTLS_QUICLB_MIN_BLOCK_SIZE; len <= PTLS_QUICLB_MAX_BLOCK_SIZE; ++len) {
-        /* encrypt */
-        ptls_cipher_context_t *ctx = ptls_cipher_new(&ptls_openssl_quiclb, 1, key);
-        ptls_cipher_encrypt(ctx, tmp, plaintext, len);
-        ptls_cipher_free(ctx);
-        if (len == sizeof(test_vector_encrypted))
-            ok(memcmp(tmp, test_vector_encrypted, len) == 0);
-        /* decrypt */
-        ctx = ptls_cipher_new(&ptls_openssl_quiclb, 0, key);
-        ptls_cipher_encrypt(ctx, tmp, tmp, len);
-        ptls_cipher_free(ctx);
-        ok(memcmp(tmp, plaintext, len) == 0);
-    }
-}
-
 static void test_key_exchanges(void)
 {
     subtest("secp256r1-self", test_key_exchange, &ptls_openssl_secp256r1, &ptls_openssl_secp256r1);
@@ -577,7 +553,7 @@ int main(int argc, char **argv)
 #endif
 
     subtest("bf", test_bf);
-    subtest("quiclb", test_quiclb);
+    subtest("quiclb", test_quiclb, &ptls_openssl_quiclb);
 
     subtest("key-exchange", test_key_exchanges);
 
