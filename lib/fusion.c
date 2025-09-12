@@ -2222,7 +2222,7 @@ static int fusion_quiclb_setup_crypto(ptls_cipher_context_t *_ctx, int is_enc, c
 ptls_cipher_algorithm_t ptls_fusion_quiclb = {
     .name = "QUICLB",
     .key_size = PTLS_QUICLB_KEY_SIZE,
-    .block_size = 8,
+    .block_size = PTLS_QUICLB_DEFAULT_BLOCK_SIZE,
     .iv_size = 0,
     .context_size = sizeof(struct fusion_quiclb_context),
     .setup_crypto = fusion_quiclb_setup_crypto,
