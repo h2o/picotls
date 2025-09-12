@@ -23,14 +23,14 @@
 #define picotls_quiclb_h
 
 #if defined(__x86_64__) || defined(_M_X64)
-#include <xmmintrin.h>
-#define PICOTLS_QUICLB_HAVE_AVX128 1
+#include <emmintrin.h>
+#define PICOTLS_QUICLB_HAVE_SSE2 1
 #endif
 
 union picotls_quiclb_block {
     uint8_t bytes[PTLS_AES_BLOCK_SIZE];
     uint64_t u64[PTLS_AES_BLOCK_SIZE / sizeof(uint64_t)];
-#if PICOTLS_QUICLB_HAVE_AVX128
+#if PICOTLS_QUICLB_HAVE_SSE2
     __m128i m128;
 #endif
 };
@@ -51,7 +51,7 @@ static inline void picotls_quiclb_one_round(void (*aesecb_func)(void *aesecb, un
                                             const union picotls_quiclb_block *y, const union picotls_quiclb_block *mask,
                                             const union picotls_quiclb_block *len_pass)
 {
-#if PICOTLS_QUICLB_HAVE_AVX128
+#if PICOTLS_QUICLB_HAVE_SSE2
     dest->m128 = (y->m128 & mask->m128) | len_pass->m128;
 #else
     for (size_t i = 0; i < PTLS_ELEMENTSOF(dest->u64); ++i)
@@ -60,7 +60,7 @@ static inline void picotls_quiclb_one_round(void (*aesecb_func)(void *aesecb, un
 
     aesecb_func(aesecb_ctx, dest);
 
-#if PICOTLS_QUICLB_HAVE_AVX128
+#if PICOTLS_QUICLB_HAVE_SSE2
     dest->m128 ^= x->m128;
 #else
     for (size_t i = 0; i < PTLS_ELEMENTSOF(dest->u64); ++i)
