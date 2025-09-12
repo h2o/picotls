@@ -2198,13 +2198,13 @@ static inline void fusion_quiclb_aes(void *aesecb, union picotls_quiclb_block *b
 static void fusion_quiclb_encrypt(ptls_cipher_context_t *_ctx, void *output, const void *input, size_t len)
 {
     struct fusion_quiclb_context *ctx = (struct fusion_quiclb_context *)_ctx;
-    return picotls_quiclb_transform(fusion_quiclb_aes, &ctx->aesecb, output, input, len, 1);
+    picotls_quiclb_transform(fusion_quiclb_aes, &ctx->aesecb, output, input, len, 1);
 }
 
 static void fusion_quiclb_decrypt(ptls_cipher_context_t *_ctx, void *output, const void *input, size_t len)
 {
     struct fusion_quiclb_context *ctx = (struct fusion_quiclb_context *)_ctx;
-    return picotls_quiclb_transform(fusion_quiclb_aes, &ctx->aesecb, output, input, len, 0);
+    picotls_quiclb_transform(fusion_quiclb_aes, &ctx->aesecb, output, input, len, 0);
 }
 
 static int fusion_quiclb_setup_crypto(ptls_cipher_context_t *_ctx, int is_enc, const void *key)
