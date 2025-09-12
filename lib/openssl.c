@@ -1464,13 +1464,12 @@ static int quiclb_setup_crypto(ptls_cipher_context_t *_ctx, int is_enc, const vo
 {
     struct quiclb_context_t *ctx = (struct quiclb_context_t *)_ctx;
 
-    *ctx = (struct quiclb_context_t){
-        .super.do_dispose = quiclb_dispose,
-        .super.do_init = picotls_quiclb_do_init,
-        .super.do_transform = is_enc ? quiclb_encrypt : quiclb_decrypt,
-    };
+    ctx->super.do_dispose = quiclb_dispose;
+    ctx->super.do_init = picotls_quiclb_do_init;
+    ctx->super.do_transform = is_enc ? quiclb_encrypt : quiclb_decrypt;
     if ((ctx->aesecb = ptls_cipher_new(&ptls_openssl_aes128ecb, 1, key)) == NULL)
         return PTLS_ERROR_LIBRARY;
+
     return 0;
 }
 
@@ -2651,7 +2650,7 @@ ptls_cipher_algorithm_t ptls_openssl_bfecb = {"BF-ECB",        PTLS_BLOWFISH_KEY
 ptls_cipher_algorithm_t ptls_openssl_quiclb = {
     .name = "QUICLB",
     .key_size = PTLS_QUICLB_KEY_SIZE,
-    .block_size = 8,
+    .block_size = PTLS_QUICLB_DEFAULT_BLOCK_SIZE,
     .iv_size = 0,
     .context_size = sizeof(struct quiclb_context_t),
     .setup_crypto = quiclb_setup_crypto,
