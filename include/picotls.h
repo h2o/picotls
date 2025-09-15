@@ -1422,9 +1422,6 @@ uint64_t ptls_decode_quicint(const uint8_t **src, const uint8_t *end);
                 ptls_log__do_write_end(&logpoint, (conn_state), (get_sni), (get_sni_arg), ptlslog_include_appdata);                \
         } while (PTLS_UNLIKELY(ptlslog_include_appdata));                                                                          \
     } while (0)
-#else
-#define PTLS_LOG__DO_LOG(module, name, conn_state, get_sni, get_sni_arg, add_time, block) /* don't generate code */
-#endif
 
 #define PTLS_LOG_DEFINE_POINT(_module, _name, _var)                                                                                \
     static struct st_ptls_log_point_t _var = {.name = PTLS_TO_STR(_module) ":" PTLS_TO_STR(_name)}
@@ -1502,7 +1499,20 @@ uint64_t ptls_decode_quicint(const uint8_t **src, const uint8_t *end);
             PTLS_LOG__DO_ELEMENT_UNSIGNED(PTLS_TO_STR(name) "_len", value_len);                                                    \
         }                                                                                                                          \
     } while (0)
+#else
+#define PTLS_LOG_CONN(name, tls, block)
+#define PTLS_LOG_ELEMENT_SAFESTR(name, value)
+#define PTLS_LOG_ELEMENT_UNSAFESTR(name, value, value_len)
+#define PTLS_LOG_ELEMENT_HEXDUMP(name, value, value_len)
+#define PTLS_LOG_ELEMENT_PTR(name, value)
+#define PTLS_LOG_ELEMENT_SIGNED(name, value)
+#define PTLS_LOG_ELEMENT_UNSIGNED(name, value)
+#define PTLS_LOG_ELEMENT_BOOL(name, value)
+#define PTLS_LOG_APPDATA_ELEMENT_UNSAFESTR(name, value, value_len)
+#define PTLS_LOG_APPDATA_ELEMENT_HEXDUMP(name, value, value_len)
+#endif
 
+#if PTLS_HAVE_LOG
 /**
  * retains a list of connections that are bound to the object
  */
@@ -1613,6 +1623,7 @@ void ptls_log__do_push_appdata_element_hexdump(int includes_appdata, const char 
 void ptls_log__do_write_start(struct st_ptls_log_point_t *point, int add_time);
 int ptls_log__do_write_end(struct st_ptls_log_point_t *point, struct st_ptls_log_conn_state_t *conn, const char *(*get_sni)(void *),
                            void *get_sni_arg, int includes_appdata);
+#endif
 
 /**
  * create a client object to handle new TLS connection
@@ -1716,12 +1727,16 @@ int ptls_is_ech_handshake(ptls_t *tls, uint8_t *config_id, ptls_hpke_kem_t **kem
  * returns a pointer to user data pointer (client is reponsible for freeing the associated data prior to calling ptls_free)
  */
 void **ptls_get_data_ptr(ptls_t *tls);
+
+#if PTLS_HAVE_LOG
 /**
  * Returns `ptls_log_conn_state_t` of `ptls_t`. By default, the state is initialized by calling `ptls_log_init_conn_state`, but the
  * behavior can be overidden by setting `ptls_log_conn_state_override`.
  * This value can be changed by setting `ptls_log_random_override` or by calling `ptls_set_log_random`.
  */
 ptls_log_conn_state_t *ptls_get_log_state(ptls_t *tls);
+#endif
+
 /**
  * proceeds with the handshake, optionally taking some input from peer. The function returns zero in case the handshake completed
  * successfully. PTLS_ERROR_IN_PROGRESS is returned in case the handshake is incomplete. Otherwise, an error value is returned. The
@@ -1957,10 +1972,13 @@ char *ptls_hexdump(char *dst, const void *src, size_t len);
  * Builds a JSON-safe string without double quotes. Supplied buffer MUST be at least 6x + 1 bytes larger than the input.
  */
 char *ptls_jsonescape(char *buf, const char *s, size_t len);
+
+#if PTLS_HAVE_LOG
 /**
  * builds a v4-mapped address (i.e., ::ffff:192.0.2.1)
  */
 void ptls_build_v4_mapped_v6_address(struct in6_addr *v6, const struct in_addr *v4);
+#endif
 
 /**
  * the default get_time callback
@@ -1973,15 +1991,12 @@ static void ptls_hash_clone_memcpy(void *dst, const void *src, size_t size);
 
 /* inline functions */
 
+#if PTLS_HAVE_LOG
 inline uint32_t ptls_log_point_maybe_active(struct st_ptls_log_point_t *point)
 {
-#if PTLS_HAVE_LOG
     if (PTLS_UNLIKELY(point->state.generation != ptls_log._generation))
         ptls_log__recalc_point(0, point);
     return point->state.active_conns;
-#else
-    return 0;
-#endif
 }
 
 inline void ptls_log_recalc_conn_state(ptls_log_conn_state_t *state)
@@ -1991,14 +2006,11 @@ inline void ptls_log_recalc_conn_state(ptls_log_conn_state_t *state)
 
 inline uint32_t ptls_log_conn_maybe_active(ptls_log_conn_state_t *conn, const char *(*get_sni)(void *), void *get_sni_arg)
 {
-#if PTLS_HAVE_LOG
     if (PTLS_UNLIKELY(conn->state.generation != ptls_log._generation))
         ptls_log__recalc_conn(0, conn, get_sni, get_sni_arg);
     return conn->state.active_conns;
-#else
-    return 0;
-#endif
 }
+#endif
 
 inline ptls_t *ptls_new(ptls_context_t *ctx, int is_server)
 {

@@ -69,6 +69,7 @@ static void shift_buffer(ptls_buffer_t *buf, size_t delta)
 
 static void setup_ptlslog(const char *fn)
 {
+#if PTLS_HAVE_LOG
     int fd;
     if ((fd = open(fn, O_WRONLY | O_CREAT | O_APPEND, 0666)) == -1) {
         fprintf(stderr, "failed to open file:%s:%s\n", fn, strerror(errno));
@@ -76,6 +77,9 @@ static void setup_ptlslog(const char *fn)
     }
     ptls_log_add_fd(fd, 1., NULL, NULL, NULL, 1);
     ptls_log.may_include_appdata = 1;
+#else
+    fprintf(stderr, "setup_ptlslog: PTLS_HAVE_LOG not enabled\n");
+#endif
 }
 
 static int handle_connection(int sockfd, ptls_context_t *ctx, const char *server_name, const char *input_file,

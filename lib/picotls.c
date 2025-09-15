@@ -5604,14 +5604,12 @@ void **ptls_get_data_ptr(ptls_t *tls)
     return &tls->data_ptr;
 }
 
+#if PTLS_HAVE_LOG
 ptls_log_conn_state_t *ptls_get_log_state(ptls_t *tls)
 {
-#if PTLS_HAVE_LOG
     return &tls->log_state;
-#else
-    return &ptls_log.dummy_conn_state;
-#endif
 }
+#endif
 
 static int handle_client_handshake_message(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_iovec_t message, int is_end_of_record,
                                            ptls_handshake_properties_t *properties)
@@ -6773,6 +6771,7 @@ char *ptls_jsonescape(char *buf, const char *unsafe_str, size_t len)
     return dst;
 }
 
+#if PTLS_HAVE_LOG
 void ptls_build_v4_mapped_v6_address(struct in6_addr *v6, const struct in_addr *v4)
 {
     *v6 = (struct in6_addr){.s6_addr[10] = 0xff, .s6_addr[11] = 0xff};
@@ -6784,8 +6783,6 @@ struct st_ptls_log_t ptls_log = {
     ._generation = 1, /* starts from 1 so that recalc can be forced by setting to zero (i.e., the initial) */
 };
 PTLS_THREADLOCAL ptls_log_conn_state_t *ptls_log_conn_state_override = NULL;
-
-#if PTLS_HAVE_LOG
 
 static struct {
     /**
@@ -7145,8 +7142,6 @@ int ptls_log__do_write_end(struct st_ptls_log_point_t *point, struct st_ptls_log
     return needs_appdata;
 }
 
-#endif
-
 void ptls_log_init_conn_state(ptls_log_conn_state_t *state, void (*random_bytes)(void *, size_t))
 {
     uint32_t r;
@@ -7160,17 +7155,11 @@ void ptls_log_init_conn_state(ptls_log_conn_state_t *state, void (*random_bytes)
 
 size_t ptls_log_num_lost(void)
 {
-#if PTLS_HAVE_LOG
     return logctx.num_lost;
-#else
-    return 0;
-#endif
 }
 
 int ptls_log_add_fd(int fd, float sample_ratio, const char *_points, const char *_snis, const char *_addresses, int appdata)
 {
-#if PTLS_HAVE_LOG
-
     char *points = NULL, *snis = NULL;
     struct in6_addr *addresses = NULL;
     int ret;
@@ -7239,8 +7228,5 @@ Exit:
         free(addresses);
     }
     return ret;
-
-#else
-    return PTLS_ERROR_NOT_AVAILABLE;
-#endif
 }
+#endif
