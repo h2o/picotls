@@ -60,8 +60,20 @@ extern ptls_key_exchange_algorithm_t *ptls_mbedtls_key_exchanges[];
 
 void ptls_mbedtls_random_bytes(void *buf, size_t len);
 
+int ptls_mbedtls_load_file(char const* file_name, unsigned char** buf, size_t* n);
+
 int ptls_mbedtls_load_private_key(ptls_context_t *ctx, char const *pem_fname);
 void ptls_mbedtls_dispose_sign_certificate(ptls_sign_certificate_t *_self);
+
+int ptls_mbedtls_sign_certificate(ptls_sign_certificate_t* _self, ptls_t* tls, ptls_async_job_t** async,
+    uint16_t* selected_algorithm, ptls_buffer_t* outbuf, ptls_iovec_t input,
+    const uint16_t* algorithms, size_t num_algorithms);
+
+int picoquic_mbedtls_get_certs_from_file(char const* pem_fname, ptls_iovec_t** vec, size_t* count);
+int ptls_mbedtls_init_verify_certificate(ptls_context_t* ptls_ctx, char const* pem_fname);
+void ptls_mbedtls_dispose_verify_certificate(ptls_context_t* ptls_ctx);
+
+
 
 #ifdef __cplusplus
 }
