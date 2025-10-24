@@ -1488,19 +1488,15 @@ uint64_t ptls_decode_quicint(const uint8_t **src, const uint8_t *end);
 #define PTLS_LOG_ELEMENT_BOOL(name, value) ptls_log__do_push_element_bool(PTLS_LOG__ELEMENT_PREFIX(PTLS_TO_STR(name)), (value))
 #define PTLS_LOG_APPDATA_ELEMENT_UNSAFESTR(name, value, value_len)                                                                 \
     do {                                                                                                                           \
-        if (ptlslog_include_appdata) {                                                                                             \
+        if (ptlslog_include_appdata)                                                                                               \
             PTLS_LOG_ELEMENT_UNSAFESTR(name, value, value_len);                                                                    \
-        } else {                                                                                                                   \
-            PTLS_LOG__DO_ELEMENT_UNSIGNED(PTLS_TO_STR(name) "_len", value_len);                                                    \
-        }                                                                                                                          \
+        PTLS_LOG__DO_ELEMENT_UNSIGNED(PTLS_TO_STR(name) "_len", value_len);                                                        \
     } while (0)
 #define PTLS_LOG_APPDATA_ELEMENT_HEXDUMP(name, value, value_len)                                                                   \
     do {                                                                                                                           \
-        if (ptlslog_include_appdata) {                                                                                             \
+        if (ptlslog_include_appdata)                                                                                               \
             PTLS_LOG_ELEMENT_HEXDUMP(name, value, value_len);                                                                      \
-        } else {                                                                                                                   \
-            PTLS_LOG__DO_ELEMENT_UNSIGNED(PTLS_TO_STR(name) "_len", value_len);                                                    \
-        }                                                                                                                          \
+        PTLS_LOG__DO_ELEMENT_UNSIGNED(PTLS_TO_STR(name) "_len", value_len);                                                        \
     } while (0)
 
 /**
