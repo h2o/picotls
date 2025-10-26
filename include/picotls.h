@@ -34,10 +34,6 @@ extern "C" {
 #include <inttypes.h>
 #include <string.h>
 #include <sys/types.h>
-#ifndef _WINDOWS
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#endif
 
 #if __GNUC__ >= 3
 #define PTLS_LIKELY(x) __builtin_expect(!!(x), 1)
@@ -1535,9 +1531,9 @@ typedef struct st_ptls_log_conn_state_t {
      */
     float random_;
     /**
-     * represents peer address; ipv4 addresses are stored using the mapped form (::ffff:192.0.2.1)
+     * represents the peer address using ipv6; ipv4 addresses are stored using the mapped form (::ffff:192.0.2.1)
      */
-    struct in6_addr address;
+    uint8_t address[16];
     struct st_ptls_log_state_t state;
 } ptls_log_conn_state_t;
 
@@ -1958,9 +1954,9 @@ char *ptls_hexdump(char *dst, const void *src, size_t len);
  */
 char *ptls_jsonescape(char *buf, const char *s, size_t len);
 /**
- * builds a v4-mapped address (i.e., ::ffff:192.0.2.1)
+ * Builds a v4-mapped address (i.e., ::ffff:192.0.2.1). The v4 address must be in big-endian.
  */
-void ptls_build_v4_mapped_v6_address(struct in6_addr *v6, const struct in_addr *v4);
+void ptls_build_v4_mapped_v6_address(void *v6, const void *v4);
 
 /**
  * the default get_time callback
