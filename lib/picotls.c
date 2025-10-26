@@ -7156,7 +7156,7 @@ void ptls_log_init_conn_state(ptls_log_conn_state_t *state, void (*random_bytes)
 
     *state = (ptls_log_conn_state_t){
         .random_ = (float)r / ((uint64_t)UINT32_MAX + 1), /* [0..1), so that any(r) < sample_ratio where sample_ratio is [0..1] */
-        .address = {}, /* inaddr6_any */
+        .address = {0}, /* inaddr6_any */
     };
 }
 
