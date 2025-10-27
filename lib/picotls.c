@@ -6773,10 +6773,11 @@ char *ptls_jsonescape(char *buf, const char *unsafe_str, size_t len)
     return dst;
 }
 
-void ptls_build_v4_mapped_v6_address(struct in6_addr *v6, const struct in_addr *v4)
+void ptls_build_v4_mapped_v6_address(void *v6, const void *v4)
 {
-    *v6 = (struct in6_addr){.s6_addr[10] = 0xff, .s6_addr[11] = 0xff};
-    memcpy(&v6->s6_addr[12], &v4->s_addr, 4);
+    memset(v6, 0, 10);
+    memset((uint8_t *)v6 + 10, 0xff, 2);
+    memcpy((uint8_t *)v6 + 12, v4, 4);
 }
 
 struct st_ptls_log_t ptls_log = {
@@ -6939,7 +6940,8 @@ void ptls_log__recalc_conn(int caller_locked, struct st_ptls_log_conn_state_t *c
         const char *sni = get_sni != NULL ? get_sni(get_sni_arg) : NULL;
         for (size_t slot = 0; slot < PTLS_ELEMENTSOF(logctx.conns); ++slot) {
             if (logctx.conns[slot].points != NULL && conn->random_ < logctx.conns[slot].sample_ratio &&
-                is_in_stringlist(logctx.conns[slot].snis, sni) && is_in_addresslist(logctx.conns[slot].addresses, &conn->address)) {
+                is_in_stringlist(logctx.conns[slot].snis, sni) &&
+                is_in_addresslist(logctx.conns[slot].addresses, (struct in6_addr *)&conn->address)) {
                 new_active |= (uint32_t)1 << slot;
             }
         }
@@ -7154,7 +7156,7 @@ void ptls_log_init_conn_state(ptls_log_conn_state_t *state, void (*random_bytes)
 
     *state = (ptls_log_conn_state_t){
         .random_ = (float)r / ((uint64_t)UINT32_MAX + 1), /* [0..1), so that any(r) < sample_ratio where sample_ratio is [0..1] */
-        .address = in6addr_any,
+        .address = {0}, /* inaddr6_any */
     };
 }
 
