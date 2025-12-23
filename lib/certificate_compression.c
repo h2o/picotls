@@ -24,26 +24,43 @@
 #include "brotli/decode.h"
 #include "brotli/encode.h"
 #include "picotls/certificate_compression.h"
+#ifdef PTLS_HAVE_ZSTD
+#include "zstd.h"
+#endif
 
 static inline int decompress_certificate(ptls_decompress_certificate_t *self, ptls_t *tls, uint16_t algorithm, ptls_iovec_t output,
                                          ptls_iovec_t input)
 {
-    if (algorithm != PTLS_CERTIFICATE_COMPRESSION_ALGORITHM_BROTLI)
-        goto Fail;
+    if (algorithm == PTLS_CERTIFICATE_COMPRESSION_ALGORITHM_BROTLI) {
 
-    size_t decoded_size = output.len;
-    if (BrotliDecoderDecompress(input.len, input.base, &decoded_size, output.base) != BROTLI_DECODER_RESULT_SUCCESS)
-        goto Fail;
+        size_t decoded_size = output.len;
+        if (BrotliDecoderDecompress(input.len, input.base, &decoded_size, output.base) != BROTLI_DECODER_RESULT_SUCCESS)
+            goto Fail;
 
-    if (decoded_size != output.len)
-        goto Fail;
+        if (decoded_size != output.len)
+            goto Fail;
 
-    return 0;
+        return 0;
+#if PTLS_HAVE_ZSTD
+    } else if (algorithm == PTLS_CERTIFICATE_COMPRESSION_ALGORITHM_ZSTD) {
+        size_t res = ZSTD_decompress(output.base, output.len, input.base, input.len);
+        if (ZSTD_isError(res))
+            goto Fail;
+        if (res != output.len)
+            goto Fail;
+        return 0;
+#endif
+    }
 Fail:
     return PTLS_ALERT_BAD_CERTIFICATE;
 }
 
-static const uint16_t algorithms[] = {PTLS_CERTIFICATE_COMPRESSION_ALGORITHM_BROTLI, UINT16_MAX};
+static const uint16_t algorithms[] = {
+    PTLS_CERTIFICATE_COMPRESSION_ALGORITHM_BROTLI,
+#if PTLS_HAVE_ZSTD
+    PTLS_CERTIFICATE_COMPRESSION_ALGORITHM_ZSTD,
+#endif
+    UINT16_MAX};
 
 ptls_decompress_certificate_t ptls_decompress_certificate = {algorithms, decompress_certificate};
 
