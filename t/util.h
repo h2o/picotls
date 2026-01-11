@@ -266,6 +266,11 @@ static struct {
     } retry;
 } ech;
 
+static void ech_setup_retry_configs(ptls_context_t *ctx) {
+    ctx->ech.server.retry_configs.base = ech.config_list.base;
+    ctx->ech.server.retry_configs.len = ech.config_list.len;
+}
+
 static ptls_aead_context_t *ech_create_opener(ptls_ech_create_opener_t *self, ptls_hpke_kem_t **kem,
                                               ptls_hpke_cipher_suite_t **cipher, ptls_t *tls, uint8_t config_id,
                                               ptls_hpke_cipher_suite_id_t cipher_id, ptls_iovec_t enc, ptls_iovec_t info_prefix)
