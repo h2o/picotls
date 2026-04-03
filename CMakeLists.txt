@@ -196,6 +196,10 @@ IF (WITH_FUSION)
 
     SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DPTLS_HAVE_FUSION=1")
     LIST(APPEND PTLSBENCH_LIBS picotls-fusion)
+    
+    INSTALL(
+        TARGETS picotls-fusion
+    )
 ENDIF ()
 
 IF (WITH_MBEDTLS)
@@ -274,3 +278,17 @@ IF (BUILD_FUZZER)
     TARGET_LINK_LIBRARIES(fuzz-client-hello picotls-core picotls-openssl ${OPENSSL_CRYPTO_LIBRARIES} ${AEGIS_LIBRARIES} ${LIB_FUZZER})
 
 ENDIF()
+
+INSTALL(
+    TARGETS picotls-core picotls-openssl picotls-minicrypto
+    RUNTIME DESTINATION bin
+    LIBRARY DESTINATION lib
+    ARCHIVE DESTINATION lib
+    INCLUDES DESTINATION include
+)
+
+INSTALL(
+    DIRECTORY ${CMAKE_SOURCE_DIR}/include/
+    DESTINATION include
+    FILES_MATCHING PATTERN "*.h*"
+)
