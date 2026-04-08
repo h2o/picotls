@@ -183,6 +183,11 @@ size_t ptls_asn1_get_expected_type_and_length(const uint8_t *bytes, size_t bytes
 {
     int is_indefinite = 0;
 
+    if (byte_index >= bytes_max) {
+        *decode_error = PTLS_ERROR_INCORRECT_ASN1_SYNTAX;
+        return ptls_asn1_error_message("Unexpected end of input", bytes_max, byte_index, 0, log_ctx);
+    }
+
     /* Check that the expected type is present */
     if (bytes[byte_index] != expected_type) {
         byte_index = ptls_asn1_error_message("Unexpected type", bytes_max, byte_index, 0, log_ctx);
