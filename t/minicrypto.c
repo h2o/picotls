@@ -28,6 +28,7 @@
 #include "../deps/picotest/picotest.h"
 #include "../lib/cifra.c"
 #include "../lib/uecc.c"
+#include "picotls/asn1.h"
 #include "test.h"
 
 static void test_secp256r1_key_exchange(void)
@@ -135,6 +136,26 @@ static void test_hrr(void)
     ptls_free(server);
 }
 
+static void test_asn1_empty_input(void)
+{
+    int decode_error = 0;
+    uint32_t length = 0;
+    size_t last_byte = 0;
+    uint8_t dummy = 0x30;
+
+    ptls_asn1_get_expected_type_and_length(&dummy, 0, 0, 0x30, &length, NULL, &last_byte, &decode_error, NULL);
+    ok(decode_error != 0);
+
+    decode_error = 0;
+    uint8_t buf[2] = {0x30, 0x00};
+    ptls_asn1_get_expected_type_and_length(buf, 2, 2, 0x30, &length, NULL, &last_byte, &decode_error, NULL);
+    ok(decode_error != 0);
+
+    decode_error = 0;
+    ptls_asn1_get_expected_type_and_length(buf, 1, 1, 0x04, &length, NULL, &last_byte, &decode_error, NULL);
+    ok(decode_error != 0);
+}
+
 DEFINE_FFX_AES128_ALGORITHMS(minicrypto);
 DEFINE_FFX_CHACHA20_ALGORITHMS(minicrypto);
 
@@ -161,6 +182,7 @@ int main(int argc, char **argv)
     ADD_FFX_CHACHA20_ALGORITHMS(minicrypto);
 
     subtest("picotls", test_picotls);
+    subtest("asn1-bounds", test_asn1_empty_input);
     subtest("hrr", test_hrr);
 
     return done_testing();
