@@ -1423,7 +1423,8 @@ typedef struct st_ptls_log_getsni_t {
     }                                                                                                                              \
     static inline ptls_log_getsni_t ptls_log_getsni_##suffix(type arg)                                                             \
     {                                                                                                                              \
-        return (ptls_log_getsni_t){ptls_log_getsni_cb_##suffix, arg};                                                              \
+        ptls_log_getsni_t ret = {ptls_log_getsni_cb_##suffix, arg};                                                                \
+        return ret;                                                                                                                \
     }
 
 #if PTLS_HAVE_LOG
