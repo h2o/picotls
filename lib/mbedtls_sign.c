@@ -540,14 +540,15 @@ int ptls_mbedtls_rsa_get_key_bits(const unsigned char *key_value, size_t key_len
         }
     }
 
-    if (ret == 0 && key_value[x] == 0x02 && key_value[x + 1] == 0x01 && key_value[x + 2] == 0x00 && key_value[x + 3] == 0x02) {
+    if (ret == 0 && x + 3 < key_length && key_value[x] == 0x02 && key_value[x + 1] == 0x01 && key_value[x + 2] == 0x00 &&
+        key_value[x + 3] == 0x02) {
         x += 4;
         ret = ptls_mbedtls_parse_der_length(key_value, key_length, &x, &nb_bytes);
     } else {
         ret = -1;
     }
 
-    if (ret == 0) {
+    if (ret == 0 && x < key_length) {
         unsigned char v = key_value[x];
         nb_bits = 8 * nb_bytes;
 
