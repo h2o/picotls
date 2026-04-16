@@ -6008,7 +6008,7 @@ static int handle_input_tls12(ptls_t *tls, ptls_buffer_t *decryptbuf, const void
 Exit:
     ptls_buffer_dispose(&tls->recvbuf.rec);
     ptls_clear_memory(aad, sizeof(aad));
-    return 0;
+    return ret;
 }
 
 static void init_record_message_emitter(ptls_t *tls, struct st_ptls_record_message_emitter_t *emitter, ptls_buffer_t *sendbuf)
