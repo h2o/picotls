@@ -1177,7 +1177,6 @@ static void client_setup_ech_grease(struct st_ptls_ech_t *ech, void (*random_byt
                                     ptls_hpke_cipher_suite_t **ciphers, const char *sni_name)
 {
     static const size_t x25519_key_size = 32;
-    uint8_t random_secret[PTLS_AES128_KEY_SIZE + PTLS_AES_IV_SIZE];
 
     /* pick up X25519, AES-128-GCM or bail out */
     for (size_t i = 0; kems[i] != NULL; ++i) {
@@ -1194,10 +1193,6 @@ static void client_setup_ech_grease(struct st_ptls_ech_t *ech, void (*random_byt
     }
     if (ech->kem == NULL || ech->cipher == NULL)
         goto Fail;
-
-    /* aead is generated from random */
-    random_bytes(random_secret, sizeof(random_secret));
-    ech->aead = ptls_aead_new_direct(ech->cipher->aead, 1, random_secret, random_secret + PTLS_AES128_KEY_SIZE);
 
     /* `enc` is random bytes */
     if ((ech->client.enc.base = malloc(x25519_key_size)) == NULL)
@@ -2341,6 +2336,68 @@ Exit:
     return ret;
 }
 
+static int build_grease_ech_extension(ptls_context_t *ctx, struct st_ptls_ech_t *ech, ptls_iovec_t *dst,
+                                      ptls_handshake_properties_t *properties, const void *client_random,
+                                      ptls_key_exchange_context_t *key_share_ctx, const char *sni_name,
+                                      ptls_iovec_t legacy_session_id, ptls_iovec_t psk_secret, ptls_iovec_t psk_identity,
+                                      uint32_t obfuscated_ticket_age, size_t psk_binder_size, ptls_iovec_t *cookie,
+                                      int using_early_data)
+{
+    ptls_buffer_t chbuf, extbuf;
+    int ret;
+
+    *dst = ptls_iovec_init(NULL, 0);
+    ptls_buffer_init(&chbuf, "", 0);
+    ptls_buffer_init(&extbuf, "", 0);
+
+    if ((ret = encode_client_hello(ctx, &chbuf, ENCODE_CH_MODE_INNER, 0, properties, client_random, key_share_ctx, sni_name,
+                                   legacy_session_id, ech, NULL, ptls_iovec_init(NULL, 0), psk_secret, psk_identity,
+                                   obfuscated_ticket_age, psk_binder_size, cookie, using_early_data)) != 0)
+        goto Exit;
+
+    { /* pad as if this were EncodedClientHelloInner */
+        size_t padding_len;
+        if (sni_name != NULL) {
+            padding_len = strlen(sni_name);
+            if (padding_len < ech->client.max_name_length)
+                padding_len = ech->client.max_name_length;
+        } else {
+            padding_len = ech->client.max_name_length + 9;
+        }
+        size_t final_len = chbuf.off - PTLS_HANDSHAKE_HEADER_SIZE + padding_len;
+        final_len = (final_len + 31) / 32 * 32;
+        padding_len = final_len - (chbuf.off - PTLS_HANDSHAKE_HEADER_SIZE);
+        if (padding_len != 0) {
+            if ((ret = ptls_buffer_reserve(&chbuf, padding_len)) != 0)
+                goto Exit;
+            memset(chbuf.base + chbuf.off, 0, padding_len);
+            chbuf.off += padding_len;
+        }
+    }
+
+    size_t payload_len = chbuf.off - PTLS_HANDSHAKE_HEADER_SIZE + ech->cipher->aead->tag_size;
+    ptls_buffer_push(&extbuf, PTLS_ECH_CLIENT_HELLO_TYPE_OUTER);
+    ptls_buffer_push16(&extbuf, ech->cipher->id.kdf);
+    ptls_buffer_push16(&extbuf, ech->cipher->id.aead);
+    ptls_buffer_push(&extbuf, ech->config_id);
+    ptls_buffer_push_block(&extbuf, 2, { ptls_buffer_pushv(&extbuf, ech->client.enc.base, ech->client.enc.len); });
+    ptls_buffer_push_block(&extbuf, 2, {
+        if ((ret = ptls_buffer_reserve(&extbuf, payload_len)) != 0)
+            goto Exit;
+        ctx->random_bytes(extbuf.base + extbuf.off, payload_len);
+        extbuf.off += payload_len;
+    });
+
+    *dst = ptls_iovec_init(extbuf.base, extbuf.off);
+    extbuf = (ptls_buffer_t){0};
+    ret = 0;
+
+Exit:
+    ptls_buffer_dispose(&chbuf);
+    ptls_buffer_dispose(&extbuf);
+    return ret;
+}
+
 static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_handshake_properties_t *properties,
                              ptls_iovec_t *cookie)
 {
@@ -2375,6 +2432,7 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
                 /* zero-length config indicates ECH greasing */
                 client_setup_ech_grease(&tls->ech, tls->ctx->random_bytes, tls->ctx->ech.client.kems, tls->ctx->ech.client.ciphers,
                                         sni_name);
+                tls->ech.offered_grease = 1;
             }
         }
     }
@@ -2456,6 +2514,14 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
             goto Exit;
         }
         if ((ret = key_schedule_extract(tls->key_schedule, psk.secret)) != 0)
+            goto Exit;
+    }
+
+    if (tls->ech.offered_grease && !is_second_flight && tls->ech.client.first_ech.base == NULL) {
+        if ((ret = build_grease_ech_extension(tls->ctx, &tls->ech, &tls->ech.client.first_ech, properties, tls->client_random,
+                                              tls->client.key_share_ctx, sni_name, tls->client.legacy_session_id, psk.secret,
+                                              psk.identity, obfuscated_ticket_age, tls->key_schedule->hashes[0].algo->digest_size,
+                                              cookie, tls->client.using_early_data)) != 0)
             goto Exit;
     }
 
@@ -2541,11 +2607,7 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
             memcpy(tls->ech.client.first_ech.base,
                    emitter->buf->base + ech_size_offset - outer_ech_header_size(tls->ech.client.enc.len), len);
             tls->ech.client.first_ech.len = len;
-            if (properties->client.ech.configs.len != 0) {
-                tls->ech.offered = 1;
-            } else {
-                tls->ech.offered_grease = 1;
-            }
+            tls->ech.offered = 1;
         }
         /* update hash */
         ptls__key_schedule_update_hash(tls->key_schedule, emitter->buf->base + mess_start, emitter->buf->off - mess_start, 1);
@@ -3003,8 +3065,16 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
             src = end;
             break;
         case PTLS_EXTENSION_TYPE_ENCRYPTED_CLIENT_HELLO: {
+            if (tls->ech.offered_grease) {
+                /* GREASE clients ignore retry_configs after verifying the syntax. */
+                struct st_decoded_ech_config_t decoded;
+                if ((ret = client_decode_ech_config_list(tls->ctx, &decoded, ptls_iovec_init(src, end - src))) != 0)
+                    goto Exit;
+                src = end;
+                break;
+            }
             /* accept retry_configs only if we offered ECH but rejected */
-            if (!((tls->ech.offered || tls->ech.offered_grease) && !ptls_is_ech_handshake(tls, NULL, NULL, NULL))) {
+            if (!(tls->ech.offered && !ptls_is_ech_handshake(tls, NULL, NULL, NULL))) {
                 ret = PTLS_ALERT_UNSUPPORTED_EXTENSION;
                 goto Exit;
             }
