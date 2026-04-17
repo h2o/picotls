@@ -1177,6 +1177,7 @@ static void client_setup_ech_grease(struct st_ptls_ech_t *ech, void (*random_byt
                                     ptls_hpke_cipher_suite_t **ciphers, const char *sni_name)
 {
     static const size_t x25519_key_size = 32;
+    uint8_t random_secret[PTLS_AES128_KEY_SIZE + PTLS_AES_IV_SIZE];
 
     /* pick up X25519, AES-128-GCM or bail out */
     for (size_t i = 0; kems[i] != NULL; ++i) {
@@ -1195,11 +1196,8 @@ static void client_setup_ech_grease(struct st_ptls_ech_t *ech, void (*random_byt
         goto Fail;
 
     /* aead is generated from random */
-    {
-        uint8_t random_secret[PTLS_AES128_KEY_SIZE + PTLS_AES_IV_SIZE];
-        random_bytes(random_secret, sizeof(random_secret));
-        ech->aead = ptls_aead_new_direct(ech->cipher->aead, 1, random_secret, random_secret + PTLS_AES128_KEY_SIZE);
-    }
+    random_bytes(random_secret, sizeof(random_secret));
+    ech->aead = ptls_aead_new_direct(ech->cipher->aead, 1, random_secret, random_secret + PTLS_AES128_KEY_SIZE);
 
     /* `enc` is random bytes */
     if ((ech->client.enc.base = malloc(x25519_key_size)) == NULL)
@@ -3037,25 +3035,19 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
             src = end;
             break;
         case PTLS_EXTENSION_TYPE_ENCRYPTED_CLIENT_HELLO: {
-            if (tls->ech.offered_grease) {
-                /* GREASE clients ignore retry_configs after verifying the syntax. */
-                struct st_decoded_ech_config_t decoded;
-                if ((ret = client_decode_ech_config_list(tls->ctx, &decoded, ptls_iovec_init(src, end - src))) != 0)
-                    goto Exit;
-                src = end;
-                break;
-            }
-            /* accept retry_configs only if we offered ECH but rejected */
-            if (!(tls->ech.offered && !ptls_is_ech_handshake(tls, NULL, NULL, NULL))) {
+            /* accept retry_configs only if we offered ECH (or grease) but rejected */
+            if (!((tls->ech.offered || tls->ech.offered_grease) && !ptls_is_ech_handshake(tls, NULL, NULL, NULL))) {
                 ret = PTLS_ALERT_UNSUPPORTED_EXTENSION;
                 goto Exit;
             }
-            /* parse retry_config, and if it is applicable, provide that to the application */
+            /* parse retry_config, and if it is applicable, provide that to the application (grease clients just verify syntax) */
             struct st_decoded_ech_config_t decoded;
             if ((ret = client_decode_ech_config_list(tls->ctx, &decoded, ptls_iovec_init(src, end - src))) != 0)
                 goto Exit;
-            if (decoded.kem != NULL && decoded.cipher != NULL && properties != NULL &&
-                properties->client.ech.retry_configs != NULL) {
+            if (tls->ech.offered_grease) {
+                /* GREASE clients ignore retry_configs after verifying the syntax */
+            } else if (decoded.kem != NULL && decoded.cipher != NULL && properties != NULL &&
+                       properties->client.ech.retry_configs != NULL) {
                 if ((properties->client.ech.retry_configs->base = malloc(end - src)) == NULL) {
                     ret = PTLS_ERROR_NO_MEMORY;
                     goto Exit;
