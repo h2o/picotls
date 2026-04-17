@@ -2343,6 +2343,28 @@ Exit:
     return ret;
 }
 
+/**
+ * Feeds the CH message into the hash, computing the PSK binder if necessary. `binder_key` must be derived before calling this
+ * function.
+ */
+static int update_ch_hash_and_binder(ptls_key_schedule_t *ks, uint8_t *ch, size_t ch_start, size_t ch_end, int has_psk,
+                                     uint8_t *binder_key, int is_outer)
+{
+    int ret = 0;
+    size_t hash_off = ch_start;
+
+    if (has_psk) {
+        size_t psk_binder_off = ch_end - (3 + ks->hashes[0].algo->digest_size);
+        ptls__key_schedule_update_hash(ks, ch + hash_off, psk_binder_off - hash_off, is_outer);
+        hash_off = psk_binder_off;
+        if ((ret = calc_verify_data(ch + psk_binder_off + 3, ks, binder_key)) != 0)
+            return ret;
+    }
+    ptls__key_schedule_update_hash(ks, ch + hash_off, ch_end - hash_off, is_outer);
+
+    return ret;
+}
+
 static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_handshake_properties_t *properties,
                              ptls_iovec_t *cookie)
 {
@@ -2353,7 +2375,7 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
     } psk = {{NULL}};
     uint32_t obfuscated_ticket_age = 0;
     const char *sni_name = NULL;
-    size_t mess_start, msghash_off;
+    size_t mess_start;
     uint8_t binder_key[PTLS_MAX_DIGEST_SIZE];
     ptls_buffer_t encoded_ch_inner;
     int ret, is_second_flight = tls->key_schedule != NULL;
@@ -2465,7 +2487,7 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
     /* start generating CH */
     if ((ret = emitter->begin_message(emitter)) != 0)
         goto Exit;
-    mess_start = msghash_off = emitter->buf->off;
+    mess_start = emitter->buf->off;
 
     /* generate true (inner) CH */
     if ((ret = encode_client_hello(tls->ctx, emitter->buf, ENCODE_CH_MODE_INNER, is_second_flight, properties,
@@ -2477,15 +2499,12 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
 
     /* update the message hash, filling in the PSK binder HMAC if necessary */
     if (psk.secret.base != NULL) {
-        size_t psk_binder_off = emitter->buf->off - (3 + tls->key_schedule->hashes[0].algo->digest_size);
         if ((ret = derive_secret_with_empty_digest(tls->key_schedule, binder_key, psk.label)) != 0)
             goto Exit;
-        ptls__key_schedule_update_hash(tls->key_schedule, emitter->buf->base + msghash_off, psk_binder_off - msghash_off, 0);
-        msghash_off = psk_binder_off;
-        if ((ret = calc_verify_data(emitter->buf->base + psk_binder_off + 3, tls->key_schedule, binder_key)) != 0)
-            goto Exit;
     }
-    ptls__key_schedule_update_hash(tls->key_schedule, emitter->buf->base + msghash_off, emitter->buf->off - msghash_off, 0);
+    if ((ret = update_ch_hash_and_binder(tls->key_schedule, emitter->buf->base, mess_start, emitter->buf->off,
+                                         psk.secret.base != NULL, binder_key, 0)) != 0)
+        goto Exit;
 
     /* ECH */
     if (tls->ech.aead != NULL) {
@@ -2557,17 +2576,9 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
             }
             ptls_aead_free(tls->ech.aead);
             tls->ech.aead = NULL;
-            if (psk.secret.base != NULL) {
-                size_t psk_binder_off = emitter->buf->off - (3 + tls->key_schedule->hashes[0].algo->digest_size);
-                ptls__key_schedule_update_hash(tls->key_schedule, emitter->buf->base + mess_start, psk_binder_off - mess_start, 0);
-                if ((ret = calc_verify_data(emitter->buf->base + psk_binder_off + 3, tls->key_schedule, binder_key)) != 0)
-                    goto Exit;
-                ptls__key_schedule_update_hash(tls->key_schedule, emitter->buf->base + psk_binder_off,
-                                               emitter->buf->off - psk_binder_off, 0);
-            } else {
-                ptls__key_schedule_update_hash(tls->key_schedule, emitter->buf->base + mess_start, emitter->buf->off - mess_start,
-                                               0);
-            }
+            if ((ret = update_ch_hash_and_binder(tls->key_schedule, emitter->buf->base, mess_start, emitter->buf->off,
+                                                     psk.secret.base != NULL, binder_key, 0)) != 0)
+                goto Exit;
         } else {
             /* update outer hash */
             ptls__key_schedule_update_hash(tls->key_schedule, emitter->buf->base + mess_start, emitter->buf->off - mess_start, 1);
