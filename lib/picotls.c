@@ -5874,9 +5874,9 @@ static int handle_input(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_buffe
     if (rec.type == PTLS_CONTENT_TYPE_CHANGE_CIPHER_SPEC) {
         if (tls->state < PTLS_STATE_POST_HANDSHAKE_MIN) {
             if (!(rec.length == 1 && rec.fragment[0] == 0x01))
-                return PTLS_ALERT_ILLEGAL_PARAMETER;
+                return PTLS_ALERT_UNEXPECTED_MESSAGE;
         } else {
-            return PTLS_ALERT_HANDSHAKE_FAILURE;
+            return PTLS_ALERT_UNEXPECTED_MESSAGE;
         }
         ret = PTLS_ERROR_IN_PROGRESS;
         goto NextRecord;
