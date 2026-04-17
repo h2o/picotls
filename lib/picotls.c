@@ -1194,6 +1194,13 @@ static void client_setup_ech_grease(struct st_ptls_ech_t *ech, void (*random_byt
     if (ech->kem == NULL || ech->cipher == NULL)
         goto Fail;
 
+    /* aead is generated from random */
+    {
+        uint8_t random_secret[PTLS_AES128_KEY_SIZE + PTLS_AES_IV_SIZE];
+        random_bytes(random_secret, sizeof(random_secret));
+        ech->aead = ptls_aead_new_direct(ech->cipher->aead, 1, random_secret, random_secret + PTLS_AES128_KEY_SIZE);
+    }
+
     /* `enc` is random bytes */
     if ((ech->client.enc.base = malloc(x25519_key_size)) == NULL)
         goto Fail;
@@ -2300,7 +2307,7 @@ static int encode_client_hello(ptls_context_t *ctx, ptls_buffer_t *sendbuf, enum
                 buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_PRE_SHARED_KEY, {
                     ptls_buffer_push_block(sendbuf, 2, {
                         ptls_buffer_push_block(sendbuf, 2, {
-                            if (mode == ENCODE_CH_MODE_OUTER) {
+                            if (mode == ENCODE_CH_MODE_OUTER && !ech->offered_grease) {
                                 if ((ret = ptls_buffer_reserve(sendbuf, psk_identity.len)) != 0)
                                     goto Exit;
                                 ctx->random_bytes(sendbuf->base + sendbuf->off, psk_identity.len);
@@ -2310,7 +2317,7 @@ static int encode_client_hello(ptls_context_t *ctx, ptls_buffer_t *sendbuf, enum
                             }
                         });
                         uint32_t age;
-                        if (mode == ENCODE_CH_MODE_OUTER) {
+                        if (mode == ENCODE_CH_MODE_OUTER && !ech->offered_grease) {
                             ctx->random_bytes(&age, sizeof(age));
                         } else {
                             age = obfuscated_ticket_age;
@@ -2333,68 +2340,6 @@ static int encode_client_hello(ptls_context_t *ctx, ptls_buffer_t *sendbuf, enum
     });
 
 Exit:
-    return ret;
-}
-
-static int build_grease_ech_extension(ptls_context_t *ctx, struct st_ptls_ech_t *ech, ptls_iovec_t *dst,
-                                      ptls_handshake_properties_t *properties, const void *client_random,
-                                      ptls_key_exchange_context_t *key_share_ctx, const char *sni_name,
-                                      ptls_iovec_t legacy_session_id, ptls_iovec_t psk_secret, ptls_iovec_t psk_identity,
-                                      uint32_t obfuscated_ticket_age, size_t psk_binder_size, ptls_iovec_t *cookie,
-                                      int using_early_data)
-{
-    ptls_buffer_t chbuf, extbuf;
-    int ret;
-
-    *dst = ptls_iovec_init(NULL, 0);
-    ptls_buffer_init(&chbuf, "", 0);
-    ptls_buffer_init(&extbuf, "", 0);
-
-    if ((ret = encode_client_hello(ctx, &chbuf, ENCODE_CH_MODE_INNER, 0, properties, client_random, key_share_ctx, sni_name,
-                                   legacy_session_id, ech, NULL, ptls_iovec_init(NULL, 0), psk_secret, psk_identity,
-                                   obfuscated_ticket_age, psk_binder_size, cookie, using_early_data)) != 0)
-        goto Exit;
-
-    { /* pad as if this were EncodedClientHelloInner */
-        size_t padding_len;
-        if (sni_name != NULL) {
-            padding_len = strlen(sni_name);
-            if (padding_len < ech->client.max_name_length)
-                padding_len = ech->client.max_name_length;
-        } else {
-            padding_len = ech->client.max_name_length + 9;
-        }
-        size_t final_len = chbuf.off - PTLS_HANDSHAKE_HEADER_SIZE + padding_len;
-        final_len = (final_len + 31) / 32 * 32;
-        padding_len = final_len - (chbuf.off - PTLS_HANDSHAKE_HEADER_SIZE);
-        if (padding_len != 0) {
-            if ((ret = ptls_buffer_reserve(&chbuf, padding_len)) != 0)
-                goto Exit;
-            memset(chbuf.base + chbuf.off, 0, padding_len);
-            chbuf.off += padding_len;
-        }
-    }
-
-    size_t payload_len = chbuf.off - PTLS_HANDSHAKE_HEADER_SIZE + ech->cipher->aead->tag_size;
-    ptls_buffer_push(&extbuf, PTLS_ECH_CLIENT_HELLO_TYPE_OUTER);
-    ptls_buffer_push16(&extbuf, ech->cipher->id.kdf);
-    ptls_buffer_push16(&extbuf, ech->cipher->id.aead);
-    ptls_buffer_push(&extbuf, ech->config_id);
-    ptls_buffer_push_block(&extbuf, 2, { ptls_buffer_pushv(&extbuf, ech->client.enc.base, ech->client.enc.len); });
-    ptls_buffer_push_block(&extbuf, 2, {
-        if ((ret = ptls_buffer_reserve(&extbuf, payload_len)) != 0)
-            goto Exit;
-        ctx->random_bytes(extbuf.base + extbuf.off, payload_len);
-        extbuf.off += payload_len;
-    });
-
-    *dst = ptls_iovec_init(extbuf.base, extbuf.off);
-    extbuf = (ptls_buffer_t){0};
-    ret = 0;
-
-Exit:
-    ptls_buffer_dispose(&chbuf);
-    ptls_buffer_dispose(&extbuf);
     return ret;
 }
 
@@ -2517,14 +2462,6 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
             goto Exit;
     }
 
-    if (tls->ech.offered_grease && !is_second_flight && tls->ech.client.first_ech.base == NULL) {
-        if ((ret = build_grease_ech_extension(tls->ctx, &tls->ech, &tls->ech.client.first_ech, properties, tls->client_random,
-                                              tls->client.key_share_ctx, sni_name, tls->client.legacy_session_id, psk.secret,
-                                              psk.identity, obfuscated_ticket_age, tls->key_schedule->hashes[0].algo->digest_size,
-                                              cookie, tls->client.using_early_data)) != 0)
-            goto Exit;
-    }
-
     /* start generating CH */
     if ((ret = emitter->begin_message(emitter)) != 0)
         goto Exit;
@@ -2607,10 +2544,34 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
             memcpy(tls->ech.client.first_ech.base,
                    emitter->buf->base + ech_size_offset - outer_ech_header_size(tls->ech.client.enc.len), len);
             tls->ech.client.first_ech.len = len;
-            tls->ech.offered = 1;
+            if (!tls->ech.offered_grease)
+                tls->ech.offered = 1;
         }
-        /* update hash */
-        ptls__key_schedule_update_hash(tls->key_schedule, emitter->buf->base + mess_start, emitter->buf->off - mess_start, 1);
+        if (tls->ech.offered_grease) {
+            /* For grease ECH, the server sees the outer CH. Discard the inner state and adopt the outer, then compute the PSK
+             * binder over the outer CH using the standard flow. */
+            for (size_t i = 0; i < tls->key_schedule->num_hashes; ++i) {
+                tls->key_schedule->hashes[i].ctx->final(tls->key_schedule->hashes[i].ctx, NULL, PTLS_HASH_FINAL_MODE_FREE);
+                tls->key_schedule->hashes[i].ctx = tls->key_schedule->hashes[i].ctx_outer;
+                tls->key_schedule->hashes[i].ctx_outer = NULL;
+            }
+            ptls_aead_free(tls->ech.aead);
+            tls->ech.aead = NULL;
+            if (psk.secret.base != NULL) {
+                size_t psk_binder_off = emitter->buf->off - (3 + tls->key_schedule->hashes[0].algo->digest_size);
+                ptls__key_schedule_update_hash(tls->key_schedule, emitter->buf->base + mess_start, psk_binder_off - mess_start, 0);
+                if ((ret = calc_verify_data(emitter->buf->base + psk_binder_off + 3, tls->key_schedule, binder_key)) != 0)
+                    goto Exit;
+                ptls__key_schedule_update_hash(tls->key_schedule, emitter->buf->base + psk_binder_off,
+                                               emitter->buf->off - psk_binder_off, 0);
+            } else {
+                ptls__key_schedule_update_hash(tls->key_schedule, emitter->buf->base + mess_start, emitter->buf->off - mess_start,
+                                               0);
+            }
+        } else {
+            /* update outer hash */
+            ptls__key_schedule_update_hash(tls->key_schedule, emitter->buf->base + mess_start, emitter->buf->off - mess_start, 1);
+        }
     }
 
     /* commit CH to the record layer */
