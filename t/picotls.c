@@ -840,6 +840,14 @@ static int save_client_hello(ptls_on_client_hello_t *self, ptls_t *tls, ptls_on_
     return 0;
 }
 
+enum test_ech_mode {
+    TEST_ECH_NONE,
+    TEST_ECH_REAL,
+    TEST_ECH_GREASE
+};
+
+static enum test_ech_mode test_client_ech_mode = TEST_ECH_REAL;
+
 enum {
     TEST_HANDSHAKE_1RTT,
     TEST_HANDSHAKE_2RTT,
@@ -855,12 +863,14 @@ static int on_extension_cb(ptls_on_extension_t *self, ptls_t *tls, uint8_t hstyp
     return 0;
 }
 
-static int can_ech(ptls_context_t *ctx, int is_server)
+static enum test_ech_mode get_test_ech_mode(ptls_context_t *ctx, int is_server)
 {
     if (is_server) {
-        return ctx->ech.server.create_opener != NULL;
+        return ctx->ech.server.create_opener != NULL ? TEST_ECH_REAL : TEST_ECH_NONE;
     } else {
-        return ctx->ech.client.ciphers != NULL;
+        if (ctx->ech.client.ciphers == NULL)
+            return TEST_ECH_NONE;
+        return test_client_ech_mode;
     }
 }
 
@@ -940,9 +950,17 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int expect_ticket, int
         ptls_set_server_name(client, "test.example.com", 0);
     }
 
-    if (can_ech(ctx, 0)) {
+    switch (get_test_ech_mode(ctx, 0)) {
+    case TEST_ECH_REAL:
         ptls_set_server_name(client, "test.example.com", 0);
         client_hs_prop.client.ech.configs = ptls_iovec_init(ECH_CONFIG_LIST, sizeof(ECH_CONFIG_LIST) - 1);
+        break;
+    case TEST_ECH_GREASE:
+        ptls_set_server_name(client, "test.example.com", 0);
+        client_hs_prop.client.ech.configs = ptls_iovec_init("", 0);
+        break;
+    default:
+        break;
     }
 
     static ptls_on_extension_t cb = {on_extension_cb};
@@ -1016,7 +1034,7 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int expect_ticket, int
     ok(sbuf.off != 0);
     if (check_ch) {
         ok(ptls_get_server_name(server) != NULL);
-        if (can_ech(ctx, 0) && !can_ech(ctx_peer, 1)) {
+        if (get_test_ech_mode(ctx, 0) != TEST_ECH_NONE && get_test_ech_mode(ctx_peer, 1) == TEST_ECH_NONE) {
             /* server should be using CHouter.sni that includes the public name of the ECH extension */
             ok(strcmp(ptls_get_server_name(server), "example.com") == 0);
         } else {
@@ -1174,7 +1192,7 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int expect_ticket, int
     }
 
     /* original_server is used for the server-side checks because handshake data is never migrated */
-    if (can_ech(ctx_peer, 1) && can_ech(ctx, 0)) {
+    if (get_test_ech_mode(ctx_peer, 1) != TEST_ECH_NONE && get_test_ech_mode(ctx, 0) == TEST_ECH_REAL) {
         ok(ptls_is_ech_handshake(client, NULL, NULL, NULL));
         ok(ptls_is_ech_handshake(original_server, NULL, NULL, NULL));
     } else {
@@ -1409,6 +1427,24 @@ static void test_resumption(int different_preferred_key_share, int require_clien
     subtest("basic", test_resumption_impl, different_preferred_key_share, require_client_authentication, 0, 0);
     subtest("transfer-session", test_resumption_impl, different_preferred_key_share, require_client_authentication, 0, 1);
     subtest("ticket-request", test_resumption_impl, different_preferred_key_share, require_client_authentication, 1, 0);
+}
+
+static void test_grease_resumption(void)
+{
+    ptls_ech_create_opener_t *orig_create_opener = ctx_peer->ech.server.create_opener;
+
+    if (get_test_ech_mode(ctx, 0) == TEST_ECH_NONE)
+        return;
+
+    ctx_peer->ech.server.create_opener = NULL;
+    test_client_ech_mode = TEST_ECH_GREASE;
+
+    subtest("basic", test_resumption_impl, 0, 0, 0, 0);
+    subtest("transfer-session", test_resumption_impl, 0, 0, 0, 1);
+    subtest("ticket-request", test_resumption_impl, 0, 0, 1, 0);
+
+    test_client_ech_mode = TEST_ECH_REAL;
+    ctx_peer->ech.server.create_opener = orig_create_opener;
 }
 
 static void test_async_sign_certificate(void)
@@ -2088,15 +2124,17 @@ static void test_all_handshakes_core(void)
     subtest("full-handshake+client-auth", test_full_handshake_with_client_authentication);
     subtest("hrr-handshake", test_hrr_handshake);
     /* resumption does not work when the client offers ECH but the server does not recognize that */
-    if (!(can_ech(ctx, 0) && !can_ech(ctx_peer, 1))) {
+    if (!(get_test_ech_mode(ctx, 0) != TEST_ECH_NONE && get_test_ech_mode(ctx_peer, 1) == TEST_ECH_NONE)) {
         subtest("resumption", test_resumption, 0, 0);
         if (ctx != ctx_peer)
             subtest("resumption-different-preferred-key-share", test_resumption, 1, 0);
         subtest("resumption-with-client-authentication", test_resumption, 0, 1);
     }
+    if (get_test_ech_mode(ctx, 0) != TEST_ECH_NONE)
+        subtest("resumption-with-grease", test_grease_resumption);
     subtest("async-sign-certificate", test_async_sign_certificate);
     subtest("enforce-retry-stateful", test_enforce_retry_stateful);
-    if (!(can_ech(ctx_peer, 1) && can_ech(ctx, 0))) {
+    if (!(get_test_ech_mode(ctx_peer, 1) != TEST_ECH_NONE && get_test_ech_mode(ctx, 0) != TEST_ECH_NONE)) {
         subtest("hrr-stateless-handshake", test_hrr_stateless_handshake);
         subtest("enforce-retry-stateless", test_enforce_retry_stateless);
         subtest("stateless-hrr-aad-change", test_stateless_hrr_aad_change);
@@ -2130,7 +2168,7 @@ static void test_all_handshakes(void)
     ctx_peer->ech.server.create_opener = orig_ech.create_opener;
     ctx->ech.client.ciphers = orig_ech.client_ciphers;
 
-    if (can_ech(ctx_peer, 1) && can_ech(ctx, 0)) {
+    if (get_test_ech_mode(ctx_peer, 1) != TEST_ECH_NONE && get_test_ech_mode(ctx, 0) != TEST_ECH_NONE) {
         subtest("ech", test_all_handshakes_core);
         if (ctx != ctx_peer) {
             ctx->ech.client.ciphers = NULL;
