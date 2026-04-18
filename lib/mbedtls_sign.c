@@ -670,8 +670,7 @@ int ptls_mbedtls_load_private_key(ptls_context_t *ctx, char const *pem_fname)
                 } else if (oid_length == sizeof(ptls_mbedtls_oid_rsa_key) &&
                            memcmp(pem.private_buf + oid_index, ptls_mbedtls_oid_rsa_key, sizeof(ptls_mbedtls_oid_rsa_key)) == 0) {
                     /* We recognized RSA */
-                    key_length = pem.private_buflen;
-                    ptls_mbedtls_set_rsa_key_attributes(signer, pem.private_buf, key_length);
+                    ptls_mbedtls_set_rsa_key_attributes(signer, pem.private_buf + key_index, key_length);
                 } else {
                     ret = PTLS_ERROR_NOT_AVAILABLE;
                 }
