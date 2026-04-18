@@ -846,7 +846,11 @@ enum test_ech_mode {
     TEST_ECH_GREASE
 };
 
-static enum test_ech_mode test_client_ech_mode = TEST_ECH_REAL;
+/**
+ * Sentinel value for `ctx->ech.client.ciphers` indicating grease mode. `get_test_ech_mode` recognizes this pointer and returns
+ * `TEST_ECH_GREASE`. Contains a single cipher entry sufficient for `client_setup_ech_grease`.
+ */
+static ptls_hpke_cipher_suite_t *grease_ciphers[2];
 
 enum {
     TEST_HANDSHAKE_1RTT,
@@ -870,7 +874,9 @@ static enum test_ech_mode get_test_ech_mode(ptls_context_t *ctx, int is_server)
     } else {
         if (ctx->ech.client.ciphers == NULL)
             return TEST_ECH_NONE;
-        return test_client_ech_mode;
+        if (ctx->ech.client.ciphers == grease_ciphers)
+            return TEST_ECH_GREASE;
+        return TEST_ECH_REAL;
     }
 }
 
@@ -1432,16 +1438,21 @@ static void test_resumption(int different_preferred_key_share, int require_clien
 static void test_grease_resumption(void)
 {
     ptls_ech_create_opener_t *orig_create_opener = ctx_peer->ech.server.create_opener;
+    ptls_hpke_cipher_suite_t **orig_ciphers = ctx->ech.client.ciphers;
 
     if (get_test_ech_mode(ctx, 0) == TEST_ECH_NONE)
         return;
 
+    /* populate grease_ciphers (once) with a single entry from the real list */
+    if (grease_ciphers[0] == NULL)
+        grease_ciphers[0] = orig_ciphers[0];
+
     ctx_peer->ech.server.create_opener = NULL;
-    test_client_ech_mode = TEST_ECH_GREASE;
+    ctx->ech.client.ciphers = grease_ciphers;
 
     test_resumption(0, 0);
 
-    test_client_ech_mode = TEST_ECH_REAL;
+    ctx->ech.client.ciphers = orig_ciphers;
     ctx_peer->ech.server.create_opener = orig_create_opener;
 }
 
