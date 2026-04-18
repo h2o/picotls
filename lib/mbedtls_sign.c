@@ -403,6 +403,7 @@ int ptls_mbedtls_set_available_schemes(ptls_mbedtls_sign_certificate_t *signer)
         }
         break;
     case PSA_ALG_ED25519PH:
+    case PSA_ALG_PURE_EDDSA:
         signer->schemes = ed25519_signature_schemes;
         break;
     default:
