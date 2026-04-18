@@ -1439,9 +1439,7 @@ static void test_grease_resumption(void)
     ctx_peer->ech.server.create_opener = NULL;
     test_client_ech_mode = TEST_ECH_GREASE;
 
-    subtest("basic", test_resumption_impl, 0, 0, 0, 0);
-    subtest("transfer-session", test_resumption_impl, 0, 0, 0, 1);
-    subtest("ticket-request", test_resumption_impl, 0, 0, 1, 0);
+    test_resumption(0, 0);
 
     test_client_ech_mode = TEST_ECH_REAL;
     ctx_peer->ech.server.create_opener = orig_create_opener;
