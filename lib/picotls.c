@@ -2400,8 +2400,8 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
                     if ((ret = client_setup_ech(&tls->ech, &decoded, tls->ctx->random_bytes)) != 0)
                         goto Exit;
                 }
-            } else {
-                /* zero-length config indicates ECH greasing */
+            } else if (properties->client.ech.configs.base != NULL) {
+                /* zero-length config with non-NULL base indicates ECH greasing; NULL base means no ECH */
                 client_setup_ech_grease(&tls->ech, tls->ctx->random_bytes, tls->ctx->ech.client.kems, tls->ctx->ech.client.ciphers,
                                         sni_name);
                 tls->ech.state = PTLS_ECH_STATE_GREASE;

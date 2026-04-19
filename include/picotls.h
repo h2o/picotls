@@ -1123,8 +1123,9 @@ typedef struct st_ptls_handshake_properties_t {
              */
             struct {
                 /**
-                 * Config offered by server e.g., by HTTPS RR. If config.base is non-NULL but config.len is zero, a grease ECH will
-                 * be sent, assuming that X25519-SHA256 KEM and SHA256-AES-128-GCM HPKE cipher is available.
+                 * An ECH config offered by server e.g., by HTTPS RR. If config.len is zero and .base is non-NULL, a grease ECH will
+                 * be sent, assuming that X25519-SHA256 KEM and SHA256-AES-128-GCM HPKE cipher is available. If .base is also NULL,
+                 * ECH will not be used at all, even if the context provided the ECH ciphers.
                  */
                 ptls_iovec_t configs;
                 /**
