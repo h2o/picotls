@@ -1698,6 +1698,52 @@ static void test_ech_hrr_accept_sh_reject(void)
     ptls_buffer_dispose(&sbuf);
 }
 
+static int ech_ext_seen_in_ch;
+static int observe_ech_extension(ptls_on_extension_t *self, ptls_t *tls, uint8_t hstype, uint16_t exttype, ptls_iovec_t extdata)
+{
+    /* PTLS_EXTENSION_TYPE_ENCRYPTED_CLIENT_HELLO is 0xfe0d (not exposed in picotls.h). */
+    if (hstype == PTLS_HANDSHAKE_TYPE_CLIENT_HELLO && exttype == 0xfe0d)
+        ech_ext_seen_in_ch = 1;
+    return 0;
+}
+
+/* When handshake_properties is supplied with client.ech.configs = {NULL, 0}, the client must NOT send an ECH extension
+ * (neither real ECH nor grease), even when the context has ECH ciphers configured. This matches what picotls.h documents. */
+static void test_ech_null_configs_no_ech(void)
+{
+    ptls_t *client, *server;
+    ptls_buffer_t cbuf, sbuf;
+    size_t consumed;
+    int ret;
+    ptls_handshake_properties_t client_hs_prop = {{{{NULL}}}}; /* configs.base == NULL */
+    ptls_on_extension_t observer = {observe_ech_extension};
+    ptls_on_extension_t *orig_observer = ctx_peer->on_extension;
+
+    ech_ext_seen_in_ch = 0;
+    ctx_peer->on_extension = &observer;
+
+    client = ptls_new(ctx, 0);
+    ptls_set_server_name(client, "test.example.com", 0);
+    server = ptls_new(ctx_peer, 1);
+    ptls_buffer_init(&cbuf, "", 0);
+    ptls_buffer_init(&sbuf, "", 0);
+
+    ret = ptls_handshake(client, &cbuf, NULL, NULL, &client_hs_prop);
+    ok(ret == PTLS_ERROR_IN_PROGRESS);
+
+    consumed = cbuf.off;
+    ret = ptls_handshake(server, &sbuf, cbuf.base, &consumed, NULL);
+    /* server should progress (either still in handshake or complete); what matters is that it observed no ECH ext */
+    ok(ret == PTLS_ERROR_IN_PROGRESS || ret == 0);
+    ok(!ech_ext_seen_in_ch);
+
+    ctx_peer->on_extension = orig_observer;
+    ptls_free(client);
+    ptls_free(server);
+    ptls_buffer_dispose(&cbuf);
+    ptls_buffer_dispose(&sbuf);
+}
+
 static void do_test_pre_shared_key(int mode)
 {
     ptls_context_t ctx_client = *ctx;
@@ -2211,6 +2257,7 @@ static void test_all_handshakes(void)
         }
         subtest("ech-config-mismatch", test_ech_config_mismatch);
         subtest("ech-hrr-accept-sh-reject", test_ech_hrr_accept_sh_reject);
+        subtest("ech-null-configs-no-ech", test_ech_null_configs_no_ech);
         test_client_ech_configs = ptls_iovec_init(NULL, 0);
     }
 
