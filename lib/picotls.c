@@ -2831,12 +2831,16 @@ static int client_ech_select_hello(ptls_t *tls, ptls_iovec_t message, size_t con
         if ((ret = ech_calc_confirmation(tls->key_schedule, confirm_hash_expected, tls->ech.inner_client_random, label, message)) !=
             0)
             goto Exit;
-        tls->ech.state = ptls_mem_equal(confirm_hash_delivered, confirm_hash_expected, sizeof(confirm_hash_delivered))
-                             ? PTLS_ECH_STATE_ACCEPTED
-                             : PTLS_ECH_STATE_OFFERED;
+        int accepted = ptls_mem_equal(confirm_hash_delivered, confirm_hash_expected, sizeof(confirm_hash_delivered));
         memcpy(message.base + confirm_hash_off, confirm_hash_delivered, sizeof(confirm_hash_delivered));
-        if (tls->ech.state == PTLS_ECH_STATE_ACCEPTED)
+        if (accepted) {
+            tls->ech.state = PTLS_ECH_STATE_ACCEPTED;
             goto Exit;
+        } else if (tls->ech.state == PTLS_ECH_STATE_ACCEPTED) {
+            /* Per RFC 9849 Section 6.1.5: if HRR confirmed ECH acceptance, ServerHello MUST also confirm it. */
+            ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+            goto Exit;
+        }
     }
 
     /* dispose ECH AEAD state to indicate rejection, adopting outer CH for the rest of the handshake */
