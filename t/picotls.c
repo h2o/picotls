@@ -1635,6 +1635,69 @@ static void test_ech_config_mismatch(void)
     free(retry_configs.base);
 }
 
+/* Per RFC 9849 §6.1.5, if the HRR confirmed ECH acceptance, the ServerHello MUST also confirm it. Here we force HRR, let the
+ * server accept ECH in the HRR, then flip the ECH confirmation bits in the SH and check that the client aborts with
+ * illegal_parameter. */
+static void test_ech_hrr_accept_sh_reject(void)
+{
+    ptls_t *client, *server;
+    ptls_buffer_t cbuf, sbuf;
+    size_t consumed;
+    int ret;
+    ptls_handshake_properties_t client_hs_prop = {
+        .client = {
+            .ech.configs = ptls_iovec_init(ECH_CONFIG_LIST, sizeof(ECH_CONFIG_LIST) - 1),
+            .negotiate_before_key_exchange = 1, /* force HRR */
+        }};
+
+    client = ptls_new(ctx, 0);
+    ptls_set_server_name(client, "test.example.com", 0);
+    server = ptls_new(ctx_peer, 1);
+    ptls_buffer_init(&cbuf, "", 0);
+    ptls_buffer_init(&sbuf, "", 0);
+
+    /* CH1 */
+    ret = ptls_handshake(client, &cbuf, NULL, NULL, &client_hs_prop);
+    ok(ret == PTLS_ERROR_IN_PROGRESS);
+
+    /* CH1 -> HRR */
+    consumed = cbuf.off;
+    ret = ptls_handshake(server, &sbuf, cbuf.base, &consumed, NULL);
+    ok(ret == PTLS_ERROR_IN_PROGRESS);
+    ok(cbuf.off == consumed);
+    cbuf.off = 0;
+
+    /* HRR -> CH2 (client transitions to ECH_STATE_ACCEPTED via HRR confirmation) */
+    consumed = sbuf.off;
+    ret = ptls_handshake(client, &cbuf, sbuf.base, &consumed, &client_hs_prop);
+    ok(ret == PTLS_ERROR_IN_PROGRESS);
+    ok(sbuf.off == consumed);
+    sbuf.off = 0;
+
+    /* CH2 -> SH + ... */
+    consumed = cbuf.off;
+    ret = ptls_handshake(server, &sbuf, cbuf.base, &consumed, NULL);
+    ok(ret == 0);
+    ok(cbuf.off == consumed);
+    cbuf.off = 0;
+
+    /* Corrupt last 8 bytes of SH.random (the ECH confirmation signal). SH record layout:
+     * [5 record hdr][1 hs_type=0x02][3 hs len][2 legacy_ver][32 random]... -> bytes 35..42 */
+    ok(sbuf.off >= 43 && sbuf.base[0] == 0x16 && sbuf.base[5] == 0x02);
+    for (size_t i = 35; i < 43; ++i)
+        sbuf.base[i] ^= 0xff;
+
+    /* Corrupted SH -> client MUST abort with illegal_parameter. */
+    consumed = sbuf.off;
+    ret = ptls_handshake(client, &cbuf, sbuf.base, &consumed, &client_hs_prop);
+    ok(ret == PTLS_ALERT_ILLEGAL_PARAMETER);
+
+    ptls_free(client);
+    ptls_free(server);
+    ptls_buffer_dispose(&cbuf);
+    ptls_buffer_dispose(&sbuf);
+}
+
 static void do_test_pre_shared_key(int mode)
 {
     ptls_context_t ctx_client = *ctx;
@@ -2147,6 +2210,7 @@ static void test_all_handshakes(void)
             test_client_ech_configs = ptls_iovec_init(ECH_CONFIG_LIST, sizeof(ECH_CONFIG_LIST) - 1);
         }
         subtest("ech-config-mismatch", test_ech_config_mismatch);
+        subtest("ech-hrr-accept-sh-reject", test_ech_hrr_accept_sh_reject);
         test_client_ech_configs = ptls_iovec_init(NULL, 0);
     }
 
