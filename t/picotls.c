@@ -2258,6 +2258,73 @@ static void test_escape_json_unsafe_string(void)
 #undef STRLIT
 }
 
+static void test_signature_algorithms_overflow(void)
+{
+    /*
+     * Reproduces the bug triggered by Erlang/OTP 29.0-rc3 client that sends 34 signature algorithms.
+     * The supported ones (ecdsa_secp256r1_sha256 0x0403, rsa_pss_rsae_sha256 0x0804, etc.) land
+     * at positions 20+ in the list, beyond the list[16] cutoff, so the server can't find a match.
+     * Fix by using PTLS_MAX_SIGNATURE_ALGORITHMS of 64.
+     */
+    static const uint8_t erlang_sig_algs[] = {
+        0x00, 0x46, /* length = 35 * 2 = 70 */
+        /* 0:  mldsa87             */ 0x09, 0x07,
+        /* 1:  mldsa65             */ 0x09, 0x06,
+        /* 2:  mldsa44             */ 0x09, 0x05,
+        /* 3:  slh_dsa_shake_256f  */ 0x09, 0x0e,
+        /* 4:  slh_dsa_shake_256s  */ 0x09, 0x0d,
+        /* 5:  slh_dsa_sha2_256f   */ 0x09, 0x0c,
+        /* 6:  slh_dsa_sha2_256s   */ 0x09, 0x0b,
+        /* 7:  slh_dsa_shake_192f  */ 0x09, 0x0a,
+        /* 8:  slh_dsa_shake_192s  */ 0x09, 0x09,
+        /* 9:  slh_dsa_sha2_192f   */ 0x09, 0x08,
+        /* 10: slh_dsa_sha2_192s   */ 0x09, 0x04,
+        /* 11: slh_dsa_shake_128f  */ 0x09, 0x03,
+        /* 12: slh_dsa_shake_128s  */ 0x09, 0x02,
+        /* 13: slh_dsa_sha2_128f   */ 0x09, 0x01,
+        /* 14: slh_dsa_sha2_128s   */ 0x09, 0x00,
+        /* 15: eddsa_ed25519       */ 0x08, 0x07,
+        /* 16: eddsa_ed448         */ 0x08, 0x08,
+        /* 17: ecdsa_secp521r1     */ 0x06, 0x03,
+        /* 18: ecdsa_secp384r1     */ 0x05, 0x03,
+        /* 19: ecdsa_secp256r1     */ 0x04, 0x03,
+        /* 20: brainpoolP512r1     */ 0x08, 0x1b,
+        /* 21: brainpoolP384r1     */ 0x08, 0x1a,
+        /* 22: brainpoolP256r1     */ 0x08, 0x19,
+        /* 23: rsa_pss_pss_sha512  */ 0x08, 0x0b,
+        /* 24: rsa_pss_pss_sha384  */ 0x08, 0x0a,
+        /* 25: rsa_pss_pss_sha256  */ 0x08, 0x09,
+        /* 26: rsa_pss_rsae_sha512 */ 0x08, 0x06,
+        /* 27: rsa_pss_rsae_sha384 */ 0x08, 0x05,
+        /* 28: rsa_pss_rsae_sha256 */ 0x08, 0x04,
+        /* 29: rsa_pkcs1_sha512    */ 0x06, 0x01,
+        /* 30: rsa_pkcs1_sha384    */ 0x05, 0x01,
+        /* 31: rsa_pkcs1_sha256    */ 0x04, 0x01,
+        /* 32: {sha512,ecdsa}      */ 0x06, 0x03,
+        /* 33: {sha384,ecdsa}      */ 0x05, 0x03,
+        /* 34: {sha256,ecdsa}      */ 0x04, 0x03,
+    };
+
+    struct st_ptls_signature_algorithms_t sa = {0};
+    const uint8_t *src = erlang_sig_algs;
+    int ret = decode_signature_algorithms(&sa, &src, erlang_sig_algs + sizeof(erlang_sig_algs));
+    ok(ret == 0);
+    ok(src == erlang_sig_algs + sizeof(erlang_sig_algs));
+
+    ok(sa.count == 35);
+
+    /* Verify that the commonly supported algorithms (past old position 16) are present */
+    int found_ecdsa_p256 = 0, found_rsa_pss_rsae_256 = 0;
+    for (size_t i = 0; i < sa.count; ++i) {
+        if (sa.list[i] == PTLS_SIGNATURE_ECDSA_SECP256R1_SHA256)
+            found_ecdsa_p256 = 1;
+        if (sa.list[i] == PTLS_SIGNATURE_RSA_PSS_RSAE_SHA256)
+            found_rsa_pss_rsae_256 = 1;
+    }
+    ok(found_ecdsa_p256);
+    ok(found_rsa_pss_rsae_256);
+}
+
 void test_picotls(void)
 {
     subtest("is_ipaddr", test_is_ipaddr);
@@ -2288,6 +2355,7 @@ void test_picotls(void)
     subtest("quic", test_quic);
     subtest("legacy-ch", test_legacy_ch);
     subtest("ptls_escape_json_unsafe_string", test_escape_json_unsafe_string);
+    subtest("signature-algorithms-overflow", test_signature_algorithms_overflow);
 }
 
 void test_key_exchange(ptls_key_exchange_algorithm_t *client, ptls_key_exchange_algorithm_t *server)
