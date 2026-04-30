@@ -154,7 +154,7 @@ struct st_ptls_record_message_emitter_t {
 };
 
 struct st_ptls_signature_algorithms_t {
-    uint16_t list[16]; /* expand? */
+    uint16_t list[PTLS_MAX_SIGNATURE_ALGORITHMS];
     size_t count;
 };
 
