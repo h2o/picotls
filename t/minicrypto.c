@@ -156,6 +156,37 @@ static void test_asn1_empty_input(void)
     ok(decode_error != 0);
 }
 
+static size_t build_nested_asn1_sequence(uint8_t *buf, size_t depth)
+{
+    size_t len = 3;
+
+    buf[2 * depth] = 0x04;
+    buf[2 * depth + 1] = 0x01;
+    buf[2 * depth + 2] = 0x00;
+
+    for (size_t i = depth; i != 0; --i) {
+        size_t off = 2 * (i - 1);
+        buf[off] = 0x30;
+        buf[off + 1] = (uint8_t)len;
+        len += 2;
+    }
+
+    return len;
+}
+
+static void test_asn1_recursion(void)
+{
+    uint8_t shallow[3 + 2 * 32];
+    uint8_t too_deep[3 + 2 * 40];
+    size_t len;
+
+    len = build_nested_asn1_sequence(shallow, 32);
+    ok(ptls_asn1_validation(shallow, len, NULL) == 0);
+
+    len = build_nested_asn1_sequence(too_deep, 40);
+    ok(ptls_asn1_validation(too_deep, len, NULL) == PTLS_ERROR_INCORRECT_ASN1_SYNTAX);
+}
+
 DEFINE_FFX_AES128_ALGORITHMS(minicrypto);
 DEFINE_FFX_CHACHA20_ALGORITHMS(minicrypto);
 
@@ -183,6 +214,7 @@ int main(int argc, char **argv)
 
     subtest("picotls", test_picotls);
     subtest("asn1-bounds", test_asn1_empty_input);
+    subtest("asn1-recursion", test_asn1_recursion);
     subtest("hrr", test_hrr);
 
     return done_testing();
