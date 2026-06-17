@@ -1292,6 +1292,98 @@ static void test_hrr_handshake(void)
     test_handshake(ptls_iovec_init(NULL, 0), TEST_HANDSHAKE_HRR, 0, 0, 0, 0);
 }
 
+static size_t calc_server_hello_cipher_suite_offset(ptls_buffer_t *buf)
+{
+    size_t session_id_len_off = 5 + 4 + 2 + PTLS_HELLO_RANDOM_SIZE;
+    size_t cipher_off;
+
+    assert(buf->off > session_id_len_off);
+    assert(buf->base[0] == PTLS_CONTENT_TYPE_HANDSHAKE);
+    assert(buf->base[5] == PTLS_HANDSHAKE_TYPE_SERVER_HELLO);
+    cipher_off = session_id_len_off + 1 + buf->base[session_id_len_off];
+    assert(cipher_off + 2 <= buf->off);
+    return cipher_off;
+}
+
+static void test_hrr_cipher_suite_mismatch(void)
+{
+    ptls_t *client = NULL, *server = NULL;
+    ptls_handshake_properties_t client_hs_prop = {{{{NULL}}}};
+    ptls_cipher_suite_t **client_cipher_suites_orig = ctx->cipher_suites, **server_cipher_suites_orig = ctx_peer->cipher_suites;
+    ptls_cipher_suite_t *client_cipher_suites[] = {find_cipher(ctx, PTLS_CIPHER_SUITE_AES_256_GCM_SHA384),
+                                                   find_cipher(ctx, PTLS_CIPHER_SUITE_AES_128_GCM_SHA256), NULL};
+    ptls_cipher_suite_t *server_cipher_suites[] = {find_cipher(ctx_peer, PTLS_CIPHER_SUITE_AES_256_GCM_SHA384),
+                                                   find_cipher(ctx_peer, PTLS_CIPHER_SUITE_AES_128_GCM_SHA256), NULL};
+    ptls_buffer_t cbuf, sbuf;
+    uint8_t cbuf_small[16384], sbuf_small[16384];
+    size_t consumed, cipher_off;
+    int ret;
+
+    if (client_cipher_suites[0] == NULL || client_cipher_suites[1] == NULL || server_cipher_suites[0] == NULL ||
+        server_cipher_suites[1] == NULL) {
+        note("skipping test because the backend does not provide both sha384 and sha256 TLS 1.3 cipher suites");
+        return;
+    }
+
+    /* Limit the negotiation to two cipher suites that use different hash algorithms. With SHA-384 selected by HRR, rewriting the
+     * final ServerHello to SHA-256 tests that the client enforces the HRR/ServerHello cipher-suite match before switching hashes. */
+    ctx->cipher_suites = client_cipher_suites;
+    ctx_peer->cipher_suites = server_cipher_suites;
+
+    /* Force HRR while keeping the context key-exchange configuration unchanged. */
+    client_hs_prop.client.negotiate_before_key_exchange = 1;
+
+    client = ptls_new(ctx, 0);
+    server = ptls_new(ctx_peer, 1);
+    ptls_buffer_init(&cbuf, cbuf_small, sizeof(cbuf_small));
+    ptls_buffer_init(&sbuf, sbuf_small, sizeof(sbuf_small));
+
+    ret = ptls_handshake(client, &cbuf, NULL, NULL, &client_hs_prop);
+    ok(ret == PTLS_ERROR_IN_PROGRESS);
+
+    consumed = cbuf.off;
+    ret = ptls_handshake(server, &sbuf, cbuf.base, &consumed, NULL);
+    ok(ret == PTLS_ERROR_IN_PROGRESS);
+    ok(consumed == cbuf.off);
+    cbuf.off = 0;
+
+    cipher_off = calc_server_hello_cipher_suite_offset(&sbuf);
+    ok(sbuf.base[cipher_off] == (PTLS_CIPHER_SUITE_AES_256_GCM_SHA384 >> 8));
+    ok(sbuf.base[cipher_off + 1] == (PTLS_CIPHER_SUITE_AES_256_GCM_SHA384 & 0xff));
+
+    consumed = sbuf.off;
+    ret = ptls_handshake(client, &cbuf, sbuf.base, &consumed, &client_hs_prop);
+    ok(ret == PTLS_ERROR_IN_PROGRESS);
+    ok(consumed == sbuf.off);
+    sbuf.off = 0;
+
+    consumed = cbuf.off;
+    ret = ptls_handshake(server, &sbuf, cbuf.base, &consumed, NULL);
+    ok(ret == 0);
+    ok(consumed == cbuf.off);
+    cbuf.off = 0;
+
+    cipher_off = calc_server_hello_cipher_suite_offset(&sbuf);
+    ok(sbuf.base[cipher_off] == (PTLS_CIPHER_SUITE_AES_256_GCM_SHA384 >> 8));
+    ok(sbuf.base[cipher_off + 1] == (PTLS_CIPHER_SUITE_AES_256_GCM_SHA384 & 0xff));
+
+    /* Mutate only the final ServerHello cipher-suite field. The replacement suite is still in the client's offer, but it no longer
+     * matches the HRR cipher suite, so the client should abort with illegal_parameter. */
+    sbuf.base[cipher_off] = PTLS_CIPHER_SUITE_AES_128_GCM_SHA256 >> 8;
+    sbuf.base[cipher_off + 1] = PTLS_CIPHER_SUITE_AES_128_GCM_SHA256 & 0xff;
+
+    consumed = sbuf.off;
+    ret = ptls_handshake(client, &cbuf, sbuf.base, &consumed, NULL);
+    ok(ret == PTLS_ALERT_ILLEGAL_PARAMETER);
+
+    ptls_buffer_dispose(&sbuf);
+    ptls_buffer_dispose(&cbuf);
+    ptls_free(server);
+    ptls_free(client);
+    ctx->cipher_suites = client_cipher_suites_orig;
+    ctx_peer->cipher_suites = server_cipher_suites_orig;
+}
+
 static void test_hrr_stateless_handshake(void)
 {
     test_handshake(ptls_iovec_init(NULL, 0), TEST_HANDSHAKE_HRR_STATELESS, 0, 0, 0, 0);
@@ -2652,6 +2744,7 @@ void test_picotls(void)
     subtest("tls-block16", test_tlsblock16);
     subtest("ech", test_ech);
     subtest("fragmented-message", test_fragmented_message);
+    subtest("hrr-cipher-suite-mismatch", test_hrr_cipher_suite_mismatch);
     subtest("handshake", test_all_handshakes);
     subtest("quic", test_quic);
     subtest("legacy-ch", test_legacy_ch);
