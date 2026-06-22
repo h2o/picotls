@@ -4458,6 +4458,10 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
         }
         if (tls->ech.aead != NULL) {
             /* now that AEAD context is available, create AAD and decrypt inner CH */
+            if (ch->ech.payload.len <= tls->ech.aead->algo->tag_size) {
+                ret = PTLS_ALERT_DECODE_ERROR;
+                goto Exit;
+            }
             if ((ech.encoded_ch_inner = malloc(ch->ech.payload.len - tls->ech.aead->algo->tag_size)) == NULL ||
                 (ech.ch_outer_aad = malloc(message.len - PTLS_HANDSHAKE_HEADER_SIZE)) == NULL) {
                 ret = PTLS_ERROR_NO_MEMORY;
