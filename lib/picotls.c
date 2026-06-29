@@ -1364,6 +1364,7 @@ static int key_schedule_select_cipher(ptls_key_schedule_t *sched, ptls_cipher_su
                 sched->hashes[i].ctx_outer->final(sched->hashes[i].ctx_outer, NULL, PTLS_HASH_FINAL_MODE_FREE);
         }
     }
+    assert(found_slot != SIZE_MAX);
     if (found_slot != 0) {
         sched->hashes[0] = sched->hashes[found_slot];
         reset = 1;
@@ -2644,6 +2645,10 @@ static int decode_server_hello(ptls_t *tls, struct st_ptls_server_hello_t *sh, c
     }
     sh->is_retry_request = memcmp(src, hello_retry_random, PTLS_HELLO_RANDOM_SIZE) == 0;
     src += PTLS_HELLO_RANDOM_SIZE;
+    if (sh->is_retry_request && tls->state == PTLS_STATE_CLIENT_EXPECT_SECOND_SERVER_HELLO) {
+        ret = PTLS_ALERT_UNEXPECTED_MESSAGE;
+        goto Exit;
+    }
 
     /* legacy_session_id */
     ptls_decode_open_block(src, end, 1, {
@@ -2659,9 +2664,17 @@ static int decode_server_hello(ptls_t *tls, struct st_ptls_server_hello_t *sh, c
         uint16_t csid;
         if ((ret = ptls_decode16(&csid, &src, end)) != 0)
             goto Exit;
-        if ((tls->cipher_suite = ptls_find_cipher_suite(tls->ctx->cipher_suites, csid)) == NULL) {
-            ret = PTLS_ALERT_ILLEGAL_PARAMETER;
-            goto Exit;
+        if (tls->state == PTLS_STATE_CLIENT_EXPECT_SERVER_HELLO) {
+            if ((tls->cipher_suite = ptls_find_cipher_suite(tls->ctx->cipher_suites, csid)) == NULL) {
+                ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+                goto Exit;
+            }
+        } else {
+            assert(tls->state == PTLS_STATE_CLIENT_EXPECT_SECOND_SERVER_HELLO);
+            if (tls->cipher_suite->id != csid) {
+                ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+                goto Exit;
+            }
         }
     }
 
