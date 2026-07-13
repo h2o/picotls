@@ -5966,6 +5966,8 @@ static int handle_input(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_buffe
         if (rec.length == 0)
             return PTLS_ALERT_UNEXPECTED_MESSAGE;
         rec.type = rec.fragment[--rec.length];
+        if (rec.length == 0 && (rec.type == PTLS_CONTENT_TYPE_ALERT || rec.type == PTLS_CONTENT_TYPE_HANDSHAKE))
+            return PTLS_ALERT_UNEXPECTED_MESSAGE;
     } else if (rec.type == PTLS_CONTENT_TYPE_APPDATA && tls->is_server && tls->server.early_data_skipped_bytes != UINT32_MAX) {
         goto ServerSkipEarlyData;
     }
