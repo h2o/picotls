@@ -6208,7 +6208,10 @@ Exit:
 
 int ptls_send(ptls_t *tls, ptls_buffer_t *sendbuf, const void *input, size_t inlen)
 {
-    assert(tls->traffic_protection.enc.aead != NULL);
+    if (!(tls->traffic_protection.enc.aead != NULL &&
+          (tls->traffic_protection.enc.tls12 || tls->traffic_protection.enc.epoch == 1 ||
+           tls->traffic_protection.enc.epoch == 3)))
+        return PTLS_ERROR_IN_PROGRESS;
 
     /* "For AES-GCM, up to 2^24.5 full-size records (about 24 million) may be encrypted on a given connection while keeping a
      * safety margin of approximately 2^-57 for Authenticated Encryption (AE) security." (RFC 8446 section 5.5).

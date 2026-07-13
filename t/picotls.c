@@ -1273,6 +1273,47 @@ static void test_full_handshake(void)
     test_full_handshake_impl(0, 0, 0);
 }
 
+static void test_send_fails_with_handshake_traffic_key(void)
+{
+    ptls_t *client = ptls_new(ctx, 0), *server = ptls_new(ctx_peer, 1);
+    ptls_buffer_t cbuf, sbuf;
+    uint8_t cbuf_small[16384], sbuf_small[16384];
+    size_t consumed;
+    int ret;
+
+    ptls_buffer_init(&cbuf, cbuf_small, sizeof(cbuf_small));
+    ptls_buffer_init(&sbuf, sbuf_small, sizeof(sbuf_small));
+
+    ret = ptls_handshake(client, &cbuf, NULL, NULL, NULL);
+    ok(ret == PTLS_ERROR_IN_PROGRESS);
+    ok(cbuf.off != 0);
+
+    consumed = cbuf.off;
+    ret = ptls_handshake(server, &sbuf, cbuf.base, &consumed, NULL);
+    ok(ret == 0);
+    ok(consumed == cbuf.off);
+    ok(sbuf.off > 5);
+
+    size_t server_hello_len = 5 + ntoh16(sbuf.base + 3);
+    ok(server_hello_len <= sbuf.off);
+
+    cbuf.off = 0;
+    consumed = server_hello_len;
+    ret = ptls_handshake(client, &cbuf, sbuf.base, &consumed, NULL);
+    ok(ret == PTLS_ERROR_IN_PROGRESS);
+    ok(consumed == server_hello_len);
+    ok(cbuf.off == 0);
+
+    ret = ptls_send(client, &cbuf, "hello", 5);
+    ok(ret == PTLS_ERROR_IN_PROGRESS);
+    ok(cbuf.off == 0);
+
+    ptls_buffer_dispose(&cbuf);
+    ptls_buffer_dispose(&sbuf);
+    ptls_free(client);
+    ptls_free(server);
+}
+
 static void test_full_handshake_with_client_authentication(void)
 {
     test_full_handshake_impl(1, 0, 0);
@@ -2343,6 +2384,7 @@ static void test_handshake_api(void)
 static void test_all_handshakes_core(void)
 {
     subtest("full-handshake", test_full_handshake);
+    subtest("send-fails-with-handshake-traffic-key", test_send_fails_with_handshake_traffic_key);
     subtest("full-handshake+client-auth", test_full_handshake_with_client_authentication);
     subtest("hrr-handshake", test_hrr_handshake);
     /* resumption does not work when the client offers ECH but the server does not recognize that */
