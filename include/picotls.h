@@ -779,7 +779,7 @@ typedef struct st_ptls_async_job_t {
     /**
      * optional callback returning a file descriptor that becomes readable when the job is complete
      */
-    int (*get_fd)(struct st_ptls_async_job_t *self);
+    intptr_t (*get_fd)(struct st_ptls_async_job_t *self);
     /**
      * optional callback for setting a completion callback
      */
