@@ -30,6 +30,7 @@ extern "C" {
 
 #define PTLS_CERTIFICATE_COMPRESSION_ALGORITHM_GZIP 1
 #define PTLS_CERTIFICATE_COMPRESSION_ALGORITHM_BROTLI 2
+#define PTLS_CERTIFICATE_COMPRESSION_ALGORITHM_ZSTD 3
 
 typedef struct st_ptls_emit_compressed_certificate_t {
     ptls_emit_certificate_t super;
