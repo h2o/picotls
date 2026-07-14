@@ -2817,6 +2817,10 @@ static int handle_hello_retry_request(ptls_t *tls, ptls_message_emitter_t *emitt
             ret = PTLS_ALERT_ILLEGAL_PARAMETER;
             goto Exit;
         }
+        if (tls->key_share != NULL && sh->retry_request.selected_group == tls->key_share->id) {
+            ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+            goto Exit;
+        }
         tls->key_share = *cand;
     } else if (tls->key_share != NULL) {
         /* retain the key-share using in first CH, if server does not specify one */
