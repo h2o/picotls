@@ -1352,19 +1352,23 @@ static void test_hrr_selected_group_matches_ch1_key_share(void)
                                   0x9a, 0x61, 0x11, 0xbe, 0x1d, 0x8c, 0x02, 0x1e, 0x65, 0xb8, 0x91, 0xc2, 0xa2, 0x11, 0x16, 0x7a,
                                   0xbb, 0x8c, 0x5e, 0x07, 0x9e, 0x09, 0xe2, 0xc8, 0xa8, 0x33, 0x9c, 0x00, 0x13, 0x01, 0x00, 0x00,
                                   0x0c, 0x00, 0x2b, 0x00, 0x02, 0x03, 0x04, 0x00, 0x33, 0x00, 0x02, 0x00, 0x17};
+
+    ok(ctx->key_exchanges[0]->id == PTLS_GROUP_SECP256R1);
+    ptls_key_exchange_algorithm_t **key_exchanges_orig = ctx->key_exchanges, *key_exchanges[] = {ctx->key_exchanges[0], NULL};
+    ctx->key_exchanges = key_exchanges;
+
     ptls_cipher_suite_t **cipher_suites_orig = ctx->cipher_suites,
                         *cipher_suites[] = {find_cipher(ctx, PTLS_CIPHER_SUITE_AES_128_GCM_SHA256), NULL};
-    ptls_key_exchange_algorithm_t **key_exchanges_orig = ctx->key_exchanges, *key_exchanges[] = {ctx->key_exchanges[0], NULL};
+    ctx->cipher_suites = cipher_suites;
+
     unsigned send_change_cipher_spec_orig = ctx->send_change_cipher_spec;
+    ctx->send_change_cipher_spec = 0;
+
     ptls_t *client;
     ptls_buffer_t cbuf;
     uint8_t cbuf_small[16384];
     size_t consumed;
     int ret;
-
-    ctx->cipher_suites = cipher_suites;
-    ctx->key_exchanges = key_exchanges;
-    ctx->send_change_cipher_spec = 0;
 
     client = ptls_new(ctx, 0);
     ptls_buffer_init(&cbuf, cbuf_small, sizeof(cbuf_small));
@@ -1382,8 +1386,8 @@ static void test_hrr_selected_group_matches_ch1_key_share(void)
     ptls_buffer_dispose(&cbuf);
     ptls_free(client);
 
-    ctx->cipher_suites = cipher_suites_orig;
     ctx->key_exchanges = key_exchanges_orig;
+    ctx->cipher_suites = cipher_suites_orig;
     ctx->send_change_cipher_spec = send_change_cipher_spec_orig;
 }
 
