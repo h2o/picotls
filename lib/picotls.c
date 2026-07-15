@@ -2817,6 +2817,10 @@ static int handle_hello_retry_request(ptls_t *tls, ptls_message_emitter_t *emitt
             ret = PTLS_ALERT_ILLEGAL_PARAMETER;
             goto Exit;
         }
+        if (tls->key_share != NULL && sh->retry_request.selected_group == tls->key_share->id) {
+            ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+            goto Exit;
+        }
         tls->key_share = *cand;
     } else if (tls->key_share != NULL) {
         /* retain the key-share using in first CH, if server does not specify one */
@@ -5966,6 +5970,8 @@ static int handle_input(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_buffe
         if (rec.length == 0)
             return PTLS_ALERT_UNEXPECTED_MESSAGE;
         rec.type = rec.fragment[--rec.length];
+        if (rec.length == 0 && (rec.type == PTLS_CONTENT_TYPE_ALERT || rec.type == PTLS_CONTENT_TYPE_HANDSHAKE))
+            return PTLS_ALERT_UNEXPECTED_MESSAGE;
     } else if (rec.type == PTLS_CONTENT_TYPE_APPDATA && tls->is_server && tls->server.early_data_skipped_bytes != UINT32_MAX) {
         goto ServerSkipEarlyData;
     }
@@ -6206,7 +6212,10 @@ Exit:
 
 int ptls_send(ptls_t *tls, ptls_buffer_t *sendbuf, const void *input, size_t inlen)
 {
-    assert(tls->traffic_protection.enc.aead != NULL);
+    if (!(tls->traffic_protection.enc.aead != NULL &&
+          (tls->traffic_protection.enc.tls12 || tls->traffic_protection.enc.epoch == 1 ||
+           tls->traffic_protection.enc.epoch == 3)))
+        return PTLS_ERROR_IN_PROGRESS;
 
     /* "For AES-GCM, up to 2^24.5 full-size records (about 24 million) may be encrypted on a given connection while keeping a
      * safety margin of approximately 2^-57 for Authenticated Encryption (AE) security." (RFC 8446 section 5.5).

@@ -1111,7 +1111,7 @@ typedef struct st_ptls_handshake_properties_t {
             size_t *max_early_data_size;
             /**
              * If early-data has been accepted by peer, or if the state is still unknown. The state changes anytime after handshake
-             * keys become available. Applications can peek the tri-state variable every time it calls `ptls_hanshake` or
+             * keys become available. Applications can peek the tri-state variable every time it calls `ptls_handshake` or
              * `ptls_handle_message` to determine the result at the earliest moment. This is an output parameter.
              */
             ptls_early_data_acceptance_t early_data_acceptance;
@@ -1755,7 +1755,9 @@ int ptls_handshake(ptls_t *tls, ptls_buffer_t *sendbuf, const void *input, size_
  */
 int ptls_receive(ptls_t *tls, ptls_buffer_t *plaintextbuf, const void *input, size_t *len);
 /**
- * encrypts given buffer into multiple TLS records
+ * encrypts given buffer into multiple TLS records. During a TLS 1.3 handshake, this function can be used to send early data until
+ * the client starts processing the server's handshake messages; after that, it returns PTLS_ERROR_IN_PROGRESS until application
+ * traffic keys are available.
  */
 int ptls_send(ptls_t *tls, ptls_buffer_t *sendbuf, const void *input, size_t inlen);
 /**
