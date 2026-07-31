@@ -3606,10 +3606,9 @@ static int client_hello_decode_server_name(ptls_iovec_t *name, const uint8_t **s
             ptls_decode_open_block(*src, end, 2, {
                 switch (type) {
                 case PTLS_SERVER_NAME_TYPE_HOSTNAME:
-                    if (end - *src == 0) {
-                        ret = PTLS_ALERT_DECODE_ERROR;
-                        goto Exit;
-                    }
+                    /* Twingate: upstream (h2o/picotls #603) rejects a zero-length HostName per RFC 6066. Our clients have always
+                     * sent an empty SNI for direct connections, so treat it as "no SNI" as picotls did before #603; rejecting it
+                     * breaks every already-deployed client. */
                     if (memchr(*src, '\0', end - *src) != 0) {
                         ret = PTLS_ALERT_ILLEGAL_PARAMETER;
                         goto Exit;
