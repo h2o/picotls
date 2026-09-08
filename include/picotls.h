@@ -825,7 +825,11 @@ typedef struct st_ptls_save_ticket_properties_t {
      */
     uint32_t lifetime;
     /**
-     * maximum amount of early data indicated by the server
+     * if set, the ticket contains an early_data extension
+     */
+    unsigned early_data : 1;
+    /**
+     * maximum amount of early data indicated by the server; valid only when `early_data` is set
      */
     uint32_t max_early_data_size;
 } ptls_save_ticket_properties_t;

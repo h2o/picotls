@@ -1516,7 +1516,7 @@ Exit:
 }
 
 static int decode_new_session_ticket(ptls_t *tls, uint32_t *lifetime, uint32_t *age_add, ptls_iovec_t *nonce, ptls_iovec_t *ticket,
-                                     uint32_t *max_early_data_size, const uint8_t *src, const uint8_t *const end)
+                                     int *early_data, uint32_t *max_early_data_size, const uint8_t *src, const uint8_t *const end)
 {
     uint16_t exttype;
     int ret;
@@ -1538,6 +1538,7 @@ static int decode_new_session_ticket(ptls_t *tls, uint32_t *lifetime, uint32_t *
         src = end;
     });
 
+    *early_data = 0;
     *max_early_data_size = 0;
     decode_extensions(src, end, PTLS_HANDSHAKE_TYPE_NEW_SESSION_TICKET, &exttype, {
         if (tls->ctx->on_extension != NULL &&
@@ -1546,6 +1547,7 @@ static int decode_new_session_ticket(ptls_t *tls, uint32_t *lifetime, uint32_t *
             goto Exit;
         switch (exttype) {
         case PTLS_EXTENSION_TYPE_EARLY_DATA:
+            *early_data = 1;
             if ((ret = ptls_decode32(max_early_data_size, &src, end)) != 0)
                 goto Exit;
             break;
@@ -1568,6 +1570,7 @@ static int decode_stored_session_ticket(ptls_t *tls, ptls_key_exchange_algorithm
     uint32_t lifetime, age_add;
     uint64_t obtained_at, now;
     ptls_iovec_t nonce;
+    int early_data;
     int ret;
 
     /* decode */
@@ -1578,7 +1581,8 @@ static int decode_stored_session_ticket(ptls_t *tls, ptls_key_exchange_algorithm
     if ((ret = ptls_decode16(&csid, &src, end)) != 0)
         goto Exit;
     ptls_decode_open_block(src, end, 3, {
-        if ((ret = decode_new_session_ticket(tls, &lifetime, &age_add, &nonce, ticket, max_early_data_size, src, end)) != 0)
+        if ((ret = decode_new_session_ticket(tls, &lifetime, &age_add, &nonce, ticket, &early_data, max_early_data_size, src,
+                                             end)) != 0)
             goto Exit;
         src = end;
     });
@@ -3574,13 +3578,14 @@ static int client_handle_new_session_ticket(ptls_t *tls, ptls_iovec_t message)
     const uint8_t *src = message.base + PTLS_HANDSHAKE_HEADER_SIZE, *const end = message.base + message.len;
     ptls_iovec_t ticket_nonce;
     uint32_t ticket_lifetime, max_early_data_size;
+    int early_data;
     int ret;
 
     { /* verify the format */
         uint32_t ticket_age_add;
         ptls_iovec_t ticket;
-        if ((ret = decode_new_session_ticket(tls, &ticket_lifetime, &ticket_age_add, &ticket_nonce, &ticket, &max_early_data_size,
-                                             src, end)) != 0)
+        if ((ret = decode_new_session_ticket(tls, &ticket_lifetime, &ticket_age_add, &ticket_nonce, &ticket, &early_data,
+                                             &max_early_data_size, src, end)) != 0)
             return ret;
     }
 
@@ -3603,7 +3608,8 @@ static int client_handle_new_session_ticket(ptls_t *tls, ptls_iovec_t message)
         ticket_buf.off += tls->key_schedule->hashes[0].algo->digest_size;
     });
 
-    ptls_save_ticket_properties_t properties = {.lifetime = ticket_lifetime, .max_early_data_size = max_early_data_size};
+    ptls_save_ticket_properties_t properties = {
+        .lifetime = ticket_lifetime, .early_data = early_data, .max_early_data_size = max_early_data_size};
     if ((ret = tls->ctx->save_ticket->cb(tls->ctx->save_ticket, tls, ptls_iovec_init(ticket_buf.base, ticket_buf.off),
                                          &properties)) != 0)
         goto Exit;
