@@ -2187,9 +2187,11 @@ static void test_handshake_api(void)
 
     ctx->update_traffic_key = &update_traffic_key;
     ctx->omit_end_of_early_data = 1;
+    ctx->quic_transport = 1;
     ctx->save_ticket = &save_ticket;
     ctx_peer->update_traffic_key = &update_traffic_key;
     ctx_peer->omit_end_of_early_data = 1;
+    ctx_peer->quic_transport = 1;
     ctx_peer->encrypt_ticket = &encrypt_ticket;
     ctx_peer->ticket_lifetime = 86400;
     ctx_peer->max_early_data_size = 8192;
@@ -2363,8 +2365,10 @@ static void test_handshake_api(void)
     /* shamelessly reuse this subtest for testing ordinary TLS 0-RTT with HRR rejection */
     ctx->update_traffic_key = NULL;
     ctx->omit_end_of_early_data = 0;
+    ctx->quic_transport = 0;
     ctx_peer->update_traffic_key = NULL;
     ctx_peer->omit_end_of_early_data = 0;
+    ctx_peer->quic_transport = 0;
     client_hs_prop = (ptls_handshake_properties_t){{{{NULL}, saved_tickets[0], &max_early_data_size}}};
     server_hs_prop = (ptls_handshake_properties_t){{{{NULL}}}};
     server_hs_prop.server.enforce_retry = 1;
@@ -2417,9 +2421,11 @@ static void test_handshake_api(void)
 
     ctx->update_traffic_key = NULL;
     ctx->omit_end_of_early_data = 0;
+    ctx->quic_transport = 0;
     ctx->save_ticket = NULL;
     ctx_peer->update_traffic_key = NULL;
     ctx_peer->omit_end_of_early_data = 0;
+    ctx_peer->quic_transport = 0;
     ctx_peer->encrypt_ticket = NULL;
     ctx_peer->save_ticket = NULL;
     ctx_peer->ticket_lifetime = 0;
@@ -2627,10 +2633,128 @@ Exit:
     ptls_buffer_dispose(&buf);
 }
 
+static int quic_update_traffic_key(ptls_update_traffic_key_t *self, ptls_t *tls, int is_enc, size_t epoch, const void *secret)
+{
+    (void)self;
+    (void)tls;
+    (void)is_enc;
+    (void)epoch;
+    (void)secret;
+    return 0;
+}
+
+static void test_quic_tls_constraints(void)
+{
+    ptls_update_traffic_key_t update_traffic_key = {quic_update_traffic_key};
+    ptls_context_t client_ctx = *ctx, server_ctx = *ctx_peer, record_layer_ctx = *ctx;
+    ptls_buffer_t cbuf, sbuf;
+    size_t coffs[5] = {0}, soffs[5];
+    ptls_t *client, *server;
+    int ret;
+    uint8_t nst[] = {0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 8, 0, PTLS_EXTENSION_TYPE_EARLY_DATA, 0, 4, 0, 0, 0, 1};
+    uint32_t lifetime, age_add, max_early_data_size;
+    ptls_iovec_t nonce, ticket;
+
+    client_ctx.update_traffic_key = &update_traffic_key;
+    client_ctx.omit_end_of_early_data = 1;
+    client_ctx.quic_transport = 1;
+    client_ctx.send_change_cipher_spec = 1; /* ignored in QUIC mode */
+    server_ctx.update_traffic_key = &update_traffic_key;
+    server_ctx.omit_end_of_early_data = 1;
+    server_ctx.quic_transport = 1;
+    server_ctx.send_change_cipher_spec = 1; /* ignored in QUIC mode */
+
+    /* A custom record layer is not necessarily QUIC. */
+    record_layer_ctx.update_traffic_key = &update_traffic_key;
+    client = ptls_new(&record_layer_ctx, 0);
+    ret = decode_new_session_ticket(client, &lifetime, &age_add, &nonce, &ticket, &max_early_data_size, nst, nst + sizeof(nst));
+    ok(ret == 0);
+    ok(max_early_data_size == 1);
+    ptls_free(client);
+
+    /* QUIC forbids the TLS middlebox-compatibility legacy_session_id. */
+    ptls_buffer_init(&cbuf, "", 0);
+    ptls_buffer_init(&sbuf, "", 0);
+    client = ptls_new(&client_ctx, 0);
+    server = ptls_new(&server_ctx, 1);
+    ok(!client->send_change_cipher_spec);
+    ok(!server->send_change_cipher_spec);
+    client->client.legacy_session_id = ptls_iovec_init("x", 1);
+    ret = ptls_handle_message(client, &cbuf, coffs, 0, NULL, 0, NULL);
+    ok(ret == PTLS_ERROR_IN_PROGRESS);
+    ret = feed_messages(server, &sbuf, soffs, cbuf.base, coffs, NULL);
+    ok(ret == PTLS_ERROR_QUIC_PROTOCOL_VIOLATION);
+    ptls_free(client);
+    ptls_free(server);
+    ptls_buffer_dispose(&cbuf);
+    ptls_buffer_dispose(&sbuf);
+
+    /* Apply the same rule to ClientHello2 after HelloRetryRequest. */
+    ptls_handshake_properties_t client_hs_prop = {0};
+    client_hs_prop.client.negotiate_before_key_exchange = 1;
+    memset(coffs, 0, sizeof(coffs));
+    client = ptls_new(&client_ctx, 0);
+    server = ptls_new(&server_ctx, 1);
+    ptls_buffer_init(&cbuf, "", 0);
+    ptls_buffer_init(&sbuf, "", 0);
+    ret = ptls_handle_message(client, &cbuf, coffs, 0, NULL, 0, &client_hs_prop);
+    ok(ret == PTLS_ERROR_IN_PROGRESS);
+    ret = feed_messages(server, &sbuf, soffs, cbuf.base, coffs, NULL);
+    ok(ret == PTLS_ERROR_IN_PROGRESS);
+    ret = feed_messages(client, &cbuf, coffs, sbuf.base, soffs, &client_hs_prop);
+    ok(ret == PTLS_ERROR_IN_PROGRESS);
+    size_t session_id_len_at = PTLS_HANDSHAKE_HEADER_SIZE + 2 + PTLS_HELLO_RANDOM_SIZE;
+    assert(cbuf.off > session_id_len_at && cbuf.base[0] == PTLS_HANDSHAKE_TYPE_CLIENT_HELLO && cbuf.base[session_id_len_at] == 0);
+    assert(ptls_buffer_reserve(&cbuf, 1) == 0);
+    memmove(cbuf.base + session_id_len_at + 2, cbuf.base + session_id_len_at + 1, cbuf.off - session_id_len_at - 1);
+    cbuf.base[session_id_len_at] = 1;
+    cbuf.base[session_id_len_at + 1] = 'x';
+    ++cbuf.off;
+    size_t handshake_size = cbuf.off - PTLS_HANDSHAKE_HEADER_SIZE;
+    cbuf.base[1] = (uint8_t)(handshake_size >> 16);
+    cbuf.base[2] = (uint8_t)(handshake_size >> 8);
+    cbuf.base[3] = (uint8_t)handshake_size;
+    ++coffs[1];
+    ret = feed_messages(server, &sbuf, soffs, cbuf.base, coffs, NULL);
+    ok(ret == PTLS_ERROR_QUIC_PROTOCOL_VIOLATION);
+    ptls_free(client);
+    ptls_free(server);
+    ptls_buffer_dispose(&cbuf);
+    ptls_buffer_dispose(&sbuf);
+
+    client = ptls_new(&client_ctx, 0);
+
+    /* NewSessionTicket early_data must use the QUIC sentinel value. */
+    ret = decode_new_session_ticket(client, &lifetime, &age_add, &nonce, &ticket, &max_early_data_size, nst, nst + sizeof(nst));
+    ok(ret == PTLS_ERROR_QUIC_PROTOCOL_VIOLATION);
+    memset(nst + sizeof(nst) - 4, 0xff, 4);
+    ret = decode_new_session_ticket(client, &lifetime, &age_add, &nonce, &ticket, &max_early_data_size, nst, nst + sizeof(nst));
+    ok(ret == 0);
+    ok(max_early_data_size == UINT32_MAX);
+
+    /* TLS KeyUpdate is forbidden in QUIC, for both request_update values. */
+    uint8_t key_update[] = {PTLS_HANDSHAKE_TYPE_KEY_UPDATE, 0, 0, 1, 0};
+    ok(handle_key_update(client, NULL, ptls_iovec_init(key_update, sizeof(key_update))) == PTLS_ALERT_UNEXPECTED_MESSAGE);
+    key_update[4] = 1;
+    ok(handle_key_update(client, NULL, ptls_iovec_init(key_update, sizeof(key_update))) == PTLS_ALERT_UNEXPECTED_MESSAGE);
+    key_update[4] = 2;
+    ok(handle_key_update(client, NULL, ptls_iovec_init(key_update, sizeof(key_update))) == PTLS_ALERT_UNEXPECTED_MESSAGE);
+    ok(handle_key_update(client, NULL, ptls_iovec_init(key_update, PTLS_HANDSHAKE_HEADER_SIZE)) == PTLS_ALERT_UNEXPECTED_MESSAGE);
+
+    /* A post-handshake CertificateRequest is a QUIC transport protocol violation, not a TLS alert. */
+    uint8_t certificate_request[] = {PTLS_HANDSHAKE_TYPE_CERTIFICATE_REQUEST, 0, 0, 0};
+    client->state = PTLS_STATE_CLIENT_POST_HANDSHAKE;
+    ok(handle_client_handshake_message(client, NULL, ptls_iovec_init(certificate_request, sizeof(certificate_request)), 1, NULL) ==
+       PTLS_ERROR_QUIC_PROTOCOL_VIOLATION);
+
+    ptls_free(client);
+}
+
 static void test_quic(void)
 {
     subtest("varint", test_quicint);
     subtest("block", test_quicblock);
+    subtest("tls-constraints", test_quic_tls_constraints);
 }
 
 static ptls_on_client_hello_parameters_t *legacy_params;
