@@ -2233,6 +2233,7 @@ static void test_handshake_api(void)
     ok(cbuf.off != 0);
     ok(ptls_handshake_is_complete(client));
     ok(saved_ticket_properties.lifetime == 86400);
+    ok(saved_ticket_properties.early_data);
     ok(saved_ticket_properties.max_early_data_size == 8192);
     ok(memcmp(client_secrets[0][2], server_secrets[1][2], PTLS_MAX_DIGEST_SIZE) == 0);
     ok(memcmp(client_secrets[1][2], server_secrets[0][2], PTLS_MAX_DIGEST_SIZE) == 0);
@@ -2244,15 +2245,27 @@ static void test_handshake_api(void)
     ok(ptls_handshake_is_complete(server));
     ok(memcmp(client_secrets[1][3], server_secrets[0][3], PTLS_MAX_DIGEST_SIZE) == 0);
 
-    /* Pass the decoded early_data limit to the ticket callback. */
+    /* Pass the decoded ticket properties to the ticket callback. */
     ptls_save_ticket_t observe_ticket = {on_observe_ticket};
-    uint8_t nst[] = {PTLS_HANDSHAKE_TYPE_NEW_SESSION_TICKET, 0, 0, 22, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 8, 0,
-                     PTLS_EXTENSION_TYPE_EARLY_DATA,         0, 4, 0,  0, 0, 1};
+    uint8_t nst_without_early_data[] = {PTLS_HANDSHAKE_TYPE_NEW_SESSION_TICKET, 0, 0, 14, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0};
+    uint8_t nst_with_early_data[] = {PTLS_HANDSHAKE_TYPE_NEW_SESSION_TICKET, 0, 0, 22, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 8, 0,
+                                     PTLS_EXTENSION_TYPE_EARLY_DATA,         0, 4, 0,  0, 0, 0};
     ctx->save_ticket = &observe_ticket;
     cbuf.off = 0;
     memset(coffs, 0, sizeof(coffs));
-    ret = ptls_handle_message(client, &cbuf, coffs, 3, nst, sizeof(nst), NULL);
+    saved_ticket_properties = (ptls_save_ticket_properties_t){.max_early_data_size = UINT32_MAX, .early_data = 1};
+    ret = ptls_handle_message(client, &cbuf, coffs, 3, nst_without_early_data, sizeof(nst_without_early_data), NULL);
     ok(ret == 0);
+    ok(!saved_ticket_properties.early_data);
+    ok(saved_ticket_properties.max_early_data_size == 0);
+    ret = ptls_handle_message(client, &cbuf, coffs, 3, nst_with_early_data, sizeof(nst_with_early_data), NULL);
+    ok(ret == 0);
+    ok(saved_ticket_properties.early_data);
+    ok(saved_ticket_properties.max_early_data_size == 0);
+    nst_with_early_data[sizeof(nst_with_early_data) - 1] = 1;
+    ret = ptls_handle_message(client, &cbuf, coffs, 3, nst_with_early_data, sizeof(nst_with_early_data), NULL);
+    ok(ret == 0);
+    ok(saved_ticket_properties.early_data);
     ok(saved_ticket_properties.lifetime == 1);
     ok(saved_ticket_properties.max_early_data_size == 1);
     ctx->save_ticket = &save_ticket;
