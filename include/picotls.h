@@ -293,7 +293,6 @@ extern "C" {
 #define PTLS_ERROR_INCORRECT_PEM_ECDSA_CURVE (PTLS_ERROR_CLASS_INTERNAL + 62)
 #define PTLS_ERROR_INCORRECT_PEM_ECDSA_KEYSIZE (PTLS_ERROR_CLASS_INTERNAL + 63)
 #define PTLS_ERROR_INCORRECT_ASN1_ECDSA_KEY_SYNTAX (PTLS_ERROR_CLASS_INTERNAL + 64)
-#define PTLS_ERROR_QUIC_PROTOCOL_VIOLATION (PTLS_ERROR_CLASS_INTERNAL + 65)
 
 #define PTLS_HANDSHAKE_TYPE_CLIENT_HELLO 1
 #define PTLS_HANDSHAKE_TYPE_SERVER_HELLO 2
@@ -980,10 +979,6 @@ struct st_ptls_context_t {
      * if set, EOED will not be emitted or accepted
      */
     unsigned omit_end_of_early_data : 1;
-    /**
-     * if set, enforce the TLS restrictions required by QUIC
-     */
-    unsigned quic_transport : 1;
     /**
      * This option turns on support for Raw Public Keys (RFC 7250).
      *

@@ -1548,10 +1548,6 @@ static int decode_new_session_ticket(ptls_t *tls, uint32_t *lifetime, uint32_t *
         case PTLS_EXTENSION_TYPE_EARLY_DATA:
             if ((ret = ptls_decode32(max_early_data_size, &src, end)) != 0)
                 goto Exit;
-            if (tls->ctx->quic_transport && *max_early_data_size != UINT32_MAX) {
-                ret = PTLS_ERROR_QUIC_PROTOCOL_VIOLATION;
-                goto Exit;
-            }
             break;
         default:
             src = end;
@@ -1932,11 +1928,9 @@ static int send_session_ticket(ptls_t *tls, ptls_message_emitter_t *emitter)
                 goto Exit;
         });
         ptls_buffer_push_block(emitter->buf, 2, {
-            if (tls->ctx->max_early_data_size != 0) {
-                uint32_t max_early_data_size = tls->ctx->quic_transport ? UINT32_MAX : tls->ctx->max_early_data_size;
+            if (tls->ctx->max_early_data_size != 0)
                 buffer_push_extension(emitter->buf, PTLS_EXTENSION_TYPE_EARLY_DATA,
-                                      { ptls_buffer_push32(emitter->buf, max_early_data_size); });
-            }
+                                      { ptls_buffer_push32(emitter->buf, tls->ctx->max_early_data_size); });
         });
     });
 
@@ -4532,10 +4526,6 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
         ch->psk.ke_modes &= ~(1u << PTLS_PSK_KE_MODE_PSK);
 
     /* handle client_random, legacy_session_id, SNI, ESNI */
-    if (tls->ctx->quic_transport && ch->legacy_session_id.len != 0) {
-        ret = PTLS_ERROR_QUIC_PROTOCOL_VIOLATION;
-        goto Exit;
-    }
     if (!is_second_flight) {
         if (ch->legacy_session_id.len != 0)
             tls->send_change_cipher_spec = 1;
@@ -5093,9 +5083,6 @@ static int handle_key_update(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
     const uint8_t *src = message.base + PTLS_HANDSHAKE_HEADER_SIZE, *const end = message.base + message.len;
     int ret;
 
-    if (tls->ctx->quic_transport)
-        return PTLS_ALERT_UNEXPECTED_MESSAGE;
-
     /* validate */
     if (end - src != 1 || *src > 1)
         return PTLS_ALERT_DECODE_ERROR;
@@ -5231,7 +5218,7 @@ static ptls_t *new_instance(ptls_context_t *ctx, int is_server)
     update_open_count(ctx, 1);
     *tls = (ptls_t){ctx};
     tls->is_server = is_server;
-    tls->send_change_cipher_spec = ctx->send_change_cipher_spec && !ctx->quic_transport;
+    tls->send_change_cipher_spec = ctx->send_change_cipher_spec;
 
 #if PTLS_HAVE_LOG
     if (ptls_log_conn_state_override != NULL) {
@@ -5759,10 +5746,7 @@ static int handle_client_handshake_message(ptls_t *tls, ptls_message_emitter_t *
             ret = handle_key_update(tls, emitter, message);
             break;
         default:
-            if (tls->ctx->quic_transport && type == PTLS_HANDSHAKE_TYPE_CERTIFICATE_REQUEST)
-                ret = PTLS_ERROR_QUIC_PROTOCOL_VIOLATION;
-            else
-                ret = PTLS_ALERT_UNEXPECTED_MESSAGE;
+            ret = PTLS_ALERT_UNEXPECTED_MESSAGE;
             break;
         }
         break;
