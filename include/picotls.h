@@ -817,9 +817,22 @@ typedef struct st_ptls_verify_certificate_t {
  */
 PTLS_CALLBACK_TYPE(int, encrypt_ticket, ptls_t *tls, int is_encrypt, ptls_buffer_t *dst, ptls_iovec_t src);
 /**
+ * properties of a session ticket being saved
+ */
+typedef struct st_ptls_save_ticket_properties_t {
+    /**
+     * lifetime of the ticket in seconds
+     */
+    uint32_t lifetime;
+    /**
+     * maximum amount of early data indicated by the server
+     */
+    uint32_t max_early_data_size;
+} ptls_save_ticket_properties_t;
+/**
  * saves a ticket (client-only)
  */
-PTLS_CALLBACK_TYPE(int, save_ticket, ptls_t *tls, ptls_iovec_t input);
+PTLS_CALLBACK_TYPE(int, save_ticket, ptls_t *tls, ptls_iovec_t input, const ptls_save_ticket_properties_t *properties);
 /**
  * event logging (incl. secret logging)
  */

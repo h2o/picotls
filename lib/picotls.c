@@ -3573,10 +3573,11 @@ static int client_handle_new_session_ticket(ptls_t *tls, ptls_iovec_t message)
 {
     const uint8_t *src = message.base + PTLS_HANDSHAKE_HEADER_SIZE, *const end = message.base + message.len;
     ptls_iovec_t ticket_nonce;
+    uint32_t ticket_lifetime, max_early_data_size;
     int ret;
 
     { /* verify the format */
-        uint32_t ticket_lifetime, ticket_age_add, max_early_data_size;
+        uint32_t ticket_age_add;
         ptls_iovec_t ticket;
         if ((ret = decode_new_session_ticket(tls, &ticket_lifetime, &ticket_age_add, &ticket_nonce, &ticket, &max_early_data_size,
                                              src, end)) != 0)
@@ -3602,7 +3603,9 @@ static int client_handle_new_session_ticket(ptls_t *tls, ptls_iovec_t message)
         ticket_buf.off += tls->key_schedule->hashes[0].algo->digest_size;
     });
 
-    if ((ret = tls->ctx->save_ticket->cb(tls->ctx->save_ticket, tls, ptls_iovec_init(ticket_buf.base, ticket_buf.off))) != 0)
+    ptls_save_ticket_properties_t properties = {.lifetime = ticket_lifetime, .max_early_data_size = max_early_data_size};
+    if ((ret = tls->ctx->save_ticket->cb(tls->ctx->save_ticket, tls, ptls_iovec_init(ticket_buf.base, ticket_buf.off),
+                                         &properties)) != 0)
         goto Exit;
 
     ret = 0;
@@ -5080,8 +5083,13 @@ Exit:
 
 static int handle_key_update(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_iovec_t message)
 {
-    const uint8_t *src = message.base + PTLS_HANDSHAKE_HEADER_SIZE, *const end = message.base + message.len;
     int ret;
+
+    /* KeyUpdate is not supported when the application owns the record layer. */
+    if (tls->ctx->update_traffic_key != NULL)
+        return PTLS_ALERT_UNEXPECTED_MESSAGE;
+
+    const uint8_t *src = message.base + PTLS_HANDSHAKE_HEADER_SIZE, *const end = message.base + message.len;
 
     /* validate */
     if (end - src != 1 || *src > 1)
@@ -5092,8 +5100,6 @@ static int handle_key_update(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
         return ret;
 
     if (*src) {
-        if (tls->ctx->update_traffic_key != NULL)
-            return PTLS_ALERT_UNEXPECTED_MESSAGE;
         tls->needs_key_update = 1;
     }
 
