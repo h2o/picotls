@@ -1506,7 +1506,9 @@ typedef struct st_ptls_log_getsni_t {
 #define PTLS_LOG_ELEMENT_PTR(name, value) PTLS_LOG_ELEMENT_UNSIGNED(name, (uint64_t)(value))
 #define PTLS_LOG_ELEMENT_SIGNED(name, value)                                                                                       \
     do {                                                                                                                           \
-        if (sizeof(value) <= sizeof(int32_t)) {                                                                                    \
+        if (PTLS_IS_FLOAT(value)) {                                                                                                \
+            ptls_log__do_push_element_double(PTLS_LOG__ELEMENT_PREFIX(PTLS_TO_STR(name)), (value));                                \
+        } else if (sizeof(value) <= sizeof(int32_t)) {                                                                             \
             ptls_log__do_push_element_signed32(PTLS_LOG__ELEMENT_PREFIX(PTLS_TO_STR(name)), (value));                              \
         } else {                                                                                                                   \
             ptls_log__do_push_element_signed64(PTLS_LOG__ELEMENT_PREFIX(PTLS_TO_STR(name)), (value));                              \
@@ -1534,6 +1536,11 @@ typedef struct st_ptls_log_getsni_t {
             PTLS_LOG_ELEMENT_HEXDUMP(name, value, value_len);                                                                      \
         PTLS_LOG__DO_ELEMENT_UNSIGNED(PTLS_TO_STR(name) "_len", value_len);                                                        \
     } while (0)
+
+/**
+ * Evaluates to non-zero if the type of `v` is a floating-point type. `v` is not evaluated.
+ */
+#define PTLS_IS_FLOAT(v) ((0 ? (v) : 1) / 2 != 0)
 
 /**
  * retains a list of connections that are bound to the object
@@ -1641,6 +1648,7 @@ void ptls_log__do_push_element_signed32(const char *prefix, size_t prefix_len, i
 void ptls_log__do_push_element_signed64(const char *prefix, size_t prefix_len, int64_t v);
 void ptls_log__do_push_element_unsigned32(const char *prefix, size_t prefix_len, uint32_t v);
 void ptls_log__do_push_element_unsigned64(const char *prefix, size_t prefix_len, uint64_t v);
+void ptls_log__do_push_element_double(const char *prefix, size_t prefix_len, double v);
 void ptls_log__do_push_element_bool(const char *prefix, size_t prefix_len, int v);
 void ptls_log__do_push_appdata_element_unsafestr(int includes_appdata, const char *prefix, size_t prefix_len, const char *s,
                                                  size_t l);
