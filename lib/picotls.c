@@ -7119,6 +7119,12 @@ void ptls_log__do_push_element_unsigned64(const char *prefix, size_t prefix_len,
     pushf_logbuf_or_invalidate(prefix, prefix_len, sizeof("18446744073709551615"), "%" PRIu64, v);
 }
 
+void ptls_log__do_push_element_double(const char *prefix, size_t prefix_len, double v)
+{
+    /* .9 is enough precision for logging; 64 bytes is far more than enough, and we have assert in pushf_logbuf_or_invalidate */
+    pushf_logbuf_or_invalidate(prefix, prefix_len, 64, "%.9g", v);
+}
+
 void ptls_log__do_push_element_bool(const char *prefix, size_t prefix_len, int v)
 {
     if (expand_logbuf_or_invalidate(prefix, prefix_len, 5)) {
