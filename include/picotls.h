@@ -1484,7 +1484,7 @@ typedef struct st_ptls_log_getsni_t {
         PTLS_LOG__DO_LOG(picotls, name, conn_state, ptls_log_getsni_ptls(_tls), 1, {                                               \
             PTLS_LOG_ELEMENT_PTR(tls, _tls);                                                                                       \
             if (conn_state->conn_id != 0) {                                                                                        \
-                PTLS_LOG_ELEMENT_UNSIGNED(conn_id, conn_state->conn_id);                                                           \
+                PTLS_LOG_ELEMENT_NUMBER(conn_id, conn_state->conn_id);                                                             \
             }                                                                                                                      \
             do {                                                                                                                   \
                 block                                                                                                              \
@@ -1503,44 +1503,57 @@ typedef struct st_ptls_log_getsni_t {
     ptls_log__do_push_element_unsafestr(PTLS_LOG__ELEMENT_PREFIX(PTLS_TO_STR(name)), (value), (value_len))
 #define PTLS_LOG_ELEMENT_HEXDUMP(name, value, value_len)                                                                           \
     ptls_log__do_push_element_hexdump(PTLS_LOG__ELEMENT_PREFIX(PTLS_TO_STR(name)), (value), (value_len))
-#define PTLS_LOG_ELEMENT_PTR(name, value) PTLS_LOG_ELEMENT_UNSIGNED(name, (uint64_t)(value))
-#define PTLS_LOG_ELEMENT_SIGNED(name, value)                                                                                       \
+#define PTLS_LOG_ELEMENT_PTR(name, value) PTLS_LOG_ELEMENT_NUMBER(name, (uint64_t)(value))
+/**
+ * Emits a number, choosing the representation (floating-point, signed, or unsigned) from the type of `value`.
+ */
+#define PTLS_LOG__DO_ELEMENT_NUMBER(lit, value)                                                                                    \
     do {                                                                                                                           \
         if (PTLS_IS_FLOAT(value)) {                                                                                                \
-            ptls_log__do_push_element_double(PTLS_LOG__ELEMENT_PREFIX(PTLS_TO_STR(name)), (value));                                \
-        } else if (sizeof(value) <= sizeof(int32_t)) {                                                                             \
-            ptls_log__do_push_element_signed32(PTLS_LOG__ELEMENT_PREFIX(PTLS_TO_STR(name)), (value));                              \
-        } else {                                                                                                                   \
-            ptls_log__do_push_element_signed64(PTLS_LOG__ELEMENT_PREFIX(PTLS_TO_STR(name)), (value));                              \
-        }                                                                                                                          \
-    } while (0)
-#define PTLS_LOG__DO_ELEMENT_UNSIGNED(lit, value)                                                                                  \
-    do {                                                                                                                           \
-        if (sizeof(value) <= sizeof(uint32_t)) {                                                                                   \
+            ptls_log__do_push_element_double(PTLS_LOG__ELEMENT_PREFIX(lit), (value));                                              \
+        } else if (PTLS_IS_SIGNED(value)) {                                                                                        \
+            if (sizeof(value) <= sizeof(int32_t)) {                                                                                \
+                ptls_log__do_push_element_signed32(PTLS_LOG__ELEMENT_PREFIX(lit), (value));                                        \
+            } else {                                                                                                               \
+                ptls_log__do_push_element_signed64(PTLS_LOG__ELEMENT_PREFIX(lit), (value));                                        \
+            }                                                                                                                      \
+        } else if (sizeof(value) <= sizeof(uint32_t)) {                                                                            \
             ptls_log__do_push_element_unsigned32(PTLS_LOG__ELEMENT_PREFIX(lit), (value));                                          \
         } else {                                                                                                                   \
             ptls_log__do_push_element_unsigned64(PTLS_LOG__ELEMENT_PREFIX(lit), (value));                                          \
         }                                                                                                                          \
     } while (0)
-#define PTLS_LOG_ELEMENT_UNSIGNED(name, value) PTLS_LOG__DO_ELEMENT_UNSIGNED(PTLS_TO_STR(name), (value))
+#define PTLS_LOG_ELEMENT_NUMBER(name, value) PTLS_LOG__DO_ELEMENT_NUMBER(PTLS_TO_STR(name), (value))
+/**
+ * Deprecated; use PTLS_LOG_ELEMENT_NUMBER, which these are now aliases of (i.e., the representation is chosen from the type of
+ * `value`, not from the name of the macro).
+ */
+#define PTLS_LOG_ELEMENT_SIGNED(name, value) PTLS_LOG_ELEMENT_NUMBER(name, (value))
+#define PTLS_LOG_ELEMENT_UNSIGNED(name, value) PTLS_LOG_ELEMENT_NUMBER(name, (value))
+#define PTLS_LOG__DO_ELEMENT_UNSIGNED(lit, value) PTLS_LOG__DO_ELEMENT_NUMBER(lit, (value))
 #define PTLS_LOG_ELEMENT_BOOL(name, value) ptls_log__do_push_element_bool(PTLS_LOG__ELEMENT_PREFIX(PTLS_TO_STR(name)), (value))
 #define PTLS_LOG_APPDATA_ELEMENT_UNSAFESTR(name, value, value_len)                                                                 \
     do {                                                                                                                           \
         if (ptlslog_include_appdata)                                                                                               \
             PTLS_LOG_ELEMENT_UNSAFESTR(name, value, value_len);                                                                    \
-        PTLS_LOG__DO_ELEMENT_UNSIGNED(PTLS_TO_STR(name) "_len", value_len);                                                        \
+        PTLS_LOG__DO_ELEMENT_NUMBER(PTLS_TO_STR(name) "_len", value_len);                                                          \
     } while (0)
 #define PTLS_LOG_APPDATA_ELEMENT_HEXDUMP(name, value, value_len)                                                                   \
     do {                                                                                                                           \
         if (ptlslog_include_appdata)                                                                                               \
             PTLS_LOG_ELEMENT_HEXDUMP(name, value, value_len);                                                                      \
-        PTLS_LOG__DO_ELEMENT_UNSIGNED(PTLS_TO_STR(name) "_len", value_len);                                                        \
+        PTLS_LOG__DO_ELEMENT_NUMBER(PTLS_TO_STR(name) "_len", value_len);                                                          \
     } while (0)
 
 /**
  * Evaluates to non-zero if the type of `v` is a floating-point type. `v` is not evaluated.
  */
 #define PTLS_IS_FLOAT(v) ((0 ? (v) : 1) / 2 != 0)
+/**
+ * Evaluates to non-zero if the type of `v`, after integer promotion, is signed (floating-point types included). `v` is not
+ * evaluated.
+ */
+#define PTLS_IS_SIGNED(v) ((0 ? (v) : 1) - 2 < 1)
 
 /**
  * retains a list of connections that are bound to the object
