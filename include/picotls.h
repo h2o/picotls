@@ -1524,13 +1524,6 @@ typedef struct st_ptls_log_getsni_t {
         }                                                                                                                          \
     } while (0)
 #define PTLS_LOG_ELEMENT_NUMBER(name, value) PTLS_LOG__DO_ELEMENT_NUMBER(PTLS_TO_STR(name), (value))
-/**
- * Deprecated; use PTLS_LOG_ELEMENT_NUMBER, which these are now aliases of (i.e., the representation is chosen from the type of
- * `value`, not from the name of the macro).
- */
-#define PTLS_LOG_ELEMENT_SIGNED(name, value) PTLS_LOG_ELEMENT_NUMBER(name, (value))
-#define PTLS_LOG_ELEMENT_UNSIGNED(name, value) PTLS_LOG_ELEMENT_NUMBER(name, (value))
-#define PTLS_LOG__DO_ELEMENT_UNSIGNED(lit, value) PTLS_LOG__DO_ELEMENT_NUMBER(lit, (value))
 #define PTLS_LOG_ELEMENT_BOOL(name, value) ptls_log__do_push_element_bool(PTLS_LOG__ELEMENT_PREFIX(PTLS_TO_STR(name)), (value))
 #define PTLS_LOG_APPDATA_ELEMENT_UNSAFESTR(name, value, value_len)                                                                 \
     do {                                                                                                                           \
