@@ -1515,9 +1515,9 @@ typedef struct st_ptls_log_getsni_t {
 #define PTLS_LOG__DO_ELEMENT_UNSIGNED(lit, value)                                                                                  \
     do {                                                                                                                           \
         if (sizeof(value) <= sizeof(uint32_t)) {                                                                                   \
-            ptls_log__do_push_element_unsigned32(PTLS_LOG__ELEMENT_PREFIX(lit), (value));                                          \
+            ptls_log__do_push_element_unsigned32(PTLS_LOG__ELEMENT_PREFIX(lit), PTLS_TO_UINT32(value));                            \
         } else {                                                                                                                   \
-            ptls_log__do_push_element_unsigned64(PTLS_LOG__ELEMENT_PREFIX(lit), (value));                                          \
+            ptls_log__do_push_element_unsigned64(PTLS_LOG__ELEMENT_PREFIX(lit), PTLS_TO_UINT64(value));                            \
         }                                                                                                                          \
     } while (0)
 #define PTLS_LOG_ELEMENT_UNSIGNED(name, value) PTLS_LOG__DO_ELEMENT_UNSIGNED(PTLS_TO_STR(name), (value))
@@ -1617,6 +1617,23 @@ static uint32_t ptls_log_point_maybe_active(struct st_ptls_log_point_t *point);
  * returns a bitmap indicating the loggers active for given connection
  */
 static uint32_t ptls_log_conn_maybe_active(ptls_log_conn_state_t *conn, ptls_log_getsni_t getsni);
+
+/**
+ * Evaluates to non-zero if the type of `v` is a floating-point type. `v` is not evaluated.
+ */
+#define PTLS_IS_FLOAT(v) ((0 ? (v) : 1) / 2 != 0)
+/**
+ * Converts `v` to uint32_t, evaluating `v` exactly once. Integers are converted as if by a cast. Floating-point values  are
+ * saturated: those at or beyond the maximum of the destination type become that maximum, and negative values or NaN become zero.
+ */
+#define PTLS_TO_UINT32(v) (PTLS_IS_FLOAT(v) ? ptls__float_to_uint32(v) : (uint32_t)(v))
+/**
+ * 64-bit counterpart of PTLS_TO_UINT32.
+ */
+#define PTLS_TO_UINT64(v) (PTLS_IS_FLOAT(v) ? ptls__float_to_uint64(v) : (uint64_t)(v))
+
+static uint32_t ptls__float_to_uint32(double v);
+static uint64_t ptls__float_to_uint64(double v);
 
 /**
  * Returns the number of log events that were unable to be emitted.
@@ -2022,6 +2039,24 @@ inline uint32_t ptls_log_point_maybe_active(struct st_ptls_log_point_t *point)
 #else
     return 0;
 #endif
+}
+
+inline uint32_t ptls__float_to_uint32(double v)
+{
+    if (!(v >= 0))
+        return 0;
+    if (v >= (double)UINT32_MAX)
+        return UINT32_MAX;
+    return (uint32_t)v;
+}
+
+inline uint64_t ptls__float_to_uint64(double v)
+{
+    if (!(v >= 0))
+        return 0;
+    if (v >= (double)UINT64_MAX)
+        return UINT64_MAX;
+    return (uint64_t)v;
 }
 
 inline void ptls_log_recalc_conn_state(ptls_log_conn_state_t *state)
