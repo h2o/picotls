@@ -7099,9 +7099,9 @@ void ptls_log__do_push_element_hexdump(const char *prefix, size_t prefix_len, co
     }
 }
 
-void ptls_log__do_push_element_signed32(const char *prefix, size_t prefix_len, int32_t v)
+void ptls_log__do_push_element_signed(const char *prefix, size_t prefix_len, int v)
 {
-    pushf_logbuf_or_invalidate(prefix, prefix_len, sizeof("-2147483648"), "%" PRId32, v);
+    pushf_logbuf_or_invalidate(prefix, prefix_len, sizeof(v) * 3 + 2, "%d", v);
 }
 
 void ptls_log__do_push_element_signed64(const char *prefix, size_t prefix_len, int64_t v)
@@ -7109,9 +7109,9 @@ void ptls_log__do_push_element_signed64(const char *prefix, size_t prefix_len, i
     pushf_logbuf_or_invalidate(prefix, prefix_len, sizeof("-9223372036854775808"), "%" PRId64, v);
 }
 
-void ptls_log__do_push_element_unsigned32(const char *prefix, size_t prefix_len, uint32_t v)
+void ptls_log__do_push_element_unsigned(const char *prefix, size_t prefix_len, unsigned v)
 {
-    pushf_logbuf_or_invalidate(prefix, prefix_len, sizeof("4294967295"), "%" PRIu32, v);
+    pushf_logbuf_or_invalidate(prefix, prefix_len, sizeof(v) * 3 + 1, "%u", v);
 }
 
 void ptls_log__do_push_element_unsigned64(const char *prefix, size_t prefix_len, uint64_t v)
