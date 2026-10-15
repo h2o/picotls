@@ -1326,6 +1326,45 @@ static void test_key_update(void)
     test_handshake(ptls_iovec_init(NULL, 0), TEST_HANDSHAKE_KEY_UPDATE, 0, 0, 0, 1);
 }
 
+static void test_unexpected_message_alerts(void)
+{
+    /* Reproduces the scenario of issue #612: an unexpected handshake message type must trigger
+     * an "unexpected_message" alert (RFC 8446 section 4) in every state of
+     * handle_server_handshake_message(). A state machine that has progressed past the
+     * ClientHello cannot be driven to those states without a real handshake, therefore we
+     * invoke handle_server_handshake_message() directly on crafted states, as is done by
+     * other unit tests (e.g., the direct invocation of handle_key_update). */
+    ptls_context_t tlsctx = {NULL};
+    ptls_t tls = {&tlsctx};
+    static const uint8_t cert_message[] = {PTLS_HANDSHAKE_TYPE_CERTIFICATE, 0, 0, 0};
+    static const uint8_t finished_message[] = {PTLS_HANDSHAKE_TYPE_FINISHED, 0, 0, 0};
+    int ret;
+
+    tls.is_server = 1;
+
+    /* these three states used to return "handshake_failure" */
+    tls.state = PTLS_STATE_SERVER_EXPECT_CLIENT_HELLO;
+    ret = handle_server_handshake_message(&tls, NULL, ptls_iovec_init(cert_message, sizeof(cert_message)), 1, NULL);
+    ok(ret == PTLS_ALERT_UNEXPECTED_MESSAGE);
+
+    tls.state = PTLS_STATE_SERVER_EXPECT_SECOND_CLIENT_HELLO;
+    ret = handle_server_handshake_message(&tls, NULL, ptls_iovec_init(cert_message, sizeof(cert_message)), 1, NULL);
+    ok(ret == PTLS_ALERT_UNEXPECTED_MESSAGE);
+
+    tls.state = PTLS_STATE_SERVER_EXPECT_FINISHED;
+    ret = handle_server_handshake_message(&tls, NULL, ptls_iovec_init(cert_message, sizeof(cert_message)), 1, NULL);
+    ok(ret == PTLS_ALERT_UNEXPECTED_MESSAGE);
+
+    /* sanity check: these states already returned "unexpected_message" before the fix */
+    tls.state = PTLS_STATE_SERVER_EXPECT_CERTIFICATE;
+    ret = handle_server_handshake_message(&tls, NULL, ptls_iovec_init(finished_message, sizeof(finished_message)), 1, NULL);
+    ok(ret == PTLS_ALERT_UNEXPECTED_MESSAGE);
+
+    tls.state = PTLS_STATE_SERVER_POST_HANDSHAKE;
+    ret = handle_server_handshake_message(&tls, NULL, ptls_iovec_init(cert_message, sizeof(cert_message)), 1, NULL);
+    ok(ret == PTLS_ALERT_UNEXPECTED_MESSAGE);
+}
+
 static void test_hrr_handshake(void)
 {
     test_handshake(ptls_iovec_init(NULL, 0), TEST_HANDSHAKE_HRR, 0, 0, 0, 0);
@@ -2504,6 +2543,7 @@ static void test_all_handshakes_core(void)
         subtest("stateless-hrr-aad-change", test_stateless_hrr_aad_change);
     }
     subtest("key-update", test_key_update);
+    subtest("unexpected-message-alerts", test_unexpected_message_alerts);
     subtest("pre-shared-key", test_pre_shared_key);
     subtest("handshake-api", test_handshake_api);
 }
