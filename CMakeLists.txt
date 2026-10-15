@@ -9,7 +9,6 @@ IF (CMAKE_VERSION VERSION_LESS 3.13.0)
   ENDMACRO ()
 ENDIF ()
 
-FIND_PACKAGE(PkgConfig REQUIRED)
 INCLUDE(cmake/boringssl-adjust.cmake)
 INCLUDE(cmake/dtrace-utils.cmake)
 INCLUDE(cmake/fusion.cmake)
@@ -32,6 +31,16 @@ OPTION(WITH_MBEDTLS "enable MBEDTLS" ${WITH_MBEDTLS})
 # standard BUILD_SHARED_LIBS variable selects the library type. Surface it as
 # an option for discoverability; the default (OFF) preserves static builds.
 OPTION(BUILD_SHARED_LIBS "build picotls libraries as shared libraries" OFF)
+OPTION(WITH_BROTLI "enable Brotli certificate compression when available" ON)
+IF (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    SET(PICOTLS_BUILD_TESTS_DEFAULT ON)
+    SET(PICOTLS_BUILD_BENCH_DEFAULT ON)
+ELSE ()
+    SET(PICOTLS_BUILD_TESTS_DEFAULT OFF)
+    SET(PICOTLS_BUILD_BENCH_DEFAULT OFF)
+ENDIF ()
+OPTION(picotls_BUILD_TESTS "build picotls tests" ${PICOTLS_BUILD_TESTS_DEFAULT})
+OPTION(picotls_BUILD_BENCH "build the picotls benchmark" ${PICOTLS_BUILD_BENCH_DEFAULT})
 
 SET(CMAKE_C_FLAGS "-std=c99 -Wall -O2 -g ${CC_WARNING_FLAGS} ${CMAKE_C_FLAGS}")
 INCLUDE_DIRECTORIES(
@@ -75,16 +84,19 @@ IF (WITH_DTRACE)
     ENDIF ()
 ENDIF ()
 
-PKG_CHECK_MODULES(BROTLI_DEC libbrotlidec)
-PKG_CHECK_MODULES(BROTLI_ENC libbrotlienc)
-IF (BROTLI_DEC_FOUND AND BROTLI_ENC_FOUND)
-    INCLUDE_DIRECTORIES(${BROTLI_DEC_INCLUDE_DIRS} ${BROTLI_ENC_INCLUDE_DIRS})
-    SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DPICOTLS_USE_BROTLI=1")
-    LIST(APPEND CORE_FILES
-        lib/certificate_compression.c)
-    LIST(APPEND CORE_EXTRA_LIBS ${BROTLI_DEC_LIBRARIES} ${BROTLI_ENC_LIBRARIES})
-    LIST(APPEND CORE_EXTRA_LIBS_DIRS ${BROTLI_DEC_LIBRARY_DIRS} ${BROTLI_ENC_LIBRARY_DIRS})
-ENDIF ()
+if (WITH_BROTLI)
+    FIND_PACKAGE(PkgConfig REQUIRED)
+    PKG_CHECK_MODULES(BROTLI_DEC libbrotlidec)
+    PKG_CHECK_MODULES(BROTLI_ENC libbrotlienc)
+    IF (BROTLI_DEC_FOUND AND BROTLI_ENC_FOUND)
+        INCLUDE_DIRECTORIES(${BROTLI_DEC_INCLUDE_DIRS} ${BROTLI_ENC_INCLUDE_DIRS})
+        SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DPICOTLS_USE_BROTLI=1")
+        LIST(APPEND CORE_FILES
+            lib/certificate_compression.c)
+        LIST(APPEND CORE_EXTRA_LIBS ${BROTLI_DEC_LIBRARIES} ${BROTLI_ENC_LIBRARIES})
+        LIST(APPEND CORE_EXTRA_LIBS_DIRS ${BROTLI_DEC_LIBRARY_DIRS} ${BROTLI_ENC_LIBRARY_DIRS})
+    ENDIF ()
+endif()
 
 ADD_LIBRARY(picotls-core ${CORE_FILES})
 TARGET_LINK_LIBRARIES(picotls-core ${CORE_EXTRA_LIBS})
@@ -108,22 +120,24 @@ ADD_LIBRARY(picotls-minicrypto
     lib/asn1.c
     lib/ffx.c)
 TARGET_LINK_LIBRARIES(picotls-minicrypto picotls-core)
-ADD_EXECUTABLE(test-minicrypto.t
-    ${MINICRYPTO_LIBRARY_FILES}
-    ${MINICRYPTO_AEGIS_FILES}
-    deps/picotest/picotest.c
-    ${CORE_TEST_FILES}
-    t/minicrypto.c
-    lib/asn1.c
-    lib/pembase64.c
-    lib/ffx.c
-    lib/cifra/x25519.c
-    lib/cifra/chacha20.c
-    lib/cifra/aes128.c
-    lib/cifra/aes256.c
-    lib/cifra/random.c)
-SET(TEST_EXES test-minicrypto.t)
 
+if (picotls_BUILD_TESTS)
+    ADD_EXECUTABLE(test-minicrypto.t
+        ${MINICRYPTO_LIBRARY_FILES}
+        ${MINICRYPTO_AEGIS_FILES}
+        deps/picotest/picotest.c
+        ${CORE_TEST_FILES}
+        t/minicrypto.c
+        lib/asn1.c
+        lib/pembase64.c
+        lib/ffx.c
+        lib/cifra/x25519.c
+        lib/cifra/chacha20.c
+        lib/cifra/aes128.c
+        lib/cifra/aes256.c
+        lib/cifra/random.c)
+    SET(TEST_EXES test-minicrypto.t)
+endif()
 
 SET(PTLSBENCH_LIBS
     picotls-minicrypto picotls-core)
@@ -136,7 +150,10 @@ IF (WITH_AEGIS)
       MESSAGE(STATUS "Enabling AEGIS support (library found in ${aegis_DIR})")
       SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DPTLS_HAVE_AEGIS=1")
       SET(AEGIS_LIBRARIES ${aegis_LIBRARIES})
-      TARGET_LINK_LIBRARIES(test-minicrypto.t ${AEGIS_LIBRARIES})
+
+      if (picotls_BUILD_TESTS)
+        TARGET_LINK_LIBRARIES(test-minicrypto.t ${AEGIS_LIBRARIES})
+      endif()
     ELSE()
       MESSAGE(FATAL_ERROR "libaegis found, but aegis.h not found - Define AEGIS_INCLUDE_DIR accordingly")
     ENDIF()
@@ -153,31 +170,38 @@ IF (OPENSSL_FOUND AND NOT (OPENSSL_VERSION VERSION_LESS "1.0.1"))
     INCLUDE_DIRECTORIES(${OPENSSL_INCLUDE_DIR})
     ADD_LIBRARY(picotls-openssl lib/openssl.c)
     TARGET_LINK_LIBRARIES(picotls-openssl ${OPENSSL_CRYPTO_LIBRARIES} ${AEGIS_LIBRARIES} picotls-core ${CMAKE_DL_LIBS})
-    ADD_EXECUTABLE(cli t/cli.c lib/pembase64.c)
-    TARGET_LINK_LIBRARIES(cli picotls-openssl picotls-core)
 
-    ADD_EXECUTABLE(test-openssl.t
-        ${MINICRYPTO_LIBRARY_FILES}
-        ${MINICRYPTO_AEGIS_FILES}
-        lib/cifra.c
-        lib/cifra/x25519.c
-        lib/cifra/chacha20.c
-        lib/cifra/aes128.c
-        lib/cifra/aes256.c
-        lib/cifra/random.c
-        lib/uecc.c
-        lib/asn1.c
-        lib/pembase64.c
-        lib/ffx.c
-        deps/picotest/picotest.c
-        ${CORE_TEST_FILES}
-        t/openssl.c)
-    SET_TARGET_PROPERTIES(test-openssl.t PROPERTIES COMPILE_FLAGS "-DPTLS_MEMORY_DEBUG=1")
-    TARGET_LINK_LIBRARIES(test-openssl.t ${OPENSSL_CRYPTO_LIBRARIES} ${AEGIS_LIBRARIES} ${CMAKE_DL_LIBS})
+    if (picotls_BUILD_TESTS)
+        ADD_EXECUTABLE(cli t/cli.c lib/pembase64.c)
+        TARGET_LINK_LIBRARIES(cli picotls-openssl picotls-core)
+
+        FIND_LIBRARY(LIBC_RESOLV_LIB "resolv")
+        IF (OPENSSL_FOUND AND LIBC_RESOLV_LIB)
+            TARGET_LINK_LIBRARIES(cli ${LIBC_RESOLV_LIB})
+        ENDIF ()
+
+        ADD_EXECUTABLE(test-openssl.t
+            ${MINICRYPTO_LIBRARY_FILES}
+            ${MINICRYPTO_AEGIS_FILES}
+            lib/cifra.c
+            lib/cifra/x25519.c
+            lib/cifra/chacha20.c
+            lib/cifra/aes128.c
+            lib/cifra/aes256.c
+            lib/cifra/random.c
+            lib/uecc.c
+            lib/asn1.c
+            lib/pembase64.c
+            lib/ffx.c
+            deps/picotest/picotest.c
+            ${CORE_TEST_FILES}
+            t/openssl.c)
+        SET_TARGET_PROPERTIES(test-openssl.t PROPERTIES COMPILE_FLAGS "-DPTLS_MEMORY_DEBUG=1")
+        TARGET_LINK_LIBRARIES(test-openssl.t ${OPENSSL_CRYPTO_LIBRARIES} ${AEGIS_LIBRARIES} ${CMAKE_DL_LIBS})
+        LIST(APPEND TEST_EXES test-openssl.t cli)
+    endif()
 
     LIST(APPEND PTLSBENCH_LIBS picotls-openssl ${OPENSSL_CRYPTO_LIBRARIES} ${AEGIS_LIBRARIES} ${CMAKE_DL_LIBS})
-
-    SET(TEST_EXES ${TEST_EXES} test-openssl.t)
 ELSE ()
     MESSAGE(WARNING "Disabling OpenSSL support (requires 1.0.1 or newer)")
 ENDIF ()
@@ -186,17 +210,20 @@ IF (WITH_FUSION)
     ADD_LIBRARY(picotls-fusion lib/fusion.c)
     SET_TARGET_PROPERTIES(picotls-fusion PROPERTIES COMPILE_FLAGS "-mavx2 -maes -mpclmul -mvaes -mvpclmulqdq")
     TARGET_LINK_LIBRARIES(picotls-fusion picotls-core)
-    ADD_EXECUTABLE(test-fusion.t
-        deps/picotest/picotest.c
-        lib/picotls.c
-        t/fusion.c
-        t/quiclb.c)
-    TARGET_LINK_LIBRARIES(test-fusion.t picotls-minicrypto)
-    SET_TARGET_PROPERTIES(test-fusion.t PROPERTIES COMPILE_FLAGS "-mavx2 -maes -mpclmul -mvaes -mvpclmulqdq")
-    IF (WITH_DTRACE)
-        ADD_DEPENDENCIES(test-fusion.t generate-picotls-probes)
-    ENDIF ()
-    SET(TEST_EXES ${TEST_EXES} test-fusion.t)
+
+    if (picotls_BUILD_TESTS)
+        ADD_EXECUTABLE(test-fusion.t
+            deps/picotest/picotest.c
+            lib/picotls.c
+            t/fusion.c
+            t/quiclb.c)
+        TARGET_LINK_LIBRARIES(test-fusion.t picotls-minicrypto)
+        SET_TARGET_PROPERTIES(test-fusion.t PROPERTIES COMPILE_FLAGS "-mavx2 -maes -mpclmul -mvaes -mvpclmulqdq")
+        IF (WITH_DTRACE)
+            ADD_DEPENDENCIES(test-fusion.t generate-picotls-probes)
+        ENDIF ()
+        SET(TEST_EXES ${TEST_EXES} test-fusion.t)
+    endif()
 
     SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DPTLS_HAVE_FUSION=1")
     LIST(APPEND PTLSBENCH_LIBS picotls-fusion)
@@ -215,25 +242,32 @@ IF (WITH_MBEDTLS)
     # resolved at link time (DT_NEEDED/import libraries), and static consumers
     # inherit them transitively instead of having to repeat them.
     TARGET_LINK_LIBRARIES(picotls-mbedtls picotls-core ${MBEDTLS_LIBRARIES})
-    ADD_EXECUTABLE(test-mbedtls.t
-        deps/picotest/picotest.c
-        ${CORE_TEST_FILES}
-        t/mbedtls.c)
-    TARGET_LINK_LIBRARIES(test-mbedtls.t
-        picotls-minicrypto picotls-mbedtls
-        ${MBEDTLS_LIBRARIES})
+    if (picotls_BUILD_TESTS)
+        ADD_EXECUTABLE(test-mbedtls.t
+            deps/picotest/picotest.c
+            ${CORE_TEST_FILES}
+            t/mbedtls.c)
+        TARGET_LINK_LIBRARIES(test-mbedtls.t
+            picotls-minicrypto picotls-mbedtls
+            ${MBEDTLS_LIBRARIES})
+        LIST(APPEND TEST_EXES test-mbedtls.t)
+    endif()
     SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DPTLS_HAVE_MBEDTLS=1")
     LIST(APPEND PTLSBENCH_LIBS picotls-mbedtls ${MBEDTLS_LIBRARIES})
 ENDIF ()
 
-ADD_EXECUTABLE(ptlsbench t/ptlsbench.c)
-SET_TARGET_PROPERTIES(ptlsbench PROPERTIES COMPILE_FLAGS "-DPTLS_MEMORY_DEBUG=1")
-TARGET_LINK_LIBRARIES(ptlsbench ${PTLSBENCH_LIBS})
-IF (NOT WITH_FUSION)
-    SET_TARGET_PROPERTIES(ptlsbench PROPERTIES EXCLUDE_FROM_ALL 1)
-ENDIF ()
+if(picotls_BUILD_BENCH)
+    ADD_EXECUTABLE(ptlsbench t/ptlsbench.c)
+    SET_TARGET_PROPERTIES(ptlsbench PROPERTIES COMPILE_FLAGS "-DPTLS_MEMORY_DEBUG=1")
+    TARGET_LINK_LIBRARIES(ptlsbench ${PTLSBENCH_LIBS})
+    IF (NOT WITH_FUSION)
+        SET_TARGET_PROPERTIES(ptlsbench PROPERTIES EXCLUDE_FROM_ALL 1)
+    ENDIF ()
+endif()
 
-ADD_CUSTOM_TARGET(check env BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR} prove --exec '' -v ${CMAKE_CURRENT_BINARY_DIR}/*.t t/*.t WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} DEPENDS ${TEST_EXES} cli)
+if (picotls_BUILD_TESTS)
+    ADD_CUSTOM_TARGET(check env BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR} prove --exec '' -v ${CMAKE_CURRENT_BINARY_DIR}/*.t t/*.t WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} DEPENDS ${TEST_EXES})
+endif()
 
 # The picotls headers carry no dllexport/dllimport annotations, so DLL builds
 # on Windows would otherwise produce no import library. Exporting all symbols
@@ -252,12 +286,9 @@ ENDFOREACH ()
 IF (CMAKE_SYSTEM_NAME STREQUAL "Linux")
      SET(CMAKE_C_FLAGS "-D_GNU_SOURCE -pthread ${CMAKE_C_FLAGS}")
 ELSEIF ("${CMAKE_SYSTEM_NAME}" MATCHES "SunOS")
-    TARGET_LINK_LIBRARIES(cli "socket" "nsl")
-ENDIF ()
-
-FIND_LIBRARY(LIBC_RESOLV_LIB "resolv")
-IF (OPENSSL_FOUND AND LIBC_RESOLV_LIB)
-    TARGET_LINK_LIBRARIES(cli ${LIBC_RESOLV_LIB})
+    IF (TARGET cli)
+        TARGET_LINK_LIBRARIES(cli "socket" "nsl")
+    ENDIF ()
 ENDIF ()
 
 IF (BUILD_FUZZER)
