@@ -4707,9 +4707,9 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
                              ptls_iovec_init(emitter->buf->base + sh_start_off, emitter->buf->off - sh_start_off))) != 0)
                         goto Exit;
                 });
+            if ((ret = push_change_cipher_spec(tls, emitter)) != 0)
+                goto Exit;
             if (retry_uses_cookie) {
-                if ((ret = push_change_cipher_spec(tls, emitter)) != 0)
-                    goto Exit;
                 ret = PTLS_ERROR_STATELESS_RETRY;
             } else {
                 tls->state = PTLS_STATE_SERVER_EXPECT_SECOND_CLIENT_HELLO;
