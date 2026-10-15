@@ -5246,28 +5246,32 @@ static ptls_t *new_instance(ptls_context_t *ctx, int is_server)
 ptls_t *ptls_client_new(ptls_context_t *ctx)
 {
     ptls_t *tls = new_instance(ctx, 0);
-    tls->state = PTLS_STATE_CLIENT_HANDSHAKE_START;
-    tls->ctx->random_bytes(tls->client_random, sizeof(tls->client_random));
-    log_client_random(tls);
-    if (tls->send_change_cipher_spec) {
-        tls->client.legacy_session_id =
-            ptls_iovec_init(tls->client.legacy_session_id_buf, sizeof(tls->client.legacy_session_id_buf));
-        tls->ctx->random_bytes(tls->client.legacy_session_id.base, tls->client.legacy_session_id.len);
-    }
+    if (tls != NULL) {
+        tls->state = PTLS_STATE_CLIENT_HANDSHAKE_START;
+        tls->ctx->random_bytes(tls->client_random, sizeof(tls->client_random));
+        log_client_random(tls);
+        if (tls->send_change_cipher_spec) {
+            tls->client.legacy_session_id =
+                ptls_iovec_init(tls->client.legacy_session_id_buf, sizeof(tls->client.legacy_session_id_buf));
+            tls->ctx->random_bytes(tls->client.legacy_session_id.base, tls->client.legacy_session_id.len);
+        }
 
-    PTLS_PROBE(NEW, tls, 0);
-    PTLS_LOG_CONN(new, tls, { PTLS_LOG_ELEMENT_BOOL(is_server, 0); });
+        PTLS_PROBE(NEW, tls, 0);
+        PTLS_LOG_CONN(new, tls, { PTLS_LOG_ELEMENT_BOOL(is_server, 0); });
+    }
     return tls;
 }
 
 ptls_t *ptls_server_new(ptls_context_t *ctx)
 {
     ptls_t *tls = new_instance(ctx, 1);
-    tls->state = PTLS_STATE_SERVER_EXPECT_CLIENT_HELLO;
-    tls->server.early_data_skipped_bytes = UINT32_MAX;
+    if (tls != NULL) {
+        tls->state = PTLS_STATE_SERVER_EXPECT_CLIENT_HELLO;
+        tls->server.early_data_skipped_bytes = UINT32_MAX;
 
-    PTLS_PROBE(NEW, tls, 1);
-    PTLS_LOG_CONN(new, tls, { PTLS_LOG_ELEMENT_BOOL(is_server, 1); });
+        PTLS_PROBE(NEW, tls, 1);
+        PTLS_LOG_CONN(new, tls, { PTLS_LOG_ELEMENT_BOOL(is_server, 1); });
+    }
     return tls;
 }
 
