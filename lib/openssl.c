@@ -1007,9 +1007,9 @@ Exit:
 
 int ptls_openssl_create_key_exchange(ptls_key_exchange_context_t **ctx, EVP_PKEY *pkey)
 {
-    int ret, id;
+    int ret;
 
-    switch (id = EVP_PKEY_id(pkey)) {
+    switch (EVP_PKEY_id(pkey)) {
 
     case EVP_PKEY_EC: {
         /* obtain eckey */
