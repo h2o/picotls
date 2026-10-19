@@ -3563,7 +3563,8 @@ static int client_handle_finished(ptls_t *tls, ptls_message_emitter_t *emitter, 
             goto Exit;
     }
 
-    ret = send_finished(tls, emitter);
+    if ((ret = send_finished(tls, emitter)) != 0)
+        goto Exit;
 
     memcpy(tls->traffic_protection.enc.secret, send_secret, sizeof(send_secret));
     if ((ret = setup_traffic_protection(tls, 1, NULL, 3, 0, 0)) != 0)
