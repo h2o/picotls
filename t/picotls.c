@@ -631,6 +631,22 @@ static void test_base64_decode(void)
                              &state, &buf);
     ok(ret != 0);
 
+    buf.off = 0;
+
+    /* blanks following padding are accepted */
+    ptls_base64_decode_init(&state);
+    ret = ptls_base64_decode("aGVsbG8gd29ybGQ= \r\n", &state, &buf);
+    ok(ret == 0);
+    ok(buf.off == 11);
+    ok(memcmp(buf.base, "hello world", 11) == 0);
+
+    buf.off = 0;
+
+    /* other characters following padding are rejected */
+    ptls_base64_decode_init(&state);
+    ret = ptls_base64_decode("aGVsbG8gd29ybGQ=x", &state, &buf);
+    ok(ret != 0);
+
     ptls_buffer_dispose(&buf);
 }
 
