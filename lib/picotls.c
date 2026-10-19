@@ -1896,6 +1896,9 @@ static int send_session_ticket(ptls_t *tls, ptls_message_emitter_t *emitter)
     assert(tls->ctx->ticket_lifetime != 0);
     assert(tls->ctx->encrypt_ticket != NULL);
 
+    if (msghash_backup == NULL)
+        return PTLS_ERROR_NO_MEMORY;
+
     ptls_buffer_init(&session_id, session_id_smallbuf, sizeof(session_id_smallbuf));
 
     { /* calculate verify-data that will be sent by the client */
