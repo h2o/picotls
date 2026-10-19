@@ -892,7 +892,7 @@ static int commit_record_message(ptls_message_emitter_t *_self)
     do {                                                                                                                           \
         ptls_buffer_push16((buf), (type));                                                                                         \
         ptls_buffer_push_block((buf), 2, block);                                                                                   \
-    } while (0);
+    } while (0)
 
 #define decode_open_extensions(src, end, hstype, exttype, block)                                                                   \
     do {                                                                                                                           \
