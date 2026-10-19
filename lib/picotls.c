@@ -4203,7 +4203,8 @@ static int try_psk_handshake(ptls_t *tls, size_t *psk_index, int *accept_early_d
         /* negotiate using fixed pre-shared key */
         if (tls->ctx->pre_shared_key.identity.base != NULL) {
             if (identity->identity.len == tls->ctx->pre_shared_key.identity.len &&
-                memcmp(identity->identity.base, tls->ctx->pre_shared_key.identity.base, identity->identity.len) == 0) {
+                memcmp(identity->identity.base, tls->ctx->pre_shared_key.identity.base, identity->identity.len) == 0 &&
+                identity->binder.len == tls->key_schedule->hashes[0].algo->digest_size) {
                 *accept_early_data = ch->psk.early_data_indication && *psk_index == 0;
                 tls->key_share = NULL;
                 secret = tls->ctx->pre_shared_key.secret;
