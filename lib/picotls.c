@@ -5791,7 +5791,7 @@ static int handle_server_handshake_message(ptls_t *tls, ptls_message_emitter_t *
         if (type == PTLS_HANDSHAKE_TYPE_CLIENT_HELLO && is_end_of_record) {
             ret = server_handle_hello(tls, emitter, message, properties);
         } else {
-            ret = PTLS_ALERT_HANDSHAKE_FAILURE;
+            ret = PTLS_ALERT_UNEXPECTED_MESSAGE;
         }
         break;
     case PTLS_STATE_SERVER_EXPECT_CERTIFICATE:
@@ -5820,7 +5820,7 @@ static int handle_server_handshake_message(ptls_t *tls, ptls_message_emitter_t *
         if (type == PTLS_HANDSHAKE_TYPE_FINISHED && is_end_of_record) {
             ret = server_handle_finished(tls, message);
         } else {
-            ret = PTLS_ALERT_HANDSHAKE_FAILURE;
+            ret = PTLS_ALERT_UNEXPECTED_MESSAGE;
         }
         break;
     case PTLS_STATE_SERVER_POST_HANDSHAKE:
