@@ -2222,7 +2222,7 @@ int ptls_fusion_is_supported_by_cpu(void)
         __cpuid(cpu_info, 1);
         leaf1_ecx = cpu_info[2];
 
-        if (/* PCLMUL */ (leaf1_ecx & (1 << 5)) != 0 && /* AES */ (leaf1_ecx & (1 << 25)) != 0) {
+        if (/* PCLMUL */ (leaf1_ecx & (1 << 1)) != 0 && /* AES */ (leaf1_ecx & (1 << 25)) != 0) {
             uint32_t leaf7_ebx, leaf7_ecx;
             __cpuid(cpu_info, 7);
             leaf7_ebx = cpu_info[1];
