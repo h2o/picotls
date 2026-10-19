@@ -4203,8 +4203,7 @@ static int try_psk_handshake(ptls_t *tls, size_t *psk_index, int *accept_early_d
         /* negotiate using fixed pre-shared key */
         if (tls->ctx->pre_shared_key.identity.base != NULL) {
             if (identity->identity.len == tls->ctx->pre_shared_key.identity.len &&
-                memcmp(identity->identity.base, tls->ctx->pre_shared_key.identity.base, identity->identity.len) == 0 &&
-                identity->binder.len == tls->key_schedule->hashes[0].algo->digest_size) {
+                memcmp(identity->identity.base, tls->ctx->pre_shared_key.identity.base, identity->identity.len) == 0) {
                 *accept_early_data = ch->psk.early_data_indication && *psk_index == 0;
                 tls->key_share = NULL;
                 secret = tls->ctx->pre_shared_key.secret;
@@ -4306,7 +4305,8 @@ Found:
     if ((ret = calc_verify_data(binder_key /* to conserve space, reuse binder_key for storing verify_data */, tls->key_schedule,
                                 binder_key)) != 0)
         goto Exit;
-    if (!ptls_mem_equal(ch->psk.identities.list[*psk_index].binder.base, binder_key,
+    if (ch->psk.identities.list[*psk_index].binder.len != tls->key_schedule->hashes[0].algo->digest_size ||
+        !ptls_mem_equal(ch->psk.identities.list[*psk_index].binder.base, binder_key,
                         tls->key_schedule->hashes[0].algo->digest_size)) {
         ret = PTLS_ALERT_DECRYPT_ERROR;
         goto Exit;
