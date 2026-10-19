@@ -7203,8 +7203,9 @@ int ptls_log__do_write_end(struct st_ptls_log_point_t *point, struct st_ptls_log
     if (point->state.generation != ptls_log._generation)
         ptls_log__recalc_point(1, point);
     uint32_t active = point->state.active_conns;
-    if (conn != NULL && conn->state.generation != ptls_log._generation) {
-        ptls_log__recalc_conn(1, conn, getsni);
+    if (conn != NULL) {
+        if (conn->state.generation != ptls_log._generation)
+            ptls_log__recalc_conn(1, conn, getsni);
         active &= conn->state.active_conns;
     }
 
