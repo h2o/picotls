@@ -5079,7 +5079,7 @@ static int update_traffic_key(ptls_t *tls, int is_enc)
     if ((ret = ptls_hkdf_expand_label(hash, secret, hash->digest_size, ptls_iovec_init(tp->secret, hash->digest_size),
                                       "traffic upd", ptls_iovec_init(NULL, 0), NULL)) != 0)
         goto Exit;
-    memcpy(tp->secret, secret, sizeof(secret));
+    memcpy(tp->secret, secret, hash->digest_size);
     ret = setup_traffic_protection(tls, is_enc, NULL, 3, 0, 1);
 
 Exit:
