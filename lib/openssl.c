@@ -404,8 +404,10 @@ Exit:
     if (ret == 0) {
         *_ctx = &ctx->super;
     } else {
-        if (ctx != NULL)
+        if (ctx != NULL) {
+            ctx->privkey = NULL; /* do not free eckey in case of error, as the caller retains the ownership */
             x9_62_free_context(ctx);
+        }
         *_ctx = NULL;
     }
     return ret;
