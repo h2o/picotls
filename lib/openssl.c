@@ -1112,7 +1112,10 @@ static ptls_async_job_t *async_sign_ctx_new(const ptls_openssl_signature_scheme_
     self->super = (ptls_async_job_t){async_sign_ctx_free, async_sign_ctx_get_fd};
     self->scheme = scheme;
     self->ctx = ctx;
-    self->waitctx = ASYNC_WAIT_CTX_new();
+    if ((self->waitctx = ASYNC_WAIT_CTX_new()) == NULL) {
+        free(self);
+        return NULL;
+    }
     self->job = NULL;
     self->siglen = siglen;
     memset(self->sig, 0, siglen);
