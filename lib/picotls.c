@@ -3589,8 +3589,9 @@ static int client_handle_new_session_ticket(ptls_t *tls, ptls_iovec_t message)
             return ret;
     }
 
-    /* do nothing if use of session ticket is disabled */
-    if (tls->ctx->save_ticket == NULL)
+    /* do nothing if use of session ticket is disabled, or if there is no key share to be recorded (i.e., external PSK being used
+     * without key exchanges; such a ticket cannot be used for resumption) */
+    if (tls->ctx->save_ticket == NULL || tls->key_share == NULL)
         return 0;
 
     /* save the extension, along with the key of myself */
