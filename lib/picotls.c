@@ -4305,7 +4305,8 @@ Found:
     if ((ret = calc_verify_data(binder_key /* to conserve space, reuse binder_key for storing verify_data */, tls->key_schedule,
                                 binder_key)) != 0)
         goto Exit;
-    if (!ptls_mem_equal(ch->psk.identities.list[*psk_index].binder.base, binder_key,
+    if (ch->psk.identities.list[*psk_index].binder.len != tls->key_schedule->hashes[0].algo->digest_size ||
+        !ptls_mem_equal(ch->psk.identities.list[*psk_index].binder.base, binder_key,
                         tls->key_schedule->hashes[0].algo->digest_size)) {
         ret = PTLS_ALERT_DECRYPT_ERROR;
         goto Exit;
@@ -4768,6 +4769,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
         tls->is_psk_handshake = 1;
         if (properties != NULL) {
             ptls_iovec_t *selected = &ch->psk.identities.list[psk_index].binder;
+            assert(selected->len <= sizeof(properties->server.selected_psk_binder.base));
             memcpy(properties->server.selected_psk_binder.base, selected->base, selected->len);
             properties->server.selected_psk_binder.len = selected->len;
         }
