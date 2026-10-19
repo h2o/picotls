@@ -1309,8 +1309,11 @@ static ptls_key_schedule_t *key_schedule_new(ptls_cipher_suite_t *preferred, ptl
         if ((sched->hashes[sched->num_hashes].ctx = cs->hash->create()) == NULL)
             goto Fail;
         if (use_outer) {
-            if ((sched->hashes[sched->num_hashes].ctx_outer = cs->hash->create()) == NULL)
+            if ((sched->hashes[sched->num_hashes].ctx_outer = cs->hash->create()) == NULL) {
+                /* num_hashes is yet to be incremented, therefore `ctx` has to be freed here */
+                sched->hashes[sched->num_hashes].ctx->final(sched->hashes[sched->num_hashes].ctx, NULL, PTLS_HASH_FINAL_MODE_FREE);
                 goto Fail;
+            }
         } else {
             sched->hashes[sched->num_hashes].ctx_outer = NULL;
         }
