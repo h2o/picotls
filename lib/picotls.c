@@ -4769,6 +4769,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
         tls->is_psk_handshake = 1;
         if (properties != NULL) {
             ptls_iovec_t *selected = &ch->psk.identities.list[psk_index].binder;
+            assert(selected->len <= sizeof(properties->server.selected_psk_binder.base));
             memcpy(properties->server.selected_psk_binder.base, selected->base, selected->len);
             properties->server.selected_psk_binder.len = selected->len;
         }
