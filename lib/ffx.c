@@ -71,8 +71,6 @@ int ptls_ffx_setup_crypto(ptls_cipher_context_t *_ctx, ptls_cipher_algorithm_t *
         ctx->super.do_dispose = ffx_dispose;
         ctx->super.do_init = ffx_init;
         ctx->super.do_transform = ffx_encrypt;
-    } else {
-        ffx_dispose(_ctx);
     }
 
     return ret;
