@@ -1978,7 +1978,11 @@ static int verify_cert(ptls_verify_certificate_t *_self, ptls_t *tls, const char
                 ret = PTLS_ALERT_BAD_CERTIFICATE;
                 goto Exit;
             }
-            sk_X509_push(chain, interm);
+            if (sk_X509_push(chain, interm) == 0) {
+                X509_free(interm);
+                ret = PTLS_ERROR_NO_MEMORY;
+                goto Exit;
+            }
         }
         ret = verify_cert_chain(self->cert_store, cert, chain, ptls_is_server(tls), server_name, &ossl_x509_err);
     } else {
