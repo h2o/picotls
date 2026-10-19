@@ -4472,7 +4472,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
         if (!is_second_flight)
             tls->ech.state = PTLS_ECH_STATE_OFFERED;
         /* obtain AEAD context for opening inner CH */
-        if (!is_second_flight && ch->ech.payload.base != NULL && tls->ctx->ech.server.create_opener != NULL) {
+        if (!is_second_flight && tls->ctx->ech.server.create_opener != NULL) {
             if ((tls->ech.aead = tls->ctx->ech.server.create_opener->cb(
                      tls->ctx->ech.server.create_opener, &tls->ech.kem, &tls->ech.cipher, tls, ch->ech.config_id,
                      ch->ech.cipher_suite, ch->ech.enc, ptls_iovec_init(ech_info_prefix, sizeof(ech_info_prefix)))) != NULL)
