@@ -5245,7 +5245,11 @@ static ptls_t *new_instance(ptls_context_t *ctx, int is_server)
 
 ptls_t *ptls_client_new(ptls_context_t *ctx)
 {
-    ptls_t *tls = new_instance(ctx, 0);
+    ptls_t *tls;
+
+    if ((tls = new_instance(ctx, 0)) == NULL)
+        return NULL;
+
     tls->state = PTLS_STATE_CLIENT_HANDSHAKE_START;
     tls->ctx->random_bytes(tls->client_random, sizeof(tls->client_random));
     log_client_random(tls);
@@ -5262,7 +5266,11 @@ ptls_t *ptls_client_new(ptls_context_t *ctx)
 
 ptls_t *ptls_server_new(ptls_context_t *ctx)
 {
-    ptls_t *tls = new_instance(ctx, 1);
+    ptls_t *tls;
+
+    if ((tls = new_instance(ctx, 1)) == NULL)
+        return NULL;
+
     tls->state = PTLS_STATE_SERVER_EXPECT_CLIENT_HELLO;
     tls->server.early_data_skipped_bytes = UINT32_MAX;
 
