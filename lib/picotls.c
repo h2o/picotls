@@ -1177,6 +1177,7 @@ static int client_setup_ech(struct st_ptls_ech_t *ech, struct st_decoded_ech_con
 Exit:
     if (ret != 0)
         clear_ech(ech, 0);
+    ptls_buffer_dispose(&infobuf);
     return ret;
 }
 
