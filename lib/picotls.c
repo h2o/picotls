@@ -5430,6 +5430,9 @@ static int import_tls13_traffic_protection(ptls_t *tls, int is_enc, const uint8_
 {
     struct st_ptls_traffic_protection_t *tp = is_enc ? &tls->traffic_protection.enc : &tls->traffic_protection.dec;
 
+    if ((size_t)(end - *src) < tls->cipher_suite->hash->digest_size)
+        return PTLS_ALERT_DECODE_ERROR;
+
     /* set properties */
     memcpy(tp->secret, *src, tls->cipher_suite->hash->digest_size);
     *src += tls->cipher_suite->hash->digest_size;
