@@ -1140,6 +1140,10 @@ static int do_sign_async(ptls_buffer_t *outbuf, ptls_async_job_t **_async)
         break;
     case ASYNC_FINISH:
         async->job = NULL;
+        if (ret != 1) { /* the return value of EVP_DigestSignFinal */
+            ret = PTLS_ERROR_LIBRARY;
+            break;
+        }
         ptls_buffer_pushv(outbuf, async->sig, async->siglen);
         ret = 0;
         break;
