@@ -4624,9 +4624,11 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
             /* integrity check passed; update states */
             key_schedule_update_ch1hash_prefix(tls->key_schedule);
             ptls__key_schedule_update_hash(tls->key_schedule, ch->cookie.ch1_hash.base, ch->cookie.ch1_hash.len, 0);
-            key_schedule_extract(tls->key_schedule,
-                                 tls->ctx->pre_shared_key.secret /* this argument will be a zero-length vector unless external PSK
-                                                                  is used, and that's fine; we never resume when sending HRR */);
+            if ((ret = key_schedule_extract(tls->key_schedule,
+                                            tls->ctx->pre_shared_key.secret /* this argument will be a zero-length vector unless
+                                                                             external PSK is used, and that's fine; we never resume
+                                                                             when sending HRR */)) != 0)
+                goto Exit;
             /* ... reusing sendbuf to rebuild HRR for hash calculation */
             size_t hrr_start = emitter->buf->off;
             EMIT_HELLO_RETRY_REQUEST(tls->key_schedule, ch->cookie.sent_key_share ? key_share.algorithm : NULL,
@@ -4659,7 +4661,8 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
                 properties != NULL && properties->server.retry_uses_cookie && !ptls_is_ech_handshake(tls, NULL, NULL, NULL);
             if (!retry_uses_cookie) {
                 key_schedule_transform_post_ch1hash(tls->key_schedule);
-                key_schedule_extract(tls->key_schedule, tls->ctx->pre_shared_key.secret /* see comment above */);
+                if ((ret = key_schedule_extract(tls->key_schedule, tls->ctx->pre_shared_key.secret /* see comment above */)) != 0)
+                    goto Exit;
             }
             size_t ech_confirm_off = 0;
             EMIT_HELLO_RETRY_REQUEST(
@@ -4762,7 +4765,8 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
         ptls__key_schedule_update_hash(tls->key_schedule, message.base, message.len, 0);
         if (!is_second_flight) {
             assert(tls->key_schedule->generation == 0);
-            key_schedule_extract(tls->key_schedule, ptls_iovec_init(NULL, 0));
+            if ((ret = key_schedule_extract(tls->key_schedule, ptls_iovec_init(NULL, 0))) != 0)
+                goto Exit;
         }
         mode = HANDSHAKE_MODE_FULL;
         if (properties != NULL)
@@ -4869,7 +4873,8 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
 
     /* create protection contexts for the handshake */
     assert(tls->key_schedule->generation == 1);
-    key_schedule_extract(tls->key_schedule, ecdh_secret);
+    if ((ret = key_schedule_extract(tls->key_schedule, ecdh_secret)) != 0)
+        goto Exit;
     if ((ret = setup_traffic_protection(tls, 1, "s hs traffic", 2, 0, 0)) != 0)
         goto Exit;
     if (tls->pending_handshake_secret != NULL) {
