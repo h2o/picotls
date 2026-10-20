@@ -2540,9 +2540,8 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
         { /* pad EncodedCHInner (following draft-ietf-tls-esni-15 6.1.3) */
             size_t padding_len;
             if (sni_name != NULL) {
-                padding_len = strlen(sni_name);
-                if (padding_len < tls->ech.client.max_name_length)
-                    padding_len = tls->ech.client.max_name_length;
+                size_t sni_len = strlen(sni_name);
+                padding_len = sni_len < tls->ech.client.max_name_length ? tls->ech.client.max_name_length - sni_len : 0;
             } else {
                 padding_len = tls->ech.client.max_name_length + 9;
             }
