@@ -1205,7 +1205,8 @@ static void client_setup_ech_grease(struct st_ptls_ech_t *ech, void (*random_byt
 
     /* aead is generated from random */
     random_bytes(random_secret, sizeof(random_secret));
-    ech->aead = ptls_aead_new_direct(ech->cipher->aead, 1, random_secret, random_secret + PTLS_AES128_KEY_SIZE);
+    if ((ech->aead = ptls_aead_new_direct(ech->cipher->aead, 1, random_secret, random_secret + PTLS_AES128_KEY_SIZE)) == NULL)
+        goto Fail;
 
     /* `enc` is random bytes */
     if ((ech->client.enc.base = malloc(x25519_key_size)) == NULL)
