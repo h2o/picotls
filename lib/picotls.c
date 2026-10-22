@@ -1996,16 +1996,21 @@ Exit:
     return ret;
 }
 
-static int push_signature_algorithms(ptls_verify_certificate_t *vc, ptls_buffer_t *sendbuf)
+static const uint16_t *get_signature_algorithms(ptls_verify_certificate_t *vc)
 {
     /* The list sent when verify callback is not registered */
     static const uint16_t default_algos[] = {PTLS_SIGNATURE_RSA_PSS_RSAE_SHA384, PTLS_SIGNATURE_RSA_PSS_RSAE_SHA256,
                                              PTLS_SIGNATURE_ECDSA_SECP384R1_SHA384, PTLS_SIGNATURE_ECDSA_SECP256R1_SHA256,
                                              PTLS_SIGNATURE_RSA_PKCS1_SHA256, PTLS_SIGNATURE_RSA_PKCS1_SHA1, UINT16_MAX};
+    return vc != NULL ? vc->algos : default_algos;
+}
+
+static int push_signature_algorithms(ptls_verify_certificate_t *vc, ptls_buffer_t *sendbuf)
+{
     int ret;
 
     ptls_buffer_push_block(sendbuf, 2, {
-        for (const uint16_t *p = vc != NULL ? vc->algos : default_algos; *p != UINT16_MAX; ++p)
+        for (const uint16_t *p = get_signature_algorithms(vc); *p != UINT16_MAX; ++p)
             ptls_buffer_push16(sendbuf, *p);
     });
 
@@ -3477,6 +3482,14 @@ static int handle_certificate_verify(ptls_t *tls, ptls_iovec_t message, const ch
         src = end;
     });
 
+    /* The peer must use a signature algorithm that we advertised. */
+    for (const uint16_t *p = get_signature_algorithms(tls->ctx->verify_certificate); *p != UINT16_MAX; ++p)
+        if (*p == algo)
+            goto AlgorithmFound;
+    ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+    goto Exit;
+
+AlgorithmFound:
     signdata_size = build_certificate_verify_signdata(signdata, tls->key_schedule, context_string);
     if (tls->certificate_verify.cb != NULL) {
         ret = tls->certificate_verify.cb(tls->certificate_verify.verify_ctx, algo, ptls_iovec_init(signdata, signdata_size),
