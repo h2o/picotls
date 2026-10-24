@@ -56,11 +56,14 @@ void ptlc_bcrypt_dispose()
 }
 
 /**
- * Random number generation */
-
+ * Random number generation: reuse the minicrypto ptls_minicrypto_random_bytes,
+ * which already includes a reference to the appropriate Windows cryptographic random 
+ * generator when running on Windows platforms.
+ */
+void ptls_minicrypto_random_bytes(void *buf, size_t len);
 void ptls_bcrypt_random_bytes(void *buf, size_t len)
 {
-    /* TODO: Crypto gen random */
+    return ptls_minicrypto_random_bytes(buf, len);
 }
 
 /*
