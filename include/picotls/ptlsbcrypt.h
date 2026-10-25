@@ -30,7 +30,6 @@ extern "C" {
 
 #ifdef _WINDOWS
 #include <bcrypt.h>
-void ptls_bcrypt_random_bytes(void *buf, size_t len);
 
 extern ptls_cipher_algorithm_t ptls_bcrypt_aes128ecb;
 extern ptls_cipher_algorithm_t ptls_bcrypt_aes256ecb;
