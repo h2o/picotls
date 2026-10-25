@@ -3,6 +3,16 @@ name: CI
 on: [push, pull_request]
 
 jobs:
+  brotli-build:
+    runs-on: ubuntu-24.04
+    steps:
+    - uses: actions/checkout@v2
+      with:
+        submodules: recursive
+    - name: Install dependencies
+      run: sudo apt-get update && sudo apt-get install -y libssl-dev libbrotli-dev pkg-config
+    - name: Check Brotli build defaults and reconfiguration
+      run: sh misc/test-brotli-build.sh "$RUNNER_TEMP/picotls-brotli"
   linux:
     name: "${{ matrix.name }}"
     runs-on: [ubuntu-24.04]
