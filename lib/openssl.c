@@ -964,6 +964,7 @@ static int evp_kem_exchange(ptls_key_exchange_algorithm_t *algo, ptls_iovec_t *c
         goto Exit;
     }
 
+    EVP_PKEY_CTX_free(evpctx);
     evpctx = EVP_PKEY_CTX_new_from_pkey(NULL, key, NULL);
     if (evpctx == NULL) {
         ret = PTLS_ERROR_LIBRARY;
