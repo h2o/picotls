@@ -2109,7 +2109,7 @@ Exit:
     return ret;
 }
 
-static int select_key_share(ptls_key_exchange_algorithm_t **selected, ptls_iovec_t *peer_key,
+static int select_key_share(ptls_key_exchange_algorithm_t **selected, ptls_iovec_t *peer_key, int *post_quantum_offered,
                             ptls_key_exchange_algorithm_t **candidates, const uint8_t **src, const uint8_t *const end,
                             int expect_one)
 {
@@ -2129,9 +2129,13 @@ static int select_key_share(ptls_key_exchange_algorithm_t **selected, ptls_iovec
             goto Exit;
         ptls_key_exchange_algorithm_t **c = candidates;
         for (; *c != NULL; ++c) {
-            if (*selected == NULL && (*c)->id == group) {
-                *selected = *c;
-                *peer_key = key;
+            if ((*c)->id == group) {
+                if (*selected == NULL) {
+                    *selected = *c;
+                    *peer_key = key;
+                }
+                if ((*c)->post_quantum)
+                    *post_quantum_offered = 1;
             }
         }
         if (expect_one) {
@@ -3677,9 +3681,14 @@ Exit:
 }
 
 static int select_negotiated_group(ptls_key_exchange_algorithm_t **selected, ptls_key_exchange_algorithm_t **candidates,
-                                   const uint8_t *src, const uint8_t *const end)
+                                   const uint8_t *src, const uint8_t *const end, int post_quantum_only)
 {
     int ret;
+
+    if (src == NULL) {
+        ret = PTLS_ALERT_MISSING_EXTENSION;
+        goto Exit;
+    }
 
     ptls_decode_block(src, end, 2, {
         while (src != end) {
@@ -3688,7 +3697,7 @@ static int select_negotiated_group(ptls_key_exchange_algorithm_t **selected, ptl
                 goto Exit;
             ptls_key_exchange_algorithm_t **c = candidates;
             for (; *c != NULL; ++c) {
-                if ((*c)->id == group) {
+                if ((*c)->id == group && (!post_quantum_only || (*c)->post_quantum)) {
                     *selected = *c;
                     return 0;
                 }
@@ -4442,6 +4451,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
     struct {
         ptls_key_exchange_algorithm_t *algorithm;
         ptls_iovec_t peer_key;
+        int post_quantum_offered;
     } key_share = {NULL};
     struct {
         uint8_t *encoded_ch_inner;
@@ -4616,14 +4626,15 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
     if (ch->key_shares.base != NULL && tls->ctx->key_exchanges != NULL) {
         const uint8_t *src = ch->key_shares.base, *const end = src + ch->key_shares.len;
         ptls_decode_block(src, end, 2, {
-            if ((ret = select_key_share(&key_share.algorithm, &key_share.peer_key, tls->ctx->key_exchanges, &src, end, 0)) != 0)
+            if ((ret = select_key_share(&key_share.algorithm, &key_share.peer_key, &key_share.post_quantum_offered,
+                                        tls->ctx->key_exchanges, &src, end, 0)) != 0)
                 goto Exit;
         });
     }
 
     if (!is_second_flight) {
+        ptls_key_exchange_algorithm_t *negotiated_group = NULL;
         if (ch->cookie.all.len != 0 && key_share.algorithm != NULL) {
-
             { /* use cookie to check the integrity of the handshake, and update the context */
                 uint8_t sig[PTLS_MAX_DIGEST_SIZE];
                 size_t sigsize = tls->ctx->cipher_suites[0]->hash->digest_size;
@@ -4655,16 +4666,20 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
             is_second_flight = 1;
 
         } else if (ch->key_shares.base != NULL && tls->ctx->key_exchanges != NULL &&
-                   (key_share.algorithm == NULL || (properties != NULL && properties->server.enforce_retry))) {
-            /* send HelloRetryRequest, when trying to negotiate the key share but enforced by config or upon key-share mismatch */
-            if (ch->negotiated_groups.base == NULL) {
-                ret = PTLS_ALERT_MISSING_EXTENSION;
-                goto Exit;
+                   (key_share.algorithm == NULL || (properties != NULL && properties->server.enforce_retry) ||
+                    (!key_share.post_quantum_offered &&
+                     (ret = select_negotiated_group(&negotiated_group, tls->ctx->key_exchanges, ch->negotiated_groups.base,
+                                                    ch->negotiated_groups.base + ch->negotiated_groups.len, 1)) == 0))) {
+            /* send HelloRetryRequest upon either:
+             * - key-share mismatch
+             * - enforced by config
+             * - both peers support PQ but the offered key-share was non-PQ. */
+            if (key_share.algorithm == NULL) {
+                assert(negotiated_group == NULL);
+                if ((ret = select_negotiated_group(&negotiated_group, tls->ctx->key_exchanges, ch->negotiated_groups.base,
+                                                   ch->negotiated_groups.base + ch->negotiated_groups.len, 0)) != 0)
+                    goto Exit;
             }
-            ptls_key_exchange_algorithm_t *negotiated_group;
-            if ((ret = select_negotiated_group(&negotiated_group, tls->ctx->key_exchanges, ch->negotiated_groups.base,
-                                               ch->negotiated_groups.base + ch->negotiated_groups.len)) != 0)
-                goto Exit;
             ptls__key_schedule_update_hash(tls->key_schedule, message.base, message.len, 0);
             assert(tls->key_schedule->generation == 0);
 
@@ -4679,7 +4694,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
             }
             size_t ech_confirm_off = 0;
             EMIT_HELLO_RETRY_REQUEST(
-                tls->key_schedule, key_share.algorithm != NULL ? NULL : negotiated_group,
+                tls->key_schedule, negotiated_group,
                 {
                     ptls_buffer_t *sendbuf = emitter->buf;
                     if (ptls_is_ech_handshake(tls, NULL, NULL, NULL)) {
@@ -4706,7 +4721,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
                                         sendbuf->off += sz;
                                     });
                                     /* second is if we have sent key_share extension */
-                                    ptls_buffer_push(sendbuf, key_share.algorithm == NULL);
+                                    ptls_buffer_push(sendbuf, negotiated_group != NULL);
                                     /* we can add more data here */
                                 });
                                 size_t tbs_len = sendbuf->off - tbs_start;
@@ -4715,9 +4730,10 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
                                     size_t sz = tls->ctx->cipher_suites[0]->hash->digest_size;
                                     if ((ret = ptls_buffer_reserve(sendbuf, sz)) != 0)
                                         goto Exit;
-                                    if ((ret = calc_cookie_signature(tls, properties, negotiated_group,
-                                                                     ptls_iovec_init(sendbuf->base + tbs_start, tbs_len),
-                                                                     sendbuf->base + sendbuf->off)) != 0)
+                                    if ((ret = calc_cookie_signature(
+                                             tls, properties, negotiated_group != NULL ? negotiated_group : key_share.algorithm,
+                                             ptls_iovec_init(sendbuf->base + tbs_start, tbs_len), sendbuf->base + sendbuf->off)) !=
+                                        0)
                                         goto Exit;
                                     sendbuf->off += sz;
                                 });
