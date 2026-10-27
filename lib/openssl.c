@@ -947,25 +947,11 @@ static int evp_kem_exchange(ptls_key_exchange_algorithm_t *algo, ptls_iovec_t *c
     *ciphertext = ptls_iovec_init(NULL, 0);
     *secret = ptls_iovec_init(NULL, 0);
 
-    if ((evpctx = EVP_PKEY_CTX_new_from_name(NULL, (const char *)algo->data, NULL)) == NULL) {
+    if ((key = EVP_PKEY_new_raw_public_key_ex(NULL, (const char *)algo->data, NULL, peerkey.base, peerkey.len)) == NULL) {
         ret = PTLS_ERROR_LIBRARY;
         goto Exit;
     }
-    if (EVP_PKEY_paramgen_init(evpctx) <= 0) {
-        ret = PTLS_ERROR_LIBRARY;
-        goto Exit;
-    }
-    if (EVP_PKEY_paramgen(evpctx, &key) <= 0) {
-        ret = PTLS_ERROR_LIBRARY;
-        goto Exit;
-    }
-    if (EVP_PKEY_set1_encoded_public_key(key, peerkey.base, peerkey.len) <= 0) {
-        ret = PTLS_ERROR_LIBRARY;
-        goto Exit;
-    }
-
-    evpctx = EVP_PKEY_CTX_new_from_pkey(NULL, key, NULL);
-    if (evpctx == NULL) {
+    if ((evpctx = EVP_PKEY_CTX_new_from_pkey(NULL, key, NULL)) == NULL) {
         ret = PTLS_ERROR_LIBRARY;
         goto Exit;
     }
