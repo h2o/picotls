@@ -2407,7 +2407,8 @@ ptls_key_exchange_algorithm_t ptls_openssl_x25519 = {.id = PTLS_GROUP_X25519,
 ptls_key_exchange_algorithm_t ptls_openssl_x25519mlkem768 = {.id = PTLS_GROUP_X25519MLKEM768,
                                                              .name = PTLS_GROUP_NAME_X25519MLKEM768,
                                                              .create = x25519mlkem768_create,
-                                                             .exchange = x25519mlkem768_exchange};
+                                                             .exchange = x25519mlkem768_exchange,
+                                                             .post_quantum = 1};
 #endif
 #if PTLS_OPENSSL_HAVE_MLKEM
 #define DEFINE_MLKEM_KEYEX(lowcase, upcase)                                                                                        \
@@ -2415,7 +2416,8 @@ ptls_key_exchange_algorithm_t ptls_openssl_x25519mlkem768 = {.id = PTLS_GROUP_X2
                                                             .name = PTLS_GROUP_NAME_##upcase,                                      \
                                                             .create = evp_kem_create,                                              \
                                                             .exchange = evp_kem_exchange,                                          \
-                                                            .data = (intptr_t)PTLS_GROUP_NAME_##upcase}
+                                                            .data = (intptr_t)PTLS_GROUP_NAME_##upcase,                            \
+                                                            .post_quantum = 1}
 DEFINE_MLKEM_KEYEX(x25519mlkem768, X25519MLKEM768);
 DEFINE_MLKEM_KEYEX(secp256r1mlkem768, SECP256R1MLKEM768);
 DEFINE_MLKEM_KEYEX(secp384r1mlkem1024, SECP384R1MLKEM1024);
