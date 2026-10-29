@@ -1336,10 +1336,54 @@ static void test_full_handshake_with_client_authentication(void)
     test_full_handshake_impl(1, 0, 1);
 }
 
+static void test_key_update_not_at_record_boundary(void)
+{
+    ptls_t *client = ptls_new(ctx, 0), *server = ptls_new(ctx_peer, 1);
+    ptls_buffer_t cbuf, sbuf, decbuf;
+    size_t consumed;
+    int ret;
+
+    ptls_buffer_init(&cbuf, "", 0);
+    ptls_buffer_init(&sbuf, "", 0);
+    ptls_buffer_init(&decbuf, "", 0);
+
+    ret = ptls_handshake(client, &cbuf, NULL, NULL, NULL);
+    ok(ret == PTLS_ERROR_IN_PROGRESS);
+    consumed = cbuf.off;
+    ret = ptls_handshake(server, &sbuf, cbuf.base, &consumed, NULL);
+    ok(ret == 0);
+    cbuf.off = 0;
+    consumed = sbuf.off;
+    ret = ptls_handshake(client, &cbuf, sbuf.base, &consumed, NULL);
+    ok(ret == 0);
+    sbuf.off = 0;
+    consumed = cbuf.off;
+    ret = ptls_handshake(server, &sbuf, cbuf.base, &consumed, NULL);
+    ok(ret == 0);
+    cbuf.off = 0;
+
+    /* KeyUpdate followed by another message in the same record must be rejected (RFC 8446 section 5.1) */
+    static const uint8_t two_key_updates[] = {PTLS_HANDSHAKE_TYPE_KEY_UPDATE, 0, 0, 1, 0,
+                                              PTLS_HANDSHAKE_TYPE_KEY_UPDATE, 0, 0, 1, 0};
+    ret = buffer_push_encrypted_records(&cbuf, PTLS_CONTENT_TYPE_HANDSHAKE, two_key_updates, sizeof(two_key_updates),
+                                        &client->traffic_protection.enc);
+    ok(ret == 0);
+    consumed = cbuf.off;
+    ret = ptls_receive(server, &decbuf, cbuf.base, &consumed);
+    ok(ret == PTLS_ALERT_UNEXPECTED_MESSAGE);
+
+    ptls_buffer_dispose(&cbuf);
+    ptls_buffer_dispose(&sbuf);
+    ptls_buffer_dispose(&decbuf);
+    ptls_free(client);
+    ptls_free(server);
+}
+
 static void test_key_update(void)
 {
     test_handshake(ptls_iovec_init(NULL, 0), TEST_HANDSHAKE_KEY_UPDATE, 0, 0, 0, 0);
     test_handshake(ptls_iovec_init(NULL, 0), TEST_HANDSHAKE_KEY_UPDATE, 0, 0, 0, 1);
+    subtest("not-at-record-boundary", test_key_update_not_at_record_boundary);
 }
 
 static void test_hrr_handshake(void)
