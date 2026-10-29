@@ -6482,6 +6482,10 @@ int ptls_hkdf_expand(ptls_hash_algorithm_t *algo, void *output, size_t outlen, p
     size_t i;
     uint8_t digest[PTLS_MAX_DIGEST_SIZE];
 
+    /* RFC 5869 section 2.3: L <= 255*HashLen, as the block counter is a single octet */
+    if (outlen > 255 * algo->digest_size)
+        return PTLS_ERROR_LIBRARY;
+
     for (i = 0; (i * algo->digest_size) < outlen; ++i) {
         if (hmac == NULL) {
             if ((hmac = ptls_hmac_create(algo, prk.base, prk.len)) == NULL)
