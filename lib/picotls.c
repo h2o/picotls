@@ -5811,7 +5811,11 @@ static int handle_client_handshake_message(ptls_t *tls, ptls_message_emitter_t *
             ret = client_handle_new_session_ticket(tls, message);
             break;
         case PTLS_HANDSHAKE_TYPE_KEY_UPDATE:
-            ret = is_end_of_record ? handle_key_update(tls, emitter, message) : PTLS_ALERT_UNEXPECTED_MESSAGE;
+            if (is_end_of_record) {
+                ret = handle_key_update(tls, emitter, message);
+            } else {
+                ret = PTLS_ALERT_UNEXPECTED_MESSAGE;
+            }
             break;
         default:
             ret = PTLS_ALERT_UNEXPECTED_MESSAGE;
@@ -5882,7 +5886,11 @@ static int handle_server_handshake_message(ptls_t *tls, ptls_message_emitter_t *
     case PTLS_STATE_SERVER_POST_HANDSHAKE:
         switch (type) {
         case PTLS_HANDSHAKE_TYPE_KEY_UPDATE:
-            ret = is_end_of_record ? handle_key_update(tls, emitter, message) : PTLS_ALERT_UNEXPECTED_MESSAGE;
+            if (is_end_of_record) {
+                ret = handle_key_update(tls, emitter, message);
+            } else {
+                ret = PTLS_ALERT_UNEXPECTED_MESSAGE;
+            }
             break;
         default:
             ret = PTLS_ALERT_UNEXPECTED_MESSAGE;
