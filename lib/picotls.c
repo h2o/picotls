@@ -3343,8 +3343,11 @@ static int handle_certificate(ptls_t *tls, const uint8_t *src, const uint8_t *en
     ptls_decode_block(src, end, 3, {
         while (src != end) {
             ptls_decode_open_block(src, end, 3, {
-                if (num_certs < PTLS_ELEMENTSOF(certs))
-                    certs[num_certs++] = ptls_iovec_init(src, end - src);
+                if (num_certs == PTLS_ELEMENTSOF(certs)) {
+                    ret = PTLS_ALERT_BAD_CERTIFICATE;
+                    goto Exit;
+                }
+                certs[num_certs++] = ptls_iovec_init(src, end - src);
                 src = end;
             });
             uint16_t type;
