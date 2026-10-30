@@ -6016,8 +6016,14 @@ static int handle_input(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_buffe
         }
         ret = PTLS_ERROR_IN_PROGRESS;
         goto NextRecord;
-    }
-    if (tls->traffic_protection.dec.aead != NULL && rec.type != PTLS_CONTENT_TYPE_ALERT) {
+    } else if (rec.type == PTLS_CONTENT_TYPE_ALERT &&
+               (tls->is_server ? tls->state < PTLS_STATE_POST_HANDSHAKE_MIN : tls->traffic_protection.dec.aead == NULL)) {
+        /* cleartext alerts are accepted under the following conditions:
+         * - when running as a server: until Finished is received, as clients may send alerts in cleartext until then (RFC 9846
+         *   Appendix A.1)
+         * - when running as a client: until handshake keys are obtained, as servers protect everything they send after
+         *   ServerHello (RFC 9846 Section 6, Appendix A.2) */
+    } else if (tls->traffic_protection.dec.aead != NULL) {
         size_t decrypted_length;
         if (rec.type != PTLS_CONTENT_TYPE_APPDATA)
             return PTLS_ALERT_HANDSHAKE_FAILURE;
@@ -6330,7 +6336,8 @@ int ptls_send_alert(ptls_t *tls, ptls_buffer_t *sendbuf, uint8_t level, uint8_t 
 
     buffer_push_record(sendbuf, PTLS_CONTENT_TYPE_ALERT, { ptls_buffer_push(sendbuf, level, description); });
     /* encrypt the alert if we have the encryption keys, unless when it is the early data key */
-    if (tls->traffic_protection.enc.aead != NULL && !(tls->state <= PTLS_STATE_CLIENT_EXPECT_FINISHED)) {
+    if (tls->traffic_protection.enc.aead != NULL &&
+        (tls->is_server || !(tls->client.using_early_data || tls->pending_handshake_secret != NULL))) {
         if ((ret = buffer_encrypt_record(sendbuf, rec_start, &tls->traffic_protection.enc)) != 0)
             goto Exit;
     }
