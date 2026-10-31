@@ -1342,6 +1342,90 @@ static void test_key_update(void)
     test_handshake(ptls_iovec_init(NULL, 0), TEST_HANDSHAKE_KEY_UPDATE, 0, 0, 0, 1);
 }
 
+static void do_test_plaintext_alert(int to_client, int after_handshake)
+{
+    static const uint8_t close_notify[] = {PTLS_CONTENT_TYPE_ALERT, 0x03, 0x03, 0x00, 0x02, PTLS_ALERT_LEVEL_WARNING,
+                                           PTLS_ALERT_CLOSE_NOTIFY};
+    ptls_t *client = ptls_new(ctx, 0), *server = ptls_new(ctx_peer, 1);
+    ptls_buffer_t cbuf, sbuf, decbuf;
+    size_t consumed;
+    int ret;
+
+    ptls_buffer_init(&cbuf, "", 0);
+    ptls_buffer_init(&sbuf, "", 0);
+    ptls_buffer_init(&decbuf, "", 0);
+
+    ret = ptls_handshake(client, &cbuf, NULL, NULL, NULL);
+    ok(ret == PTLS_ERROR_IN_PROGRESS);
+    consumed = cbuf.off;
+    ret = ptls_handshake(server, &sbuf, cbuf.base, &consumed, NULL);
+    ok(ret == 0);
+    ok(consumed == cbuf.off);
+    cbuf.off = 0;
+
+    if (!after_handshake) {
+        if (to_client) {
+            /* feed ServerHello only, so that the client has the handshake key installed */
+            consumed = 5 + (sbuf.base[3] << 8 | sbuf.base[4]);
+            ret = ptls_handshake(client, &cbuf, sbuf.base, &consumed, NULL);
+            ok(ret == PTLS_ERROR_IN_PROGRESS);
+            ok(client->state == PTLS_STATE_CLIENT_EXPECT_ENCRYPTED_EXTENSIONS);
+            ok(client->traffic_protection.dec.aead != NULL);
+            /* alert sent by the client is protected by the handshake key */
+            ret = ptls_send_alert(client, &cbuf, PTLS_ALERT_LEVEL_WARNING, PTLS_ALERT_CLOSE_NOTIFY);
+            ok(ret == 0);
+            ok(cbuf.off > 0 && cbuf.base[0] == PTLS_CONTENT_TYPE_APPDATA);
+            consumed = cbuf.off;
+            ret = ptls_handshake(server, &sbuf, cbuf.base, &consumed, NULL);
+            ok(ret == PTLS_ALERT_TO_PEER_ERROR(PTLS_ALERT_CLOSE_NOTIFY));
+            cbuf.off = 0;
+            /* unprotected alert is rejected by the client */
+            consumed = sizeof(close_notify);
+            ret = ptls_handshake(client, &cbuf, close_notify, &consumed, NULL);
+            ok(ret == PTLS_ALERT_HANDSHAKE_FAILURE);
+        } else {
+            ok(server->state == PTLS_STATE_SERVER_EXPECT_FINISHED);
+            ok(server->traffic_protection.dec.aead != NULL);
+            /* unprotected alert is accepted by the server until it receives client Finished */
+            consumed = sizeof(close_notify);
+            ret = ptls_handshake(server, &sbuf, close_notify, &consumed, NULL);
+            ok(ret == PTLS_ALERT_TO_PEER_ERROR(PTLS_ALERT_CLOSE_NOTIFY));
+        }
+        goto Exit;
+    }
+
+    consumed = sbuf.off;
+    ret = ptls_handshake(client, &cbuf, sbuf.base, &consumed, NULL);
+    ok(ret == 0);
+    ok(consumed == sbuf.off);
+    sbuf.off = 0;
+    consumed = cbuf.off;
+    ret = ptls_receive(server, &decbuf, cbuf.base, &consumed);
+    ok(ret == 0);
+    ok(consumed == cbuf.off);
+    ok(server->state == PTLS_STATE_SERVER_POST_HANDSHAKE);
+
+    /* an unprotected close_notify (which could have been injected by an on-path attacker) must not be taken as a closure */
+    consumed = sizeof(close_notify);
+    ret = ptls_receive(to_client ? client : server, &decbuf, close_notify, &consumed);
+    ok(ret == PTLS_ALERT_HANDSHAKE_FAILURE);
+
+Exit:
+    ptls_buffer_dispose(&cbuf);
+    ptls_buffer_dispose(&sbuf);
+    ptls_buffer_dispose(&decbuf);
+    ptls_free(client);
+    ptls_free(server);
+}
+
+static void test_plaintext_alert(void)
+{
+    subtest("to-client-during-handshake", do_test_plaintext_alert, 1, 0);
+    subtest("to-server-during-handshake", do_test_plaintext_alert, 0, 0);
+    subtest("to-client-after-handshake", do_test_plaintext_alert, 1, 1);
+    subtest("to-server-after-handshake", do_test_plaintext_alert, 0, 1);
+}
+
 static void test_hrr_handshake(void)
 {
     test_handshake(ptls_iovec_init(NULL, 0), TEST_HANDSHAKE_HRR, 0, 0, 0, 0);
@@ -3078,6 +3162,7 @@ void test_picotls(void)
     subtest("fragmented-message", test_fragmented_message);
     subtest("hrr-cipher-suite-mismatch", test_hrr_cipher_suite_mismatch);
     subtest("hrr-selected-group-matches-ch1-key-share", test_hrr_selected_group_matches_ch1_key_share);
+    subtest("plaintext-alert", test_plaintext_alert);
     subtest("handshake", test_all_handshakes);
     subtest("quic", test_quic);
     subtest("legacy-ch", test_legacy_ch);
