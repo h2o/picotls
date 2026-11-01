@@ -1762,10 +1762,10 @@ int ptls_handshake_is_complete(ptls_t *tls);
  */
 int ptls_is_psk_handshake(ptls_t *tls);
 /**
- * Returns the TLS NamedGroup used for key exchange in this handshake after local handshake completion.
- * Returns zero while the handshake is incomplete, for PSK-only handshakes, or when the group is unavailable (imported
- * connections). A ClientHello offer, an HRR request, or a group cached in a session ticket is not a negotiated result.
- * Applications must still check the handshake result for errors before using the connection.
+ * Returns the TLS NamedGroup used for key exchange in this handshake, once the key exchange has succeeded.
+ * Returns zero before key exchange, for PSK-only handshakes, or when the group is unavailable (imported connections).
+ * A ClientHello offer, an HRR request, or a group cached in a session ticket is not a negotiated result.
+ * The value can be available before handshake completion; applications must still check the handshake result for errors.
  */
 uint16_t ptls_get_negotiated_group(ptls_t *tls);
 /**

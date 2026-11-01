@@ -5733,7 +5733,7 @@ int ptls_is_psk_handshake(ptls_t *tls)
 
 uint16_t ptls_get_negotiated_group(ptls_t *tls)
 {
-    return ptls_handshake_is_complete(tls) ? tls->negotiated_group : 0;
+    return tls->negotiated_group;
 }
 
 int ptls_is_ech_handshake(ptls_t *tls, uint8_t *config_id, ptls_hpke_kem_t **kem, ptls_hpke_cipher_suite_t **cipher)

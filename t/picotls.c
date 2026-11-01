@@ -1064,11 +1064,14 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int expect_ticket, int
         ok(decbuf.off == strlen(req));
         ok(memcmp(decbuf.base, req, decbuf.off) == 0);
         ok(!ptls_handshake_is_complete(server));
+        ok(ptls_get_negotiated_group(server) == expected_group);
         cbuf.off = 0;
         decbuf.off = 0;
 
         ret = ptls_send(server, &sbuf, resp, strlen(resp));
         ok(ret == 0);
+        ok(!ptls_handshake_is_complete(server));
+        ok(ptls_get_negotiated_group(server) == expected_group);
     } else {
         ok(consumed == cbuf.off);
         cbuf.off = 0;
@@ -1096,7 +1099,7 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int expect_ticket, int
     ok(ptls_handshake_is_complete(client));
     ok(ptls_get_negotiated_group(client) == expected_group);
     ok(!ptls_handshake_is_complete(server));
-    ok(ptls_get_negotiated_group(server) == 0);
+    ok(ptls_get_negotiated_group(server) == expected_group);
     if (check_ch) {
         ok(ptls_get_server_name(client) != NULL);
         ok(strcmp(ptls_get_server_name(client), "test.example.com") == 0);
