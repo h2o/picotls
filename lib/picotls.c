@@ -2798,6 +2798,11 @@ static int decode_server_hello(ptls_t *tls, struct st_ptls_server_hello_t *sh, c
                 ret = PTLS_ALERT_ILLEGAL_PARAMETER;
                 goto Exit;
             }
+            /* the hash of the selected cipher-suite must match that of the PSK (RFC 8446 section 4.2.11) */
+            if (tls->cipher_suite->hash != tls->key_schedule->hashes[0].algo) {
+                ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+                goto Exit;
+            }
             tls->is_psk_handshake = 1;
         }
         if (sh->peerkey.base == NULL && !tls->is_psk_handshake) {

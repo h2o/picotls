@@ -2388,6 +2388,58 @@ Exit:
     ptls_free(server);
 }
 
+static void test_pre_shared_key_cipher_suite_hash_mismatch(void)
+{
+    ptls_context_t ctx_client = *ctx;
+    ptls_cipher_suite_t *cipher_suites[] = {find_cipher(ctx, PTLS_CIPHER_SUITE_AES_128_GCM_SHA256),
+                                            find_cipher(ctx, PTLS_CIPHER_SUITE_AES_256_GCM_SHA384), NULL};
+    ptls_buffer_t cbuf, sbuf;
+    size_t consumed, cipher_off;
+    int ret;
+
+    if (cipher_suites[0] == NULL || cipher_suites[1] == NULL) {
+        note("skipping test because the backend does not provide both sha256 and sha384 TLS 1.3 cipher suites");
+        return;
+    }
+
+    /* the client offers a sha256 PSK while advertising cipher suites of both hashes */
+    ctx_client.cipher_suites = cipher_suites;
+    assert(ctx_client.pre_shared_key.identity.len == 0 && ctx_client.pre_shared_key.secret.len == 0);
+    ctx_client.pre_shared_key.identity = ptls_iovec_init("", 1);
+    ctx_client.pre_shared_key.secret = ptls_iovec_init("hello world", 11);
+    ctx_client.pre_shared_key.hash = cipher_suites[0]->hash;
+
+    ptls_t *client = ptls_new(&ctx_client, 0), *server = ptls_new(&ctx_client, 1);
+    ptls_buffer_init(&cbuf, "", 0);
+    ptls_buffer_init(&sbuf, "", 0);
+
+    ret = ptls_handshake(client, &cbuf, NULL, NULL, NULL);
+    ok(ret == PTLS_ERROR_IN_PROGRESS);
+
+    consumed = cbuf.off;
+    ret = ptls_handshake(server, &sbuf, cbuf.base, &consumed, NULL);
+    ok(ret == 0);
+    ok(consumed == cbuf.off);
+    cbuf.off = 0;
+
+    /* The server selected the PSK together with the sha256 cipher suite. Rewrite the cipher suite of ServerHello to the sha384
+     * one, which the client offered but which cannot be used with the PSK; the client should abort with illegal_parameter. */
+    cipher_off = calc_server_hello_cipher_suite_offset(&sbuf);
+    ok(sbuf.base[cipher_off] == (PTLS_CIPHER_SUITE_AES_128_GCM_SHA256 >> 8));
+    ok(sbuf.base[cipher_off + 1] == (PTLS_CIPHER_SUITE_AES_128_GCM_SHA256 & 0xff));
+    sbuf.base[cipher_off] = PTLS_CIPHER_SUITE_AES_256_GCM_SHA384 >> 8;
+    sbuf.base[cipher_off + 1] = PTLS_CIPHER_SUITE_AES_256_GCM_SHA384 & 0xff;
+
+    consumed = sbuf.off;
+    ret = ptls_handshake(client, &cbuf, sbuf.base, &consumed, NULL);
+    ok(ret == PTLS_ALERT_ILLEGAL_PARAMETER);
+
+    ptls_buffer_dispose(&cbuf);
+    ptls_buffer_dispose(&sbuf);
+    ptls_free(client);
+    ptls_free(server);
+}
+
 static void test_pre_shared_key(void)
 {
     if (ctx != ctx_peer) {
@@ -2402,6 +2454,7 @@ static void test_pre_shared_key(void)
     subtest("key-share:negotiate", do_test_pre_shared_key, 4);
 
     subtest("fail:requires-psk-dhe", do_test_pre_shared_key, -1);
+    subtest("fail:cipher-suite-hash-mismatch", test_pre_shared_key_cipher_suite_hash_mismatch);
 }
 
 typedef uint8_t traffic_secrets_t[2 /* is_enc */][4 /* epoch */][PTLS_MAX_DIGEST_SIZE /* octets */];
