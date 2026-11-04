@@ -2388,11 +2388,12 @@ Exit:
     ptls_free(server);
 }
 
-static void test_pre_shared_key_cipher_suite_hash_mismatch(void)
+static void test_pre_shared_key_cipher_suite_hash_mismatch(int use_hrr)
 {
     ptls_context_t ctx_client = *ctx;
     ptls_cipher_suite_t *cipher_suites[] = {find_cipher(ctx, PTLS_CIPHER_SUITE_AES_128_GCM_SHA256),
                                             find_cipher(ctx, PTLS_CIPHER_SUITE_AES_256_GCM_SHA384), NULL};
+    ptls_handshake_properties_t client_prop = {{{{NULL}}}};
     ptls_buffer_t cbuf, sbuf;
     size_t consumed, cipher_off;
     int ret;
@@ -2409,21 +2410,26 @@ static void test_pre_shared_key_cipher_suite_hash_mismatch(void)
     ctx_client.pre_shared_key.secret = ptls_iovec_init("hello world", 11);
     ctx_client.pre_shared_key.hash = cipher_suites[0]->hash;
 
+    /* when testing HRR, have the client send ClientHello without a key share so that the server responds with HRR */
+    if (use_hrr)
+        client_prop.client.negotiate_before_key_exchange = 1;
+
     ptls_t *client = ptls_new(&ctx_client, 0), *server = ptls_new(&ctx_client, 1);
     ptls_buffer_init(&cbuf, "", 0);
     ptls_buffer_init(&sbuf, "", 0);
 
-    ret = ptls_handshake(client, &cbuf, NULL, NULL, NULL);
+    ret = ptls_handshake(client, &cbuf, NULL, NULL, &client_prop);
     ok(ret == PTLS_ERROR_IN_PROGRESS);
 
     consumed = cbuf.off;
     ret = ptls_handshake(server, &sbuf, cbuf.base, &consumed, NULL);
-    ok(ret == 0);
+    ok(ret == (use_hrr ? PTLS_ERROR_IN_PROGRESS : 0));
     ok(consumed == cbuf.off);
     cbuf.off = 0;
 
-    /* The server selected the PSK together with the sha256 cipher suite. Rewrite the cipher suite of ServerHello to the sha384
-     * one, which the client offered but which cannot be used with the PSK; the client should abort with illegal_parameter. */
+    /* The server selected the sha256 cipher suite (together with the PSK, unless it is HRR). Rewrite the cipher suite of
+     * ServerHello / HRR to the sha384 one, which the client offered but which cannot be used with the PSK; the client should abort
+     * with illegal_parameter. */
     cipher_off = calc_server_hello_cipher_suite_offset(&sbuf);
     ok(sbuf.base[cipher_off] == (PTLS_CIPHER_SUITE_AES_128_GCM_SHA256 >> 8));
     ok(sbuf.base[cipher_off + 1] == (PTLS_CIPHER_SUITE_AES_128_GCM_SHA256 & 0xff));
@@ -2431,7 +2437,7 @@ static void test_pre_shared_key_cipher_suite_hash_mismatch(void)
     sbuf.base[cipher_off + 1] = PTLS_CIPHER_SUITE_AES_256_GCM_SHA384 & 0xff;
 
     consumed = sbuf.off;
-    ret = ptls_handshake(client, &cbuf, sbuf.base, &consumed, NULL);
+    ret = ptls_handshake(client, &cbuf, sbuf.base, &consumed, &client_prop);
     ok(ret == PTLS_ALERT_ILLEGAL_PARAMETER);
 
     ptls_buffer_dispose(&cbuf);
@@ -2454,7 +2460,8 @@ static void test_pre_shared_key(void)
     subtest("key-share:negotiate", do_test_pre_shared_key, 4);
 
     subtest("fail:requires-psk-dhe", do_test_pre_shared_key, -1);
-    subtest("fail:cipher-suite-hash-mismatch", test_pre_shared_key_cipher_suite_hash_mismatch);
+    subtest("fail:cipher-suite-hash-mismatch", test_pre_shared_key_cipher_suite_hash_mismatch, 0);
+    subtest("fail:cipher-suite-hash-mismatch-hrr", test_pre_shared_key_cipher_suite_hash_mismatch, 1);
 }
 
 typedef uint8_t traffic_secrets_t[2 /* is_enc */][4 /* epoch */][PTLS_MAX_DIGEST_SIZE /* octets */];
