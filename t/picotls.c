@@ -1590,6 +1590,148 @@ static void test_hrr_cipher_suite_mismatch(void)
     ctx_peer->cipher_suites = server_cipher_suites_orig;
 }
 
+static int on_copy_ticket(ptls_encrypt_ticket_t *self, ptls_t *tls, int is_encrypt, ptls_buffer_t *dst, ptls_iovec_t src);
+static int on_save_ticket(ptls_save_ticket_t *self, ptls_t *tls, ptls_iovec_t src, const ptls_save_ticket_properties_t *properties);
+static ptls_iovec_t saved_tickets[8];
+
+/**
+ * Tests a resumption attempt in which HRR selects a cipher-suite different from that of the ticket (AES128-GCM-SHA256). If
+ * `hrr_csid` has the same hash, the ticket is expected to be offered again in the second ClientHello; otherwise, it has to be
+ * dropped. In either case, the handshake must complete as a full handshake using the cipher-suite selected by HRR, as the server
+ * never resumes after sending HRR.
+ */
+static void test_hrr_resumption_cipher_suite_change(int hrr_csid)
+{
+    ptls_t *client = NULL, *server = NULL;
+    ptls_handshake_properties_t client_hs_prop = {{{{NULL}}}}, server_hs_prop = {{{{NULL}}}};
+    ptls_cipher_suite_t **client_cipher_suites_orig = ctx->cipher_suites, **server_cipher_suites_orig = ctx_peer->cipher_suites;
+    ptls_cipher_suite_t *client_cipher_suites_ticket_first[] = {find_cipher(ctx, PTLS_CIPHER_SUITE_AES_128_GCM_SHA256),
+                                                                find_cipher(ctx, hrr_csid), NULL};
+    ptls_cipher_suite_t *client_cipher_suites_hrr_first[] = {client_cipher_suites_ticket_first[1],
+                                                             client_cipher_suites_ticket_first[0], NULL};
+    ptls_cipher_suite_t *server_cipher_suites[] = {find_cipher(ctx_peer, PTLS_CIPHER_SUITE_AES_128_GCM_SHA256),
+                                                   find_cipher(ctx_peer, hrr_csid), NULL};
+    ptls_encrypt_ticket_t et = {on_copy_ticket};
+    ptls_save_ticket_t st = {on_save_ticket};
+    ptls_buffer_t cbuf, sbuf, decbuf;
+    size_t consumed, nst_off, cipher_off;
+    int ret, expect_psk_offered;
+
+    if (client_cipher_suites_ticket_first[0] == NULL || client_cipher_suites_ticket_first[1] == NULL ||
+        server_cipher_suites[0] == NULL || server_cipher_suites[1] == NULL) {
+        note("skipping test because the backend does not provide the cipher suites being tested");
+        return;
+    }
+    expect_psk_offered = client_cipher_suites_ticket_first[0]->hash == client_cipher_suites_ticket_first[1]->hash;
+
+    assert(ctx_peer->ticket_lifetime == 0);
+    assert(ctx_peer->encrypt_ticket == NULL);
+    assert(ctx->save_ticket == NULL);
+    assert(!ctx_peer->server_cipher_preference);
+    memset(saved_tickets, 0, sizeof(saved_tickets));
+
+    /* The server honors the preference of the client; the cipher-suite being used is steered by the order of the cipher-suites
+     * that the client offers. Note that `ctx` and `ctx_peer` may point to the same context, hence the client's list is set last. */
+    ctx_peer->cipher_suites = server_cipher_suites;
+    ctx->cipher_suites = client_cipher_suites_ticket_first;
+    ctx_peer->ticket_lifetime = 86400;
+    ctx_peer->encrypt_ticket = &et;
+    ctx->save_ticket = &st;
+
+    ptls_buffer_init(&cbuf, "", 0);
+    ptls_buffer_init(&sbuf, "", 0);
+    ptls_buffer_init(&decbuf, "", 0);
+
+    /* Full handshake using AES128-GCM-SHA256; the ticket being issued is bound to that cipher-suite. */
+    client = ptls_new(ctx, 0);
+    server = ptls_new(ctx_peer, 1);
+    ret = ptls_handshake(client, &cbuf, NULL, NULL, &client_hs_prop); /* -> CH */
+    ok(ret == PTLS_ERROR_IN_PROGRESS);
+    consumed = cbuf.off;
+    ret = ptls_handshake(server, &sbuf, cbuf.base, &consumed, &server_hs_prop); /* CH -> SH..SF,NST */
+    ok(ret == 0);
+    ok(consumed == cbuf.off);
+    cbuf.off = 0;
+    ok(ptls_get_cipher(server)->id == PTLS_CIPHER_SUITE_AES_128_GCM_SHA256);
+    consumed = sbuf.off;
+    ret = ptls_handshake(client, &cbuf, sbuf.base, &consumed, &client_hs_prop); /* SH..SF -> CF */
+    ok(ret == 0);
+    ok(consumed < sbuf.off); /* NST remains */
+    nst_off = consumed;
+    consumed = sbuf.off - nst_off;
+    ret = ptls_receive(client, &decbuf, sbuf.base + nst_off, &consumed); /* NST */
+    ok(ret == 0);
+    ok(consumed == sbuf.off - nst_off);
+    ok(decbuf.off == 0);
+    ok(saved_tickets[0].base != NULL);
+    sbuf.off = 0;
+    consumed = cbuf.off;
+    ret = ptls_handshake(server, &sbuf, cbuf.base, &consumed, &server_hs_prop); /* CF */
+    ok(ret == 0);
+    ok(ptls_handshake_is_complete(server));
+    ok(consumed == cbuf.off);
+    cbuf.off = 0;
+    ptls_free(client);
+    ptls_free(server);
+
+    /* Resumption attempt, with the client now preferring `hrr_csid` and the server enforcing HRR. */
+    ctx->cipher_suites = client_cipher_suites_hrr_first;
+    client_hs_prop = (ptls_handshake_properties_t){{{{NULL}}}};
+    client_hs_prop.client.session_ticket = saved_tickets[0];
+    server_hs_prop = (ptls_handshake_properties_t){{{{NULL}}}};
+    server_hs_prop.server.enforce_retry = 1;
+    client = ptls_new(ctx, 0);
+    server = ptls_new(ctx_peer, 1);
+    ret = ptls_handshake(client, &cbuf, NULL, NULL, &client_hs_prop); /* -> CH1 */
+    ok(ret == PTLS_ERROR_IN_PROGRESS);
+    ok(client->client.offered_psk);
+    consumed = cbuf.off;
+    ret = ptls_handshake(server, &sbuf, cbuf.base, &consumed, &server_hs_prop); /* CH1 -> HRR */
+    ok(ret == PTLS_ERROR_IN_PROGRESS);
+    ok(consumed == cbuf.off);
+    cbuf.off = 0;
+    cipher_off = calc_server_hello_cipher_suite_offset(&sbuf);
+    ok(sbuf.base[cipher_off] == (hrr_csid >> 8));
+    ok(sbuf.base[cipher_off + 1] == (hrr_csid & 0xff));
+    consumed = sbuf.off;
+    ret = ptls_handshake(client, &cbuf, sbuf.base, &consumed, &client_hs_prop); /* HRR -> CH2 */
+    ok(ret == PTLS_ERROR_IN_PROGRESS);
+    ok(consumed == sbuf.off);
+    sbuf.off = 0;
+    ok(client->client.offered_psk == expect_psk_offered); /* the ticket is offered again only if the hash remains the same */
+    consumed = cbuf.off;
+    ret = ptls_handshake(server, &sbuf, cbuf.base, &consumed, &server_hs_prop); /* CH2 -> SH..SF,NST */
+    ok(ret == 0);
+    ok(consumed == cbuf.off);
+    cbuf.off = 0;
+    ok(!ptls_is_psk_handshake(server));
+    consumed = sbuf.off;
+    ret = ptls_handshake(client, &cbuf, sbuf.base, &consumed, &client_hs_prop); /* SH..SF -> CF */
+    ok(ret == 0);
+    ok(!ptls_is_psk_handshake(client));
+    ok(ptls_get_cipher(client)->id == hrr_csid);
+    sbuf.off = 0;
+    consumed = cbuf.off;
+    ret = ptls_handshake(server, &sbuf, cbuf.base, &consumed, &server_hs_prop); /* CF */
+    ok(ret == 0);
+    ok(ptls_handshake_is_complete(server));
+    ok(consumed == cbuf.off);
+    ptls_free(client);
+    ptls_free(server);
+
+    ptls_buffer_dispose(&cbuf);
+    ptls_buffer_dispose(&sbuf);
+    ptls_buffer_dispose(&decbuf);
+    for (size_t i = 0; i < PTLS_ELEMENTSOF(saved_tickets); ++i)
+        free(saved_tickets[i].base);
+    memset(saved_tickets, 0, sizeof(saved_tickets));
+    ctx->cipher_suites = client_cipher_suites_orig;
+    ctx_peer->cipher_suites = server_cipher_suites_orig;
+    ctx_peer->ticket_lifetime = 0;
+    ctx_peer->encrypt_ticket = NULL;
+    ctx->save_ticket = NULL;
+}
+
 static void test_hrr_stateless_handshake(void)
 {
     test_handshake(ptls_iovec_init(NULL, 0), TEST_HANDSHAKE_HRR_STATELESS, 0, 0, 0, 0);
@@ -3183,6 +3325,10 @@ void test_picotls(void)
     subtest("ech", test_ech);
     subtest("fragmented-message", test_fragmented_message);
     subtest("hrr-cipher-suite-mismatch", test_hrr_cipher_suite_mismatch);
+    subtest("hrr-resumption-cipher-suite-change:same-hash", test_hrr_resumption_cipher_suite_change,
+            PTLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256);
+    subtest("hrr-resumption-cipher-suite-change:different-hash", test_hrr_resumption_cipher_suite_change,
+            PTLS_CIPHER_SUITE_AES_256_GCM_SHA384);
     subtest("hrr-selected-group-matches-ch1-key-share", test_hrr_selected_group_matches_ch1_key_share);
     subtest("plaintext-alert", test_plaintext_alert);
     subtest("handshake", test_all_handshakes);
