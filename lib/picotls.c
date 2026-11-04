@@ -2467,19 +2467,21 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
         uint32_t max_early_data_size;
         if (decode_stored_session_ticket(tls, &key_share, &cipher_suite, &psk.secret, &obfuscated_ticket_age, &psk.identity,
                                          &max_early_data_size, properties->client.session_ticket.base,
-                                         properties->client.session_ticket.base + properties->client.session_ticket.len) == 0) {
+                                         properties->client.session_ticket.base + properties->client.session_ticket.len) == 0 &&
+            (!is_second_flight || cipher_suite->hash == tls->cipher_suite->hash)) {
             psk.label = "res binder";
             tls->client.offered_psk = 1;
-            /* key-share selected by HRR should not be overridden */
-            if (tls->key_share == NULL)
+            if (!is_second_flight) {
                 tls->key_share = key_share;
-            tls->cipher_suite = cipher_suite;
-            if (!is_second_flight && max_early_data_size != 0 && properties->client.max_early_data_size != NULL) {
-                tls->client.using_early_data = 1;
-                *properties->client.max_early_data_size = max_early_data_size;
+                tls->cipher_suite = cipher_suite;
+                if (max_early_data_size != 0 && properties->client.max_early_data_size != NULL) {
+                    tls->client.using_early_data = 1;
+                    *properties->client.max_early_data_size = max_early_data_size;
+                }
             }
         } else {
             psk.secret = ptls_iovec_init(NULL, 0);
+            tls->client.offered_psk = 0; /* ticket offered in 1st CH is dropped in the 2nd CH, HRR adopted a different hash */
         }
     }
 
