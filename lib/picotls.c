@@ -1355,7 +1355,7 @@ static int key_schedule_extract(ptls_key_schedule_t *sched, ptls_iovec_t ikm)
     return ret;
 }
 
-static int key_schedule_select_cipher(ptls_key_schedule_t *sched, ptls_cipher_suite_t *cs, int reset, ptls_iovec_t reset_ikm)
+static int key_schedule_select_cipher(ptls_key_schedule_t *sched, ptls_cipher_suite_t *cs, int reset, const ptls_iovec_t *reset_ikm)
 {
     size_t found_slot = SIZE_MAX, i;
     int ret;
@@ -1382,9 +1382,10 @@ static int key_schedule_select_cipher(ptls_key_schedule_t *sched, ptls_cipher_su
 
     /* recalculate the hash if a different hash as been selected than the one we used for calculating the early secrets */
     if (reset) {
+        assert(reset_ikm != NULL);
         --sched->generation;
         memset(sched->secret, 0, sizeof(sched->secret));
-        if ((ret = key_schedule_extract(sched, reset_ikm)) != 0)
+        if ((ret = key_schedule_extract(sched, *reset_ikm)) != 0)
             goto Exit;
     }
 
@@ -2805,6 +2806,15 @@ static int decode_server_hello(ptls_t *tls, struct st_ptls_server_hello_t *sh, c
             goto Exit;
         }
     }
+    /* The hash of the selected cipher-suite must match that of the PSK (RFC 8446 section 4.2.11), which is the hash that the
+     * ClientHello was built with (i.e., `hashes[0]`). The check applies when the PSK is selected by ServerHello, as well as when
+     * HRR is received while offering an external PSK, because the external PSK (unlike a resumption PSK) is going to be offered
+     * again by the second ClientHello. */
+    if ((tls->is_psk_handshake || (sh->is_retry_request && tls->ctx->pre_shared_key.identity.base != NULL)) &&
+        tls->cipher_suite->hash != tls->key_schedule->hashes[0].algo) {
+        ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+        goto Exit;
+    }
 
     ret = 0;
 Exit:
@@ -2912,7 +2922,7 @@ static int client_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
     }
 
     if (sh.is_retry_request) {
-        if ((ret = key_schedule_select_cipher(tls->key_schedule, tls->cipher_suite, 0, tls->ctx->pre_shared_key.secret)) != 0)
+        if ((ret = key_schedule_select_cipher(tls->key_schedule, tls->cipher_suite, 0, &tls->ctx->pre_shared_key.secret)) != 0)
             goto Exit;
         key_schedule_transform_post_ch1hash(tls->key_schedule);
         if (tls->ech.aead != NULL) {
@@ -2928,8 +2938,10 @@ static int client_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
         return handle_hello_retry_request(tls, emitter, &sh, message, properties);
     }
 
-    if ((ret = key_schedule_select_cipher(tls->key_schedule, tls->cipher_suite, tls->client.offered_psk && !tls->is_psk_handshake,
-                                          ptls_iovec_init(NULL, 0))) != 0)
+    static const ptls_iovec_t zero_ikm = {NULL, 0};
+    if ((ret = key_schedule_select_cipher(
+             tls->key_schedule, tls->cipher_suite, tls->client.offered_psk && !tls->is_psk_handshake,
+             tls->is_psk_handshake ? NULL /* if psk was selected, a reset must never happen */ : &zero_ikm)) != 0)
         goto Exit;
 
     /* check if ECH is accepted */
