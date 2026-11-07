@@ -317,6 +317,16 @@ struct st_ptls_t {
              * if 1-RTT write key is active
              */
             unsigned using_early_data : 1;
+            /**
+             * if ALPN has been offered
+             */
+            unsigned offered_alpn : 1;
+            /**
+             * types of the extensions sent by the application through `ptls_handshake_properties_t::additional_extensions`, so that
+             * extensions sent by the server can be checked if they have been requested; terminated by UINT16_MAX unless all the
+             * slots are used, in which case any extension type is considered to have been requested
+             */
+            uint16_t additional_extensions[8];
             struct st_ptls_certificate_request_t certificate_request;
         } client;
         struct {
@@ -2001,6 +2011,22 @@ Exit:
     return ret;
 }
 
+/**
+ * Returns if the extension of given type has been sent by the client through `ptls_handshake_properties_t::additional_extensions`.
+ */
+static int client_sent_additional_extension(ptls_t *tls, uint16_t type)
+{
+    size_t i;
+
+    for (i = 0; i != PTLS_ELEMENTSOF(tls->client.additional_extensions); ++i) {
+        if (tls->client.additional_extensions[i] == UINT16_MAX)
+            return 0;
+        if (tls->client.additional_extensions[i] == type)
+            return 1;
+    }
+    return 1; /* too many extensions to track */
+}
+
 static const uint16_t *get_signature_algorithms(ptls_verify_certificate_t *vc)
 {
     /* The list sent when verify callback is not registered */
@@ -2417,6 +2443,16 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
     if (tls->server_name != NULL && !ptls_server_name_is_ipaddr(tls->server_name))
         sni_name = tls->server_name;
 
+    /* record the extensions being requested by the application, so that the responses can be checked */
+    tls->client.offered_alpn = properties != NULL && properties->client.negotiated_protocols.count != 0;
+    for (size_t i = 0; i != PTLS_ELEMENTSOF(tls->client.additional_extensions); ++i) {
+        uint16_t type = properties != NULL && properties->additional_extensions != NULL ? properties->additional_extensions[i].type
+                                                                                        : UINT16_MAX;
+        tls->client.additional_extensions[i] = type;
+        if (type == UINT16_MAX)
+            break;
+    }
+
     /* try to use ECH (ignore broken ECHConfigList; it is delivered insecurely) */
     if (properties != NULL) {
         if (!is_second_flight && sni_name != NULL && tls->ctx->ech.client.ciphers != NULL) {
@@ -2782,6 +2818,12 @@ static int decode_server_hello(ptls_t *tls, struct st_ptls_server_hello_t *sh, c
                               src = end;
                               break;
                           default:
+                              /* RFC 8446 section 4.2: extension responses not requested by the client MUST be rejected; this applies
+                               * to both ServerHello and HelloRetryRequest */
+                              if (!client_sent_additional_extension(tls, exttype)) {
+                                  ret = PTLS_ALERT_UNSUPPORTED_EXTENSION;
+                                  goto Exit;
+                              }
                               src = end;
                               break;
                           }
@@ -3068,6 +3110,10 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
             }
             break;
         case PTLS_EXTENSION_TYPE_ALPN:
+            if (!tls->client.offered_alpn) {
+                ret = PTLS_ALERT_UNSUPPORTED_EXTENSION;
+                goto Exit;
+            }
             ptls_decode_block(src, end, 2, {
                 ptls_decode_open_block(src, end, 1, {
                     if (src == end) {
@@ -3092,6 +3138,10 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
             skip_early_data = 0;
             break;
         case PTLS_EXTENSION_TYPE_SERVER_CERTIFICATE_TYPE:
+            if (!tls->ctx->use_raw_public_keys) {
+                ret = PTLS_ALERT_UNSUPPORTED_EXTENSION;
+                goto Exit;
+            }
             if (end - src != 1) {
                 ret = PTLS_ALERT_DECODE_ERROR;
                 goto Exit;
@@ -3123,6 +3173,16 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
             src = end;
         } break;
         default:
+            /* RFC 8446 section 4.2: extension responses not requested by the client MUST be rejected; among the extensions that
+             * picotls sends, supported_groups and ticket_request are those to which the server might respond but are ignored */
+            if (!((type == PTLS_EXTENSION_TYPE_SUPPORTED_GROUPS && tls->ctx->key_exchanges != NULL) ||
+                  (type == PTLS_EXTENSION_TYPE_TICKET_REQUEST && tls->ctx->save_ticket != NULL &&
+                   (tls->ctx->ticket_requests.client.new_session_count != 0 ||
+                    tls->ctx->ticket_requests.client.resumption_count != 0)) ||
+                  client_sent_additional_extension(tls, type))) {
+                ret = PTLS_ALERT_UNSUPPORTED_EXTENSION;
+                goto Exit;
+            }
             if (should_collect_unknown_extension(tls, properties, type)) {
                 if (unknown_extensions == &no_unknown_extensions) {
                     if ((unknown_extensions = malloc(sizeof(*unknown_extensions) * (MAX_UNKNOWN_EXTENSIONS + 1))) == NULL) {
@@ -3134,9 +3194,9 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
                 if ((ret = collect_unknown_extension(tls, type, src, end, unknown_extensions)) != 0)
                     goto Exit;
             }
+            src = end;
             break;
         }
-        src = end;
     });
 
     if (server_offered_cert_type !=
@@ -3375,6 +3435,12 @@ static int handle_certificate(ptls_t *tls, const uint8_t *src, const uint8_t *en
                     (ret = tls->ctx->on_extension->cb(tls->ctx->on_extension, tls, PTLS_HANDSHAKE_TYPE_CERTIFICATE, type,
                                                       ptls_iovec_init(src, end - src))) != 0)
                     goto Exit;
+                /* RFC 8446 section 4.4.2: extensions in the Certificate message from the server MUST correspond to ones from the
+                 * ClientHello message; picotls does not send such extensions by itself */
+                if (!ptls_is_server(tls) && !client_sent_additional_extension(tls, type)) {
+                    ret = PTLS_ALERT_UNSUPPORTED_EXTENSION;
+                    goto Exit;
+                }
                 src = end;
             });
         }

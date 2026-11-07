@@ -1511,6 +1511,58 @@ static void test_hrr_selected_group_matches_ch1_key_share(void)
     ctx->send_change_cipher_spec = send_change_cipher_spec_orig;
 }
 
+/**
+ * Sends an HRR carrying an unknown extension (0xfafb), and checks that the client aborts with unsupported_extension unless the
+ * extension has been offered by the client as an additional extension.
+ */
+static void test_hrr_unsolicited_extension(int offered)
+{
+    static const uint8_t hrr[] = {0x16, 0x03, 0x03, 0x00, 0x3c, 0x02, 0x00, 0x00, 0x38, 0x03, 0x03, 0xcf, 0x21,
+                                  0xad, 0x74, 0xe5, 0x9a, 0x61, 0x11, 0xbe, 0x1d, 0x8c, 0x02, 0x1e, 0x65, 0xb8,
+                                  0x91, 0xc2, 0xa2, 0x11, 0x16, 0x7a, 0xbb, 0x8c, 0x5e, 0x07, 0x9e, 0x09, 0xe2,
+                                  0xc8, 0xa8, 0x33, 0x9c, 0x00, 0x13, 0x01, 0x00, 0x00, 0x10, 0x00, 0x2b, 0x00,
+                                  0x02, 0x03, 0x04, 0x00, 0x33, 0x00, 0x02, 0x00, 0x17, 0xfa, 0xfb, 0x00, 0x00};
+    ptls_raw_extension_t additional_extensions[] = {{0xfafb, {NULL}}, {UINT16_MAX}};
+    ptls_handshake_properties_t client_hs_prop = {{{{NULL}}}};
+
+    ok(ctx->key_exchanges[0]->id == PTLS_GROUP_SECP256R1);
+    ptls_cipher_suite_t **cipher_suites_orig = ctx->cipher_suites,
+                        *cipher_suites[] = {find_cipher(ctx, PTLS_CIPHER_SUITE_AES_128_GCM_SHA256), NULL};
+    ctx->cipher_suites = cipher_suites;
+    unsigned send_change_cipher_spec_orig = ctx->send_change_cipher_spec;
+    ctx->send_change_cipher_spec = 0;
+
+    client_hs_prop.client.negotiate_before_key_exchange = 1; /* so that HRR selecting secp256r1 is legitimate */
+    if (offered)
+        client_hs_prop.additional_extensions = additional_extensions;
+
+    ptls_t *client = ptls_new(ctx, 0);
+    ptls_buffer_t cbuf;
+    size_t consumed;
+    int ret;
+
+    ptls_buffer_init(&cbuf, "", 0);
+
+    ret = ptls_handshake(client, &cbuf, NULL, NULL, &client_hs_prop);
+    ok(ret == PTLS_ERROR_IN_PROGRESS);
+    cbuf.off = 0;
+
+    consumed = sizeof(hrr);
+    ret = ptls_handshake(client, &cbuf, hrr, &consumed, &client_hs_prop);
+    if (offered) {
+        ok(ret == PTLS_ERROR_IN_PROGRESS);
+        ok(cbuf.off != 0);
+    } else {
+        ok(ret == PTLS_ALERT_UNSUPPORTED_EXTENSION);
+    }
+
+    ptls_buffer_dispose(&cbuf);
+    ptls_free(client);
+
+    ctx->cipher_suites = cipher_suites_orig;
+    ctx->send_change_cipher_spec = send_change_cipher_spec_orig;
+}
+
 static void test_hrr_cipher_suite_mismatch(void)
 {
     ptls_t *client = NULL, *server = NULL;
@@ -2588,6 +2640,57 @@ static void test_pre_shared_key_cipher_suite_hash_mismatch(int use_hrr)
     ptls_free(server);
 }
 
+static void test_early_data_extension_trailing_data(void)
+{
+    ptls_context_t ctx_client = *ctx, ctx_server = *ctx;
+    size_t client_max_early_data_size = 0;
+    ptls_handshake_properties_t client_prop = {.client.max_early_data_size = &client_max_early_data_size},
+                                server_prop = {{{{NULL}}}};
+    ptls_raw_extension_t server_exts[] = {{PTLS_EXTENSION_TYPE_EARLY_DATA, {(uint8_t *)"", 1}}, {UINT16_MAX}};
+    ptls_buffer_t cbuf, sbuf;
+    size_t consumed;
+    int ret;
+
+    /* client tries to send early data using external PSK, server does not accept early data */
+    assert(ctx_client.pre_shared_key.identity.len == 0 && ctx_client.pre_shared_key.secret.len == 0);
+    ctx_client.pre_shared_key.identity = ptls_iovec_init("", 1);
+    ctx_client.pre_shared_key.secret = ptls_iovec_init("hello world", 11);
+    for (size_t i = 0; ctx_client.cipher_suites[i] != NULL; ++i) {
+        if (strcmp(ctx_client.cipher_suites[i]->hash->name, "sha256") == 0) {
+            ctx_client.pre_shared_key.hash = ctx_client.cipher_suites[i]->hash;
+            break;
+        }
+    }
+    assert(ctx_client.pre_shared_key.hash != NULL);
+    ctx_client.max_early_data_size = 16384;
+    ctx_server.pre_shared_key = ctx_client.pre_shared_key;
+    ctx_server.max_early_data_size = 0;
+
+    /* server sends early_data extension in EncryptedExtensions, with one byte of trailing data */
+    server_prop.additional_extensions = server_exts;
+
+    ptls_t *client = ptls_new(&ctx_client, 0), *server = ptls_new(&ctx_server, 1);
+    ptls_buffer_init(&cbuf, "", 0);
+    ptls_buffer_init(&sbuf, "", 0);
+
+    ret = ptls_handshake(client, &cbuf, NULL, NULL, &client_prop);
+    ok(ret == PTLS_ERROR_IN_PROGRESS);
+    ok(client_max_early_data_size != 0);
+    consumed = cbuf.off;
+    ret = ptls_handshake(server, &sbuf, cbuf.base, &consumed, &server_prop);
+    ok(ret == 0);
+    cbuf.off = 0;
+
+    consumed = sbuf.off;
+    ret = ptls_handshake(client, &cbuf, sbuf.base, &consumed, &client_prop);
+    ok(ret == PTLS_ALERT_DECODE_ERROR);
+
+    ptls_buffer_dispose(&cbuf);
+    ptls_buffer_dispose(&sbuf);
+    ptls_free(client);
+    ptls_free(server);
+}
+
 static void test_pre_shared_key(void)
 {
     if (ctx != ctx_peer) {
@@ -2602,6 +2705,7 @@ static void test_pre_shared_key(void)
     subtest("key-share:negotiate", do_test_pre_shared_key, 4);
 
     subtest("fail:requires-psk-dhe", do_test_pre_shared_key, -1);
+    subtest("fail:early-data-trailing-data", test_early_data_extension_trailing_data);
     subtest("fail:cipher-suite-hash-mismatch", test_pre_shared_key_cipher_suite_hash_mismatch, 0);
     subtest("fail:cipher-suite-hash-mismatch-hrr", test_pre_shared_key_cipher_suite_hash_mismatch, 1);
 }
@@ -2929,6 +3033,117 @@ static void test_handshake_api(void)
     ctx_peer->max_early_data_size = 0;
 }
 
+static int emit_certificate_with_ocsp_status_cb(ptls_emit_certificate_t *self, ptls_t *tls, ptls_message_emitter_t *emitter,
+                                                ptls_key_schedule_t *key_sched, ptls_iovec_t context, int push_status_request,
+                                                const uint16_t *compress_algos, size_t num_compress_algos)
+{
+    int ret;
+
+    /* send status_request regardless of `push_status_request` */
+    ptls_push_message(emitter, key_sched, PTLS_HANDSHAKE_TYPE_CERTIFICATE, {
+        if ((ret = ptls_build_certificate_message(emitter->buf, context, ptls_get_context(tls)->certificates.list,
+                                                  ptls_get_context(tls)->certificates.count, ptls_iovec_init("ocsp", 4))) != 0)
+            goto Exit;
+    });
+
+    ret = 0;
+Exit:
+    return ret;
+}
+
+enum en_unsolicited_extension_location {
+    UNSOLICITED_IN_SERVER_HELLO,
+    UNSOLICITED_IN_ENCRYPTED_EXTENSIONS,
+    UNSOLICITED_IN_CERTIFICATE
+};
+
+static void do_test_unsolicited_extension(enum en_unsolicited_extension_location location, uint16_t type, ptls_iovec_t data,
+                                          int requested)
+{
+    ptls_context_t ctx_server = *ctx_peer;
+    ptls_emit_certificate_t emit_certificate_with_ocsp_status = {emit_certificate_with_ocsp_status_cb};
+    ptls_raw_extension_t exts[] = {{type, data}, {UINT16_MAX}}, client_exts[] = {{type, {NULL}}, {UINT16_MAX}};
+    ptls_handshake_properties_t client_prop = {{{{NULL}}}}, server_prop = {{{{NULL}}}};
+    ptls_buffer_t cbuf, sbuf;
+    size_t consumed;
+    int ret;
+
+    if (requested)
+        client_prop.additional_extensions = client_exts;
+    switch (location) {
+    case UNSOLICITED_IN_ENCRYPTED_EXTENSIONS:
+        server_prop.additional_extensions = exts;
+        break;
+    case UNSOLICITED_IN_CERTIFICATE:
+        ctx_server.emit_certificate = &emit_certificate_with_ocsp_status;
+        break;
+    default:
+        break;
+    }
+
+    ptls_t *client = ptls_new(ctx, 0), *server = ptls_new(&ctx_server, 1);
+    ptls_buffer_init(&cbuf, "", 0);
+    ptls_buffer_init(&sbuf, "", 0);
+
+    ret = ptls_handshake(client, &cbuf, NULL, NULL, &client_prop);
+    ok(ret == PTLS_ERROR_IN_PROGRESS);
+    consumed = cbuf.off;
+    ret = ptls_handshake(server, &sbuf, cbuf.base, &consumed, &server_prop);
+    ok(ret == 0);
+    cbuf.off = 0;
+
+    if (location == UNSOLICITED_IN_SERVER_HELLO) {
+        /* append an empty extension of given type to ServerHello, fixing up the lengths of the record, handshake message, and the
+         * extensions block */
+        size_t ext_len_off = calc_server_hello_cipher_suite_offset(&sbuf) + 2 + 1,
+               sh_end = 5 + 4 + ((size_t)sbuf.base[6] << 16 | (size_t)sbuf.base[7] << 8 | sbuf.base[8]);
+        uint8_t ext[4] = {type >> 8, type & 0xff, 0, 0};
+        ok(ptls_buffer_reserve(&sbuf, sizeof(ext)) == 0);
+        memmove(sbuf.base + sh_end + sizeof(ext), sbuf.base + sh_end, sbuf.off - sh_end);
+        memcpy(sbuf.base + sh_end, ext, sizeof(ext));
+        sbuf.off += sizeof(ext);
+#define ADD_TO_LENGTH(off, size)                                                                                                   \
+    do {                                                                                                                           \
+        size_t v = 0;                                                                                                              \
+        for (size_t i = 0; i < (size); ++i)                                                                                        \
+            v = v << 8 | sbuf.base[(off) + i];                                                                                     \
+        v += sizeof(ext);                                                                                                          \
+        for (size_t i = (size); i != 0; --i, v >>= 8)                                                                              \
+            sbuf.base[(off) + i - 1] = (uint8_t)v;                                                                                 \
+    } while (0)
+        ADD_TO_LENGTH(3, 2);
+        ADD_TO_LENGTH(6, 3);
+        ADD_TO_LENGTH(ext_len_off, 2);
+#undef ADD_TO_LENGTH
+    }
+
+    consumed = sbuf.off;
+    ret = ptls_handshake(client, &cbuf, sbuf.base, &consumed, &client_prop);
+    ok(ret == (requested ? 0 : PTLS_ALERT_UNSUPPORTED_EXTENSION));
+
+    ptls_buffer_dispose(&cbuf);
+    ptls_buffer_dispose(&sbuf);
+    ptls_free(client);
+    ptls_free(server);
+}
+
+static void test_unsolicited_extension(void)
+{
+    subtest("server-hello", do_test_unsolicited_extension, UNSOLICITED_IN_SERVER_HELLO, 0x3300, ptls_iovec_init(NULL, 0), 0);
+    subtest("encrypted-extensions", do_test_unsolicited_extension, UNSOLICITED_IN_ENCRYPTED_EXTENSIONS, 0x3300,
+            ptls_iovec_init(NULL, 0), 0);
+    subtest("encrypted-extensions-requested", do_test_unsolicited_extension, UNSOLICITED_IN_ENCRYPTED_EXTENSIONS, 0x3300,
+            ptls_iovec_init(NULL, 0), 1);
+    subtest("alpn", do_test_unsolicited_extension, UNSOLICITED_IN_ENCRYPTED_EXTENSIONS, PTLS_EXTENSION_TYPE_ALPN,
+            ptls_iovec_init("\x00\x03\x02h2", 5), 0);
+    subtest("server-certificate-type", do_test_unsolicited_extension, UNSOLICITED_IN_ENCRYPTED_EXTENSIONS,
+            PTLS_EXTENSION_TYPE_SERVER_CERTIFICATE_TYPE, ptls_iovec_init("\x00", 1), 0);
+    subtest("certificate-authorities", do_test_unsolicited_extension, UNSOLICITED_IN_ENCRYPTED_EXTENSIONS,
+            PTLS_EXTENSION_TYPE_CERTIFICATE_AUTHORITIES, ptls_iovec_init("\x00\x00", 2), 0);
+    subtest("certificate", do_test_unsolicited_extension, UNSOLICITED_IN_CERTIFICATE, PTLS_EXTENSION_TYPE_STATUS_REQUEST,
+            ptls_iovec_init(NULL, 0), 0);
+}
+
 static void test_all_handshakes_core(void)
 {
     subtest("full-handshake", test_full_handshake);
@@ -2956,6 +3171,7 @@ static void test_all_handshakes_core(void)
     subtest("key-update", test_key_update);
     subtest("pre-shared-key", test_pre_shared_key);
     subtest("handshake-api", test_handshake_api);
+    subtest("unsolicited-extension", test_unsolicited_extension);
 }
 
 static void test_all_handshakes(void)
@@ -3390,6 +3606,8 @@ void test_picotls(void)
     subtest("hrr-resumption-cipher-suite-change:different-hash", test_hrr_resumption_cipher_suite_change,
             PTLS_CIPHER_SUITE_AES_256_GCM_SHA384);
     subtest("hrr-selected-group-matches-ch1-key-share", test_hrr_selected_group_matches_ch1_key_share);
+    subtest("hrr-unsolicited-extension", test_hrr_unsolicited_extension, 0);
+    subtest("hrr-solicited-unknown-extension", test_hrr_unsolicited_extension, 1);
     subtest("plaintext-alert", test_plaintext_alert);
     subtest("handshake", test_all_handshakes);
     subtest("quic", test_quic);
