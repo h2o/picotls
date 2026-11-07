@@ -4934,8 +4934,8 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
         }
     }
 
-    /* determine number of tickets to send */
-    if (ch->psk.ke_modes != 0 && tls->ctx->ticket_lifetime != 0) {
+    /* determine the number of tickets to send; none when an external PSK is configured, as every handshake uses that PSK */
+    if (ch->psk.ke_modes != 0 && tls->ctx->ticket_lifetime != 0 && tls->ctx->pre_shared_key.identity.base == NULL) {
         if (ch->ticket_request.new_session_count != 0) {
             tls->server.num_tickets_to_send =
                 tls->is_psk_handshake ? ch->ticket_request.resumption_count : ch->ticket_request.new_session_count;
