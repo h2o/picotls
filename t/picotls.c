@@ -760,6 +760,21 @@ static int test_fragmented_message_record(ptls_t *tls, struct st_ptls_message_em
     return 0;
 }
 
+static void test_record_overflow(void)
+{
+    struct st_ptls_record_t rec;
+
+    /* protected records: up to 2^14 + 256 bytes */
+    ok(parse_record_header(&rec, (const uint8_t *)"\x17\x03\x03\x41\x00") == 0);
+    ok(rec.length == 16640);
+    ok(parse_record_header(&rec, (const uint8_t *)"\x17\x03\x03\x41\x01") == PTLS_ALERT_RECORD_OVERFLOW);
+
+    /* plaintext records: up to 2^14 bytes */
+    ok(parse_record_header(&rec, (const uint8_t *)"\x16\x03\x01\x40\x00") == 0);
+    ok(rec.length == 16384);
+    ok(parse_record_header(&rec, (const uint8_t *)"\x16\x03\x01\x40\x01") == PTLS_ALERT_RECORD_OVERFLOW);
+}
+
 static void test_fragmented_message(void)
 {
     ptls_context_t tlsctx = {NULL};
@@ -1201,6 +1216,19 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int expect_ticket, int
         ok(memcmp(decbuf.base, "hello", 5) == 0);
         cbuf.off = 0;
         decbuf.off = 0;
+
+        /* KeyUpdate with an invalid request_update value, or of an invalid length */
+        uint8_t bad_key_update[] = {PTLS_HANDSHAKE_TYPE_KEY_UPDATE, 0, 0, 1, 2};
+        ok(handle_key_update(client, NULL, ptls_iovec_init(bad_key_update, sizeof(bad_key_update))) ==
+           PTLS_ALERT_ILLEGAL_PARAMETER);
+        bad_key_update[3] = 0;
+        ok(handle_key_update(client, NULL, ptls_iovec_init(bad_key_update, PTLS_HANDSHAKE_HEADER_SIZE)) == PTLS_ALERT_DECODE_ERROR);
+
+        /* Finished with incorrect verify_data, or of an incorrect length */
+        uint8_t bad_finished[PTLS_HANDSHAKE_HEADER_SIZE + PTLS_MAX_DIGEST_SIZE] = {PTLS_HANDSHAKE_TYPE_FINISHED};
+        size_t bad_finished_len = PTLS_HANDSHAKE_HEADER_SIZE + client->key_schedule->hashes[0].algo->digest_size;
+        ok(verify_finished(client, ptls_iovec_init(bad_finished, bad_finished_len)) == PTLS_ALERT_DECRYPT_ERROR);
+        ok(verify_finished(client, ptls_iovec_init(bad_finished, bad_finished_len - 1)) == PTLS_ALERT_DECODE_ERROR);
     }
 
     /* original_server is used for the server-side checks because handshake data is never migrated */
@@ -1883,6 +1911,57 @@ static void test_async_sign_certificate(void)
     test_full_handshake_impl(0, 1, 0);
 
     ctx_peer->sign_certificate = orig_sc;
+}
+
+static int fail_encrypt_ticket(ptls_encrypt_ticket_t *self, ptls_t *tls, int is_encrypt, ptls_buffer_t *dst, ptls_iovec_t src)
+{
+    return PTLS_ERROR_LIBRARY;
+}
+
+static void test_async_sign_certificate_failure(void)
+{
+    assert(ctx_peer->sign_certificate->cb == sign_certificate);
+    assert(ctx_peer->encrypt_ticket == NULL);
+
+    ptls_sign_certificate_t async_sc = {async_sign_certificate}, *orig_sc = ctx_peer->sign_certificate;
+    ptls_encrypt_ticket_t et = {fail_encrypt_ticket};
+    ptls_save_ticket_t st = {on_save_ticket}, *orig_st = ctx->save_ticket;
+    ctx_peer->sign_certificate = &async_sc;
+    ctx_peer->ticket_lifetime = 86400;
+    ctx_peer->encrypt_ticket = &et;
+    ctx->save_ticket = &st;
+
+    ptls_t *client = ptls_new(ctx, 0), *server = ptls_new(ctx_peer, 1);
+    ptls_buffer_t cbuf, sbuf;
+    size_t consumed;
+    int ret;
+
+    ptls_buffer_init(&cbuf, "", 0);
+    ptls_buffer_init(&sbuf, "", 0);
+
+    ret = ptls_handshake(client, &cbuf, NULL, NULL, NULL);
+    ok(ret == PTLS_ERROR_IN_PROGRESS);
+    consumed = cbuf.off;
+    ret = ptls_handshake(server, &sbuf, cbuf.base, &consumed, NULL);
+    ok(ret == PTLS_ERROR_ASYNC_OPERATION);
+    ok(consumed == cbuf.off);
+
+    /* complete the signature; sending NewSessionTicket fails, upon which the partial flight is discarded and an alert is sent */
+    sbuf.off = 0;
+    ret = ptls_handshake(server, &sbuf, NULL, NULL, NULL);
+    ok(ret == PTLS_ERROR_LIBRARY);
+    ok(sbuf.off == 5 + 2 + 1 + server->traffic_protection.enc.aead->algo->tag_size); /* one encrypted alert record */
+    ok(sbuf.off != 0 && sbuf.base[0] == PTLS_CONTENT_TYPE_APPDATA);
+
+    ptls_buffer_dispose(&cbuf);
+    ptls_buffer_dispose(&sbuf);
+    ptls_free(client);
+    ptls_free(server);
+
+    ctx_peer->sign_certificate = orig_sc;
+    ctx_peer->ticket_lifetime = 0;
+    ctx_peer->encrypt_ticket = NULL;
+    ctx->save_ticket = orig_st;
 }
 
 static void test_enforce_retry(int use_cookie)
@@ -2945,6 +3024,7 @@ static void test_all_handshakes_core(void)
     if (test_client_ech_configs.base != NULL)
         subtest("resumption-with-grease", test_grease_resumption);
     subtest("async-sign-certificate", test_async_sign_certificate);
+    subtest("async-sign-certificate-failure", test_async_sign_certificate_failure);
     subtest("enforce-retry-stateful", test_enforce_retry_stateful);
     subtest("pq-retry-stateful", test_pq_retry_stateful);
     if (!(ctx_peer->ech.server.create_opener != NULL && test_client_ech_configs.base != NULL)) {
@@ -3383,6 +3463,7 @@ void test_picotls(void)
     subtest("tls-block8", test_tlsblock8);
     subtest("tls-block16", test_tlsblock16);
     subtest("ech", test_ech);
+    subtest("record-overflow", test_record_overflow);
     subtest("fragmented-message", test_fragmented_message);
     subtest("hrr-cipher-suite-mismatch", test_hrr_cipher_suite_mismatch);
     subtest("hrr-resumption-cipher-suite-change:same-hash", test_hrr_resumption_cipher_suite_change,

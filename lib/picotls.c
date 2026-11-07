@@ -1865,7 +1865,7 @@ static int verify_finished(ptls_t *tls, ptls_iovec_t message)
     if ((ret = calc_verify_data(verify_data, tls->key_schedule, tls->traffic_protection.dec.secret)) != 0)
         goto Exit;
     if (!ptls_mem_equal(message.base + PTLS_HANDSHAKE_HEADER_SIZE, verify_data, tls->key_schedule->hashes[0].algo->digest_size)) {
-        ret = PTLS_ALERT_HANDSHAKE_FAILURE;
+        ret = PTLS_ALERT_DECRYPT_ERROR;
         goto Exit;
     }
 
@@ -5166,8 +5166,10 @@ static int handle_key_update(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
     const uint8_t *src = message.base + PTLS_HANDSHAKE_HEADER_SIZE, *const end = message.base + message.len;
 
     /* validate */
-    if (end - src != 1 || *src > 1)
+    if (end - src != 1)
         return PTLS_ALERT_DECODE_ERROR;
+    if (*src > 1)
+        return PTLS_ALERT_ILLEGAL_PARAMETER;
 
     /* update receive key */
     if ((ret = update_traffic_key(tls, 0)) != 0)
@@ -5188,7 +5190,7 @@ static int parse_record_header(struct st_ptls_record_t *rec, const uint8_t *src)
 
     if (rec->length >
         (size_t)(rec->type == PTLS_CONTENT_TYPE_APPDATA ? PTLS_MAX_ENCRYPTED_RECORD_SIZE : PTLS_MAX_PLAINTEXT_RECORD_SIZE))
-        return PTLS_ALERT_DECODE_ERROR;
+        return PTLS_ALERT_RECORD_OVERFLOW;
 
     return 0;
 }
@@ -6214,7 +6216,8 @@ int ptls_handshake(ptls_t *tls, ptls_buffer_t *_sendbuf, const void *input, size
         return send_client_hello(tls, &emitter.super, properties, NULL);
     }
     case PTLS_STATE_SERVER_GENERATING_CERTIFICATE_VERIFY:
-        return server_finish_handshake(tls, &emitter.super, 1, NULL);
+        ret = server_finish_handshake(tls, &emitter.super, 1, NULL);
+        goto Exit;
     default:
         break;
     }
@@ -6234,7 +6237,9 @@ int ptls_handshake(ptls_t *tls, ptls_buffer_t *_sendbuf, const void *input, size
     }
 
     ptls_buffer_dispose(&decryptbuf);
+    *inlen -= src_end - src;
 
+Exit:
     switch (ret) {
     case 0:
     case PTLS_ERROR_IN_PROGRESS:
@@ -6256,7 +6261,6 @@ int ptls_handshake(ptls_t *tls, ptls_buffer_t *_sendbuf, const void *input, size
         break;
     }
 
-    *inlen -= src_end - src;
     return ret;
 }
 
