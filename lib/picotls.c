@@ -2658,12 +2658,16 @@ static int decode_server_hello(ptls_t *tls, struct st_ptls_server_hello_t *sh, c
 
     *sh = (struct st_ptls_server_hello_t){{0}};
 
-    /* ignore legacy-version */
-    if (end - src < 2) {
-        ret = PTLS_ALERT_DECODE_ERROR;
-        goto Exit;
+    { /* legacy_version (RFC 9846 section 4.2.3: "A client which receives a TLS 1.3 Server Hello with a legacy_version value not
+       * equal to 0x0303 MUST abort the handshake with a "protocol_version" alert."; we do not support older versions either) */
+        uint16_t legacy_version;
+        if ((ret = ptls_decode16(&legacy_version, &src, end)) != 0)
+            goto Exit;
+        if (legacy_version != 0x0303) {
+            ret = PTLS_ALERT_PROTOCOL_VERSION;
+            goto Exit;
+        }
     }
-    src += 2;
 
     /* random */
     if (end - src < PTLS_HELLO_RANDOM_SIZE) {
