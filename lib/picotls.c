@@ -5532,6 +5532,8 @@ int ptls_import(ptls_context_t *ctx, ptls_t **tls, ptls_iovec_t params)
             ret = PTLS_ERROR_NO_MEMORY;
             goto Exit;
         }
+        if ((*tls)->is_server)
+            (*tls)->server.early_data_skipped_bytes = UINT32_MAX;
         (*tls)->is_psk_handshake = *src++;
         /* determine protocol version and cipher suite */
         if ((ret = ptls_decode16(&protocol_version, &src, end)) != 0)
@@ -6071,6 +6073,9 @@ static int handle_input(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_buffe
                 goto ServerSkipEarlyData;
             return ret;
         }
+        /* skipping of early data ends once a record is deprotected successfully (RFC 9846 Section 4.3.10) */
+        if (tls->is_server)
+            tls->server.early_data_skipped_bytes = UINT32_MAX;
         rec.length = decrypted_length;
         rec.fragment = decryptbuf->base + decryptbuf->off;
         /* skip padding */
