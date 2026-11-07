@@ -4330,6 +4330,8 @@ static int try_psk_handshake(ptls_t *tls, size_t *psk_index, int *accept_early_d
                 continue;
             if (!vec_is_string(ticket_negotiated_protocol, tls->negotiated_protocol))
                 continue;
+        } else if (tls->negotiated_protocol != NULL) {
+            continue;
         }
         /* check the length of the decrypted psk and the PSK binder */
         if (secret.len != tls->key_schedule->hashes[0].algo->digest_size)
