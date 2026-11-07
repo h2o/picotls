@@ -4686,6 +4686,11 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
                                      {});
             emitter->buf->off = hrr_start;
             is_second_flight = 1;
+            /* early data is not permitted after HRR (RFC 9846 Section 4.3.10); same check as the stateful path above */
+            if (ch->psk.early_data_indication) {
+                ret = PTLS_ALERT_DECODE_ERROR;
+                goto Exit;
+            }
 
         } else if (ch->key_shares.base != NULL && tls->ctx->key_exchanges != NULL &&
                    (key_share.algorithm == NULL || (properties != NULL && properties->server.enforce_retry) ||
