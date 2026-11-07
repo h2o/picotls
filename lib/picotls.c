@@ -3085,7 +3085,7 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
             });
             break;
         case PTLS_EXTENSION_TYPE_EARLY_DATA:
-            if (!tls->client.using_early_data) {
+            if (!(tls->client.using_early_data && tls->is_psk_handshake)) {
                 ret = PTLS_ALERT_ILLEGAL_PARAMETER;
                 goto Exit;
             }
