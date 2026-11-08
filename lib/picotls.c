@@ -2803,7 +2803,7 @@ static int decode_server_hello(ptls_t *tls, struct st_ptls_server_hello_t *sh, c
             }
             tls->is_psk_handshake = 1;
         }
-        if (sh->peerkey.base == NULL && !tls->is_psk_handshake) {
+        if (sh->peerkey.base == NULL && !(tls->is_psk_handshake && !tls->ctx->require_dhe_on_psk)) {
             ret = PTLS_ALERT_ILLEGAL_PARAMETER;
             goto Exit;
         }
