@@ -376,7 +376,6 @@ struct st_ptls_client_hello_t {
         size_t count;
     } cert_compression_algos;
     struct {
-        ptls_iovec_t all;
         ptls_iovec_t tbs;
         ptls_iovec_t ch1_hash;
         ptls_iovec_t signature;
@@ -3886,38 +3885,42 @@ static int decode_client_hello(ptls_context_t *ctx, struct st_ptls_client_hello_
             });
             break;
         case PTLS_EXTENSION_TYPE_COOKIE:
-            if (properties == NULL || properties->server.cookie.key == NULL) {
-                ret = PTLS_ALERT_ILLEGAL_PARAMETER;
-                goto Exit;
-            }
-            ch->cookie.all = ptls_iovec_init(src, end - src);
             ptls_decode_block(src, end, 2, {
-                ch->cookie.tbs.base = (void *)src;
-                ptls_decode_open_block(src, end, 2, {
-                    ptls_decode_open_block(src, end, 1, {
-                        ch->cookie.ch1_hash = ptls_iovec_init(src, end - src);
-                        src = end;
-                    });
-                    uint8_t sent_key_share;
-                    if ((ret = ptls_decode8(&sent_key_share, &src, end)) != 0)
-                        goto Exit;
-                    switch (sent_key_share) {
-                    case 0:
-                        assert(!ch->cookie.sent_key_share);
-                        break;
-                    case 1:
-                        ch->cookie.sent_key_share = 1;
-                        break;
-                    default:
-                        ret = PTLS_ALERT_DECODE_ERROR;
+                if (end - src == 1) {
+                    /* cookie of a stateful HRR, being a single byte that carries no information */
+                    src = end;
+                } else {
+                    if (properties == NULL || properties->server.cookie.key == NULL) {
+                        ret = PTLS_ALERT_ILLEGAL_PARAMETER;
                         goto Exit;
                     }
-                });
-                ch->cookie.tbs.len = src - ch->cookie.tbs.base;
-                ptls_decode_block(src, end, 1, {
-                    ch->cookie.signature = ptls_iovec_init(src, end - src);
-                    src = end;
-                });
+                    ch->cookie.tbs.base = (void *)src;
+                    ptls_decode_open_block(src, end, 2, {
+                        ptls_decode_open_block(src, end, 1, {
+                            ch->cookie.ch1_hash = ptls_iovec_init(src, end - src);
+                            src = end;
+                        });
+                        uint8_t sent_key_share;
+                        if ((ret = ptls_decode8(&sent_key_share, &src, end)) != 0)
+                            goto Exit;
+                        switch (sent_key_share) {
+                        case 0:
+                            assert(!ch->cookie.sent_key_share);
+                            break;
+                        case 1:
+                            ch->cookie.sent_key_share = 1;
+                            break;
+                        default:
+                            ret = PTLS_ALERT_DECODE_ERROR;
+                            goto Exit;
+                        }
+                    });
+                    ch->cookie.tbs.len = src - ch->cookie.tbs.base;
+                    ptls_decode_block(src, end, 1, {
+                        ch->cookie.signature = ptls_iovec_init(src, end - src);
+                        src = end;
+                    });
+                }
             });
             break;
         case PTLS_EXTENSION_TYPE_PRE_SHARED_KEY: {
@@ -4656,7 +4659,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
 
     if (!is_second_flight) {
         ptls_key_exchange_algorithm_t *negotiated_group = NULL;
-        if (ch->cookie.all.len != 0 && key_share.algorithm != NULL) {
+        if (ch->cookie.tbs.base != NULL && key_share.algorithm != NULL) {
             { /* use cookie to check the integrity of the handshake, and update the context */
                 uint8_t sig[PTLS_MAX_DIGEST_SIZE];
                 size_t sigsize = tls->ctx->cipher_suites[0]->hash->digest_size;
@@ -4680,7 +4683,13 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
             EMIT_HELLO_RETRY_REQUEST(tls->key_schedule, ch->cookie.sent_key_share ? key_share.algorithm : NULL,
                                      {
                                          buffer_push_extension(emitter->buf, PTLS_EXTENSION_TYPE_COOKIE, {
-                                             ptls_buffer_pushv(emitter->buf, ch->cookie.all.base, ch->cookie.all.len);
+                                             ptls_buffer_push_block(emitter->buf, 2, {
+                                                 ptls_buffer_pushv(emitter->buf, ch->cookie.tbs.base, ch->cookie.tbs.len);
+                                                 ptls_buffer_push_block(emitter->buf, 1, {
+                                                     ptls_buffer_pushv(emitter->buf, ch->cookie.signature.base,
+                                                                       ch->cookie.signature.len);
+                                                 });
+                                             });
                                          });
                                      },
                                      {});
@@ -4727,6 +4736,13 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
                             ech_confirm_off = sendbuf->off;
                             sendbuf->off += PTLS_ECH_CONFIRM_LENGTH;
                         });
+                    }
+                    if (!retry_uses_cookie && negotiated_group == NULL) {
+                        /* An HRR that does not change the CH is a protocol violation (RFC 9846 Section 4.2.4). Therefore, when
+                         * sending a stateful HRR without a key_share (i.e., due to `enforce_retry`), include a cookie, which the
+                         * client is required to echo. As the server is stateful, the value can be a constant. */
+                        buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_COOKIE,
+                                              { ptls_buffer_push_block(sendbuf, 2, { ptls_buffer_push(sendbuf, 0); }); });
                     }
                     if (retry_uses_cookie) {
                         buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_COOKIE, {
