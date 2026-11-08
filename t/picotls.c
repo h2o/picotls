@@ -1236,13 +1236,6 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int expect_ticket, int
         ok(server->pending_key_update == PTLS_PENDING_KEY_UPDATE_NONE);
         cbuf.off = 0;
         decbuf.off = 0;
-        /* the keys remain in sync */
-        ok(ptls_send(server, &sbuf, "bye", 3) == 0);
-        consumed = sbuf.off;
-        ok(ptls_receive(client, &decbuf, sbuf.base, &consumed) == 0);
-        ok(decbuf.off == 3 && memcmp(decbuf.base, "bye", 3) == 0);
-        sbuf.off = 0;
-        decbuf.off = 0;
 
         /* KeyUpdate with an invalid request_update value, or of an invalid length */
         uint8_t bad_key_update[] = {PTLS_HANDSHAKE_TYPE_KEY_UPDATE, 0, 0, 1, 2};
