@@ -5539,6 +5539,11 @@ int ptls_export(ptls_t *tls, ptls_buffer_t *output)
         ret = PTLS_ERROR_LIBRARY;
         goto Exit;
     }
+    /* KeyUpdate that is yet to be sent is not exported */
+    if (tls->pending_key_update != PTLS_PENDING_KEY_UPDATE_NONE) {
+        ret = PTLS_ERROR_IN_PROGRESS;
+        goto Exit;
+    }
 
     if (ptls_get_protocol_version(tls) == PTLS_PROTOCOL_VERSION_TLS13) {
         export_tls_params(output, tls->is_server, tls->is_psk_handshake, PTLS_PROTOCOL_VERSION_TLS13, tls->cipher_suite,
