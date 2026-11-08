@@ -4187,7 +4187,7 @@ static int check_client_hello_constraints(ptls_context_t *ctx, struct st_ptls_cl
 
     /* Bail out if CH cannot be handled as TLS 1.3. TLS 1.3 CH is identified by legacy_version being 0x0303 in addition to
      * supported_versions selecting TLS 1.3 (RFC 9846 Section 4.2.2). */
-    if (!is_supported_version(ch->selected_version) || ch->legacy_version != 0x0303) {
+    if (!(ch->legacy_version == 0x0303 && is_supported_version(ch->selected_version))) {
         /* ECH: server MUST abort with an "illegal_parameter" alert if the client offers TLS 1.2 or below (draft-15 7.1) */
         if (ech_is_inner_ch)
             return PTLS_ALERT_ILLEGAL_PARAMETER;
