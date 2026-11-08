@@ -407,6 +407,7 @@ struct st_ptls_client_hello_t {
             size_t count;
         } identities;
         unsigned ke_modes;
+        unsigned ke_modes_present : 1;
         unsigned early_data_indication : 1;
         unsigned is_last_extension : 1;
     } psk;
@@ -3886,6 +3887,13 @@ static int decode_client_hello(ptls_context_t *ctx, struct st_ptls_client_hello_
             break;
         case PTLS_EXTENSION_TYPE_SUPPORTED_GROUPS:
             ch->negotiated_groups = ptls_iovec_init(src, end - src);
+            ptls_decode_block(src, end, 2, {
+                if (!(end - src >= 2 && (end - src) % 2 == 0)) {
+                    ret = PTLS_ALERT_DECODE_ERROR;
+                    goto Exit;
+                }
+                src = end;
+            });
             break;
         case PTLS_EXTENSION_TYPE_SIGNATURE_ALGORITHMS:
             if ((ret = decode_signature_algorithms(&ch->signature_algorithms, &src, end)) != 0)
@@ -3991,6 +3999,7 @@ static int decode_client_hello(ptls_context_t *ctx, struct st_ptls_client_hello_
             ch->psk.is_last_extension = 1;
         } break;
         case PTLS_EXTENSION_TYPE_PSK_KEY_EXCHANGE_MODES:
+            ch->psk.ke_modes_present = 1;
             ptls_decode_block(src, end, 1, {
                 do {
                     uint8_t mode;
@@ -4246,10 +4255,22 @@ static int check_client_hello_constraints(ptls_context_t *ctx, struct st_ptls_cl
         /* PSK must be the last extension */
         if (!ch->psk.is_last_extension)
             return PTLS_ALERT_ILLEGAL_PARAMETER;
+        /* RFC 9846 Section 4.3.9: "If clients offer "pre_shared_key" without a "psk_key_exchange_modes" extension, servers MUST
+         * abort the handshake." */
+        if (!ch->psk.ke_modes_present)
+            return PTLS_ALERT_MISSING_EXTENSION;
     } else {
         if (ch->psk.early_data_indication)
             return PTLS_ALERT_ILLEGAL_PARAMETER;
     }
+
+    /* Section 9.2 of RFC 9846 requires ClientHello to meet the following requirements:
+     * - If not containing a "pre_shared_key" extension, it MUST contain both a "signature_algorithms" extension and a
+     *   "supported_groups" extension (absence of "signature_algorithms" is detected when sending a certificate).
+     * - If containing a "supported_groups" extension, it MUST also contain a "key_share" extension, and vice versa. */
+    if ((ch->psk.hash_end == NULL && ch->negotiated_groups.base == NULL) ||
+        (ch->negotiated_groups.base != NULL) != (ch->key_shares.base != NULL))
+        return PTLS_ALERT_MISSING_EXTENSION;
 
     if (ech_is_inner_ch && ch->ech.payload.base == NULL)
         return PTLS_ALERT_ILLEGAL_PARAMETER;
