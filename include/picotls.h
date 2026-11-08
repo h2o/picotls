@@ -1689,6 +1689,8 @@ int ptls_build_tls12_export_params(ptls_context_t *ctx, ptls_buffer_t *output, i
                                    uint64_t next_send_record_iv, const char *server_name, ptls_iovec_t negotiated_protocol);
 /**
  * store the parameters of a post-handshake TLS connection so that it can be reconstructed later
+ * @return zero on success, or PTLS_ERROR_IN_PROGRESS if a KeyUpdate is pending, in which case the application should call
+ * `ptls_send` (with zero-length input, if there is nothing else to send) before calling the function again
  */
 int ptls_export(ptls_t *tls, ptls_buffer_t *output);
 /**
