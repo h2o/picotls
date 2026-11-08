@@ -2737,6 +2737,12 @@ static int decode_server_hello(ptls_t *tls, struct st_ptls_server_hello_t *sh, c
                               if (sh->is_retry_request) {
                                   if ((ret = ptls_decode16(&sh->retry_request.selected_group, &src, end)) != 0)
                                       goto Exit;
+                                  /* UINT16_MAX is used as the marker of key_share being absent, and it is not a group that we
+                                   * offer */
+                                  if (sh->retry_request.selected_group == UINT16_MAX) {
+                                      ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+                                      goto Exit;
+                                  }
                               } else {
                                   uint16_t group;
                                   if ((ret = decode_key_share_entry(&group, &sh->peerkey, &src, end)) != 0)
@@ -2858,7 +2864,17 @@ static int handle_hello_retry_request(ptls_t *tls, ptls_message_emitter_t *emitt
         }
         tls->key_share = *cand;
     } else if (tls->key_share != NULL) {
-        /* retain the key-share using in first CH, if server does not specify one */
+        /* Retain the key-share used in the first CH, if the server does not specify one. But then, the HRR has to carry a cookie,
+         * as RFC 9846 Section 4.2.4 requires the client to abort if the HRR would not result in any change in the CH. Checking the
+         * two is sufficient, because HRR can carry only the extensions offered by the client, except for cookie (Section 4.2.4),
+         * and among them, key_share and cookie are the only ones that change CH: supported_versions and encrypted_client_hello do
+         * not, and those supplied by the application cannot, as the second CH is built from the same `properties` without the
+         * application being given a chance to modify them. This check has to be revised when support for another HRR extension
+         * that changes CH is added, or when the application becomes able to change CH in response to HRR. */
+        if (sh->retry_request.cookie.base == NULL) {
+            ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+            goto Exit;
+        }
     } else {
         ret = PTLS_ALERT_ILLEGAL_PARAMETER;
         goto Exit;

@@ -1466,13 +1466,11 @@ static size_t calc_server_hello_cipher_suite_offset(ptls_buffer_t *buf)
     return cipher_off;
 }
 
-static void test_hrr_selected_group_matches_ch1_key_share(void)
+/**
+ * Sends `hrr` to a client that offers only secp256r1, and checks that the client responds as `expected_ret` indicates.
+ */
+static void do_test_client_handle_hrr(const uint8_t *hrr, size_t hrr_len, int expected_ret)
 {
-    static const uint8_t hrr[] = {0x16, 0x03, 0x03, 0x00, 0x38, 0x02, 0x00, 0x00, 0x34, 0x03, 0x03, 0xcf, 0x21, 0xad, 0x74, 0xe5,
-                                  0x9a, 0x61, 0x11, 0xbe, 0x1d, 0x8c, 0x02, 0x1e, 0x65, 0xb8, 0x91, 0xc2, 0xa2, 0x11, 0x16, 0x7a,
-                                  0xbb, 0x8c, 0x5e, 0x07, 0x9e, 0x09, 0xe2, 0xc8, 0xa8, 0x33, 0x9c, 0x00, 0x13, 0x01, 0x00, 0x00,
-                                  0x0c, 0x00, 0x2b, 0x00, 0x02, 0x03, 0x04, 0x00, 0x33, 0x00, 0x02, 0x00, 0x17};
-
     ok(ctx->key_exchanges[0]->id == PTLS_GROUP_SECP256R1);
     ptls_key_exchange_algorithm_t **key_exchanges_orig = ctx->key_exchanges, *key_exchanges[] = {ctx->key_exchanges[0], NULL};
     ctx->key_exchanges = key_exchanges;
@@ -1498,10 +1496,10 @@ static void test_hrr_selected_group_matches_ch1_key_share(void)
     ok(cbuf.off != 0);
     cbuf.off = 0;
 
-    consumed = sizeof(hrr);
+    consumed = hrr_len;
     ret = ptls_handshake(client, &cbuf, hrr, &consumed, NULL);
-    ok(ret == PTLS_ALERT_ILLEGAL_PARAMETER);
-    ok(consumed == sizeof(hrr));
+    ok(ret == expected_ret);
+    ok(consumed == hrr_len);
 
     ptls_buffer_dispose(&cbuf);
     ptls_free(client);
@@ -1509,6 +1507,46 @@ static void test_hrr_selected_group_matches_ch1_key_share(void)
     ctx->key_exchanges = key_exchanges_orig;
     ctx->cipher_suites = cipher_suites_orig;
     ctx->send_change_cipher_spec = send_change_cipher_spec_orig;
+}
+
+static void test_hrr_invalid_selected_group(uint16_t selected_group)
+{
+    uint8_t hrr[] = {0x16, 0x03, 0x03, 0x00, 0x38, 0x02, 0x00, 0x00, 0x34, 0x03, 0x03, 0xcf, 0x21, 0xad, 0x74, 0xe5,
+                     0x9a, 0x61, 0x11, 0xbe, 0x1d, 0x8c, 0x02, 0x1e, 0x65, 0xb8, 0x91, 0xc2, 0xa2, 0x11, 0x16, 0x7a,
+                     0xbb, 0x8c, 0x5e, 0x07, 0x9e, 0x09, 0xe2, 0xc8, 0xa8, 0x33, 0x9c, 0x00, 0x13, 0x01, 0x00, 0x00,
+                     0x0c, 0x00, 0x2b, 0x00, 0x02, 0x03, 0x04, 0x00, 0x33, 0x00, 0x02, 0x00, 0x17};
+
+    hrr[sizeof(hrr) - 2] = (uint8_t)(selected_group >> 8);
+    hrr[sizeof(hrr) - 1] = (uint8_t)selected_group;
+
+    do_test_client_handle_hrr(hrr, sizeof(hrr), PTLS_ALERT_ILLEGAL_PARAMETER);
+}
+
+/**
+ * HRR that carries neither key_share nor cookie would not change the ClientHello, and therefore has to be rejected.
+ */
+static void test_hrr_without_change(void)
+{
+    static const uint8_t hrr[] = {0x16, 0x03, 0x03, 0x00, 0x32, 0x02, 0x00, 0x00, 0x2e, 0x03, 0x03, 0xcf, 0x21, 0xad,
+                                  0x74, 0xe5, 0x9a, 0x61, 0x11, 0xbe, 0x1d, 0x8c, 0x02, 0x1e, 0x65, 0xb8, 0x91, 0xc2,
+                                  0xa2, 0x11, 0x16, 0x7a, 0xbb, 0x8c, 0x5e, 0x07, 0x9e, 0x09, 0xe2, 0xc8, 0xa8, 0x33,
+                                  0x9c, 0x00, 0x13, 0x01, 0x00, 0x00, 0x06, 0x00, 0x2b, 0x00, 0x02, 0x03, 0x04};
+
+    do_test_client_handle_hrr(hrr, sizeof(hrr), PTLS_ALERT_ILLEGAL_PARAMETER);
+}
+
+/**
+ * HRR that carries a cookie but not key_share is accepted.
+ */
+static void test_hrr_cookie_only(void)
+{
+    static const uint8_t hrr[] = {0x16, 0x03, 0x03, 0x00, 0x3c, 0x02, 0x00, 0x00, 0x38, 0x03, 0x03, 0xcf, 0x21,
+                                  0xad, 0x74, 0xe5, 0x9a, 0x61, 0x11, 0xbe, 0x1d, 0x8c, 0x02, 0x1e, 0x65, 0xb8,
+                                  0x91, 0xc2, 0xa2, 0x11, 0x16, 0x7a, 0xbb, 0x8c, 0x5e, 0x07, 0x9e, 0x09, 0xe2,
+                                  0xc8, 0xa8, 0x33, 0x9c, 0x00, 0x13, 0x01, 0x00, 0x00, 0x10, 0x00, 0x2b, 0x00,
+                                  0x02, 0x03, 0x04, 0x00, 0x2c, 0x00, 0x06, 0x00, 0x04, 0xde, 0xad, 0xbe, 0xef};
+
+    do_test_client_handle_hrr(hrr, sizeof(hrr), PTLS_ERROR_IN_PROGRESS);
 }
 
 static void test_hrr_cipher_suite_mismatch(void)
@@ -3389,7 +3427,10 @@ void test_picotls(void)
             PTLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256);
     subtest("hrr-resumption-cipher-suite-change:different-hash", test_hrr_resumption_cipher_suite_change,
             PTLS_CIPHER_SUITE_AES_256_GCM_SHA384);
-    subtest("hrr-selected-group-matches-ch1-key-share", test_hrr_selected_group_matches_ch1_key_share);
+    subtest("hrr-selected-group-matches-ch1-key-share", test_hrr_invalid_selected_group, PTLS_GROUP_SECP256R1);
+    subtest("hrr-selected-group-ffff", test_hrr_invalid_selected_group, 0xffff);
+    subtest("hrr-without-change", test_hrr_without_change);
+    subtest("hrr-cookie-only", test_hrr_cookie_only);
     subtest("plaintext-alert", test_plaintext_alert);
     subtest("handshake", test_all_handshakes);
     subtest("quic", test_quic);
