@@ -1913,7 +1913,7 @@ Exit:
     return ret;
 }
 
-static int send_session_ticket(ptls_t *tls, ptls_message_emitter_t *emitter)
+static int send_session_ticket(ptls_t *tls, ptls_message_emitter_t *emitter, uint8_t ticket_nonce)
 {
     ptls_hash_context_t *msghash_backup = tls->key_schedule->hashes[0].ctx->clone_(tls->key_schedule->hashes[0].ctx);
     ptls_buffer_t session_id;
@@ -1951,16 +1951,17 @@ static int send_session_ticket(ptls_t *tls, ptls_message_emitter_t *emitter)
     tls->ctx->random_bytes(&ticket_age_add, sizeof(ticket_age_add));
 
     /* build the raw nsk */
-    if (tls->key_share != NULL && (ret = encode_session_identifier(tls->ctx, &session_id, ticket_age_add, ptls_iovec_init(NULL, 0),
-                                                                   tls->key_schedule, tls->server_name, tls->key_share->id,
-                                                                   tls->cipher_suite->id, tls->negotiated_protocol)) != 0)
+    if (tls->key_share != NULL &&
+        (ret = encode_session_identifier(tls->ctx, &session_id, ticket_age_add,
+                                         ptls_iovec_init(&ticket_nonce, sizeof(ticket_nonce)), tls->key_schedule, tls->server_name,
+                                         tls->key_share->id, tls->cipher_suite->id, tls->negotiated_protocol)) != 0)
         goto Exit;
 
     /* encrypt and send */
     ptls_push_message(emitter, tls->key_schedule, PTLS_HANDSHAKE_TYPE_NEW_SESSION_TICKET, {
         ptls_buffer_push32(emitter->buf, tls->ctx->ticket_lifetime);
         ptls_buffer_push32(emitter->buf, ticket_age_add);
-        ptls_buffer_push_block(emitter->buf, 1, {});
+        ptls_buffer_push_block(emitter->buf, 1, { ptls_buffer_pushv(emitter->buf, &ticket_nonce, sizeof(ticket_nonce)); });
         ptls_buffer_push_block(emitter->buf, 2, {
             if ((ret = tls->ctx->encrypt_ticket->cb(tls->ctx->encrypt_ticket, tls, 1, emitter->buf,
                                                     ptls_iovec_init(session_id.base, session_id.off))) != 0)
@@ -5185,7 +5186,7 @@ static int server_finish_handshake(ptls_t *tls, ptls_message_emitter_t *emitter,
     if (tls->server.num_tickets_to_send != 0) {
         assert(tls->ctx->ticket_lifetime != 0);
         for (uint8_t i = 0; i < tls->server.num_tickets_to_send; ++i)
-            if ((ret = send_session_ticket(tls, emitter)) != 0)
+            if ((ret = send_session_ticket(tls, emitter, i)) != 0)
                 goto Exit;
     }
 
