@@ -1190,20 +1190,17 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int expect_ticket, int
         /* server -> client with update_request */
         ret = ptls_update_key(server, 1);
         ok(ret == 0);
-        ok(server->needs_key_update);
-        ok(server->key_update_send_request);
+        ok(server->pending_key_update == PTLS_PENDING_KEY_UPDATE_SELF_AND_PEER);
         ret = ptls_send(server, &sbuf, "good bye", 8);
         ok(ret == 0);
-        ok(!server->needs_key_update);
-        ok(!server->key_update_send_request);
+        ok(server->pending_key_update == PTLS_PENDING_KEY_UPDATE_NONE);
         consumed = sbuf.off;
         ret = ptls_receive(client, &decbuf, sbuf.base, &consumed);
         ok(ret == 0);
         ok(sbuf.off == consumed);
         ok(decbuf.off == 8);
         ok(memcmp(decbuf.base, "good bye", 8) == 0);
-        ok(client->needs_key_update);
-        ok(!client->key_update_send_request);
+        ok(client->pending_key_update == PTLS_PENDING_KEY_UPDATE_RESPONSE);
         sbuf.off = 0;
         decbuf.off = 0;
         ret = ptls_send(client, &cbuf, "hello", 5);
@@ -1214,7 +1211,37 @@ static void test_handshake(ptls_iovec_t ticket, int mode, int expect_ticket, int
         ok(cbuf.off == consumed);
         ok(decbuf.off == 5);
         ok(memcmp(decbuf.base, "hello", 5) == 0);
+        ok(client->pending_key_update == PTLS_PENDING_KEY_UPDATE_NONE);
         cbuf.off = 0;
+        decbuf.off = 0;
+
+        /* Both sides request update. The response to the server's request takes precedence over the client's request, and the
+         * client sends a single KeyUpdate carrying update_not_requested, as the server has already updated its send key. */
+        ok(ptls_update_key(server, 1) == 0);
+        ok(ptls_send(server, &sbuf, "ping", 4) == 0);
+        ok(ptls_update_key(client, 1) == 0);
+        consumed = sbuf.off;
+        ok(ptls_receive(client, &decbuf, sbuf.base, &consumed) == 0);
+        ok(consumed == sbuf.off);
+        ok(client->pending_key_update == PTLS_PENDING_KEY_UPDATE_RESPONSE);
+        ok(ptls_update_key(client, 1) == 0);
+        ok(client->pending_key_update == PTLS_PENDING_KEY_UPDATE_RESPONSE);
+        sbuf.off = 0;
+        decbuf.off = 0;
+        ok(ptls_send(client, &cbuf, "pong", 4) == 0);
+        consumed = cbuf.off;
+        ok(ptls_receive(server, &decbuf, cbuf.base, &consumed) == 0);
+        ok(consumed == cbuf.off);
+        ok(decbuf.off == 4 && memcmp(decbuf.base, "pong", 4) == 0);
+        ok(server->pending_key_update == PTLS_PENDING_KEY_UPDATE_NONE);
+        cbuf.off = 0;
+        decbuf.off = 0;
+        /* the keys remain in sync */
+        ok(ptls_send(server, &sbuf, "bye", 3) == 0);
+        consumed = sbuf.off;
+        ok(ptls_receive(client, &decbuf, sbuf.base, &consumed) == 0);
+        ok(decbuf.off == 3 && memcmp(decbuf.base, "bye", 3) == 0);
+        sbuf.off = 0;
         decbuf.off = 0;
 
         /* KeyUpdate with an invalid request_update value, or of an invalid length */

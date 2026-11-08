@@ -288,12 +288,34 @@ struct st_ptls_t {
      * ECH
      */
     struct st_ptls_ech_t ech;
+    /**
+     * KeyUpdate to be sent before the next application data record
+     */
+    enum en_ptls_pending_key_update_t {
+        /**
+         * nothing is pending
+         */
+        PTLS_PENDING_KEY_UPDATE_NONE = 0,
+        /**
+         * update the send key, as requested by `ptls_update_key(tls, 0)` or due to the record limit; sent as update_not_requested
+         */
+        PTLS_PENDING_KEY_UPDATE_SELF,
+        /**
+         * update the send key and request the peer to update its send key, as requested by `ptls_update_key(tls, 1)`; sent as
+         * update_requested
+         */
+        PTLS_PENDING_KEY_UPDATE_SELF_AND_PEER,
+        /**
+         * respond to update_requested sent by the peer; sent as update_not_requested (RFC 9846 Section 4.7.3). This takes
+         * precedence over the other two, as the response updates the send key, and requesting the peer to update its send key is
+         * moot when the peer has just done so.
+         */
+        PTLS_PENDING_KEY_UPDATE_RESPONSE
+    } pending_key_update;
     /* flags */
     unsigned is_server : 1;
     unsigned is_psk_handshake : 1;
     unsigned send_change_cipher_spec : 1;
-    unsigned needs_key_update : 1;
-    unsigned key_update_send_request : 1;
 #if PTLS_HAVE_LOG
     /**
      * see ptls_log
@@ -5227,9 +5249,8 @@ static int handle_key_update(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
     if ((ret = update_traffic_key(tls, 0)) != 0)
         return ret;
 
-    if (*src) {
-        tls->needs_key_update = 1;
-    }
+    if (*src)
+        tls->pending_key_update = PTLS_PENDING_KEY_UPDATE_RESPONSE;
 
     return 0;
 }
@@ -6388,15 +6409,15 @@ int ptls_send(ptls_t *tls, ptls_buffer_t *sendbuf, const void *input, size_t inl
      *
      * Key updates do not happen with tls 1.2, check `key_schedule` to see if we are using tls/1.3
      */
-    if (tls->traffic_protection.enc.seq >= 16777216 && tls->key_schedule != NULL)
-        tls->needs_key_update = 1;
+    if (tls->traffic_protection.enc.seq >= 16777216 && tls->key_schedule != NULL &&
+        tls->pending_key_update == PTLS_PENDING_KEY_UPDATE_NONE)
+        tls->pending_key_update = PTLS_PENDING_KEY_UPDATE_SELF;
 
-    if (tls->needs_key_update) {
+    if (tls->pending_key_update != PTLS_PENDING_KEY_UPDATE_NONE) {
         int ret;
-        if ((ret = update_send_key(tls, sendbuf, tls->key_update_send_request)) != 0)
+        if ((ret = update_send_key(tls, sendbuf, tls->pending_key_update == PTLS_PENDING_KEY_UPDATE_SELF_AND_PEER)) != 0)
             return ret;
-        tls->needs_key_update = 0;
-        tls->key_update_send_request = 0;
+        tls->pending_key_update = PTLS_PENDING_KEY_UPDATE_NONE;
     }
 
     return buffer_push_encrypted_records(sendbuf, PTLS_CONTENT_TYPE_APPDATA, input, inlen, &tls->traffic_protection.enc);
@@ -6405,8 +6426,8 @@ int ptls_send(ptls_t *tls, ptls_buffer_t *sendbuf, const void *input, size_t inl
 int ptls_update_key(ptls_t *tls, int request_update)
 {
     assert(tls->ctx->update_traffic_key == NULL);
-    tls->needs_key_update = 1;
-    tls->key_update_send_request = request_update;
+    if (tls->pending_key_update != PTLS_PENDING_KEY_UPDATE_RESPONSE)
+        tls->pending_key_update = request_update ? PTLS_PENDING_KEY_UPDATE_SELF_AND_PEER : PTLS_PENDING_KEY_UPDATE_SELF;
     return 0;
 }
 
