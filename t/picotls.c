@@ -2566,7 +2566,7 @@ static void do_test_pre_shared_key(int mode)
     size_t consumed = cbuf.off;
     ret = ptls_handshake(server, &sbuf, cbuf.base, &consumed, NULL);
     if (mode < 0) {
-        ok(ret == PTLS_ALERT_HANDSHAKE_FAILURE);
+        ok(ret == PTLS_ALERT_MISSING_EXTENSION);
         goto Exit;
     }
     ok(consumed <= cbuf.off);

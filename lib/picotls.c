@@ -2241,18 +2241,21 @@ static int encode_client_hello(ptls_context_t *ctx, ptls_buffer_t *sendbuf, enum
                 buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_ENCRYPTED_CLIENT_HELLO,
                                       { ptls_buffer_pushv(sendbuf, ech_replay.base, ech_replay.len); });
             }
-            if (mode == ENCODE_CH_MODE_ENCODED_INNER) {
-                buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_ECH_OUTER_EXTENSIONS, {
-                    ptls_buffer_push_block(sendbuf, 1, { ptls_buffer_push16(sendbuf, PTLS_EXTENSION_TYPE_KEY_SHARE); });
-                });
-            } else {
-                buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_KEY_SHARE, {
-                    ptls_buffer_push_block(sendbuf, 2, {
-                        if (key_share_ctx != NULL &&
-                            (ret = push_key_share_entry(sendbuf, key_share_ctx->algo->id, key_share_ctx->pubkey)) != 0)
-                            goto Exit;
+            /* key_share is sent along with supported_groups (RFC 9846 Section 9.2) */
+            if (ctx->key_exchanges != NULL) {
+                if (mode == ENCODE_CH_MODE_ENCODED_INNER) {
+                    buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_ECH_OUTER_EXTENSIONS, {
+                        ptls_buffer_push_block(sendbuf, 1, { ptls_buffer_push16(sendbuf, PTLS_EXTENSION_TYPE_KEY_SHARE); });
                     });
-                });
+                } else {
+                    buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_KEY_SHARE, {
+                        ptls_buffer_push_block(sendbuf, 2, {
+                            if (key_share_ctx != NULL &&
+                                (ret = push_key_share_entry(sendbuf, key_share_ctx->algo->id, key_share_ctx->pubkey)) != 0)
+                                goto Exit;
+                        });
+                    });
+                }
             }
             if (sni_name != NULL) {
                 buffer_push_extension(sendbuf, PTLS_EXTENSION_TYPE_SERVER_NAME, {
