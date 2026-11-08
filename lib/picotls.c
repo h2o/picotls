@@ -2957,6 +2957,12 @@ static int client_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
             goto Exit;
     }
 
+    /* if ECH was offered but rejected, PSK must not be used (RFC 9849 Section 6.1.2) */
+    if (tls->ech.state == PTLS_ECH_STATE_OFFERED && tls->is_psk_handshake) {
+        ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+        goto Exit;
+    }
+
     /* clear sensitive and space-consuming ECH state, now that are done with handling sending and decoding Hellos */
     clear_ech(&tls->ech, 0);
     if (tls->key_schedule->hashes[0].ctx_outer != NULL) {
