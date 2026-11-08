@@ -203,6 +203,11 @@ struct st_ptls_ech_t {
          * retains a copy of entire ECH extension so that it can be replayed in the 2nd CH when ECH is rejected via HRR
          */
         ptls_iovec_t first_ech;
+        /**
+         * retry_configs received in EncryptedExtensions; retained here so that `ptls_free` releases them unless they are moved to
+         * `properties->client.ech.retry_configs` upon returning PTLS_ALERT_ECH_REQUIRED
+         */
+        ptls_iovec_t retry_configs;
     } client;
 };
 
@@ -1036,6 +1041,8 @@ static void clear_ech(struct st_ptls_ech_t *ech, int is_server)
         }
         free(ech->client.first_ech.base);
         ech->client.first_ech = ptls_iovec_init(NULL, 0);
+        free(ech->client.retry_configs.base);
+        ech->client.retry_configs = ptls_iovec_init(NULL, 0);
     }
 }
 
@@ -3165,12 +3172,12 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
                 /* GREASE clients ignore retry_configs after verifying the syntax */
             } else if (decoded.kem != NULL && decoded.cipher != NULL && properties != NULL &&
                        properties->client.ech.retry_configs != NULL) {
-                if ((properties->client.ech.retry_configs->base = malloc(end - src)) == NULL) {
+                if ((tls->ech.client.retry_configs.base = malloc(end - src)) == NULL) {
                     ret = PTLS_ERROR_NO_MEMORY;
                     goto Exit;
                 }
-                memcpy(properties->client.ech.retry_configs->base, src, end - src);
-                properties->client.ech.retry_configs->len = end - src;
+                memcpy(tls->ech.client.retry_configs.base, src, end - src);
+                tls->ech.client.retry_configs.len = end - src;
             }
             src = end;
         } break;
@@ -3611,7 +3618,8 @@ static int server_handle_certificate_verify(ptls_t *tls, ptls_iovec_t message)
     return ret;
 }
 
-static int client_handle_finished(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_iovec_t message)
+static int client_handle_finished(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_iovec_t message,
+                                  ptls_handshake_properties_t *properties)
 {
     uint8_t send_secret[PTLS_MAX_DIGEST_SIZE];
     int alert_ech_required = tls->ech.state == PTLS_ECH_STATE_OFFERED, ret;
@@ -3663,9 +3671,15 @@ static int client_handle_finished(ptls_t *tls, ptls_message_emitter_t *emitter, 
 
     tls->state = PTLS_STATE_CLIENT_POST_HANDSHAKE;
 
-    /* if ECH was rejected, close the connection with ECH_REQUIRED alert after verifying messages up to Finished */
-    if (alert_ech_required)
+    /* If ECH was rejected, close the connection with ECH_REQUIRED alert after verifying messages up to Finished, handing over
+     * retry_configs along with the alert. */
+    if (alert_ech_required) {
+        if (tls->ech.client.retry_configs.base != NULL && properties != NULL && properties->client.ech.retry_configs != NULL) {
+            *properties->client.ech.retry_configs = tls->ech.client.retry_configs;
+            tls->ech.client.retry_configs = ptls_iovec_init(NULL, 0);
+        }
         ret = PTLS_ALERT_ECH_REQUIRED;
+    }
 
 Exit:
     ptls_clear_memory(send_secret, sizeof(send_secret));
@@ -5932,7 +5946,7 @@ static int handle_client_handshake_message(ptls_t *tls, ptls_message_emitter_t *
         break;
     case PTLS_STATE_CLIENT_EXPECT_FINISHED:
         if (type == PTLS_HANDSHAKE_TYPE_FINISHED && is_end_of_record) {
-            ret = client_handle_finished(tls, emitter, message);
+            ret = client_handle_finished(tls, emitter, message, properties);
         } else {
             ret = PTLS_ALERT_UNEXPECTED_MESSAGE;
         }
