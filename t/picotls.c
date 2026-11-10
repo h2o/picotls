@@ -1902,7 +1902,8 @@ static void test_resumption_impl(int different_preferred_key_share, int require_
     }
 
     /* psk using saved ticket */
-    test_handshake(saved_tickets[0], TEST_HANDSHAKE_1RTT, 1, 0, require_client_authentication, transfer_session);
+    test_handshake(saved_tickets[0], TEST_HANDSHAKE_1RTT, !require_client_authentication, 0, require_client_authentication,
+                   transfer_session);
     ok(server_sc_callcnt == require_client_authentication); /* client authentication turns off resumption */
     ok(client_sc_callcnt == require_client_authentication);
     if (use_ticket_request && !require_client_authentication) {
@@ -1912,19 +1913,22 @@ static void test_resumption_impl(int different_preferred_key_share, int require_
     }
 
     /* 0-rtt psk using saved ticket */
-    test_handshake(saved_tickets[0], TEST_HANDSHAKE_EARLY_DATA, 1, 0, require_client_authentication, transfer_session);
+    test_handshake(saved_tickets[0], TEST_HANDSHAKE_EARLY_DATA, !require_client_authentication, 0, require_client_authentication,
+                   transfer_session);
     ok(server_sc_callcnt == require_client_authentication); /* client authentication turns off resumption */
     ok(client_sc_callcnt == require_client_authentication);
 
     ctx->require_dhe_on_psk = 1;
 
     /* psk-dhe using saved ticket */
-    test_handshake(saved_tickets[0], TEST_HANDSHAKE_1RTT, 1, 0, require_client_authentication, transfer_session);
+    test_handshake(saved_tickets[0], TEST_HANDSHAKE_1RTT, !require_client_authentication, 0, require_client_authentication,
+                   transfer_session);
     ok(server_sc_callcnt == require_client_authentication); /* client authentication turns off resumption */
     ok(client_sc_callcnt == require_client_authentication);
 
     /* 0-rtt psk-dhe using saved ticket */
-    test_handshake(saved_tickets[0], TEST_HANDSHAKE_EARLY_DATA, 1, 0, require_client_authentication, transfer_session);
+    test_handshake(saved_tickets[0], TEST_HANDSHAKE_EARLY_DATA, !require_client_authentication, 0, require_client_authentication,
+                   transfer_session);
     ok(server_sc_callcnt == require_client_authentication); /* client authentication turns off resumption */
     ok(client_sc_callcnt == require_client_authentication);
 
