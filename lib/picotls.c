@@ -4263,8 +4263,9 @@ static int check_client_hello_constraints(ptls_context_t *ctx, struct st_ptls_cl
     if (is_second_flight && !ptls_mem_equal(ch->random_bytes, prev_random, PTLS_HELLO_RANDOM_SIZE))
         return PTLS_ALERT_HANDSHAKE_FAILURE;
 
-    /* bail out if CH cannot be handled as TLS 1.3 */
-    if (!is_supported_version(ch->selected_version)) {
+    /* Bail out if CH cannot be handled as TLS 1.3. TLS 1.3 CH is identified by legacy_version being 0x0303 in addition to
+     * supported_versions selecting TLS 1.3 (RFC 9846 Section 4.2.2). */
+    if (!(ch->legacy_version == 0x0303 && is_supported_version(ch->selected_version))) {
         /* ECH: server MUST abort with an "illegal_parameter" alert if the client offers TLS 1.2 or below (draft-15 7.1) */
         if (ech_is_inner_ch)
             return PTLS_ALERT_ILLEGAL_PARAMETER;
@@ -4280,11 +4281,6 @@ static int check_client_hello_constraints(ptls_context_t *ctx, struct st_ptls_cl
 
     /* Check TLS 1.3-specific constraints. Hereafter, we might exit without calling on_client_hello. That's fine because this CH is
      * ought to be rejected. */
-    if (ch->legacy_version <= 0x0300) {
-        /* RFC 8446 Appendix D.5: any endpoint receiving a Hello message with legacy_version set to 0x0300 MUST abort the handshake
-         * with a "protocol_version" alert. */
-        return PTLS_ALERT_PROTOCOL_VERSION;
-    }
     if (!(ch->compression_methods.count == 1 && ch->compression_methods.ids[0] == 0))
         return PTLS_ALERT_ILLEGAL_PARAMETER;
     /* pre-shared key */

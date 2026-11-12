@@ -3290,6 +3290,43 @@ static int test_legacy_ch_tls12_callback(ptls_on_client_hello_t *self, ptls_t *t
     return 0;
 }
 
+/**
+ * ClientHello offering TLS 1.3 with a legacy_version other than 0x0303 is not a TLS 1.3 ClientHello, and is therefore handed to the
+ * application for fallback.
+ */
+static void test_legacy_ch_tls13_legacy_version(void)
+{
+    ptls_on_client_hello_t on_client_hello = {test_legacy_ch_tls12_callback}, *orig = ctx->on_client_hello;
+    ptls_buffer_t cbuf, sbuf;
+    size_t consumed;
+
+    ptls_buffer_init(&cbuf, "", 0);
+    ptls_buffer_init(&sbuf, "", 0);
+
+    ptls_t *client = ptls_new(ctx, 0);
+    ok(ptls_handshake(client, &cbuf, NULL, NULL, NULL) == PTLS_ERROR_IN_PROGRESS);
+    ptls_free(client);
+
+    /* rewrite legacy_version of ClientHello, which follows the record header and handshake header */
+    ok(cbuf.base[5] == PTLS_HANDSHAKE_TYPE_CLIENT_HELLO);
+    ok(cbuf.base[9] == 0x03 && cbuf.base[10] == 0x03);
+    cbuf.base[10] = 0x01;
+
+    ctx->on_client_hello = &on_client_hello;
+    ptls_t *server = ptls_new(ctx, 1);
+    consumed = cbuf.off;
+    ok(ptls_handshake(server, &sbuf, cbuf.base, &consumed, NULL) == PTLS_ALERT_PROTOCOL_VERSION);
+    ptls_free(server);
+    ctx->on_client_hello = orig;
+
+    ok(legacy_params != NULL && legacy_params->incompatible_version);
+    free(legacy_params);
+    legacy_params = NULL;
+
+    ptls_buffer_dispose(&cbuf);
+    ptls_buffer_dispose(&sbuf);
+}
+
 static void test_legacy_ch(void)
 {
     static const uint8_t tls12[] = {
@@ -3540,6 +3577,7 @@ void test_picotls(void)
     subtest("handshake", test_all_handshakes);
     subtest("quic", test_quic);
     subtest("legacy-ch", test_legacy_ch);
+    subtest("legacy-ch-tls13-legacy-version", test_legacy_ch_tls13_legacy_version);
     subtest("ptls_escape_json_unsafe_string", test_escape_json_unsafe_string);
     subtest("signature-algorithms-overflow", test_signature_algorithms_overflow);
 }
