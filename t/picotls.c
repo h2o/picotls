@@ -1494,6 +1494,96 @@ static void test_plaintext_alert(void)
     subtest("to-server-after-handshake", do_test_plaintext_alert, 0, 1);
 }
 
+/**
+ * Protects TLSInnerPlaintext that consists of `content_len` bytes of application data, the content type, and `padding_len` bytes of
+ * padding, using the given traffic key.
+ */
+static void push_protected_appdata_record(ptls_buffer_t *buf, struct st_ptls_traffic_protection_t *enc, size_t content_len,
+                                          size_t padding_len)
+{
+    size_t inner_len = content_len + 1 + padding_len, reclen = inner_len + enc->aead->algo->tag_size;
+    uint8_t *inner = malloc(inner_len), header[5] = {PTLS_CONTENT_TYPE_APPDATA, PTLS_RECORD_VERSION_MAJOR,
+                                                     PTLS_RECORD_VERSION_MINOR, (uint8_t)(reclen >> 8), (uint8_t)reclen};
+
+    assert(inner != NULL);
+    memset(inner, 'A', content_len);
+    inner[content_len] = PTLS_CONTENT_TYPE_APPDATA;
+    memset(inner + content_len + 1, 0, padding_len);
+
+    /* in TLS 1.3, AAD is the record header */
+    if (ptls_buffer_reserve(buf, sizeof(header) + reclen) != 0)
+        assert(!"out of memory");
+    memcpy(buf->base + buf->off, header, sizeof(header));
+    buf->off += sizeof(header);
+    buf->off += ptls_aead_encrypt(enc->aead, buf->base + buf->off, inner, inner_len, enc->seq++, header, sizeof(header));
+
+    free(inner);
+}
+
+/**
+ * Sends a protected record carrying a TLSInnerPlaintext of 2^14 + 1 octets (the maximum, RFC 9846 Section 5.4), followed by one
+ * that is one octet larger. The excess octet is either application data or padding, depending on `use_padding`.
+ */
+static void do_test_inner_plaintext_overflow(int use_padding)
+{
+    ptls_t *client = ptls_new(ctx, 0), *server = ptls_new(ctx_peer, 1);
+    ptls_buffer_t cbuf, sbuf, decbuf;
+    size_t consumed;
+    int ret;
+
+    ptls_buffer_init(&cbuf, "", 0);
+    ptls_buffer_init(&sbuf, "", 0);
+    ptls_buffer_init(&decbuf, "", 0);
+
+    ret = ptls_handshake(client, &cbuf, NULL, NULL, NULL);
+    ok(ret == PTLS_ERROR_IN_PROGRESS);
+    consumed = cbuf.off;
+    ret = ptls_handshake(server, &sbuf, cbuf.base, &consumed, NULL);
+    ok(ret == 0);
+    ok(consumed == cbuf.off);
+    cbuf.off = 0;
+    consumed = sbuf.off;
+    ret = ptls_handshake(client, &cbuf, sbuf.base, &consumed, NULL);
+    ok(ret == 0);
+    ok(consumed == sbuf.off);
+    sbuf.off = 0;
+    consumed = cbuf.off;
+    ret = ptls_receive(server, &decbuf, cbuf.base, &consumed);
+    ok(ret == 0);
+    ok(consumed == cbuf.off);
+    ok(ptls_handshake_is_complete(server));
+    cbuf.off = 0;
+
+    /* 2^14 + 1 octets is accepted */
+    push_protected_appdata_record(&cbuf, &client->traffic_protection.enc, use_padding ? 16383 : 16384, use_padding ? 1 : 0);
+    consumed = cbuf.off;
+    ret = ptls_receive(server, &decbuf, cbuf.base, &consumed);
+    ok(ret == 0);
+    ok(consumed == cbuf.off);
+    ok(decbuf.off == (use_padding ? 16383 : 16384));
+    cbuf.off = 0;
+    decbuf.off = 0;
+
+    /* 2^14 + 2 octets is rejected */
+    push_protected_appdata_record(&cbuf, &client->traffic_protection.enc, use_padding ? 16384 : 16385, use_padding ? 1 : 0);
+    consumed = cbuf.off;
+    ret = ptls_receive(server, &decbuf, cbuf.base, &consumed);
+    ok(ret == PTLS_ALERT_RECORD_OVERFLOW);
+    ok(decbuf.off == 0);
+
+    ptls_buffer_dispose(&cbuf);
+    ptls_buffer_dispose(&sbuf);
+    ptls_buffer_dispose(&decbuf);
+    ptls_free(client);
+    ptls_free(server);
+}
+
+static void test_inner_plaintext_overflow(void)
+{
+    subtest("content", do_test_inner_plaintext_overflow, 0);
+    subtest("padding", do_test_inner_plaintext_overflow, 1);
+}
+
 static void test_hrr_handshake(void)
 {
     test_handshake(ptls_iovec_init(NULL, 0), TEST_HANDSHAKE_HRR, 0, 0, 0, 0);
@@ -3537,6 +3627,7 @@ void test_picotls(void)
     subtest("hrr-without-change", test_hrr_without_change);
     subtest("hrr-cookie-only", test_hrr_cookie_only);
     subtest("plaintext-alert", test_plaintext_alert);
+    subtest("inner-plaintext-overflow", test_inner_plaintext_overflow);
     subtest("handshake", test_all_handshakes);
     subtest("quic", test_quic);
     subtest("legacy-ch", test_legacy_ch);

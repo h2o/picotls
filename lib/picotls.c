@@ -6192,6 +6192,9 @@ static int handle_input(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_buffe
         /* skipping of early data ends once a record is deprotected successfully (RFC 9846 Section 4.3.10) */
         if (tls->is_server)
             tls->server.early_data_skipped_bytes = UINT32_MAX;
+        /* the full encoded TLSInnerPlaintext MUST NOT exceed 2^14 + 1 octets (RFC 9846 Section 5.4) */
+        if (decrypted_length > PTLS_MAX_PLAINTEXT_RECORD_SIZE + 1)
+            return PTLS_ALERT_RECORD_OVERFLOW;
         rec.length = decrypted_length;
         rec.fragment = decryptbuf->base + decryptbuf->off;
         /* skip padding */
