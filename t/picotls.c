@@ -3523,6 +3523,40 @@ static void test_escape_json_unsafe_string(void)
 #undef STRLIT
 }
 
+static void test_client_hello_decode_server_name(void)
+{
+#define TEST(_expected_err, _expected_name)                                                                                        \
+    do {                                                                                                                           \
+        const uint8_t *src = input;                                                                                                \
+        ptls_iovec_t name = {NULL};                                                                                                \
+        ok(client_hello_decode_server_name(&name, &src, input + sizeof(input)) == _expected_err);                                  \
+        if (_expected_err == 0) {                                                                                                  \
+            ok(src == input + sizeof(input));                                                                                      \
+            ok(name.len == sizeof(_expected_name) - 1);                                                                            \
+            ok(memcmp(name.base, _expected_name, name.len) == 0);                                                                  \
+        }                                                                                                                          \
+    } while (0)
+
+    { /* one host_name */
+        static const uint8_t input[] = {0x00, 0x0c, 0x00, 0x00, 0x09, 'a', '.', 'e', 'x', 'a', 'm', 'p', 'l', 'e'};
+        TEST(0, "a.example");
+    }
+
+    { /* host_name followed by a name of another type */
+        static const uint8_t input[] = {0x00, 0x11, 0x00, 0x00, 0x09, 'a',  '.',  'e', 'x', 'a',
+                                        'm',  'p',  'l',  'e',  0x01, 0x00, 0x02, 'x', 'x'};
+        TEST(0, "a.example");
+    }
+
+    { /* two host_names (RFC 6066 Section 3) */
+        static const uint8_t input[] = {0x00, 0x18, 0x00, 0x00, 0x09, 'a', '.', 'e', 'x', 'a', 'm', 'p', 'l',
+                                        'e',  0x00, 0x00, 0x09, 'b',  '.', 'e', 'x', 'a', 'm', 'p', 'l', 'e'};
+        TEST(PTLS_ALERT_ILLEGAL_PARAMETER, "");
+    }
+
+#undef TEST
+}
+
 static void test_signature_algorithms_overflow(void)
 {
     /*
@@ -3631,6 +3665,7 @@ void test_picotls(void)
     subtest("handshake", test_all_handshakes);
     subtest("quic", test_quic);
     subtest("legacy-ch", test_legacy_ch);
+    subtest("client-hello-decode-server-name", test_client_hello_decode_server_name);
     subtest("ptls_escape_json_unsafe_string", test_escape_json_unsafe_string);
     subtest("signature-algorithms-overflow", test_signature_algorithms_overflow);
 }
