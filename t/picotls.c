@@ -2390,6 +2390,77 @@ static void test_stateless_hrr_aad_change(void)
     ptls_buffer_dispose(&sbuf);
 }
 
+/**
+ * The HMAC of the stateless retry cookie covers the server name and the to-be-signed part of the cookie, each prefixed by a
+ * one-octet length. Both are supplied by the client; sends a ClientHello carrying a server name of `server_name_len` octets or a
+ * cookie with a ch1_hash of `cookie_hash_len` octets to a server that does stateless retry.
+ */
+static void do_test_stateless_hrr_long_input(size_t server_name_len, size_t cookie_hash_len, int expected)
+{
+    static ptls_on_client_hello_t on_client_hello = {save_client_hello};
+    ptls_on_client_hello_t *orig_on_client_hello = ctx_peer->on_client_hello;
+    ptls_handshake_properties_t client_hs_prop = {{{{NULL}}}}, server_hs_prop = {{{{NULL}}}};
+    ptls_raw_extension_t additional_extensions[2] = {{UINT16_MAX}, {UINT16_MAX}};
+    uint8_t cookie[2 + 2 + 1 + 255 + 1 + 1 + 32];
+    char server_name[256];
+    ptls_t *client, *server;
+    ptls_buffer_t cbuf, sbuf;
+    size_t consumed;
+    int ret;
+
+    server_hs_prop.server.cookie.key = "0123456789abcdef0123456789abcdef0123456789abcdef";
+    server_hs_prop.server.enforce_retry = 1;
+    server_hs_prop.server.retry_uses_cookie = 1;
+    ctx_peer->on_client_hello = &on_client_hello;
+
+    client = ptls_new(ctx, 0);
+    if (server_name_len != 0) {
+        assert(server_name_len < sizeof(server_name));
+        memset(server_name, 'a', server_name_len);
+        server_name[server_name_len] = '\0';
+        ptls_set_server_name(client, server_name, 0);
+    }
+    if (cookie_hash_len != 0) {
+        /* opaque cookie<1..2^16-1>, consisting of tbs (ch1_hash<0..255>, sent_key_share)<2> and signature<0..255> */
+        size_t tbs_len = 2 + 1 + cookie_hash_len + 1, cookie_len = tbs_len + 1 + 32;
+        assert(2 + cookie_len <= sizeof(cookie));
+        cookie[0] = (uint8_t)(cookie_len >> 8);
+        cookie[1] = (uint8_t)cookie_len;
+        cookie[2] = (uint8_t)((tbs_len - 2) >> 8);
+        cookie[3] = (uint8_t)(tbs_len - 2);
+        cookie[4] = (uint8_t)cookie_hash_len;
+        memset(cookie + 5, 'A', cookie_hash_len);
+        cookie[5 + cookie_hash_len] = 0;
+        cookie[6 + cookie_hash_len] = 32;
+        memset(cookie + 7 + cookie_hash_len, 'S', 32);
+        additional_extensions[0] = (ptls_raw_extension_t){PTLS_EXTENSION_TYPE_COOKIE, ptls_iovec_init(cookie, 2 + cookie_len)};
+        client_hs_prop.additional_extensions = additional_extensions;
+    }
+    server = ptls_new(ctx_peer, 1);
+    ptls_buffer_init(&cbuf, "", 0);
+    ptls_buffer_init(&sbuf, "", 0);
+
+    ret = ptls_handshake(client, &cbuf, NULL, NULL, &client_hs_prop);
+    ok(ret == PTLS_ERROR_IN_PROGRESS);
+
+    consumed = cbuf.off;
+    ret = ptls_handshake(server, &sbuf, cbuf.base, &consumed, &server_hs_prop);
+    ok(ret == expected);
+
+    ptls_free(client);
+    ptls_free(server);
+    ptls_buffer_dispose(&cbuf);
+    ptls_buffer_dispose(&sbuf);
+    ctx_peer->on_client_hello = orig_on_client_hello;
+}
+
+static void test_stateless_hrr_long_input(void)
+{
+    subtest("server-name-254", do_test_stateless_hrr_long_input, 254, 0, PTLS_ERROR_STATELESS_RETRY);
+    subtest("server-name-255", do_test_stateless_hrr_long_input, 255, 0, PTLS_ALERT_HANDSHAKE_FAILURE);
+    subtest("cookie-255", do_test_stateless_hrr_long_input, 0, 251, PTLS_ALERT_HANDSHAKE_FAILURE);
+}
+
 static void test_ech_config_mismatch(void)
 {
     ptls_t *client, *server;
@@ -3184,6 +3255,7 @@ static void test_all_handshakes_core(void)
         subtest("enforce-retry-stateless", test_enforce_retry_stateless);
         subtest("pq-retry-stateless", test_pq_retry_stateless);
         subtest("stateless-hrr-aad-change", test_stateless_hrr_aad_change);
+        subtest("stateless-hrr-long-input", test_stateless_hrr_long_input);
     }
     subtest("key-update", test_key_update);
     subtest("pre-shared-key", test_pre_shared_key);
