@@ -3746,6 +3746,11 @@ static int client_hello_decode_server_name(ptls_iovec_t *name, const uint8_t **s
             ptls_decode_open_block(*src, end, 2, {
                 switch (type) {
                 case PTLS_SERVER_NAME_TYPE_HOSTNAME:
+                    /* RFC 6066 Section 3: "The ServerNameList MUST NOT contain more than one name of the same name_type." */
+                    if (name->base != NULL) {
+                        ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+                        goto Exit;
+                    }
                     if (end - *src == 0) {
                         ret = PTLS_ALERT_DECODE_ERROR;
                         goto Exit;
