@@ -277,6 +277,7 @@ IF (BUILD_FUZZER)
     ADD_EXECUTABLE(fuzz-asn1 fuzz/fuzz-asn1.c)
     SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D_GNU_SOURCE")
     INCLUDE_DIRECTORIES(t include ${OPENSSL_INCLUDE_DIR})
+    ADD_EXECUTABLE(fuzz-fusion-aead fuzz/fuzz-fusion-aead.c)
     ADD_DEFINITIONS(-DPTLS_FUZZ_HANDSHAKE=1)
     ADD_EXECUTABLE(fuzz-server-hello fuzz/fuzz-server-hello.c)
     ADD_EXECUTABLE(fuzz-client-hello fuzz/fuzz-client-hello.c)
@@ -287,6 +288,7 @@ IF (BUILD_FUZZER)
         SET_TARGET_PROPERTIES(fuzz-asn1
             fuzz-server-hello
             fuzz-client-hello
+            fuzz-fusion-aead
             PROPERTIES
             LINKER_LANGUAGE CXX)
     ELSE()
@@ -295,6 +297,7 @@ IF (BUILD_FUZZER)
         SET_TARGET_PROPERTIES(fuzz-asn1
             fuzz-server-hello
             fuzz-client-hello
+            fuzz-fusion-aead
             PROPERTIES
             COMPILE_FLAGS "-fsanitize=fuzzer"
             LINK_FLAGS "-fsanitize=fuzzer")
@@ -303,5 +306,6 @@ IF (BUILD_FUZZER)
     TARGET_LINK_LIBRARIES(fuzz-asn1 picotls-minicrypto picotls-core picotls-openssl ${OPENSSL_CRYPTO_LIBRARIES} ${AEGIS_LIBRARIES} ${LIB_FUZZER})
     TARGET_LINK_LIBRARIES(fuzz-server-hello picotls-core picotls-openssl ${OPENSSL_CRYPTO_LIBRARIES} ${AEGIS_LIBRARIES} ${LIB_FUZZER})
     TARGET_LINK_LIBRARIES(fuzz-client-hello picotls-core picotls-openssl ${OPENSSL_CRYPTO_LIBRARIES} ${AEGIS_LIBRARIES} ${LIB_FUZZER})
+    TARGET_LINK_LIBRARIES(fuzz-fusion-aead picotls-core picotls-fusion picotls-openssl ${OPENSSL_CRYPTO_LIBRARIES} ${AEGIS_LIBRARIES} ${LIB_FUZZER})
 
 ENDIF()
