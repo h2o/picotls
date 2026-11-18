@@ -4470,6 +4470,11 @@ static int calc_cookie_signature(ptls_t *tls, ptls_handshake_properties_t *prope
     ptls_hash_algorithm_t *algo = tls->ctx->cipher_suites[0]->hash;
     ptls_hash_context_t *hctx;
 
+    /* The server name and the cookie being validated are supplied by the client, and might not fit in the one-octet length prefix
+     * used below. Reject them, as such cookies cannot be issued. */
+    if ((tls->server_name != NULL && strlen(tls->server_name) >= UINT8_MAX) || tbs.len >= UINT8_MAX)
+        return PTLS_ALERT_HANDSHAKE_FAILURE;
+
     if ((hctx = ptls_hmac_create(algo, properties->server.cookie.key, algo->digest_size)) == NULL)
         return PTLS_ERROR_NO_MEMORY;
 
