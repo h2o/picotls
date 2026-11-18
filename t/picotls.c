@@ -1584,6 +1584,70 @@ static void test_inner_plaintext_overflow(void)
     subtest("padding", do_test_inner_plaintext_overflow, 1);
 }
 
+static const char *alpn_selected_by_server;
+
+static int select_alpn_regardless_of_client(ptls_on_client_hello_t *self, ptls_t *tls, ptls_on_client_hello_parameters_t *params)
+{
+    return ptls_set_negotiated_protocol(tls, alpn_selected_by_server, 0);
+}
+
+/**
+ * Lets the server select `selected` as the ALPN protocol regardless of what the client offered, and checks how the client handles
+ * the EncryptedExtensions. `client_offers` is the number of protocols offered by the client, taken from {"h2", "http/1.1"}.
+ */
+static void do_test_alpn_selection(size_t client_offers, const char *selected, int expected)
+{
+    static ptls_on_client_hello_t on_client_hello = {select_alpn_regardless_of_client};
+    static const ptls_iovec_t protocols[] = {{(uint8_t *)"h2", 2}, {(uint8_t *)"http/1.1", 8}};
+    ptls_on_client_hello_t *orig_on_client_hello = ctx_peer->on_client_hello;
+    ptls_handshake_properties_t client_hs_prop = {{{{NULL}}}};
+    ptls_t *client, *server;
+    ptls_buffer_t cbuf, sbuf;
+    size_t consumed;
+    int ret;
+
+    alpn_selected_by_server = selected;
+    ctx_peer->on_client_hello = &on_client_hello;
+    client_hs_prop.client.negotiated_protocols.list = protocols;
+    client_hs_prop.client.negotiated_protocols.count = client_offers;
+
+    client = ptls_new(ctx, 0);
+    server = ptls_new(ctx_peer, 1);
+    ptls_buffer_init(&cbuf, "", 0);
+    ptls_buffer_init(&sbuf, "", 0);
+
+    ret = ptls_handshake(client, &cbuf, NULL, NULL, &client_hs_prop);
+    ok(ret == PTLS_ERROR_IN_PROGRESS);
+    consumed = cbuf.off;
+    ret = ptls_handshake(server, &sbuf, cbuf.base, &consumed, NULL);
+    ok(ret == 0);
+    ok(consumed == cbuf.off);
+    ok(strcmp(ptls_get_negotiated_protocol(server), selected) == 0);
+    cbuf.off = 0;
+    consumed = sbuf.off;
+    ret = ptls_handshake(client, &cbuf, sbuf.base, &consumed, &client_hs_prop);
+    ok(ret == expected);
+    if (expected == 0) {
+        ok(strcmp(ptls_get_negotiated_protocol(client), selected) == 0);
+    } else {
+        ok(ptls_get_negotiated_protocol(client) == NULL);
+    }
+
+    ptls_buffer_dispose(&cbuf);
+    ptls_buffer_dispose(&sbuf);
+    ptls_free(client);
+    ptls_free(server);
+    ctx_peer->on_client_hello = orig_on_client_hello;
+}
+
+static void test_alpn_selection(void)
+{
+    subtest("offered", do_test_alpn_selection, 2, "http/1.1", 0);
+    subtest("not-offered", do_test_alpn_selection, 2, "h3", PTLS_ALERT_ILLEGAL_PARAMETER);
+    subtest("prefix-of-offered", do_test_alpn_selection, 2, "http", PTLS_ALERT_ILLEGAL_PARAMETER);
+    subtest("client-sent-no-alpn", do_test_alpn_selection, 0, "h2", PTLS_ALERT_UNSUPPORTED_EXTENSION);
+}
+
 static void test_hrr_handshake(void)
 {
     test_handshake(ptls_iovec_init(NULL, 0), TEST_HANDSHAKE_HRR, 0, 0, 0, 0);
@@ -3628,6 +3692,7 @@ void test_picotls(void)
     subtest("hrr-cookie-only", test_hrr_cookie_only);
     subtest("plaintext-alert", test_plaintext_alert);
     subtest("inner-plaintext-overflow", test_inner_plaintext_overflow);
+    subtest("alpn-selection", test_alpn_selection);
     subtest("handshake", test_all_handshakes);
     subtest("quic", test_quic);
     subtest("legacy-ch", test_legacy_ch);
