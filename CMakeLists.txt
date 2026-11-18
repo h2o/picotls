@@ -277,6 +277,9 @@ IF (BUILD_FUZZER)
     ADD_EXECUTABLE(fuzz-asn1 fuzz/fuzz-asn1.c)
     SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D_GNU_SOURCE")
     INCLUDE_DIRECTORIES(t include ${OPENSSL_INCLUDE_DIR})
+    # fuzz-handshake-records must be created before ADD_DEFINITIONS(-DPTLS_FUZZ_HANDSHAKE=1) below,
+    # so that it uses the real record AEAD rather than the fuzz stubs (picotls.c:728).
+    ADD_EXECUTABLE(fuzz-handshake-records fuzz/fuzz-handshake-records.c)
     ADD_DEFINITIONS(-DPTLS_FUZZ_HANDSHAKE=1)
     ADD_EXECUTABLE(fuzz-server-hello fuzz/fuzz-server-hello.c)
     ADD_EXECUTABLE(fuzz-client-hello fuzz/fuzz-client-hello.c)
@@ -287,6 +290,7 @@ IF (BUILD_FUZZER)
         SET_TARGET_PROPERTIES(fuzz-asn1
             fuzz-server-hello
             fuzz-client-hello
+            fuzz-handshake-records
             PROPERTIES
             LINKER_LANGUAGE CXX)
     ELSE()
@@ -303,5 +307,6 @@ IF (BUILD_FUZZER)
     TARGET_LINK_LIBRARIES(fuzz-asn1 picotls-minicrypto picotls-core picotls-openssl ${OPENSSL_CRYPTO_LIBRARIES} ${AEGIS_LIBRARIES} ${LIB_FUZZER})
     TARGET_LINK_LIBRARIES(fuzz-server-hello picotls-core picotls-openssl ${OPENSSL_CRYPTO_LIBRARIES} ${AEGIS_LIBRARIES} ${LIB_FUZZER})
     TARGET_LINK_LIBRARIES(fuzz-client-hello picotls-core picotls-openssl ${OPENSSL_CRYPTO_LIBRARIES} ${AEGIS_LIBRARIES} ${LIB_FUZZER})
+    TARGET_LINK_LIBRARIES(fuzz-handshake-records picotls-minicrypto picotls-core ${OPENSSL_CRYPTO_LIBRARIES} ${AEGIS_LIBRARIES} ${LIB_FUZZER})
 
 ENDIF()
