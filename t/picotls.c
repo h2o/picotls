@@ -2331,6 +2331,80 @@ static void test_pq_retry_stateless(void)
     test_pq_retry(1);
 }
 
+/**
+ * Rewrites the group selected by a stateful HRR, so that the client sends the second ClientHello with a key share for a group that
+ * the server supports but has not selected. The server has to reject that ClientHello.
+ */
+static void test_hrr_key_share_mismatch(void)
+{
+    assert(ctx->key_exchanges[0] != NULL && ctx->key_exchanges[0]->id == ctx_peer->key_exchanges[0]->id);
+
+    /* emulate a second group by using the classical key exchange with a private-use codepoint */
+    ptls_key_exchange_algorithm_t client_other = {.id = 0xfe01,
+                                                  .create = ctx->key_exchanges[0]->create,
+                                                  .exchange = ctx->key_exchanges[0]->exchange,
+                                                  .data = ctx->key_exchanges[0]->data,
+                                                  .name = "other"},
+                                  server_other = {.id = 0xfe01,
+                                                  .create = ctx_peer->key_exchanges[0]->create,
+                                                  .exchange = ctx_peer->key_exchanges[0]->exchange,
+                                                  .data = ctx_peer->key_exchanges[0]->data,
+                                                  .name = "other"};
+    ptls_key_exchange_algorithm_t *client_keyex[] = {ctx->key_exchanges[0], &client_other, NULL},
+                                  *server_keyex[] = {ctx_peer->key_exchanges[0], &server_other, NULL};
+    ptls_context_t ctx_client = *ctx, ctx_server = *ctx_peer;
+    ctx_client.key_exchanges = client_keyex;
+    ctx_server.key_exchanges = server_keyex;
+
+    ptls_t *client, *server;
+    ptls_handshake_properties_t client_hs_prop = {{{{NULL}}}};
+    ptls_buffer_t cbuf, sbuf;
+    size_t consumed, group_off;
+    int ret;
+
+    /* send CH without key share, so that the server selects the first group using HRR */
+    client_hs_prop.client.negotiate_before_key_exchange = 1;
+
+    ptls_buffer_init(&cbuf, "", 0);
+    ptls_buffer_init(&sbuf, "", 0);
+
+    client = ptls_new(&ctx_client, 0);
+    server = ptls_new(&ctx_server, 1);
+
+    ret = ptls_handshake(client, &cbuf, NULL, NULL, &client_hs_prop);
+    ok(ret == PTLS_ERROR_IN_PROGRESS);
+
+    consumed = cbuf.off;
+    ret = ptls_handshake(server, &sbuf, cbuf.base, &consumed, NULL);
+    ok(ret == PTLS_ERROR_IN_PROGRESS);
+    ok(consumed == cbuf.off);
+    cbuf.off = 0;
+
+    /* the HRR ends with the key_share extension carrying the selected group; replace it with the other group */
+    assert(sbuf.off >= 5 && sbuf.base[0] == PTLS_CONTENT_TYPE_HANDSHAKE && sbuf.base[5] == PTLS_HANDSHAKE_TYPE_SERVER_HELLO);
+    group_off = 5 + ((size_t)sbuf.base[3] << 8 | sbuf.base[4]) - 2;
+    ok(sbuf.base[group_off] == (uint8_t)(ctx->key_exchanges[0]->id >> 8) &&
+       sbuf.base[group_off + 1] == (uint8_t)ctx->key_exchanges[0]->id);
+    sbuf.base[group_off] = (uint8_t)(client_other.id >> 8);
+    sbuf.base[group_off + 1] = (uint8_t)client_other.id;
+
+    consumed = sbuf.off;
+    ret = ptls_handshake(client, &cbuf, sbuf.base, &consumed, &client_hs_prop);
+    ok(ret == PTLS_ERROR_IN_PROGRESS);
+    ok(consumed == sbuf.off);
+    sbuf.off = 0;
+
+    consumed = cbuf.off;
+    ret = ptls_handshake(server, &sbuf, cbuf.base, &consumed, NULL);
+    ok(ret == PTLS_ALERT_ILLEGAL_PARAMETER);
+
+    ptls_free(client);
+    ptls_free(server);
+
+    ptls_buffer_dispose(&cbuf);
+    ptls_buffer_dispose(&sbuf);
+}
+
 static ptls_t *stateless_hrr_prepare(ptls_buffer_t *sbuf, ptls_handshake_properties_t *server_hs_prop)
 {
     ptls_t *client = ptls_new(ctx, 0), *server = ptls_new(ctx_peer, 1);
@@ -3179,6 +3253,7 @@ static void test_all_handshakes_core(void)
     subtest("async-sign-certificate-failure", test_async_sign_certificate_failure);
     subtest("enforce-retry-stateful", test_enforce_retry_stateful);
     subtest("pq-retry-stateful", test_pq_retry_stateful);
+    subtest("hrr-key-share-mismatch", test_hrr_key_share_mismatch);
     if (!(ctx_peer->ech.server.create_opener != NULL && test_client_ech_configs.base != NULL)) {
         subtest("hrr-stateless-handshake", test_hrr_stateless_handshake);
         subtest("enforce-retry-stateless", test_enforce_retry_stateless);

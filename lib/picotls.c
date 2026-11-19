@@ -4745,6 +4745,12 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
                 goto Exit;
         });
     }
+    /* If the HelloRetryRequest selected a group, the second ClientHello must offer a key share for that group (RFC 9846 Section
+     * 4.1.2). `tls->key_share` retains the group that the server has selected; see below. */
+    if (is_second_flight && tls->key_share != NULL && key_share.algorithm != tls->key_share) {
+        ret = PTLS_ALERT_ILLEGAL_PARAMETER;
+        goto Exit;
+    }
 
     if (!is_second_flight) {
         ptls_key_exchange_algorithm_t *negotiated_group = NULL;
@@ -4887,6 +4893,7 @@ static int server_handle_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptl
                 ret = PTLS_ERROR_STATELESS_RETRY;
             } else {
                 tls->state = PTLS_STATE_SERVER_EXPECT_SECOND_CLIENT_HELLO;
+                tls->key_share = negotiated_group;
                 if (ch->psk.early_data_indication)
                     tls->server.early_data_skipped_bytes = 0;
                 ret = PTLS_ERROR_IN_PROGRESS;
