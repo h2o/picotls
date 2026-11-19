@@ -345,6 +345,10 @@ struct st_ptls_t {
              */
             unsigned using_early_data : 1;
             struct st_ptls_certificate_request_t certificate_request;
+            /**
+             * ProtocolNameList of ALPN sent in the first ClientHello, retained until EncryptedExtensions is handled
+             */
+            ptls_iovec_t offered_protocols;
         } client;
         struct {
             uint8_t pending_traffic_secret[PTLS_MAX_DIGEST_SIZE];
@@ -2666,6 +2670,23 @@ static int send_client_hello(ptls_t *tls, ptls_message_emitter_t *emitter, ptls_
         if ((ret = derive_exporter_secret(tls, 1)) != 0)
             goto Exit;
     }
+    /* retain the protocols offered through ALPN, so that the selection of the server can be validated; each name is known to fit
+     * in a single-octet length, as the ClientHello has been built successfully */
+    if (!is_second_flight && properties != NULL && properties->client.negotiated_protocols.count != 0) {
+        size_t len = 0;
+        for (size_t i = 0; i != properties->client.negotiated_protocols.count; ++i)
+            len += 1 + properties->client.negotiated_protocols.list[i].len;
+        if ((tls->client.offered_protocols.base = malloc(len)) == NULL) {
+            ret = PTLS_ERROR_NO_MEMORY;
+            goto Exit;
+        }
+        for (size_t i = 0; i != properties->client.negotiated_protocols.count; ++i) {
+            ptls_iovec_t p = properties->client.negotiated_protocols.list[i];
+            tls->client.offered_protocols.base[tls->client.offered_protocols.len++] = (uint8_t)p.len;
+            memcpy(tls->client.offered_protocols.base + tls->client.offered_protocols.len, p.base, p.len);
+            tls->client.offered_protocols.len += p.len;
+        }
+    }
     tls->state = cookie == NULL ? PTLS_STATE_CLIENT_EXPECT_SERVER_HELLO : PTLS_STATE_CLIENT_EXPECT_SECOND_SERVER_HELLO;
     ret = PTLS_ERROR_IN_PROGRESS;
 
@@ -3127,10 +3148,24 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
             }
             break;
         case PTLS_EXTENSION_TYPE_ALPN:
+            if (tls->client.offered_protocols.base == NULL) {
+                ret = PTLS_ALERT_UNSUPPORTED_EXTENSION;
+                goto Exit;
+            }
             ptls_decode_block(src, end, 2, {
                 ptls_decode_open_block(src, end, 1, {
                     if (src == end) {
                         ret = PTLS_ALERT_DECODE_ERROR;
+                        goto Exit;
+                    }
+                    /* the server must select one of the protocols that we offered */
+                    const uint8_t *offered = tls->client.offered_protocols.base;
+                    const uint8_t *const offered_end = offered + tls->client.offered_protocols.len;
+                    for (; offered != offered_end; offered += 1 + *offered)
+                        if (*offered == end - src && memcmp(offered + 1, src, end - src) == 0)
+                            break;
+                    if (offered == offered_end) {
+                        ret = PTLS_ALERT_ILLEGAL_PARAMETER;
                         goto Exit;
                     }
                     if ((ret = ptls_set_negotiated_protocol(tls, (const char *)src, end - src)) != 0)
@@ -3221,6 +3256,8 @@ static int client_handle_encrypted_extensions(ptls_t *tls, ptls_iovec_t message,
 Exit:
     if (unknown_extensions != &no_unknown_extensions)
         free(unknown_extensions);
+    free(tls->client.offered_protocols.base);
+    tls->client.offered_protocols = ptls_iovec_init(NULL, 0);
     return ret;
 }
 
@@ -5757,6 +5794,7 @@ void ptls_free(ptls_t *tls)
             tls->client.key_share_ctx->on_exchange(&tls->client.key_share_ctx, 1, NULL, ptls_iovec_init(NULL, 0));
         if (tls->client.certificate_request.context.base != NULL)
             free(tls->client.certificate_request.context.base);
+        free(tls->client.offered_protocols.base);
     }
     if (tls->certificate_verify.cb != NULL)
         tls->certificate_verify.cb(tls->certificate_verify.verify_ctx, 0, ptls_iovec_init(NULL, 0), ptls_iovec_init(NULL, 0));
